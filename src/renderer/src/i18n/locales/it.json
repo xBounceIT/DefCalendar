@@ -238,6 +238,32 @@
         "title": "Impostazioni Sincronizzazione",
         "description": "Configura il comportamento e la pianificazione della sincronizzazione."
       }
+    },
+    "updates": {
+      "title": "Aggiornamenti applicazione",
+      "currentVersion": "Versione corrente",
+      "unknownVersion": "Versione sconosciuta",
+      "loading": "Caricamento…",
+      "lastChecked": "Ultimo controllo: {{value}}",
+      "notCheckedYet": "Non ancora controllato",
+      "releaseNotes": "Note di rilascio",
+      "status": {
+        "idle": "Pronto per controllare aggiornamenti.",
+        "checking": "Controllo aggiornamenti…",
+        "available": "Aggiornamento disponibile: {{version}}",
+        "notAvailable": "L'app è aggiornata.",
+        "downloading": "Download aggiornamento… {{percent}}%",
+        "downloaded": "Aggiornamento scaricato: {{version}}",
+        "error": "Controllo aggiornamenti non riuscito.",
+        "unsupported": "Gli aggiornamenti sono disponibili solo nelle build pacchettizzate."
+      },
+      "actions": {
+        "check": "Controlla aggiornamenti",
+        "checking": "Controllo…",
+        "download": "Scarica aggiornamento",
+        "downloading": "Download…",
+        "install": "Riavvia per installare"
+      }
     }
   }
 }

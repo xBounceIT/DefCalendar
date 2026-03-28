@@ -1,7 +1,9 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { CalendarSummary, UserSettings } from "@shared/schemas";
 import type { AppLocale } from "../i18n";
+import useUpdater from "../hooks/use-updater";
+import useVersion from "../hooks/use-version";
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -121,12 +123,141 @@ function NotificationsSection() {
 
 function SyncSection() {
   const { t } = useTranslation();
+  const { isLoading: isVersionLoading, version } = useVersion();
+  const {
+    check,
+    download,
+    install,
+    isChecking,
+    isDownloading,
+    status,
+    statusError,
+    statusLoading,
+  } = useUpdater();
+
+  const updateStatusLabel = useMemo(() => {
+    if (!status) {
+      return t("settings.updates.status.idle");
+    }
+
+    switch (status.state) {
+      case "checking": {
+        return t("settings.updates.status.checking");
+      }
+      case "available": {
+        return t("settings.updates.status.available", {
+          version: status.latestVersion ?? t("settings.updates.unknownVersion"),
+        });
+      }
+      case "not_available": {
+        return t("settings.updates.status.notAvailable");
+      }
+      case "downloading": {
+        return t("settings.updates.status.downloading", {
+          percent: Math.round(status.downloadPercent ?? 0),
+        });
+      }
+      case "downloaded": {
+        return t("settings.updates.status.downloaded", {
+          version: status.latestVersion ?? t("settings.updates.unknownVersion"),
+        });
+      }
+      case "error": {
+        return t("settings.updates.status.error");
+      }
+      case "unsupported": {
+        return t("settings.updates.status.unsupported");
+      }
+      case "idle":
+      default: {
+        return t("settings.updates.status.idle");
+      }
+    }
+  }, [status, t]);
+
+  const isBusy = isChecking || isDownloading;
+  const canCheck = !isBusy && status?.state !== "unsupported";
+  const canDownload = !isBusy && status?.state === "available";
+  const canInstall = status?.state === "downloaded";
+
+  let lastChecked = t("settings.updates.notCheckedYet");
+  if (status?.checkedAt) {
+    const value = new Date(status.checkedAt).toLocaleString();
+    lastChecked = t("settings.updates.lastChecked", { value });
+  }
+
+  const effectiveVersion = version ?? status?.currentVersion ?? null;
 
   return (
     <div className="settings-section">
       <h3>{t("settings.sections.sync.title")}</h3>
       <div className="settings-fields">
         <p className="settings-placeholder">{t("settings.sections.sync.description")}</p>
+        <div className="settings-updates">
+          <h4>{t("settings.updates.title")}</h4>
+          <div className="settings-updates__meta">
+            <span>{t("settings.updates.currentVersion")}</span>
+            <strong>
+              {isVersionLoading && !effectiveVersion
+                ? t("settings.updates.loading")
+                : effectiveVersion ?? t("settings.updates.unknownVersion")}
+            </strong>
+          </div>
+          <div className={`settings-updates__status settings-updates__status--${status?.state ?? "idle"}`}>
+            {updateStatusLabel}
+          </div>
+          {status?.state === "downloading" && (
+            <progress
+              className="settings-updates__progress"
+              max={100}
+              value={Math.round(status.downloadPercent ?? 0)}
+            />
+          )}
+          {status?.releaseNotes && (
+            <details className="settings-updates__notes">
+              <summary>{t("settings.updates.releaseNotes")}</summary>
+              <pre>{status.releaseNotes}</pre>
+            </details>
+          )}
+          {(status?.error || statusError instanceof Error) && (
+            <p className="settings-updates__error">
+              {status?.error ?? statusError.message}
+            </p>
+          )}
+          <p className="settings-updates__timestamp">
+            {statusLoading ? t("settings.updates.loading") : lastChecked}
+          </p>
+          <div className="settings-updates__actions">
+            <button
+              className="settings-updates__action"
+              disabled={!canCheck}
+              onClick={check}
+              type="button"
+            >
+              {isChecking ? t("settings.updates.actions.checking") : t("settings.updates.actions.check")}
+            </button>
+            <button
+              className="settings-updates__action"
+              disabled={!canDownload}
+              onClick={download}
+              type="button"
+            >
+              {isDownloading
+                ? t("settings.updates.actions.downloading")
+                : t("settings.updates.actions.download")}
+            </button>
+            <button
+              className="settings-updates__action settings-updates__action--primary"
+              disabled={!canInstall}
+              onClick={() => {
+                install();
+              }}
+              type="button"
+            >
+              {t("settings.updates.actions.install")}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

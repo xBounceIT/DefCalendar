@@ -9,6 +9,7 @@ import SafeStorageTokenCache from "@main/auth/cache-plugin";
 import SettingsService from "@main/settings/settings-service";
 import { SyncService } from "@main/sync/sync-service";
 import TrayService from "@main/tray-service";
+import UpdateService from "@main/update/update-service";
 import { app, ipcMain } from "@main/electron-runtime";
 import createMainWindow from "@main/window";
 import { join } from "pathe";
@@ -47,6 +48,7 @@ async function bootstrap(): Promise<void> {
 
   const graph = new GraphCalendarService(auth, config);
   const sync = new SyncService({ auth, graph, db, settings, reminders, config });
+  const updates = new UpdateService();
 
   ipcMain.handle(IPC_CHANNELS.appSetLocale, async (_event, locale: unknown) => {
     if (typeof locale === "string" && (locale === "en" || locale === "it")) {
@@ -112,6 +114,7 @@ async function bootstrap(): Promise<void> {
     reminderManager,
     settings,
     sync,
+    updates,
     getMainWindow: () => mainWindow,
   });
 
@@ -120,6 +123,10 @@ async function bootstrap(): Promise<void> {
 
   if (auth.hasSession()) {
     void sync.syncAll("startup");
+  }
+
+  if (app.isPackaged) {
+    void updates.checkForUpdates();
   }
 
   app.on("second-instance", () => {

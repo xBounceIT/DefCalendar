@@ -160,6 +160,21 @@ function createCalendarApiMock(): CalendarApi {
       onStatus: vi.fn().mockReturnValue(() => undefined),
       refresh: vi.fn(),
     },
+    updates: {
+      getStatus: vi.fn().mockResolvedValue({
+        checkedAt: null,
+        currentVersion: "0.1.0",
+        downloadPercent: null,
+        error: null,
+        latestVersion: null,
+        releaseNotes: null,
+        state: "idle",
+      }),
+      check: vi.fn(),
+      download: vi.fn(),
+      install: vi.fn(),
+      onStatus: vi.fn().mockReturnValue(() => undefined),
+    },
     reminder: {
       snooze: vi.fn(),
       dismiss: vi.fn(),
@@ -240,6 +255,21 @@ function createSignedInCalendarApiMock(): CalendarApi {
       }),
       onStatus: vi.fn().mockReturnValue(() => undefined),
       refresh: vi.fn(),
+    },
+    updates: {
+      getStatus: vi.fn().mockResolvedValue({
+        checkedAt: null,
+        currentVersion: "0.1.0",
+        downloadPercent: null,
+        error: null,
+        latestVersion: null,
+        releaseNotes: null,
+        state: "idle",
+      }),
+      check: vi.fn(),
+      download: vi.fn(),
+      install: vi.fn(),
+      onStatus: vi.fn().mockReturnValue(() => undefined),
     },
     reminder: {
       snooze: vi.fn(),

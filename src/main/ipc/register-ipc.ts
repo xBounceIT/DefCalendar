@@ -1,5 +1,6 @@
 import type { BrowserWindow, IpcMainInvokeEvent } from "electron";
 import {
+  appUpdateStatusSchema,
   attachmentDeleteArgsSchema,
   attachmentUploadArgsSchema,
   authSignInRequestSchema,
@@ -22,6 +23,7 @@ import type MsalAuthService from "@main/auth/msal-auth-service";
 import type ReminderWindowManager from "@main/reminders/reminder-window";
 import type SettingsService from "@main/settings/settings-service";
 import type { SyncService } from "@main/sync/sync-service";
+import type UpdateService from "@main/update/update-service";
 import { app, ipcMain, shell } from "@main/electron-runtime";
 import { IPC_CHANNELS } from "@shared/ipc";
 
@@ -32,6 +34,7 @@ interface RegisterIpcDependencies {
   reminderManager: ReminderWindowManager;
   settings: SettingsService;
   sync: SyncService;
+  updates: UpdateService;
   getMainWindow: () => BrowserWindow | null;
 }
 
@@ -238,6 +241,28 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     return syncStatusSchema.parse(dependencies.sync.getStatus());
   });
 
+  ipcMain.handle(IPC_CHANNELS.updatesGetStatus, async (event) => {
+    validateSender(event);
+    return appUpdateStatusSchema.parse(dependencies.updates.getStatus());
+  });
+
+  ipcMain.handle(IPC_CHANNELS.updatesCheck, async (event) => {
+    validateSender(event);
+    const status = await dependencies.updates.checkForUpdates();
+    return appUpdateStatusSchema.parse(status);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.updatesDownload, async (event) => {
+    validateSender(event);
+    const status = await dependencies.updates.downloadUpdate();
+    return appUpdateStatusSchema.parse(status);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.updatesInstall, async (event) => {
+    validateSender(event);
+    dependencies.updates.installUpdate();
+  });
+
   ipcMain.handle(IPC_CHANNELS.settingsGet, async (event) => {
     validateSender(event);
     return dependencies.settings.getSettings();
@@ -271,6 +296,10 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
 
   dependencies.sync.onStatus((status) => {
     broadcast(IPC_CHANNELS.syncStatusChanged, status);
+  });
+
+  dependencies.updates.onStatus((status) => {
+    broadcast(IPC_CHANNELS.updatesStatusChanged, appUpdateStatusSchema.parse(status));
   });
 
   ipcMain.handle(IPC_CHANNELS.windowMinimize, async (event) => {

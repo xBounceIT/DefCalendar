@@ -238,6 +238,32 @@
         "title": "Sync Settings",
         "description": "Configure synchronization behavior and schedule."
       }
+    },
+    "updates": {
+      "title": "Application Updates",
+      "currentVersion": "Current version",
+      "unknownVersion": "Unknown version",
+      "loading": "Loading…",
+      "lastChecked": "Last checked: {{value}}",
+      "notCheckedYet": "Not checked yet",
+      "releaseNotes": "Release notes",
+      "status": {
+        "idle": "Ready to check for updates.",
+        "checking": "Checking for updates…",
+        "available": "Update available: {{version}}",
+        "notAvailable": "You are up to date.",
+        "downloading": "Downloading update… {{percent}}%",
+        "downloaded": "Update downloaded: {{version}}",
+        "error": "Update check failed.",
+        "unsupported": "Updates are only available in packaged builds."
+      },
+      "actions": {
+        "check": "Check for updates",
+        "checking": "Checking…",
+        "download": "Download update",
+        "downloading": "Downloading…",
+        "install": "Restart to install"
+      }
     }
   }
 }
