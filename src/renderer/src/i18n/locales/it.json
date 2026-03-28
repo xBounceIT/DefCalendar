@@ -34,8 +34,8 @@
   },
   "sidebar": {
     "title": "Calendario",
-    "myCalendars": "I miei calendari",
-    "addCalendar": "Aggiungi calendario",
+    "accounts": "Account",
+    "addAccount": "Aggiungi account",
     "refresh": "Sincronizza",
     "settings": "Impostazioni",
     "signOut": "Disconnetti",

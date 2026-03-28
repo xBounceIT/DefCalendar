@@ -34,8 +34,8 @@
   },
   "sidebar": {
     "title": "Calendar",
-    "myCalendars": "My calendars",
-    "addCalendar": "Add calendar",
+    "accounts": "Accounts",
+    "addAccount": "Add account",
     "refresh": "Sync",
     "settings": "Settings",
     "signOut": "Sign out",

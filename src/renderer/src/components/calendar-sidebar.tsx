@@ -1,4 +1,6 @@
 import type { CalendarSummary, SyncStatus } from "@shared/schemas";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faCircleUser, faPlus } from "@fortawesome/free-solid-svg-icons";
 import { getCalendarAccent } from "@shared/calendar";
 import MiniCalendar from "./mini-calendar";
 import React from "react";
@@ -21,43 +23,33 @@ interface CalendarSidebarProps {
   syncStatus: SyncStatus;
 }
 
-function PlusIcon() {
+function ChevronIcon({ expanded }: { expanded: boolean }) {
   return (
     <svg
-      width="14"
-      height="14"
+      width="12"
+      height="12"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
+      style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s ease" }}
     >
-      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-      <line x1="12" y1="8" x2="12" y2="16" />
-      <line x1="8" y1="12" x2="16" y2="12" />
+      <polyline points="9 18 15 12 9 6" />
     </svg>
   );
 }
 
-function AddCalendarButton() {
-  const { t } = useTranslation();
-
-  return (
-    <button className="add-calendar-btn" type="button">
-      <PlusIcon />
-      {t("sidebar.addCalendar")}
-    </button>
-  );
-}
-
-function CalendarListHeader({ count }: { count: number }) {
+function CalendarListHeader() {
   const { t } = useTranslation();
 
   return (
     <div className="calendar-list-header">
-      <h2>{t("sidebar.myCalendars")}</h2>
-      <span className="muted-label">{count}</span>
+      <h2>{t("sidebar.accounts")}</h2>
+      <button className="add-account-btn" title={t("sidebar.addAccount")} type="button">
+        <FontAwesomeIcon icon={faPlus} />
+      </button>
     </div>
   );
 }
@@ -96,18 +88,30 @@ function CalendarListGroup({
   email,
   calendars,
   onCalendarToggle,
+  isExpanded,
+  onToggle,
 }: {
   email: string;
   calendars: CalendarSummary[];
   onCalendarToggle: (calendar: CalendarSummary) => void;
+  isExpanded: boolean;
+  onToggle: () => void;
 }) {
   return (
     <div className="calendar-list-group">
-      <div className="calendar-list-group-header">{email}</div>
-      <div className="calendar-list">
-        {calendars.map((calendar) => (
-          <CalendarRow calendar={calendar} key={calendar.id} onCalendarToggle={onCalendarToggle} />
-        ))}
+      <div className="account-card">
+        <button className="account-header" onClick={onToggle} type="button">
+          <FontAwesomeIcon className="account-icon" icon={faCircleUser} />
+          <ChevronIcon expanded={isExpanded} />
+          <span className="account-email">{email}</span>
+        </button>
+        <div className={`account-calendars-wrapper ${isExpanded ? "expanded" : ""}`}>
+          <div className="account-calendars">
+            {calendars.map((calendar) => (
+              <CalendarRow calendar={calendar} key={calendar.id} onCalendarToggle={onCalendarToggle} />
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -120,6 +124,8 @@ function CalendarList({
   calendars: CalendarSummary[];
   onCalendarToggle: (calendar: CalendarSummary) => void;
 }) {
+  const [expandedGroups, setExpandedGroups] = React.useState<Set<string>>(() => new Set());
+
   const groups = React.useMemo(() => {
     const grouped = new Map<string, CalendarSummary[]>();
     for (const calendar of calendars) {
@@ -136,14 +142,28 @@ function CalendarList({
 
   const entries = React.useMemo(() => [...groups], [groups]);
 
+  const handleToggleGroup = React.useCallback((email: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(email)) {
+        next.delete(email);
+      } else {
+        next.add(email);
+      }
+      return next;
+    });
+  }, []);
+
   return (
     <div className="calendar-list-container">
       {entries.map(([email, groupCalendars]) => (
         <CalendarListGroup
           email={email}
           calendars={groupCalendars}
+          isExpanded={expandedGroups.has(email)}
           key={email}
           onCalendarToggle={onCalendarToggle}
+          onToggle={() => handleToggleGroup(email)}
         />
       ))}
     </div>
@@ -293,8 +313,7 @@ function CalendarSidebar(props: CalendarSidebarProps) {
       <MiniCalendar selectedDate={selectedDate} onDateSelect={props.onDateSelect} />
 
       <div className="sidebar-section">
-        <CalendarListHeader count={props.calendars.length} />
-        <AddCalendarButton />
+        <CalendarListHeader />
         <CalendarList calendars={props.calendars} onCalendarToggle={props.onCalendarToggle} />
       </div>
 
