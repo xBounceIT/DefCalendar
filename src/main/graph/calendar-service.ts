@@ -878,14 +878,28 @@ function parseGraphResponseStatus(value?: Record<string, unknown>): GraphRespons
   };
 }
 
+function extractGoogleMeetUrl(text?: string): string | null {
+  if (!text) {
+    return null;
+  }
+  const match = text.match(/https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}(?:\?[^\s]*)?/i);
+  return match ? match[0] : null;
+}
+
 function parseOnlineMeetingInfo(event: GraphEvent): null | OnlineMeetingInfo {
   if (!event.onlineMeeting && !event.onlineMeetingProvider) {
     return null;
   }
 
+  let joinUrl = event.onlineMeeting?.joinUrl ?? null;
+
+  if (!joinUrl) {
+    joinUrl = extractGoogleMeetUrl(event.body?.content) ?? extractGoogleMeetUrl(event.location?.displayName) ?? null;
+  }
+
   return {
     conferenceId: event.onlineMeeting?.conferenceId ?? null,
-    joinUrl: event.onlineMeeting?.joinUrl ?? null,
+    joinUrl,
     phones: (event.onlineMeeting?.phones ?? []).map((phone) => phone.number).filter(isString),
     provider: trimOrNull(event.onlineMeetingProvider),
   };
