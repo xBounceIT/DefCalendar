@@ -92,6 +92,27 @@ function CalendarRow({
   );
 }
 
+function CalendarListGroup({
+  email,
+  calendars,
+  onCalendarToggle,
+}: {
+  email: string;
+  calendars: CalendarSummary[];
+  onCalendarToggle: (calendar: CalendarSummary) => void;
+}) {
+  return (
+    <div className="calendar-list-group">
+      <div className="calendar-list-group-header">{email}</div>
+      <div className="calendar-list">
+        {calendars.map((calendar) => (
+          <CalendarRow calendar={calendar} key={calendar.id} onCalendarToggle={onCalendarToggle} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function CalendarList({
   calendars,
   onCalendarToggle,
@@ -99,10 +120,31 @@ function CalendarList({
   calendars: CalendarSummary[];
   onCalendarToggle: (calendar: CalendarSummary) => void;
 }) {
+  const groups = React.useMemo(() => {
+    const grouped = new Map<string, CalendarSummary[]>();
+    for (const calendar of calendars) {
+      const email = calendar.ownerAddress ?? "Unknown";
+      const existing = grouped.get(email);
+      if (existing) {
+        existing.push(calendar);
+      } else {
+        grouped.set(email, [calendar]);
+      }
+    }
+    return grouped;
+  }, [calendars]);
+
+  const entries = React.useMemo(() => [...groups], [groups]);
+
   return (
-    <div className="calendar-list">
-      {calendars.map((calendar) => (
-        <CalendarRow calendar={calendar} key={calendar.id} onCalendarToggle={onCalendarToggle} />
+    <div className="calendar-list-container">
+      {entries.map(([email, groupCalendars]) => (
+        <CalendarListGroup
+          email={email}
+          calendars={groupCalendars}
+          key={email}
+          onCalendarToggle={onCalendarToggle}
+        />
       ))}
     </div>
   );

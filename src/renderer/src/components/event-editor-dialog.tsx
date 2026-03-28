@@ -183,6 +183,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
                 {props.calendars.map((calendar) => (
                   <option key={calendar.id} value={calendar.id}>
                     {calendar.name}
+                    {calendar.ownerAddress && ` (${calendar.ownerAddress})`}
                   </option>
                 ))}
               </select>
