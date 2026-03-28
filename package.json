@@ -18,7 +18,8 @@
     "format:check": "oxfmt --check src test electron.vite.config.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "prepare": "husky"
   },
   "build": {
     "appId": "com.daniel.defcalendar",
@@ -86,6 +87,7 @@
     "electron": "^41.1.0",
     "electron-builder": "^26.8.2",
     "electron-vite": "^5.0.0",
+    "husky": "^9.1.7",
     "jsdom": "^29.0.1",
     "oxfmt": "^0.42.0",
     "oxlint": "^1.57.0",

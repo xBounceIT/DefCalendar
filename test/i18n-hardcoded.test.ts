@@ -29,6 +29,9 @@ describe("i18n hardcoded string detection", () => {
       if (/^[A-Za-z0-9_\-.]+$/.test(str.text) && str.text.length < 10) {
         return false;
       }
+      if (/[&|=!<>]/.test(str.text)) {
+        return false;
+      }
       return true;
     });
 

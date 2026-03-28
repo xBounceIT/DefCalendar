@@ -123,7 +123,10 @@ button {
   place-items: center;
   height: 100%;
   padding: 32px;
-  background: #f5f5f5;
+  background-image: url("./assets/login_background.png");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
 .auth-card {
