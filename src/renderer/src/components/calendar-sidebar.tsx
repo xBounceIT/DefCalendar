@@ -1,4 +1,6 @@
 import type { CalendarSummary, SyncStatus } from "@shared/schemas";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faCircleUser, faPlus } from "@fortawesome/free-solid-svg-icons";
 import { getCalendarAccent } from "@shared/calendar";
 import MiniCalendar from "./mini-calendar";
 import React from "react";
@@ -21,34 +23,33 @@ interface CalendarSidebarProps {
   syncStatus: SyncStatus;
 }
 
-function PlusIcon() {
+function ChevronIcon({ expanded }: { expanded: boolean }) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-      <line x1="12" y1="8" x2="12" y2="16" />
-      <line x1="8" y1="12" x2="16" y2="12" />
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s ease" }}
+    >
+      <polyline points="9 18 15 12 9 6" />
     </svg>
   );
 }
 
-function AddCalendarButton() {
-  const { t } = useTranslation();
-
-  return (
-    <button className="add-calendar-btn" type="button">
-      <PlusIcon />
-      {t("sidebar.addCalendar")}
-    </button>
-  );
-}
-
-function CalendarListHeader({ count }: { count: number }) {
+function CalendarListHeader() {
   const { t } = useTranslation();
 
   return (
     <div className="calendar-list-header">
-      <h2>{t("sidebar.myCalendars")}</h2>
-      <span className="muted-label">{count}</span>
+      <h2>{t("sidebar.accounts")}</h2>
+      <button className="add-account-btn" title={t("sidebar.addAccount")} type="button">
+        <FontAwesomeIcon icon={faPlus} />
+      </button>
     </div>
   );
 }
@@ -61,7 +62,11 @@ function CalendarRow({
   onCalendarToggle: (calendar: CalendarSummary) => void;
 }) {
   return (
-    <label className="calendar-row" htmlFor={`calendar-toggle-${calendar.id}`} aria-label={calendar.name}>
+    <label
+      className="calendar-row"
+      htmlFor={`calendar-toggle-${calendar.id}`}
+      aria-label={calendar.name}
+    >
       <input
         id={`calendar-toggle-${calendar.id}`}
         type="checkbox"
@@ -69,10 +74,46 @@ function CalendarRow({
         onChange={() => onCalendarToggle(calendar)}
       />
       <div className="calendar-row-content">
-        <span className="calendar-chip" style={{ backgroundColor: getCalendarAccent(calendar.color) }} />
+        <span
+          className="calendar-chip"
+          style={{ backgroundColor: getCalendarAccent(calendar.color) }}
+        />
         <span className="calendar-name">{calendar.name}</span>
       </div>
     </label>
+  );
+}
+
+function CalendarListGroup({
+  email,
+  calendars,
+  onCalendarToggle,
+  isExpanded,
+  onToggle,
+}: {
+  email: string;
+  calendars: CalendarSummary[];
+  onCalendarToggle: (calendar: CalendarSummary) => void;
+  isExpanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="calendar-list-group">
+      <div className="account-card">
+        <button className="account-header" onClick={onToggle} type="button">
+          <FontAwesomeIcon className="account-icon" icon={faCircleUser} />
+          <ChevronIcon expanded={isExpanded} />
+          <span className="account-email">{email}</span>
+        </button>
+        <div className={`account-calendars-wrapper ${isExpanded ? "expanded" : ""}`}>
+          <div className="account-calendars">
+            {calendars.map((calendar) => (
+              <CalendarRow calendar={calendar} key={calendar.id} onCalendarToggle={onCalendarToggle} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -83,10 +124,47 @@ function CalendarList({
   calendars: CalendarSummary[];
   onCalendarToggle: (calendar: CalendarSummary) => void;
 }) {
+  const [expandedGroups, setExpandedGroups] = React.useState<Set<string>>(() => new Set());
+
+  const groups = React.useMemo(() => {
+    const grouped = new Map<string, CalendarSummary[]>();
+    for (const calendar of calendars) {
+      const email = calendar.ownerAddress ?? "Unknown";
+      const existing = grouped.get(email);
+      if (existing) {
+        existing.push(calendar);
+      } else {
+        grouped.set(email, [calendar]);
+      }
+    }
+    return grouped;
+  }, [calendars]);
+
+  const entries = React.useMemo(() => [...groups], [groups]);
+
+  const handleToggleGroup = React.useCallback((email: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(email)) {
+        next.delete(email);
+      } else {
+        next.add(email);
+      }
+      return next;
+    });
+  }, []);
+
   return (
-    <div className="calendar-list">
-      {calendars.map((calendar) => (
-        <CalendarRow calendar={calendar} key={calendar.id} onCalendarToggle={onCalendarToggle} />
+    <div className="calendar-list-container">
+      {entries.map(([email, groupCalendars]) => (
+        <CalendarListGroup
+          email={email}
+          calendars={groupCalendars}
+          isExpanded={expandedGroups.has(email)}
+          key={email}
+          onCalendarToggle={onCalendarToggle}
+          onToggle={() => handleToggleGroup(email)}
+        />
       ))}
     </div>
   );
@@ -144,7 +222,16 @@ function SyncInfo({ message, syncTimestamp }: { message: string; syncTimestamp: 
 
 function SettingsIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
     </svg>
@@ -166,7 +253,16 @@ function SettingsButton({ onClick }: { onClick: () => void }) {
 
 function RefreshIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M23 4v6h-6" />
       <path d="M1 20v-6h6" />
       <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
@@ -176,7 +272,16 @@ function RefreshIcon() {
 
 function SignOutIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
       <polyline points="16,17 21,12 16,7" />
       <line x1="21" y1="12" x2="9" y2="12" />
@@ -208,8 +313,7 @@ function CalendarSidebar(props: CalendarSidebarProps) {
       <MiniCalendar selectedDate={selectedDate} onDateSelect={props.onDateSelect} />
 
       <div className="sidebar-section">
-        <CalendarListHeader count={props.calendars.length} />
-        <AddCalendarButton />
+        <CalendarListHeader />
         <CalendarList calendars={props.calendars} onCalendarToggle={props.onCalendarToggle} />
       </div>
 

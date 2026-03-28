@@ -4,4 +4,4 @@ export {
   calendarViewSchema,
   createDefaultSettings,
   userSettingsSchema,
-} from './schemas';
+} from "./schemas";

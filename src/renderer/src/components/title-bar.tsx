@@ -71,7 +71,14 @@ function TitleBar(): React.ReactElement {
             onClick={handleMinimize}
             title={t("titleBar.minimize")}
           >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 12 12"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <line x1="1" y1="6" x2="11" y2="6" />
             </svg>
           </button>
@@ -81,12 +88,26 @@ function TitleBar(): React.ReactElement {
             title={isMaximized ? t("titleBar.restore") : t("titleBar.maximize")}
           >
             {isMaximized ? (
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 12 12"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <rect x="1" y="3" width="7" height="7" />
                 <path d="M3 3V1h8v8h-2" />
               </svg>
             ) : (
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 12 12"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
                 <rect x="1" y="1" width="10" height="10" />
               </svg>
             )}
@@ -96,7 +117,14 @@ function TitleBar(): React.ReactElement {
             onClick={handleClose}
             title={t("titleBar.close")}
           >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 12 12"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
               <line x1="1" y1="1" x2="11" y2="11" />
               <line x1="1" y1="11" x2="11" y2="1" />
             </svg>

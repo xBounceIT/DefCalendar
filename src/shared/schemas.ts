@@ -1,10 +1,13 @@
-import { z } from 'zod';
+import { z } from "zod";
 
-const dateTimeStringSchema = z.string().min(1).refine((value) => !Number.isNaN(Date.parse(value)), {
-  message: 'Expected a parseable date-time string',
-});
+const dateTimeStringSchema = z
+  .string()
+  .min(1)
+  .refine((value) => !Number.isNaN(Date.parse(value)), {
+    message: "Expected a parseable date-time string",
+  });
 
-const calendarViewSchema = z.enum(['dayGridMonth', 'timeGridWeek', 'timeGridDay']);
+const calendarViewSchema = z.enum(["dayGridMonth", "timeGridWeek", "timeGridDay"]);
 
 const accountSummarySchema = z.object({
   homeAccountId: z.string(),
@@ -13,20 +16,20 @@ const accountSummarySchema = z.object({
   tenantId: z.string().nullable(),
 });
 
-const authStateSchema = z.discriminatedUnion('status', [
+const authStateSchema = z.discriminatedUnion("status", [
   z.object({
-    status: z.literal('signed_out'),
+    status: z.literal("signed_out"),
   }),
   z.object({
-    status: z.literal('signed_in'),
+    status: z.literal("signed_in"),
     account: accountSummarySchema,
   }),
 ]);
 
-const authSignInModeSchema = z.enum(['user', 'admin_consent']);
+const authSignInModeSchema = z.enum(["user", "admin_consent"]);
 
 const authSignInRequestSchema = z.object({
-  mode: authSignInModeSchema.default('user'),
+  mode: authSignInModeSchema.default("user"),
 });
 
 const calendarSummarySchema = z.object({
@@ -41,7 +44,7 @@ const calendarSummarySchema = z.object({
   ownerAddress: z.string().nullable(),
 });
 
-const attendeeTypeSchema = z.enum(['required', 'optional', 'resource']);
+const attendeeTypeSchema = z.enum(["required", "optional", "resource"]);
 
 const participantResponseStatusSchema = z.object({
   response: z.string().nullable(),
@@ -52,7 +55,7 @@ const eventParticipantSchema = z.object({
   name: z.string().nullable(),
   email: z.string().nullable(),
   response: z.string().nullable(),
-  type: attendeeTypeSchema.default('required'),
+  type: attendeeTypeSchema.default("required"),
   status: participantResponseStatusSchema.nullable().optional(),
 });
 
@@ -71,9 +74,22 @@ const onlineMeetingInfoSchema = z.object({
   provider: z.string().nullable(),
 });
 
-const recurrencePatternTypeSchema = z.enum(['daily', 'weekly', 'absoluteMonthly', 'absoluteYearly']);
-const recurrenceRangeTypeSchema = z.enum(['endDate', 'noEnd', 'numbered']);
-const dayOfWeekSchema = z.enum(['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']);
+const recurrencePatternTypeSchema = z.enum([
+  "daily",
+  "weekly",
+  "absoluteMonthly",
+  "absoluteYearly",
+]);
+const recurrenceRangeTypeSchema = z.enum(["endDate", "noEnd", "numbered"]);
+const dayOfWeekSchema = z.enum([
+  "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+]);
 
 const recurrenceSchema = z.object({
   pattern: z.object({
@@ -94,11 +110,18 @@ const recurrenceSchema = z.object({
   }),
 });
 
-const bodyContentTypeSchema = z.enum(['text', 'html']);
-const recurrenceEditScopeSchema = z.enum(['single', 'series']);
-const availabilitySchema = z.enum(['free', 'tentative', 'busy', 'oof', 'workingElsewhere', 'unknown']);
-const sensitivitySchema = z.enum(['normal', 'personal', 'private', 'confidential']);
-const eventResponseActionSchema = z.enum(['accept', 'tentative', 'decline']);
+const bodyContentTypeSchema = z.enum(["text", "html"]);
+const recurrenceEditScopeSchema = z.enum(["single", "series"]);
+const availabilitySchema = z.enum([
+  "free",
+  "tentative",
+  "busy",
+  "oof",
+  "workingElsewhere",
+  "unknown",
+]);
+const sensitivitySchema = z.enum(["normal", "personal", "private", "confidential"]);
+const eventResponseActionSchema = z.enum(["accept", "tentative", "decline"]);
 
 const attachmentUploadSchema = z.object({
   contentBytes: z.string().min(1),
@@ -112,7 +135,7 @@ const calendarEventSchema = z.object({
   calendarId: z.string(),
   subject: z.string(),
   body: z.string().nullable(),
-  bodyContentType: bodyContentTypeSchema.default('html'),
+  bodyContentType: bodyContentTypeSchema.default("html"),
   bodyPreview: z.string().nullable(),
   location: z.string().nullable(),
   start: dateTimeStringSchema,
@@ -152,7 +175,7 @@ const eventDraftSchema = z
   .object({
     id: z.string().optional(),
     calendarId: z.string(),
-    subject: z.string().trim().min(1, 'Subject is required'),
+    subject: z.string().trim().min(1, "Subject is required"),
     body: z.string().nullable().optional(),
     location: z.string().nullable().optional(),
     attendees: z.array(eventParticipantSchema).default([]),
@@ -162,12 +185,12 @@ const eventDraftSchema = z
     isAllDay: z.boolean().default(false),
     isReminderOn: z.boolean().default(true),
     reminderMinutesBeforeStart: z.number().int().min(0).max(20_160).nullable().optional(),
-    bodyContentType: bodyContentTypeSchema.default('html'),
+    bodyContentType: bodyContentTypeSchema.default("html"),
     recurrence: recurrenceSchema.nullable().optional(),
-    recurrenceEditScope: recurrenceEditScopeSchema.default('single'),
+    recurrenceEditScope: recurrenceEditScopeSchema.default("single"),
     isOnlineMeeting: z.boolean().default(false),
-    showAs: availabilitySchema.default('busy'),
-    sensitivity: sensitivitySchema.default('normal'),
+    showAs: availabilitySchema.default("busy"),
+    sensitivity: sensitivitySchema.default("normal"),
     allowNewTimeProposals: z.boolean().default(true),
     responseRequested: z.boolean().default(true),
     categories: z.array(z.string()).default([]),
@@ -180,8 +203,8 @@ const eventDraftSchema = z
     if (new Date(value.start).getTime() >= new Date(value.end).getTime()) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Event end must be after the start',
-        path: ['end'],
+        message: "Event end must be after the start",
+        path: ["end"],
       });
     }
 
@@ -191,8 +214,8 @@ const eventDraftSchema = z
       if (!normalizedEmail) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Attendee email is required',
-          path: ['attendees', index, 'email'],
+          message: "Attendee email is required",
+          path: ["attendees", index, "email"],
         });
         continue;
       }
@@ -200,16 +223,16 @@ const eventDraftSchema = z
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Attendee email must be valid',
-          path: ['attendees', index, 'email'],
+          message: "Attendee email must be valid",
+          path: ["attendees", index, "email"],
         });
       }
 
       if (normalizedAttendees.has(normalizedEmail)) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Duplicate attendee email',
-          path: ['attendees', index, 'email'],
+          message: "Duplicate attendee email",
+          path: ["attendees", index, "email"],
         });
       }
       normalizedAttendees.add(normalizedEmail);
@@ -218,8 +241,8 @@ const eventDraftSchema = z
     if (value.isAllDay && value.recurrence?.range.recurrenceTimeZone === null) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'All-day recurring events must remain date-based.',
-        path: ['recurrence'],
+        message: "All-day recurring events must remain date-based.",
+        path: ["recurrence"],
       });
     }
   });
@@ -234,8 +257,8 @@ const eventListArgsSchema = z
     if (new Date(value.start).getTime() >= new Date(value.end).getTime()) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Range end must be after the start',
-        path: ['end'],
+        message: "Range end must be after the start",
+        path: ["end"],
       });
     }
   });
@@ -259,14 +282,14 @@ const eventReferenceArgsSchema = z.object({
 const respondToEventArgsSchema = z.object({
   action: eventResponseActionSchema,
   calendarId: z.string(),
-  comment: z.string().default(''),
+  comment: z.string().default(""),
   eventId: z.string(),
   sendResponse: z.boolean().default(true),
 });
 
 const cancelEventArgsSchema = z.object({
   calendarId: z.string(),
-  comment: z.string().default(''),
+  comment: z.string().default(""),
   eventId: z.string(),
   etag: z.string().nullable().optional(),
 });
@@ -297,7 +320,7 @@ const reminderDismissArgsSchema = z.object({
 });
 
 const syncStatusSchema = z.object({
-  state: z.enum(['idle', 'syncing', 'error']),
+  state: z.enum(["idle", "syncing", "error"]),
   lastSyncedAt: z.string().nullable(),
   message: z.string().nullable(),
 });
@@ -306,7 +329,7 @@ const userSettingsSchema = z.object({
   visibleCalendarIds: z.array(z.string()),
   activeView: calendarViewSchema,
   selectedDate: dateTimeStringSchema,
-  language: z.enum(['en', 'it']).nullable().optional(),
+  language: z.enum(["en", "it"]).nullable().optional(),
 });
 
 const userSettingsPatchSchema = userSettingsSchema.partial();
@@ -348,7 +371,7 @@ type UserSettingsPatch = z.infer<typeof userSettingsPatchSchema>;
 function createDefaultSettings(): UserSettings {
   return {
     visibleCalendarIds: [],
-    activeView: 'timeGridWeek',
+    activeView: "timeGridWeek",
     selectedDate: new Date().toISOString(),
     language: null,
   };

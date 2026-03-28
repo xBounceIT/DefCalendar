@@ -11,12 +11,7 @@ interface SettingsDialogProps {
   onSave: (settings: Partial<UserSettings>) => void;
 }
 
-type SettingsSection =
-  | "appearance"
-  | "calendarDefaults"
-  | "notifications"
-  | "language"
-  | "sync";
+type SettingsSection = "appearance" | "calendarDefaults" | "notifications" | "language" | "sync";
 
 function CloseIcon() {
   return (
@@ -56,7 +51,9 @@ function CalendarDefaultsSection({ calendars }: { calendars: CalendarSummary[] }
     <div className="settings-section">
       <h3>{t("settings.sections.calendarDefaults.title")}</h3>
       <div className="settings-fields">
-        <p className="settings-placeholder">{t("settings.sections.calendarDefaults.description")}</p>
+        <p className="settings-placeholder">
+          {t("settings.sections.calendarDefaults.description")}
+        </p>
         {calendars.length > 0 && (
           <div className="field">
             <span>{t("settings.sections.calendarDefaults.defaultCalendar")}</span>
@@ -135,11 +132,7 @@ function SyncSection() {
   );
 }
 
-function SettingsDialog({
-  isOpen,
-  onClose,
-  calendars,
-}: SettingsDialogProps): JSX.Element | null {
+function SettingsDialog({ isOpen, onClose, calendars }: SettingsDialogProps): JSX.Element | null {
   const { t } = useTranslation();
   const [activeSection, setActiveSection] = useState<SettingsSection>("appearance");
 

@@ -281,9 +281,7 @@ describe("app startup", () => {
 
       renderApp();
 
-      await expect(
-        screen.findByTestId("mock-calendar"),
-      ).resolves.not.toBeNull();
+      await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
       await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
       expect([
         screen.queryByRole("heading", { level: 1, name: "DefCalendar" }),

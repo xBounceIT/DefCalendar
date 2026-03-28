@@ -1,13 +1,13 @@
-import type { UserSettings, UserSettingsPatch } from '@shared/schemas';
-import { createDefaultSettings, userSettingsSchema } from '@shared/schema-values';
-import type AppDatabase from '@main/db/database';
+import type { UserSettings, UserSettingsPatch } from "@shared/schemas";
+import { createDefaultSettings, userSettingsSchema } from "@shared/schema-values";
+import type AppDatabase from "@main/db/database";
 
 interface SyncVisibleCalendarsArgs {
   calendarIds: string[];
   knownCalendarIds: string[];
 }
 
-type SettingsStore = Pick<AppDatabase, 'getSettings' | 'saveSettings'>;
+type SettingsStore = Pick<AppDatabase, "getSettings" | "saveSettings">;
 
 class SettingsService {
   private readonly db: SettingsStore;

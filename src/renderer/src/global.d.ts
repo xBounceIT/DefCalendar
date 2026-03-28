@@ -1,4 +1,4 @@
-import type { CalendarApi } from '@shared/ipc';
+import type { CalendarApi } from "@shared/ipc";
 
 declare global {
   var calendarApi: CalendarApi;

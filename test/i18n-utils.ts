@@ -95,17 +95,22 @@ const WHITELIST = new Set([
 
 function isWhitelisted(text: string): boolean {
   const trimmed = text.trim();
-  if (WHITELIST.has(trimmed)) {return true;}
-  if (/^\d+$/.test(trimmed)) {return true;}
-  if (/^[a-z-]+[0-9]*$/.test(trimmed)) {return true;}
-  if (/^[A-Z_]+$/.test(trimmed)) {return true;}
+  if (WHITELIST.has(trimmed)) {
+    return true;
+  }
+  if (/^\d+$/.test(trimmed)) {
+    return true;
+  }
+  if (/^[a-z-]+[0-9]*$/.test(trimmed)) {
+    return true;
+  }
+  if (/^[A-Z_]+$/.test(trimmed)) {
+    return true;
+  }
   return false;
 }
 
-function flattenObject(
-  obj: Record<string, unknown>,
-  prefix = ""
-): Record<string, string> {
+function flattenObject(obj: Record<string, unknown>, prefix = ""): Record<string, string> {
   const result: Record<string, string> = {};
 
   for (const [key, value] of Object.entries(obj)) {
@@ -155,7 +160,7 @@ function getAllTsxFiles(dir: string): string[] {
 
 function extractKeysFromFile(filePath: string): ExtractedKey[] {
   // Skip main process files -- they use src/main/i18n.ts with inline translations,
-  // not the JSON locale files. Matching t() in those files produces false positives.
+  // Not the JSON locale files. Matching t() in those files produces false positives.
   const normalizedPath = filePath.replace(/\\/g, "/");
   if (normalizedPath.includes("/src/main/")) {
     return [];

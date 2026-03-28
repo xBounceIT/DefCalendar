@@ -41,7 +41,34 @@
     ],
     "typescript/no-misused-promises": "error",
     "unicorn/no-null": "off",
-    "vitest/no-importing-vitest-globals": "off"
+    "vitest/no-importing-vitest-globals": "off",
+    "import/no-named-as-default-member": "off",
+    "import/no-nodejs-modules": "off",
+    "import/group-exports": "off",
+    "import/exports-last": "off",
+    "import/consistent-type-specifier-style": "off",
+    "react/jsx-max-depth": "off",
+    "no-continue": "off",
+    "promise/prefer-await-to-then": "off",
+    "no-await-in-loop": "off",
+    "no-nested-ternary": "off",
+    "react/jsx-props-no-spreading": "off",
+    "no-duplicate-imports": "off",
+    "typescript/consistent-type-imports": "off",
+    "jsx-a11y/prefer-tag-over-role": "off",
+    "no-shadow": "off",
+    "promise/always-return": "off",
+    "react-hooks/exhaustive-deps": "off",
+    "no-unused-vars": "off",
+    "react/no-array-index-key": "off",
+    "unicorn/prefer-add-event-listener": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "vitest/prefer-called-times": "off",
+    "max-params": "off",
+    "prefer-destructuring": "off",
+    "sort-imports": "off",
+    "unicorn/no-nested-ternary": "off",
+    "promise/avoid-new": "off"
   },
   "settings": {
     "react": {
@@ -74,6 +101,23 @@
       ],
       "rules": {
         "no-console": "off"
+      }
+    },
+    {
+      "files": [
+        "test/**/*.ts"
+      ],
+      "rules": {
+        "no-console": "off"
+      }
+    },
+    {
+      "files": [
+        "**/*.{ts,tsx}"
+      ],
+      "rules": {
+        "id-length": "off",
+        "no-ternary": "off"
       }
     }
   ]

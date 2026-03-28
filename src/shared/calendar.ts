@@ -1,28 +1,28 @@
-import type { CalendarEvent, CalendarView } from './schemas';
+import type { CalendarEvent, CalendarView } from "./schemas";
 
-const CALENDAR_VIEW_ORDER: CalendarView[] = ['dayGridMonth', 'timeGridWeek', 'timeGridDay'];
+const CALENDAR_VIEW_ORDER: CalendarView[] = ["dayGridMonth", "timeGridWeek", "timeGridDay"];
 
 const CALENDAR_VIEW_LABELS: Record<CalendarView, string> = {
-  dayGridMonth: 'Month',
-  timeGridWeek: 'Week',
-  timeGridDay: 'Day',
+  dayGridMonth: "Month",
+  timeGridWeek: "Week",
+  timeGridDay: "Day",
 };
 
-function isEventEditable(event: Pick<CalendarEvent, 'unsupportedReason'>): boolean {
+function isEventEditable(event: Pick<CalendarEvent, "unsupportedReason">): boolean {
   return !event.unsupportedReason;
 }
 
 function toDateTimeInputValue(value: string, allDay: boolean): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
-    return '';
+    return "";
   }
 
   const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, '0');
-  const day = `${date.getDate()}`.padStart(2, '0');
-  const hours = `${date.getHours()}`.padStart(2, '0');
-  const minutes = `${date.getMinutes()}`.padStart(2, '0');
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  const hours = `${date.getHours()}`.padStart(2, "0");
+  const minutes = `${date.getMinutes()}`.padStart(2, "0");
 
   if (allDay) {
     return `${year}-${month}-${day}`;
@@ -48,7 +48,7 @@ function getCalendarAccent(color: string | null | undefined): string {
     return color;
   }
 
-  return '#2368ff';
+  return "#2368ff";
 }
 
 export {

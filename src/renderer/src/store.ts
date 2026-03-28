@@ -1,6 +1,6 @@
-import type { CalendarView, UserSettings } from '@shared/schemas';
-import { create } from 'zustand';
-import { createDefaultSettings } from '@shared/schema-values';
+import type { CalendarView, UserSettings } from "@shared/schemas";
+import { create } from "zustand";
+import { createDefaultSettings } from "@shared/schema-values";
 
 interface UiState {
   activeView: CalendarView;

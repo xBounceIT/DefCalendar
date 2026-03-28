@@ -1,1 +1,1 @@
-export { LogLevel, PromptValue, PublicClientApplication } from '@azure/msal-node';
+export { LogLevel, PromptValue, PublicClientApplication } from "@azure/msal-node";

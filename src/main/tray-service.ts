@@ -1,4 +1,4 @@
-import { Menu, Tray, nativeImage } from 'electron';
+import { Menu, Tray, nativeImage } from "electron";
 
 interface TrayHandlers {
   showWindow: () => void;
@@ -21,8 +21,8 @@ class TrayService {
     }
 
     this.tray = new Tray(createTrayIcon());
-    this.tray.setToolTip('Project Calendar');
-    this.tray.on('click', () => {
+    this.tray.setToolTip("Project Calendar");
+    this.tray.on("click", () => {
       this.handlers.showWindow();
     });
     this.tray.setContextMenu(this.buildMenu());
@@ -40,22 +40,22 @@ class TrayService {
   private buildMenu() {
     return Menu.buildFromTemplate([
       {
-        label: 'Show Project Calendar',
+        label: "Show Project Calendar",
         click: () => this.handlers.showWindow(),
       },
       {
-        label: 'Refresh Now',
+        label: "Refresh Now",
         click: () => this.handlers.refreshNow(),
       },
-      { type: 'separator' },
+      { type: "separator" },
       {
-        label: 'Sign Out',
+        label: "Sign Out",
         click: () => {
           void this.handlers.signOut();
         },
       },
       {
-        label: 'Quit',
+        label: "Quit",
         click: () => this.handlers.quit(),
       },
     ]);
@@ -76,7 +76,7 @@ function createTrayIcon() {
   `;
 
   return nativeImage
-    .createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`)
+    .createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`)
     .resize({ width: 18, height: 18 });
 }
 

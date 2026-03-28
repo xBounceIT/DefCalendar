@@ -1,5 +1,5 @@
-import type AppDatabase from '@main/db/database';
-import { Notification } from 'electron';
+import type AppDatabase from "@main/db/database";
+import { Notification } from "electron";
 
 class ReminderService {
   private readonly db: AppDatabase;
@@ -41,7 +41,8 @@ class ReminderService {
     const candidates = this.db.listReminderCandidates(lookBack, lookAhead);
     for (const event of candidates) {
       if (event.isReminderOn && event.reminderMinutesBeforeStart !== null) {
-        const reminderAt = new Date(event.start).getTime() - event.reminderMinutesBeforeStart * 60_000;
+        const reminderAt =
+          new Date(event.start).getTime() - event.reminderMinutesBeforeStart * 60_000;
         const isDue = reminderAt >= dueWindowStart && reminderAt <= dueWindowEnd;
 
         if (isDue) {
@@ -50,7 +51,7 @@ class ReminderService {
             const bodyParts = [event.location, formatTime(event.start)];
             new Notification({
               title: event.subject,
-              body: bodyParts.filter(Boolean).join(' · ') || 'Exchange 365 reminder',
+              body: bodyParts.filter(Boolean).join(" · ") || "Exchange 365 reminder",
               silent: false,
             }).show();
 
@@ -67,14 +68,14 @@ class ReminderService {
 function formatTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
-    return '';
+    return "";
   }
 
   return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
   }).format(date);
 }
 

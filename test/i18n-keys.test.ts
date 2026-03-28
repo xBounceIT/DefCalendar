@@ -82,7 +82,7 @@ describe("i18n key existence", () => {
   it("should not define the same key more than once in a single expression block", () => {
     // Translation keys are naturally reused across files and components -- that's their purpose.
     // This test only checks if a key appears an unexpectedly high number of times
-    // in a single file, which might indicate a copy-paste error or accidental duplication.
+    // In a single file, which might indicate a copy-paste error or accidental duplication.
     const fileCounts = new Map<string, number>();
 
     for (const { key, file } of allExtractedKeys) {

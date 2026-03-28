@@ -1,10 +1,10 @@
-import type { ICachePlugin, TokenCacheContext } from '@azure/msal-node';
-import { dirname } from 'pathe';
-import fs from 'fs-extra';
-import { safeStorage } from 'electron';
+import type { ICachePlugin, TokenCacheContext } from "@azure/msal-node";
+import { dirname } from "pathe";
+import fs from "fs-extra";
+import { safeStorage } from "electron";
 
-const ENCRYPTED_PREFIX = 'enc:';
-const PLAIN_PREFIX = 'plain:';
+const ENCRYPTED_PREFIX = "enc:";
+const PLAIN_PREFIX = "plain:";
 
 class SafeStorageTokenCache {
   private readonly cachePath: string;
@@ -46,19 +46,22 @@ class SafeStorageTokenCache {
 
   private wrap(value: string): Buffer {
     if (safeStorage.isEncryptionAvailable()) {
-      return Buffer.concat([Buffer.from(ENCRYPTED_PREFIX, 'utf8'), safeStorage.encryptString(value)]);
+      return Buffer.concat([
+        Buffer.from(ENCRYPTED_PREFIX, "utf8"),
+        safeStorage.encryptString(value),
+      ]);
     }
 
-    return Buffer.from(`${PLAIN_PREFIX}${value}`, 'utf8');
+    return Buffer.from(`${PLAIN_PREFIX}${value}`, "utf8");
   }
 
   private unwrap(payload: Buffer): string {
-    const encryptedPrefix = Buffer.from(ENCRYPTED_PREFIX, 'utf8');
+    const encryptedPrefix = Buffer.from(ENCRYPTED_PREFIX, "utf8");
     if (payload.subarray(0, encryptedPrefix.length).equals(encryptedPrefix)) {
       return safeStorage.decryptString(payload.subarray(encryptedPrefix.length));
     }
 
-    const plain = payload.toString('utf8');
+    const plain = payload.toString("utf8");
     if (plain.startsWith(PLAIN_PREFIX)) {
       return plain.slice(PLAIN_PREFIX.length);
     }

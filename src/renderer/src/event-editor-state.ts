@@ -1,4 +1,10 @@
-import type { CalendarEvent, EventDraft, EventResponseAction, EventAttachment, RecurrenceEditScope } from '@shared/schemas';
+import type {
+  CalendarEvent,
+  EventAttachment,
+  EventDraft,
+  EventResponseAction,
+  RecurrenceEditScope,
+} from "@shared/schemas";
 
 interface CreateEditorState {
   attachmentMutations?: {
@@ -11,7 +17,7 @@ interface CreateEditorState {
   draft?: Partial<EventDraft>;
   end: string;
   loadingDetails?: boolean;
-  mode: 'create';
+  mode: "create";
   recurrenceEditScope?: RecurrenceEditScope;
   start: string;
 }
@@ -25,7 +31,7 @@ interface EditEditorState {
   draft?: Partial<EventDraft>;
   event: CalendarEvent;
   loadingDetails?: boolean;
-  mode: 'edit';
+  mode: "edit";
   recurrenceEditScope?: RecurrenceEditScope;
   responseAction?: EventResponseAction | null;
 }

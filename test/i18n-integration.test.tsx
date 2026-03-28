@@ -27,7 +27,6 @@ function createTestI18n(language: string) {
 }
 
 describe("i18n integration", () => {
-
   it("renders AuthScreen with English translations", () => {
     const testI18n = createTestI18n("en");
 
@@ -41,7 +40,7 @@ describe("i18n integration", () => {
           pendingMode="user"
           showAdminApprovalAction={false}
         />
-      </I18nextProvider>
+      </I18nextProvider>,
     );
 
     expect(screen.getByText("Welcome to DefCalendar")).toBeInTheDocument();
@@ -62,7 +61,7 @@ describe("i18n integration", () => {
           pendingMode="user"
           showAdminApprovalAction={false}
         />
-      </I18nextProvider>
+      </I18nextProvider>,
     );
 
     expect(screen.getByText("Benvenuto in DefCalendar")).toBeInTheDocument();
@@ -83,7 +82,7 @@ describe("i18n integration", () => {
           pendingMode="user"
           showAdminApprovalAction={false}
         />
-      </I18nextProvider>
+      </I18nextProvider>,
     );
 
     expect(screen.getByText("Welcome to DefCalendar")).toBeInTheDocument();
@@ -100,7 +99,7 @@ describe("i18n integration", () => {
           pendingMode="user"
           showAdminApprovalAction={false}
         />
-      </I18nextProvider>
+      </I18nextProvider>,
     );
 
     expect(screen.getByText("Benvenuto in DefCalendar")).toBeInTheDocument();
@@ -120,13 +119,13 @@ describe("i18n integration", () => {
           pendingMode="user"
           showAdminApprovalAction={false}
         />
-      </I18nextProvider>
+      </I18nextProvider>,
     );
 
     const i18nWarnings = consoleSpy.mock.calls.filter(
       (call) =>
         typeof call[0] === "string" &&
-        (call[0].includes("i18next") || call[0].includes("missingKey"))
+        (call[0].includes("i18next") || call[0].includes("missingKey")),
     );
 
     expect(i18nWarnings).toHaveLength(0);
