@@ -203,35 +203,6 @@ function EventEditorDialog(props: EventEditorDialogProps) {
               disabled={readOnlyForAttendee}
               form={form}
               onChange={setForm}
-              attachments={attachments}
-              busy={attachmentsBusy || props.busy}
-              event={editedEvent}
-              onAddAttachment={async (file) => {
-                if (!editedEvent) {
-                  return;
-                }
-                setAttachmentsBusy(true);
-                const uploaded = await props.onAddAttachment({
-                  attachment: await readFileAsAttachment(file),
-                  calendarId: editedEvent.calendarId,
-                  eventId: editedEvent.id,
-                });
-                setAttachments(uploaded);
-                setAttachmentsBusy(false);
-              }}
-              onRemoveAttachment={async (attachmentId) => {
-                if (!editedEvent) {
-                  return;
-                }
-                setAttachmentsBusy(true);
-                const uploaded = await props.onRemoveAttachment({
-                  attachmentId,
-                  calendarId: editedEvent.calendarId,
-                  eventId: editedEvent.id,
-                });
-                setAttachments(uploaded);
-                setAttachmentsBusy(false);
-              }}
             />
           </div>
 
@@ -872,114 +843,13 @@ function NotesSection({
   disabled,
   form,
   onChange,
-  attachments,
-  busy,
-  event,
-  onAddAttachment,
-  onRemoveAttachment,
 }: {
   disabled: boolean;
   form: EditorFormState;
   onChange: React.Dispatch<React.SetStateAction<EditorFormState | null>>;
-  attachments: EventAttachment[];
-  busy: boolean;
-  event: CalendarEvent | null;
-  onAddAttachment: (file: File) => Promise<void>;
-  onRemoveAttachment: (attachmentId: string) => Promise<void>;
 }) {
-  const { t } = useTranslation();
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const linkInputRef = useRef<HTMLInputElement | null>(null);
-  const [showLinkInput, setShowLinkInput] = useState(false);
-  const [linkUrl, setLinkUrl] = useState("");
-  const [isPlainTextEditing, setIsPlainTextEditing] = useState(form.bodyContentType !== "html");
-
-  useEffect(() => {
-    setIsPlainTextEditing(form.bodyContentType !== "html");
-    setShowLinkInput(false);
-    setLinkUrl("");
-  }, [event?.id, form.bodyContentType]);
-
-  const links = extractUrls(form.body);
-  const showFormattedPreview = !isPlainTextEditing && form.bodyContentType === "html";
-
-  const switchToPlainTextEditor = () => {
-    if (disabled) {
-      return;
-    }
-
-    const plainTextBody =
-      form.bodyContentType === "html" ? convertHtmlBodyToPlainText(form.body) : form.body;
-    updateForm(onChange, {
-      body: plainTextBody,
-      bodyContentType: "text",
-    });
-    setIsPlainTextEditing(true);
-    setShowLinkInput(false);
-    setLinkUrl("");
-
-    queueMicrotask(() => {
-      textareaRef.current?.focus();
-    });
-  };
-
-  const insertLink = () => {
-    if (disabled) {
-      return;
-    }
-    setShowLinkInput(true);
-    setLinkUrl("");
-    queueMicrotask(() => {
-      linkInputRef.current?.focus();
-    });
-  };
-
-  const submitLink = () => {
-    if (!linkUrl.trim()) {
-      setShowLinkInput(false);
-      return;
-    }
-
-    const normalized = normalizeUrl(linkUrl);
-    if (!normalized) {
-      setShowLinkInput(false);
-      return;
-    }
-
-    const textarea = textareaRef.current;
-    if (!textarea) {
-      const separator = form.body.length > 0 && !form.body.endsWith("\n") ? "\n" : "";
-      updateForm(onChange, { body: `${form.body}${separator}${normalized}` });
-      setShowLinkInput(false);
-      setLinkUrl("");
-      return;
-    }
-
-    const { selectionStart } = textarea;
-    const { selectionEnd } = textarea;
-    const currentBody = form.body;
-    const before = currentBody.slice(0, selectionStart);
-    const after = currentBody.slice(selectionEnd);
-    const divider = before.length > 0 && !before.endsWith(" ") && !before.endsWith("\n") ? " " : "";
-    const nextBody = `${before}${divider}${normalized}${after}`;
-    updateForm(onChange, { body: nextBody });
-
-    const caretPosition = before.length + divider.length + normalized.length;
-    queueMicrotask(() => {
-      textarea.focus();
-      textarea.setSelectionRange(caretPosition, caretPosition);
-    });
-
-    setShowLinkInput(false);
-    setLinkUrl("");
-  };
-
-  const cancelLink = () => {
-    setShowLinkInput(false);
-    setLinkUrl("");
-    textareaRef.current?.focus();
-  };
+  const showFormattedPreview = form.bodyContentType === "html";
 
   return (
     <div className="dialog-grid dialog-grid--single notes-composer">
@@ -1003,156 +873,9 @@ function NotesSection({
               value={form.body}
             />
           )}
-          <div
-            className="notes-toolbar"
-            role="toolbar"
-            aria-label={t("eventEditor.attachmentsAndLinks")}
-          >
-            <div className="notes-toolbar__group">
-              <button
-                aria-label={t("eventEditor.addFile")}
-                className="notes-toolbar__button"
-                disabled={disabled || !event || busy}
-                onClick={() => {
-                  fileInputRef.current?.click();
-                }}
-                type="button"
-              >
-                <PaperclipIcon />
-              </button>
-              {showFormattedPreview ? (
-                <button
-                  className="notes-toolbar__mode-button"
-                  disabled={disabled}
-                  onClick={switchToPlainTextEditor}
-                  type="button"
-                >
-                  {t("eventEditor.editPlainText")}
-                </button>
-              ) : !showLinkInput ? (
-                <button
-                  aria-label={t("eventEditor.insertLink")}
-                  className="notes-toolbar__button"
-                  disabled={disabled}
-                  onClick={insertLink}
-                  type="button"
-                >
-                  <LinkIcon />
-                </button>
-              ) : (
-                <div className="notes-toolbar__link-input">
-                  <input
-                    ref={linkInputRef}
-                    type="text"
-                    placeholder={t("eventEditor.insertLinkPrompt")}
-                    value={linkUrl}
-                    onChange={(e) => setLinkUrl(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        submitLink();
-                      } else if (e.key === "Escape") {
-                        cancelLink();
-                      }
-                    }}
-                  />
-                  <button
-                    className="notes-toolbar__button"
-                    onClick={submitLink}
-                    type="button"
-                    title="Add"
-                  >
-                    <CheckIcon />
-                  </button>
-                  <button
-                    className="notes-toolbar__button"
-                    onClick={cancelLink}
-                    type="button"
-                    title="Cancel"
-                  >
-                    <CloseIcon />
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {!event && <small>{t("eventEditor.saveBeforeAttachments")}</small>}
-            {showFormattedPreview && event && <small>{t("eventEditor.formattedNotesHint")}</small>}
-
-            <input
-              disabled={disabled || !event || busy}
-              onChange={(inputEvent) => {
-                const [file] = [...(inputEvent.target.files ?? [])];
-                if (file) {
-                  void onAddAttachment(file);
-                }
-                inputEvent.target.value = "";
-              }}
-              ref={fileInputRef}
-              type="file"
-              hidden
-            />
-          </div>
         </div>
       </label>
-
-      <div className="notes-attachments field--full">
-        {attachments.map((attachment) => (
-          <div className="notes-attachments__item" key={attachment.id}>
-            <span>{attachment.name}</span>
-            <span>{formatAttachmentSize(attachment.size)}</span>
-            <button
-              className="ghost-button ghost-button--danger"
-              disabled={busy}
-              onClick={() => {
-                void onRemoveAttachment(attachment.id);
-              }}
-              type="button"
-            >
-              {t("eventEditor.removeAttachment")}
-            </button>
-          </div>
-        ))}
-
-        {links.length > 0 && (
-          <div className="notes-links">
-            <CollapsibleSection title={t("eventEditor.links")}>
-              {links.map((link) => {
-                const normalized = normalizeUrl(link);
-                if (!normalized) {
-                  return null;
-                }
-
-                return (
-                  <a
-                    className="notes-links__item"
-                    href={normalized}
-                    key={normalized}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    {link}
-                  </a>
-                );
-              })}
-            </CollapsibleSection>
-          </div>
-        )}
-      </div>
     </div>
-  );
-}
-
-function PaperclipIcon() {
-  return (
-    <svg aria-hidden="true" fill="none" viewBox="0 0 20 20">
-      <path
-        d="M7 10.5L12.6 4.9a2.5 2.5 0 1 1 3.5 3.5l-7 7a4 4 0 1 1-5.6-5.7l7.1-7.1"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.6"
-      />
-    </svg>
   );
 }
 
@@ -1163,34 +886,6 @@ function FormattedNotesBody({ html }: { html: string }) {
   }
 
   return <>{renderedNodes}</>;
-}
-
-function LinkIcon() {
-  return (
-    <svg aria-hidden="true" fill="none" viewBox="0 0 20 20">
-      <path
-        d="M8 12l4-4M6.8 14.2l-1.4 1.4a3 3 0 0 1-4.2-4.2l2.8-2.8a3 3 0 0 1 4.2 0M13.2 5.8l1.4-1.4a3 3 0 0 1 4.2 4.2l-2.8 2.8a3 3 0 0 1-4.2 0"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.6"
-      />
-    </svg>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg aria-hidden="true" fill="none" viewBox="0 0 24 24" width="16" height="16">
-      <path
-        d="M20 6L9 17l-5-5"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="2"
-      />
-    </svg>
-  );
 }
 
 function CloseIcon() {
