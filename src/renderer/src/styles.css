@@ -1868,11 +1868,24 @@ button {
 }
 
 .slide-panel__section {
-  padding-top: 20px;
+  padding-top: 0;
+}
+
+.slide-panel__section:first-child {
+  padding-top: 0;
+}
+
+.slide-panel__section:first-child .field-row:first-child {
+  padding-top: 0;
+  padding-bottom: 12px;
 }
 
 .slide-panel__section + .slide-panel__section {
-  /* border-top removed */
+  padding-top: 0;
+}
+
+.slide-panel__section:has(.slide-panel__section-title) {
+  padding-top: 16px;
 }
 
 .slide-panel__section-title {
@@ -1891,9 +1904,7 @@ button {
   border-bottom: 1px solid var(--line);
 }
 
-.field-row:last-child {
-  border-bottom: none;
-}
+
 
 .field-row > svg {
   flex-shrink: 0;
@@ -1910,10 +1921,15 @@ button {
   font-size: 15px;
   padding: 0;
   outline: none;
+  user-select: none;
 }
 
 .field-input::placeholder {
   color: var(--ink-tertiary);
+}
+
+.field-input::selection {
+  background: transparent;
 }
 
 .field-select {
@@ -1973,6 +1989,7 @@ button {
 /* ── Scheduling Section (Teams-style) ── */
 
 .scheduling-section {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1982,17 +1999,22 @@ button {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
-  background: var(--surface-elevated);
-  border: 1px solid var(--line);
+  padding: 12px 0;
+  padding-right: 24px;
+  background: transparent;
+  border: none;
   border-radius: 8px;
   cursor: pointer;
-  width: auto;
+  width: 100%;
   text-align: left;
   font-size: 14px;
   color: var(--ink);
   transition: background-color 150ms ease;
   white-space: nowrap;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right center;
 }
 
 .scheduling-summary:hover:not(:disabled) {
@@ -2017,13 +2039,7 @@ button {
 }
 
 .scheduling-summary__arrow {
-  flex-shrink: 0;
-  color: var(--ink-secondary);
-  transition: transform 200ms ease;
-}
-
-.scheduling-summary__arrow.expanded {
-  transform: rotate(180deg);
+  display: none;
 }
 
 /* Scheduling & Teams stacked layout */
@@ -2092,6 +2108,10 @@ button {
 }
 
 .scheduling-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
   background: var(--surface-elevated);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -2099,6 +2119,8 @@ button {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  z-index: 100;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
 }
 
 .scheduling-dropdown__row {
@@ -2129,7 +2151,7 @@ button {
 .scheduling-field input {
   padding: 10px 12px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 14px;
   background: var(--surface);
   color: var(--ink);
@@ -2513,6 +2535,7 @@ button {
   min-height: 180px;
   padding-bottom: 48px;
   border-radius: 8px;
+  resize: none;
 }
 
 .notes-textarea-wrapper .notes-html-view {

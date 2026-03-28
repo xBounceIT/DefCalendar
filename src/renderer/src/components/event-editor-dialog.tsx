@@ -22,6 +22,7 @@ import gmeetIcon from "../assets/gmeet.png";
 interface EventEditorDialogProps {
   busy: boolean;
   calendars: CalendarSummary[];
+  currentUser: EventParticipant | null;
   errorMessage: null | string;
   onAddAttachment: (args: AttachmentUploadArgs) => Promise<EventAttachment[]>;
   onCancelMeeting: (event: CalendarEvent, comment: string) => Promise<void>;
@@ -172,6 +173,22 @@ function EventEditorDialog(props: EventEditorDialogProps) {
 
           <div className="slide-panel__section">
             <div className="field-row">
+              <CalendarSelectIcon />
+              <select
+                className="field-input field-input--underline field-select"
+                disabled={readOnlyForAttendee}
+                onChange={(event) => updateForm(setForm, { calendarId: event.target.value })}
+                value={form.calendarId}
+              >
+                {props.calendars.map((calendar) => (
+                  <option key={calendar.id} value={calendar.id}>
+                    {calendar.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="field-row">
               <SubjectIcon />
               <input
                 className="field-input field-input--underline"
@@ -193,22 +210,6 @@ function EventEditorDialog(props: EventEditorDialogProps) {
                 type="text"
                 value={form.location}
               />
-            </div>
-
-            <div className="field-row">
-              <CalendarSelectIcon />
-              <select
-                className="field-input field-input--underline field-select"
-                disabled={readOnlyForAttendee}
-                onChange={(event) => updateForm(setForm, { calendarId: event.target.value })}
-                value={form.calendarId}
-              >
-                {props.calendars.map((calendar) => (
-                  <option key={calendar.id} value={calendar.id}>
-                    {calendar.name}
-                  </option>
-                ))}
-              </select>
             </div>
           </div>
 
@@ -255,7 +256,11 @@ function EventEditorDialog(props: EventEditorDialogProps) {
         </div>
 
         <aside className="slide-panel__sidebar">
-          <AttendeesSidebar event={editedEvent} attendees={form.attendees} />
+          <AttendeesSidebar
+            event={editedEvent}
+            attendees={form.attendees}
+            organizer={props.currentUser}
+          />
         </aside>
 
         <footer className="slide-panel__footer">
@@ -298,6 +303,7 @@ function SchedulingSection({
 }) {
   const { t, i18n } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const summaryText = formatDateRangeSummary(
     form.startInput,
@@ -310,8 +316,25 @@ function SchedulingSection({
   const extractTime = (input: string) => input.slice(11, 16);
   const combineDateTime = (date: string, time: string) => `${date}T${time}`;
 
+  // Close popup when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsExpanded(false);
+      }
+    }
+
+    if (isExpanded) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isExpanded]);
+
   return (
-    <div className="scheduling-section">
+    <div className="scheduling-section" ref={containerRef}>
       <div className="scheduling-row">
         <ClockIcon />
         <button
@@ -597,9 +620,11 @@ function TeamsSection({
 function AttendeesSidebar({
   event,
   attendees,
+  organizer,
 }: {
   event: CalendarEvent | null;
   attendees: EventParticipant[];
+  organizer: EventParticipant | null;
 }) {
   const { t } = useTranslation();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
@@ -688,21 +713,23 @@ function AttendeesSidebar({
     });
   };
 
+  const displayOrganizer = event?.organizer ?? organizer;
+
   return (
     <div className="attendees-sidebar">
       {/* Organizer Section */}
-      {event?.organizer && (
+      {displayOrganizer && (
         <div className="attendees-sidebar__section">
           <h4 className="attendees-sidebar__title">{t("eventEditor.organizerRole")}</h4>
           <div className="attendees-sidebar__organizer">
             <div className="attendees-sidebar__organizer-avatar">
-              {getInitials(event.organizer.name, event.organizer.email)}
+              {getInitials(displayOrganizer.name, displayOrganizer.email)}
             </div>
             <div className="attendees-sidebar__organizer-info">
               <span className="attendees-sidebar__organizer-name">
-                {event.organizer.name || event.organizer.email}
+                {displayOrganizer.name || displayOrganizer.email}
               </span>
-              {event.created && (
+              {event?.created && (
                 <span className="attendees-sidebar__organizer-meta">
                   {t("eventEditor.invitationSent", { date: formatSentTime(event) })}
                 </span>

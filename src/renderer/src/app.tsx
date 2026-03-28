@@ -22,6 +22,7 @@ import type {
   CalendarSummary,
   CancelEventArgs,
   EventDraft,
+  EventParticipant,
   EventResponseAction,
   RespondToEventArgs,
   SyncStatus,
@@ -648,6 +649,17 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         onCancelMeeting={cancelMeeting}
         busy={busy}
         calendars={calendars}
+        currentUser={
+          account
+            ? {
+                email: account.username,
+                name: account.name,
+                response: null,
+                status: null,
+                type: "required",
+              }
+            : null
+        }
         errorMessage={dialogError}
         onListAttachments={listEventAttachments}
         onDelete={deleteDraft}
