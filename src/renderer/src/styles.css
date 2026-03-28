@@ -1389,6 +1389,14 @@ button {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+.field select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 40px;
+}
+
 .checkbox-field {
   grid-template-columns: auto 1fr;
   align-items: center;
@@ -1407,7 +1415,8 @@ button {
   cursor: pointer;
 }
 
-.toggle-field input {
+.toggle-field input,
+.teams-toggle input {
   position: absolute;
   opacity: 0;
   width: 0;
@@ -1436,15 +1445,18 @@ button {
   transition: transform 0.3s;
 }
 
-.toggle-field input:checked + .toggle-slider {
+.toggle-field input:checked + .toggle-slider,
+.teams-toggle input:checked + .toggle-slider {
   background-color: var(--accent);
 }
 
-.toggle-field input:checked + .toggle-slider::before {
+.toggle-field input:checked + .toggle-slider::before,
+.teams-toggle input:checked + .toggle-slider::before {
   transform: translateX(20px);
 }
 
-.toggle-field input:disabled + .toggle-slider {
+.toggle-field input:disabled + .toggle-slider,
+.teams-toggle input:disabled + .toggle-slider {
   background-color: #e0e0e0;
   cursor: not-allowed;
 }
@@ -1749,8 +1761,8 @@ button {
 .slide-panel {
   position: relative;
   z-index: 1001;
-  width: min(1100px, calc(100vw - 48px));
-  min-width: 800px;
+  width: min(800px, calc(100vw - 48px));
+  min-width: 600px;
   max-height: calc(100vh - 48px);
   display: grid;
   grid-template-columns: 1fr 320px;
@@ -1769,7 +1781,6 @@ button {
 .slide-panel__header {
   grid-area: header;
   padding: 16px 20px;
-  border-bottom: 1px solid var(--line);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1833,7 +1844,6 @@ button {
 .slide-panel__footer {
   grid-area: footer;
   padding: 16px 24px;
-  border-top: 1px solid var(--line);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1851,7 +1861,6 @@ button {
 
 .slide-panel__sidebar {
   grid-area: sidebar;
-  border-left: 1px solid var(--line);
   background: var(--surface-elevated);
   overflow-y: auto;
   padding: 20px;
@@ -1863,7 +1872,7 @@ button {
 }
 
 .slide-panel__section + .slide-panel__section {
-  border-top: 1px solid var(--line);
+  /* border-top removed */
 }
 
 .slide-panel__section-title {
@@ -1871,6 +1880,49 @@ button {
   font-size: 13px;
   font-weight: 600;
   color: var(--ink-secondary);
+}
+
+/* Field rows with icons (Subject, Location, Calendar) */
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.field-row:last-child {
+  border-bottom: none;
+}
+
+.field-row > svg {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  color: var(--ink-secondary);
+}
+
+.field-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-size: 15px;
+  padding: 0;
+  outline: none;
+}
+
+.field-input::placeholder {
+  color: var(--ink-tertiary);
+}
+
+.field-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right center;
+  padding-right: 24px;
+  cursor: pointer;
 }
 
 .slide-panel .dialog-grid {
@@ -1935,11 +1987,12 @@ button {
   border: 1px solid var(--line);
   border-radius: 8px;
   cursor: pointer;
-  width: 100%;
+  width: auto;
   text-align: left;
   font-size: 14px;
   color: var(--ink);
   transition: background-color 150ms ease;
+  white-space: nowrap;
 }
 
 .scheduling-summary:hover:not(:disabled) {
@@ -1966,12 +2019,76 @@ button {
 .scheduling-summary__arrow {
   flex-shrink: 0;
   color: var(--ink-secondary);
-  font-size: 12px;
   transition: transform 200ms ease;
 }
 
 .scheduling-summary__arrow.expanded {
   transform: rotate(180deg);
+}
+
+/* Scheduling & Teams stacked layout */
+.scheduling-teams-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.scheduling-teams-stack .scheduling-section {
+  width: 100%;
+}
+
+.scheduling-teams-stack .teams-section {
+  flex-shrink: 0;
+}
+
+/* Scheduling row with icon outside */
+.scheduling-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.scheduling-row > svg {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  color: var(--ink-secondary);
+}
+
+/* Teams section with icon outside */
+.teams-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.teams-section > img,
+.teams-section > svg {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+}
+
+.teams-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  padding-left: 5px;
+}
+
+.teams-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.teams-toggle__label {
+  font-size: 14px;
+  color: var(--ink);
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .scheduling-dropdown {

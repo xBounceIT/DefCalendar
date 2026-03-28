@@ -171,31 +171,60 @@ function EventEditorDialog(props: EventEditorDialogProps) {
           {props.errorMessage && <div className="banner banner--error">{props.errorMessage}</div>}
 
           <div className="slide-panel__section">
-            <h4 className="slide-panel__section-title">{t("eventEditor.tabs.details")}</h4>
-            <DetailsSection
-              disabled={readOnlyForAttendee}
-              form={form}
-              onChange={setForm}
-              calendars={props.calendars}
-            />
+            <div className="field-row">
+              <SubjectIcon />
+              <input
+                className="field-input field-input--underline"
+                disabled={readOnlyForAttendee}
+                onChange={(event) => updateForm(setForm, { subject: event.target.value })}
+                placeholder={t("eventEditor.subject")}
+                type="text"
+                value={form.subject}
+              />
+            </div>
+
+            <div className="field-row">
+              <LocationIcon />
+              <input
+                className="field-input field-input--underline"
+                disabled={readOnlyForAttendee}
+                onChange={(event) => updateForm(setForm, { location: event.target.value })}
+                placeholder={t("eventEditor.location")}
+                type="text"
+                value={form.location}
+              />
+            </div>
+
+            <div className="field-row">
+              <CalendarSelectIcon />
+              <select
+                className="field-input field-input--underline field-select"
+                disabled={readOnlyForAttendee}
+                onChange={(event) => updateForm(setForm, { calendarId: event.target.value })}
+                value={form.calendarId}
+              >
+                {props.calendars.map((calendar) => (
+                  <option key={calendar.id} value={calendar.id}>
+                    {calendar.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="slide-panel__section">
-            <h4 className="slide-panel__section-title">{t("eventEditor.tabs.scheduling")}</h4>
-            <SchedulingSection disabled={readOnlyForAttendee} form={form} onChange={setForm} />
-          </div>
-
-          {!editedEvent?.onlineMeeting?.joinUrl && (
-            <div className="slide-panel__section">
-              <h4 className="slide-panel__section-title">{t("eventEditor.tabs.teams")}</h4>
-              <TeamsSection
-                disabled={readOnlyForAttendee}
-                event={editedEvent}
-                form={form}
-                onChange={setForm}
-              />
+            <div className="scheduling-teams-stack">
+              <SchedulingSection disabled={readOnlyForAttendee} form={form} onChange={setForm} />
+              {!editedEvent?.onlineMeeting?.joinUrl && (
+                <TeamsSection
+                  disabled={readOnlyForAttendee}
+                  event={editedEvent}
+                  form={form}
+                  onChange={setForm}
+                />
+              )}
             </div>
-          )}
+          </div>
 
           <div className="slide-panel__section">
             <h4 className="slide-panel__section-title">{t("eventEditor.notes")}</h4>
@@ -258,89 +287,6 @@ function EventEditorDialog(props: EventEditorDialogProps) {
   );
 }
 
-function DetailsSection({
-  calendars,
-  disabled,
-  form,
-  onChange,
-}: {
-  calendars: CalendarSummary[];
-  disabled: boolean;
-  form: EditorFormState;
-  onChange: React.Dispatch<React.SetStateAction<EditorFormState | null>>;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="dialog-grid">
-      <label className="field field--full">
-        <span>{t("eventEditor.subject")}</span>
-        <input
-          disabled={disabled}
-          onChange={(event) => updateForm(onChange, { subject: event.target.value })}
-          type="text"
-          value={form.subject}
-        />
-      </label>
-      <label className="field">
-        <span>{t("eventEditor.location")}</span>
-        <input
-          disabled={disabled}
-          onChange={(event) => updateForm(onChange, { location: event.target.value })}
-          type="text"
-          value={form.location}
-        />
-      </label>
-      <label className="field">
-        <span>{t("eventEditor.calendar")}</span>
-        <select
-          disabled={disabled}
-          onChange={(event) => updateForm(onChange, { calendarId: event.target.value })}
-          value={form.calendarId}
-        >
-          {calendars.map((calendar) => (
-            <option key={calendar.id} value={calendar.id}>
-              {calendar.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="field field--full">
-        <CollapsibleSection title={t("eventEditor.optionalDetails")}>
-          <div className="dialog-grid dialog-grid--compact">
-            <label className="field">
-              <span>{t("eventEditor.categories")}</span>
-              <input
-                disabled={disabled}
-                onChange={(event) => updateForm(onChange, { categories: event.target.value })}
-                placeholder={t("eventEditor.categoriesPlaceholder")}
-                type="text"
-                value={form.categories}
-              />
-            </label>
-            <label className="field">
-              <span>{t("eventEditor.sensitivity")}</span>
-              <select
-                disabled={disabled}
-                onChange={(event) =>
-                  updateForm(onChange, {
-                    sensitivity: event.target.value as EditorFormState["sensitivity"],
-                  })
-                }
-                value={form.sensitivity}
-              >
-                <option value="normal">{t("eventEditor.sensitivityNormal")}</option>
-                <option value="personal">{t("eventEditor.sensitivityPersonal")}</option>
-                <option value="private">{t("eventEditor.sensitivityPrivate")}</option>
-                <option value="confidential">{t("eventEditor.sensitivityConfidential")}</option>
-              </select>
-            </label>
-          </div>
-        </CollapsibleSection>
-      </div>
-    </div>
-  );
-}
-
 function SchedulingSection({
   disabled,
   form,
@@ -366,16 +312,18 @@ function SchedulingSection({
 
   return (
     <div className="scheduling-section">
-      <button
-        type="button"
-        className="scheduling-summary"
-        onClick={() => setIsExpanded(!isExpanded)}
-        disabled={disabled}
-      >
-        <CalendarIcon />
-        <span className="scheduling-summary__text">{summaryText}</span>
-        <span className={`scheduling-summary__arrow ${isExpanded ? "expanded" : ""}`}>▼</span>
-      </button>
+      <div className="scheduling-row">
+        <ClockIcon />
+        <button
+          type="button"
+          className="scheduling-summary"
+          onClick={() => setIsExpanded(!isExpanded)}
+          disabled={disabled}
+        >
+          <span className="scheduling-summary__text">{summaryText}</span>
+          <ChevronDownIcon className={`scheduling-summary__arrow ${isExpanded ? "expanded" : ""}`} />
+        </button>
+      </div>
 
       {isExpanded && (
         <div className="scheduling-dropdown">
@@ -628,8 +576,9 @@ function TeamsSection({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="dialog-grid">
-      <label className="toggle-field">
+    <div className="teams-section">
+      <TeamsIcon />
+      <label className="teams-toggle">
         <input
           checked={form.isOnlineMeeting}
           disabled={disabled}
@@ -639,7 +588,7 @@ function TeamsSection({
           type="checkbox"
         />
         <span className="toggle-slider" />
-        <span>{t("eventEditor.teamsMeeting")}</span>
+        <span className="teams-toggle__label">{t("eventEditor.teamsMeeting")}</span>
       </label>
     </div>
   );
@@ -963,6 +912,103 @@ function TeamsIcon() {
 function GMeetIcon() {
   return (
     <img alt="" aria-hidden="true" src={gmeetIcon} style={{ width: "16px", height: "16px" }} />
+  );
+}
+
+function SubjectIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="20"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="20"
+    >
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+    </svg>
+  );
+}
+
+function LocationIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="20"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="20"
+    >
+      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+      <circle cx="12" cy="10" r="3" />
+    </svg>
+  );
+}
+
+function CalendarSelectIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="20"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="20"
+    >
+      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="20"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="20"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  );
+}
+
+function ChevronDownIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      height="16"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="16"
+    >
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
   );
 }
 
