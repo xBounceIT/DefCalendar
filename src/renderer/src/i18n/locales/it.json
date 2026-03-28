@@ -177,7 +177,8 @@
     "responseGroupAccepted": "Accettata: {{count}}",
     "responseGroupTentative": "Provvisoria: {{count}}",
     "responseGroupDeclined": "Rifiutata: {{count}}",
-    "responseGroupPending": "Nessuna risposta: {{count}}"
+    "responseGroupPending": "Nessuna risposta: {{count}}",
+    "joinMeeting": "Partecipa"
   },
   "reminder": {
     "title": "Promemoria",
@@ -237,6 +238,10 @@
         "label": "Sincronizzazione",
         "title": "Impostazioni Sincronizzazione",
         "description": "Configura il comportamento e la pianificazione della sincronizzazione."
+      },
+      "about": {
+        "label": "Informazioni",
+        "title": "Informazioni su DefCalendar"
       }
     },
     "updates": {

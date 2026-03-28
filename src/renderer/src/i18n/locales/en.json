@@ -177,7 +177,8 @@
     "responseGroupAccepted": "Accepted: {{count}}",
     "responseGroupTentative": "Tentative: {{count}}",
     "responseGroupDeclined": "Declined: {{count}}",
-    "responseGroupPending": "No response: {{count}}"
+    "responseGroupPending": "No response: {{count}}",
+    "joinMeeting": "Join meeting"
   },
   "reminder": {
     "title": "Reminder",
@@ -237,6 +238,10 @@
         "label": "Sync",
         "title": "Sync Settings",
         "description": "Configure synchronization behavior and schedule."
+      },
+      "about": {
+        "label": "About",
+        "title": "About DefCalendar"
       }
     },
     "updates": {
