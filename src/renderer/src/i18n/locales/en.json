@@ -1,0 +1,159 @@
+{
+  "common": {
+    "appName": "DefCalendar",
+    "close": "Close",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "saving": "Saving…",
+    "calendar": "Calendar",
+    "sync": "Sync",
+    "idle": "Idle"
+  },
+  "app": {
+    "startupError": "Startup error",
+    "startupErrorMessage": "DefCalendar could not load its secure desktop bridge, so the Exchange 365 controls are unavailable.",
+    "startupErrorBanner": "Restart the app. If this build was packaged, rebuild or reinstall it so the preload script is included.",
+    "signInToSync": "Sign in to sync Exchange 365.",
+    "loading": "Loading DefCalendar…",
+    "noWritableCalendar": "No writable Exchange calendar is available for new events.",
+    "unexpectedError": "An unexpected error occurred."
+  },
+  "auth": {
+    "welcomeTitle": "Welcome to DefCalendar",
+    "welcomeSubtitle": "Your personal calendar companion.",
+    "signIn": "Sync Microsoft 365",
+    "connecting": "Connecting…",
+    "adminApproval": "Retry with Admin Approval",
+    "requestingApproval": "Requesting Approval…"
+  },
+  "titleBar": {
+    "minimize": "Minimize",
+    "restore": "Restore",
+    "maximize": "Maximize",
+    "close": "Close"
+  },
+  "sidebar": {
+    "title": "Calendar",
+    "myCalendars": "My calendars",
+    "addCalendar": "Add calendar",
+    "refresh": "Sync",
+    "settings": "Settings",
+    "signOut": "Sign out",
+    "language": "Language"
+  },
+  "miniCalendar": {
+    "previousMonth": "Previous month",
+    "today": "Today",
+    "nextMonth": "Next month",
+    "weekdays": {
+      "mon": "M",
+      "tue": "T",
+      "wed": "W",
+      "thu": "T",
+      "fri": "F",
+      "sat": "S",
+      "sun": "S"
+    }
+  },
+  "workspace": {
+    "previous": "Previous",
+    "next": "Next",
+    "today": "Today",
+    "new": "New"
+  },
+  "calendarViews": {
+    "month": "Month",
+    "week": "Week",
+    "day": "Day"
+  },
+  "calendarBoard": {
+    "noCalendars": "No calendars selected",
+    "noCalendarsHint": "Enable at least one Exchange calendar from the left sidebar to populate the view.",
+    "moreEvents": "+{{count}}"
+  },
+  "eventEditor": {
+    "newEventEyebrow": "New Exchange event",
+    "newEventTitle": "Create event",
+    "editEventEyebrow": "Event details",
+    "editEventTitle": "Review or update event",
+    "subject": "Subject",
+    "start": "Start",
+    "startDay": "Start day",
+    "end": "End",
+    "endDay": "End day",
+    "allDay": "All day",
+    "location": "Location",
+    "desktopReminder": "Desktop reminder",
+    "reminderMinutes": "Reminder minutes",
+    "notes": "Notes",
+    "calendar": "Calendar",
+    "createEvent": "Create Event",
+    "saveChanges": "Save Changes",
+    "openInOutlook": "Open in Outlook",
+    "organizerSelf": "Owned by signed-in user",
+    "organizerOther": "Organizer: {{email}}",
+    "attendeeCount_one": "{{count}} attendee",
+    "attendeeCount_other": "{{count}} attendees"
+  },
+  "reminder": {
+    "title": "Reminder",
+    "dismissAll": "Dismiss All",
+    "snooze": "Snooze",
+    "dismiss": "Dismiss",
+    "untitledEvent": "Untitled event",
+    "snooze5min": "5 minutes",
+    "snooze15min": "15 minutes",
+    "snooze1hour": "1 hour",
+    "snoozeTomorrow": "Tomorrow"
+  },
+  "dateFormatting": {
+    "fallbackCalendar": "Calendar",
+    "noSyncYet": "No completed sync yet.",
+    "lastSynced": "Last synced {{date}}"
+  },
+  "sync": {
+    "signInToSync": "Sign in to sync Exchange 365.",
+    "syncing": "Syncing Exchange 365…",
+    "connecting": "Connecting to Exchange 365…",
+    "synced_one": "Synced {{calendars}} calendar, {{events}} event.",
+    "synced_other": "Synced {{calendars}} calendars, {{events}} events.",
+    "syncFailed": "Exchange 365 sync failed."
+  },
+  "tray": {
+    "tooltip": "DefCalendar",
+    "showApp": "Show DefCalendar",
+    "refreshNow": "Refresh Now",
+    "signOut": "Sign Out",
+    "quit": "Quit"
+  },
+  "settings": {
+    "sections": {
+      "appearance": {
+        "label": "Appearance",
+        "title": "Appearance Settings",
+        "description": "Customize the look and feel of the calendar application."
+      },
+      "calendarDefaults": {
+        "label": "Calendar Defaults",
+        "title": "Calendar Defaults",
+        "description": "Configure default settings for new events and calendar behavior.",
+        "defaultCalendar": "Default Calendar"
+      },
+      "language": {
+        "label": "Language",
+        "title": "Language Settings",
+        "selectLanguage": "Select Language"
+      },
+      "notifications": {
+        "label": "Notifications",
+        "title": "Notification Settings",
+        "description": "Manage reminder and notification preferences."
+      },
+      "sync": {
+        "label": "Sync",
+        "title": "Sync Settings",
+        "description": "Configure synchronization behavior and schedule."
+      }
+    }
+  }
+}

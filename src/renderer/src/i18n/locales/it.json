@@ -1,0 +1,159 @@
+{
+  "common": {
+    "appName": "DefCalendar",
+    "close": "Chiudi",
+    "cancel": "Annulla",
+    "delete": "Elimina",
+    "saving": "Salvataggio…",
+    "calendar": "Calendario",
+    "sync": "Sincronizza",
+    "idle": "Inattivo"
+  },
+  "app": {
+    "startupError": "Errore di avvio",
+    "startupErrorMessage": "DefCalendar non è riuscito a caricare il suo ponte desktop sicuro, quindi i controlli Exchange 365 non sono disponibili.",
+    "startupErrorBanner": "Riavvia l’app. Se questa build è stata pacchettizzata, ricompila o reinstalla affinché lo script di preload sia incluso.",
+    "signInToSync": "Accedi per sincronizzare Exchange 365.",
+    "loading": "Caricamento DefCalendar…",
+    "noWritableCalendar": "Nessun calendario Exchange scrivibile disponibile per i nuovi eventi.",
+    "unexpectedError": "Si è verificato un errore imprevisto."
+  },
+  "auth": {
+    "welcomeTitle": "Benvenuto in DefCalendar",
+    "welcomeSubtitle": "Il tuo compagno di calendario personale.",
+    "signIn": "Sincronizza Microsoft 365",
+    "connecting": "Connessione…",
+    "adminApproval": "Riprova con approvazione amministratore",
+    "requestingApproval": "Richiesta approvazione…"
+  },
+  "titleBar": {
+    "minimize": "Riduci a icona",
+    "restore": "Ripristina",
+    "maximize": "Ingrandisci",
+    "close": "Chiudi"
+  },
+  "sidebar": {
+    "title": "Calendario",
+    "myCalendars": "I miei calendari",
+    "addCalendar": "Aggiungi calendario",
+    "refresh": "Sincronizza",
+    "settings": "Impostazioni",
+    "signOut": "Disconnetti",
+    "language": "Lingua"
+  },
+  "miniCalendar": {
+    "previousMonth": "Mese precedente",
+    "today": "Oggi",
+    "nextMonth": "Mese successivo",
+    "weekdays": {
+      "mon": "L",
+      "tue": "M",
+      "wed": "M",
+      "thu": "G",
+      "fri": "V",
+      "sat": "S",
+      "sun": "D"
+    }
+  },
+  "workspace": {
+    "previous": "Precedente",
+    "next": "Successivo",
+    "today": "Oggi",
+    "new": "Nuovo"
+  },
+  "calendarViews": {
+    "month": "Mese",
+    "week": "Settimana",
+    "day": "Giorno"
+  },
+  "calendarBoard": {
+    "noCalendars": "Nessun calendario selezionato",
+    "noCalendarsHint": "Abilita almeno un calendario Exchange dalla barra laterale sinistra per popolare la vista.",
+    "moreEvents": "+{{count}}"
+  },
+  "eventEditor": {
+    "newEventEyebrow": "Nuovo evento Exchange",
+    "newEventTitle": "Crea evento",
+    "editEventEyebrow": "Dettagli evento",
+    "editEventTitle": "Rivedi o aggiorna evento",
+    "subject": "Oggetto",
+    "start": "Inizio",
+    "startDay": "Giorno di inizio",
+    "end": "Fine",
+    "endDay": "Giorno di fine",
+    "allDay": "Tutto il giorno",
+    "location": "Posizione",
+    "desktopReminder": "Promemoria desktop",
+    "reminderMinutes": "Minuti promemoria",
+    "notes": "Note",
+    "calendar": "Calendario",
+    "createEvent": "Crea evento",
+    "saveChanges": "Salva modifiche",
+    "openInOutlook": "Apri in Outlook",
+    "organizerSelf": "Proprietà dell’utente connesso",
+    "organizerOther": "Organizzatore: {{email}}",
+    "attendeeCount_one": "{{count}} partecipante",
+    "attendeeCount_other": "{{count}} partecipanti"
+  },
+  "reminder": {
+    "title": "Promemoria",
+    "dismissAll": "Ignora tutto",
+    "snooze": "Rimanda",
+    "dismiss": "Ignora",
+    "untitledEvent": "Evento senza titolo",
+    "snooze5min": "5 minuti",
+    "snooze15min": "15 minuti",
+    "snooze1hour": "1 ora",
+    "snoozeTomorrow": "Domani"
+  },
+  "dateFormatting": {
+    "fallbackCalendar": "Calendario",
+    "noSyncYet": "Nessuna sincronizzazione completata.",
+    "lastSynced": "Ultima sincronizzazione {{date}}"
+  },
+  "sync": {
+    "signInToSync": "Accedi per sincronizzare Exchange 365.",
+    "syncing": "Sincronizzazione Exchange 365…",
+    "connecting": "Connessione a Exchange 365…",
+    "synced_one": "Sincronizzato {{calendars}} calendario, {{events}} evento.",
+    "synced_other": "Sincronizzati {{calendars}} calendari, {{events}} eventi.",
+    "syncFailed": "Sincronizzazione Exchange 365 fallita."
+  },
+  "tray": {
+    "tooltip": "DefCalendar",
+    "showApp": "Mostra DefCalendar",
+    "refreshNow": "Aggiorna ora",
+    "signOut": "Esci",
+    "quit": "Esci dall’applicazione"
+  },
+  "settings": {
+    "sections": {
+      "appearance": {
+        "label": "Aspetto",
+        "title": "Impostazioni Aspetto",
+        "description": "Personalizza l'aspetto dell'applicazione calendario."
+      },
+      "calendarDefaults": {
+        "label": "Predefiniti Calendario",
+        "title": "Predefiniti Calendario",
+        "description": "Configura le impostazioni predefinite per nuovi eventi e comportamento del calendario.",
+        "defaultCalendar": "Calendario Predefinito"
+      },
+      "language": {
+        "label": "Lingua",
+        "title": "Impostazioni Lingua",
+        "selectLanguage": "Seleziona Lingua"
+      },
+      "notifications": {
+        "label": "Notifiche",
+        "title": "Impostazioni Notifiche",
+        "description": "Gestisci le preferenze di promemoria e notifiche."
+      },
+      "sync": {
+        "label": "Sincronizzazione",
+        "title": "Impostazioni Sincronizzazione",
+        "description": "Configura il comportamento e la pianificazione della sincronizzazione."
+      }
+    }
+  }
+}

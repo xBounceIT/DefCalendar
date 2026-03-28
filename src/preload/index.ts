@@ -1,0 +1,66 @@
+import type { AuthSignInMode, AuthState, SyncStatus } from "@shared/schemas";
+import { contextBridge, ipcRenderer } from "electron";
+import type { CalendarApi } from "@shared/ipc";
+import IPC_CHANNELS from "@shared/ipc-values";
+
+const calendarApi: CalendarApi = {
+  app: {
+    getLocale: () => ipcRenderer.invoke(IPC_CHANNELS.appGetLocale),
+    getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.appGetVersion),
+    setLocale: (locale: string) => ipcRenderer.invoke(IPC_CHANNELS.appSetLocale, locale),
+  },
+  auth: {
+    getState: () => ipcRenderer.invoke(IPC_CHANNELS.authGetState),
+    signInWithExchange365: (mode: AuthSignInMode = "user") =>
+      ipcRenderer.invoke(IPC_CHANNELS.authSignIn, { mode }),
+    signOut: () => ipcRenderer.invoke(IPC_CHANNELS.authSignOut),
+    onState: (listener: (state: AuthState) => void) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, state: AuthState) => listener(state);
+      ipcRenderer.on(IPC_CHANNELS.authStateChanged, wrapped);
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.authStateChanged, wrapped);
+      };
+    },
+  },
+  calendars: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.calendarsList),
+    setVisibility: (args) => ipcRenderer.invoke(IPC_CHANNELS.calendarsSetVisibility, args),
+  },
+  events: {
+    list: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsList, args),
+    create: (draft) => ipcRenderer.invoke(IPC_CHANNELS.eventsCreate, draft),
+    update: (draft) => ipcRenderer.invoke(IPC_CHANNELS.eventsUpdate, draft),
+    delete: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsDelete, args),
+    openWebLink: (url) => ipcRenderer.invoke(IPC_CHANNELS.eventsOpenWebLink, url),
+  },
+  sync: {
+    refresh: () => ipcRenderer.invoke(IPC_CHANNELS.syncRefresh),
+    getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.syncGetStatus),
+    onStatus: (listener: (status: SyncStatus) => void) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, status: SyncStatus) => listener(status);
+      ipcRenderer.on(IPC_CHANNELS.syncStatusChanged, wrapped);
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.syncStatusChanged, wrapped);
+      };
+    },
+  },
+  settings: {
+    get: () => ipcRenderer.invoke(IPC_CHANNELS.settingsGet),
+    update: (patch) => ipcRenderer.invoke(IPC_CHANNELS.settingsUpdate, patch),
+  },
+  reminder: {
+    snooze: (dedupeKey: string, minutes: number) =>
+      ipcRenderer.invoke(IPC_CHANNELS.reminderSnooze, { dedupeKey, minutes }),
+    dismiss: (dedupeKey: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.reminderDismiss, { dedupeKey }),
+    dismissAll: () => ipcRenderer.invoke(IPC_CHANNELS.reminderDismissAll),
+  },
+  window: {
+    minimize: () => ipcRenderer.invoke(IPC_CHANNELS.windowMinimize),
+    maximize: () => ipcRenderer.invoke(IPC_CHANNELS.windowMaximize),
+    close: () => ipcRenderer.invoke(IPC_CHANNELS.windowClose),
+    isMaximized: () => ipcRenderer.invoke(IPC_CHANNELS.windowIsMaximized),
+  },
+};
+
+contextBridge.exposeInMainWorld("calendarApi", calendarApi);

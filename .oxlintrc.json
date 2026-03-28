@@ -1,0 +1,80 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "import",
+    "react",
+    "jsx-a11y",
+    "promise",
+    "node",
+    "vitest",
+    "typescript",
+    "unicorn"
+  ],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error",
+    "style": "warn",
+    "pedantic": "off",
+    "restriction": "off",
+    "nursery": "off"
+  },
+  "ignorePatterns": [
+    "node_modules/**",
+    "out/**",
+    "release/**",
+    "coverage/**"
+  ],
+  "rules": {
+    "import/no-unassigned-import": "off",
+    "no-console": "error",
+    "func-style": "off",
+    "import/no-named-export": "off",
+    "max-statements": "off",
+    "no-magic-numbers": "off",
+    "sort-keys": "off",
+    "typescript/no-floating-promises": [
+      "error",
+      {
+        "ignoreVoid": true
+      }
+    ],
+    "typescript/no-misused-promises": "error",
+    "unicorn/no-null": "off",
+    "vitest/no-importing-vitest-globals": "off"
+  },
+  "settings": {
+    "react": {
+      "version": "19.2.4"
+    }
+  },
+  "overrides": [
+    {
+      "files": [
+        "src/renderer/src/**/*.{ts,tsx}"
+      ],
+      "env": {
+        "browser": true
+      }
+    },
+    {
+      "files": [
+        "src/main/**/*.ts",
+        "src/preload/**/*.ts",
+        "test/**/*.ts",
+        "electron.vite.config.ts"
+      ],
+      "env": {
+        "node": true
+      }
+    },
+    {
+      "files": [
+        "src/main/auth/msalAuthService.ts"
+      ],
+      "rules": {
+        "no-console": "off"
+      }
+    }
+  ]
+}
