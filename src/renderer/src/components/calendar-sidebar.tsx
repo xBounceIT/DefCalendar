@@ -34,7 +34,10 @@ function ChevronIcon({ expanded }: { expanded: boolean }) {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s ease" }}
+      style={{
+        transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+        transition: "transform 0.15s ease",
+      }}
     >
       <polyline points="9 18 15 12 9 6" />
     </svg>
@@ -108,7 +111,11 @@ function CalendarListGroup({
         <div className={`account-calendars-wrapper ${isExpanded ? "expanded" : ""}`}>
           <div className="account-calendars">
             {calendars.map((calendar) => (
-              <CalendarRow calendar={calendar} key={calendar.id} onCalendarToggle={onCalendarToggle} />
+              <CalendarRow
+                calendar={calendar}
+                key={calendar.id}
+                onCalendarToggle={onCalendarToggle}
+              />
             ))}
           </div>
         </div>

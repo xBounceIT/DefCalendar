@@ -1,12 +1,17 @@
 import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faArrowsRotate, faCircleInfo, faGlobe, faPalette } from "@fortawesome/free-solid-svg-icons";
+import {
+  faArrowsRotate,
+  faCircleInfo,
+  faGlobe,
+  faPalette,
+} from "@fortawesome/free-solid-svg-icons";
 import { faBell, faCalendar } from "@fortawesome/free-regular-svg-icons";
 import type { CalendarSummary, UserSettings } from "@shared/schemas";
 import type { AppLocale } from "../i18n";
-import useUpdater from "../hooks/use-updater";
-import useVersion from "../hooks/use-version";
+import { useUpdater } from "../hooks/use-updater";
+import { useVersion } from "../hooks/use-version";
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -16,7 +21,13 @@ interface SettingsDialogProps {
   onSave: (settings: Partial<UserSettings>) => void;
 }
 
-type SettingsSection = "appearance" | "calendarDefaults" | "language" | "notifications" | "sync" | "about";
+type SettingsSection =
+  | "appearance"
+  | "calendarDefaults"
+  | "language"
+  | "notifications"
+  | "sync"
+  | "about";
 
 function CloseIcon() {
   return (
@@ -152,18 +163,42 @@ function AboutSection() {
   } = useUpdater();
 
   const updateStatusLabel = useMemo(() => {
-    if (!status) {return t("settings.updates.status.idle");}
+    if (!status) {
+      return t("settings.updates.status.idle");
+    }
 
     switch (status.state) {
-      case "checking": {return t("settings.updates.status.checking");}
-      case "available": {return t("settings.updates.status.available", {version: status.latestVersion ?? t("settings.updates.unknownVersion"),});}
-      case "not_available": {return t("settings.updates.status.notAvailable");}
-      case "downloading": {return t("settings.updates.status.downloading", { percent: Math.round(status.downloadPercent ?? 0)});}
-      case "downloaded": {return t("settings.updates.status.downloaded", {version: status.latestVersion ?? t("settings.updates.unknownVersion"),});}
-      case "error": {return t("settings.updates.status.error");}
-      case "unsupported": {return t("settings.updates.status.unsupported");}
+      case "checking": {
+        return t("settings.updates.status.checking");
+      }
+      case "available": {
+        return t("settings.updates.status.available", {
+          version: status.latestVersion ?? t("settings.updates.unknownVersion"),
+        });
+      }
+      case "not_available": {
+        return t("settings.updates.status.notAvailable");
+      }
+      case "downloading": {
+        return t("settings.updates.status.downloading", {
+          percent: Math.round(status.downloadPercent ?? 0),
+        });
+      }
+      case "downloaded": {
+        return t("settings.updates.status.downloaded", {
+          version: status.latestVersion ?? t("settings.updates.unknownVersion"),
+        });
+      }
+      case "error": {
+        return t("settings.updates.status.error");
+      }
+      case "unsupported": {
+        return t("settings.updates.status.unsupported");
+      }
       case "idle":
-      default: {return t("settings.updates.status.idle");}
+      default: {
+        return t("settings.updates.status.idle");
+      }
     }
   }, [status, t]);
 
@@ -191,10 +226,12 @@ function AboutSection() {
             <strong>
               {isVersionLoading && !effectiveVersion
                 ? t("settings.updates.loading")
-                : effectiveVersion ?? t("settings.updates.unknownVersion")}
+                : (effectiveVersion ?? t("settings.updates.unknownVersion"))}
             </strong>
           </div>
-          <div className={`settings-updates__status settings-updates__status--${status?.state ?? "idle"}`}>
+          <div
+            className={`settings-updates__status settings-updates__status--${status?.state ?? "idle"}`}
+          >
             {updateStatusLabel}
           </div>
           {status?.state === "downloading" && (
@@ -211,9 +248,7 @@ function AboutSection() {
             </details>
           )}
           {(status?.error || statusError instanceof Error) && (
-            <p className="settings-updates__error">
-              {status?.error ?? statusError.message}
-            </p>
+            <p className="settings-updates__error">{status?.error ?? statusError.message}</p>
           )}
           <p className="settings-updates__timestamp">
             {statusLoading ? t("settings.updates.loading") : lastChecked}
@@ -225,7 +260,9 @@ function AboutSection() {
               onClick={check}
               type="button"
             >
-              {isChecking ? t("settings.updates.actions.checking") : t("settings.updates.actions.check")}
+              {isChecking
+                ? t("settings.updates.actions.checking")
+                : t("settings.updates.actions.check")}
             </button>
             <button
               className="settings-updates__action"
@@ -264,7 +301,11 @@ function SettingsDialog({ isOpen, onClose, calendars }: SettingsDialogProps): JS
 
   const sections: { id: SettingsSection; label: string; icon: typeof faPalette }[] = [
     { id: "appearance", label: t("settings.sections.appearance.label"), icon: faPalette },
-    { id: "calendarDefaults", label: t("settings.sections.calendarDefaults.label"), icon: faCalendar },
+    {
+      id: "calendarDefaults",
+      label: t("settings.sections.calendarDefaults.label"),
+      icon: faCalendar,
+    },
     { id: "language", label: t("settings.sections.language.label"), icon: faGlobe },
     { id: "notifications", label: t("settings.sections.notifications.label"), icon: faBell },
     { id: "sync", label: t("settings.sections.sync.label"), icon: faArrowsRotate },

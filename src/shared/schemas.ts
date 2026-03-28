@@ -326,14 +326,14 @@ const syncStatusSchema = z.object({
 });
 
 const appUpdateStateSchema = z.enum([
-  'idle',
-  'checking',
-  'available',
-  'not_available',
-  'downloading',
-  'downloaded',
-  'error',
-  'unsupported',
+  "idle",
+  "checking",
+  "available",
+  "not_available",
+  "downloading",
+  "downloaded",
+  "error",
+  "unsupported",
 ]);
 
 const appUpdateStatusSchema = z.object({

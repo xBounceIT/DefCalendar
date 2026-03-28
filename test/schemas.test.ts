@@ -44,30 +44,30 @@ describe("shared schemas", () => {
     expect(defaults.visibleCalendarIds).toEqual([]);
   });
 
-  it('accepts a valid app update status payload', () => {
+  it("accepts a valid app update status payload", () => {
     const status = appUpdateStatusSchema.parse({
-      checkedAt: '2026-03-28T09:30:00.000Z',
-      currentVersion: '0.1.0',
+      checkedAt: "2026-03-28T09:30:00.000Z",
+      currentVersion: "0.1.0",
       downloadPercent: 64.5,
       error: null,
-      latestVersion: '0.2.0',
-      releaseNotes: 'Fix stability issues',
-      state: 'downloading',
+      latestVersion: "0.2.0",
+      releaseNotes: "Fix stability issues",
+      state: "downloading",
     });
 
-    expect(status.state).toBe('downloading');
+    expect(status.state).toBe("downloading");
   });
 
-  it('rejects app update status with invalid percent', () => {
+  it("rejects app update status with invalid percent", () => {
     expect(() =>
       appUpdateStatusSchema.parse({
-        checkedAt: '2026-03-28T09:30:00.000Z',
-        currentVersion: '0.1.0',
+        checkedAt: "2026-03-28T09:30:00.000Z",
+        currentVersion: "0.1.0",
         downloadPercent: 122,
         error: null,
-        latestVersion: '0.2.0',
+        latestVersion: "0.2.0",
         releaseNotes: null,
-        state: 'downloading',
+        state: "downloading",
       }),
     ).toThrow(/100/);
   });

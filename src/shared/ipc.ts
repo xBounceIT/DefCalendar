@@ -18,7 +18,7 @@ import type {
   UserSettings,
   UserSettingsPatch,
 } from "./schemas";
-import type { EventAttachment, EventResponseAction, ReminderPopupData } from "./ipc-types";
+import type { EventResponseAction, ReminderPopupData } from "./ipc-types";
 
 export const IPC_CHANNELS = {
   appGetLocale: "app:get-locale",

@@ -55,7 +55,8 @@ const calendarApi: CalendarApi = {
     download: () => ipcRenderer.invoke(IPC_CHANNELS.updatesDownload),
     install: () => ipcRenderer.invoke(IPC_CHANNELS.updatesInstall),
     onStatus: (listener: (status: AppUpdateStatus) => void) => {
-      const wrapped = (_event: Electron.IpcRendererEvent, status: AppUpdateStatus) => listener(status);
+      const wrapped = (_event: Electron.IpcRendererEvent, status: AppUpdateStatus) =>
+        listener(status);
       ipcRenderer.on(IPC_CHANNELS.updatesStatusChanged, wrapped);
       return () => {
         ipcRenderer.removeListener(IPC_CHANNELS.updatesStatusChanged, wrapped);

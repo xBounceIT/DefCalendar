@@ -2149,8 +2149,6 @@ button {
   border-bottom: 1px solid var(--line);
 }
 
-
-
 .field-row > svg {
   flex-shrink: 0;
   width: 20px;
