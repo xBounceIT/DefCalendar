@@ -252,6 +252,11 @@
       "lastChecked": "Ultimo controllo: {{value}}",
       "notCheckedYet": "Non ancora controllato",
       "releaseNotes": "Note di rilascio",
+      "channel": {
+        "label": "Canale di aggiornamento",
+        "stable": "Stabile",
+        "prerelease": "Pre-rilascio"
+      },
       "status": {
         "idle": "Pronto per controllare aggiornamenti.",
         "checking": "Controllo aggiornamenti…",

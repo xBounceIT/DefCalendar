@@ -346,11 +346,14 @@ const appUpdateStatusSchema = z.object({
   error: z.string().nullable(),
 });
 
+const updateChannelSchema = z.enum(["stable", "prerelease"]);
+
 const userSettingsSchema = z.object({
   visibleCalendarIds: z.array(z.string()),
   activeView: calendarViewSchema,
   selectedDate: dateTimeStringSchema,
   language: z.enum(["en", "it"]).nullable().optional(),
+  updateChannel: updateChannelSchema.default("stable"),
 });
 
 const userSettingsPatchSchema = userSettingsSchema.partial();
@@ -390,6 +393,7 @@ type AppUpdateState = z.infer<typeof appUpdateStateSchema>;
 type AppUpdateStatus = z.infer<typeof appUpdateStatusSchema>;
 type UserSettings = z.infer<typeof userSettingsSchema>;
 type UserSettingsPatch = z.infer<typeof userSettingsPatchSchema>;
+type UpdateChannel = z.infer<typeof updateChannelSchema>;
 
 function createDefaultSettings(): UserSettings {
   return {
@@ -397,6 +401,7 @@ function createDefaultSettings(): UserSettings {
     activeView: "timeGridWeek",
     selectedDate: new Date().toISOString(),
     language: null,
+    updateChannel: "stable",
   };
 }
 
@@ -439,6 +444,7 @@ export {
   appUpdateStateSchema,
   appUpdateStatusSchema,
   syncStatusSchema,
+  updateChannelSchema,
   userSettingsPatchSchema,
   userSettingsSchema,
   type AccountSummary,
@@ -474,6 +480,7 @@ export {
   type SyncStatus,
   type AppUpdateState,
   type AppUpdateStatus,
+  type UpdateChannel,
   type UserSettings,
   type UserSettingsPatch,
 };

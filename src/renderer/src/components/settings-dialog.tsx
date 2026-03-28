@@ -8,7 +8,7 @@ import {
   faPalette,
 } from "@fortawesome/free-solid-svg-icons";
 import { faBell, faCalendar } from "@fortawesome/free-regular-svg-icons";
-import type { CalendarSummary, UserSettings } from "@shared/schemas";
+import type { CalendarSummary, UpdateChannel, UserSettings } from "@shared/schemas";
 import type { AppLocale } from "../i18n";
 import { useUpdater } from "../hooks/use-updater";
 import { useVersion } from "../hooks/use-version";
@@ -148,7 +148,12 @@ function SyncSection() {
   );
 }
 
-function AboutSection() {
+interface AboutSectionProps {
+  onSave: (settings: Partial<UserSettings>) => void;
+  settings: UserSettings;
+}
+
+function AboutSection({ onSave, settings }: AboutSectionProps) {
   const { t } = useTranslation();
   const { isLoading: isVersionLoading, version } = useVersion();
   const {
@@ -161,6 +166,12 @@ function AboutSection() {
     statusError,
     statusLoading,
   } = useUpdater();
+
+  const updateChannelOptions: UpdateChannel[] = ["stable", "prerelease"];
+  const updateChannelLabels: Record<UpdateChannel, string> = {
+    stable: t("settings.updates.channel.stable"),
+    prerelease: t("settings.updates.channel.prerelease"),
+  };
 
   const updateStatusLabel = useMemo(() => {
     if (!status) {
@@ -229,6 +240,21 @@ function AboutSection() {
                 : (effectiveVersion ?? t("settings.updates.unknownVersion"))}
             </strong>
           </div>
+          <div className="settings-updates__channel">
+            <span>{t("settings.updates.channel.label")}</span>
+            <select
+              value={settings.updateChannel}
+              onChange={(e) => {
+                onSave({ updateChannel: e.target.value as UpdateChannel });
+              }}
+            >
+              {updateChannelOptions.map((channel) => (
+                <option key={channel} value={channel}>
+                  {updateChannelLabels[channel]}
+                </option>
+              ))}
+            </select>
+          </div>
           <div
             className={`settings-updates__status settings-updates__status--${status?.state ?? "idle"}`}
           >
@@ -291,7 +317,7 @@ function AboutSection() {
   );
 }
 
-function SettingsDialog({ isOpen, onClose, calendars }: SettingsDialogProps): JSX.Element | null {
+function SettingsDialog({ isOpen, onClose, calendars, settings, onSave }: SettingsDialogProps): JSX.Element | null {
   const { t } = useTranslation();
   const [activeSection, setActiveSection] = useState<SettingsSection>("appearance");
 
@@ -330,7 +356,7 @@ function SettingsDialog({ isOpen, onClose, calendars }: SettingsDialogProps): JS
         return <SyncSection />;
       }
       case "about": {
-        return <AboutSection />;
+        return <AboutSection onSave={onSave} settings={settings} />;
       }
       default: {
         return <AppearanceSection />;

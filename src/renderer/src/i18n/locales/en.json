@@ -252,6 +252,11 @@
       "lastChecked": "Last checked: {{value}}",
       "notCheckedYet": "Not checked yet",
       "releaseNotes": "Release notes",
+      "channel": {
+        "label": "Update channel",
+        "stable": "Stable",
+        "prerelease": "Pre-release"
+      },
       "status": {
         "idle": "Ready to check for updates.",
         "checking": "Checking for updates…",

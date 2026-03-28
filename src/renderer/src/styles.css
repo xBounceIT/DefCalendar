@@ -1823,6 +1823,39 @@ button {
   font-size: 14px;
 }
 
+.settings-updates__channel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-updates__channel span {
+  color: var(--ink-secondary);
+  font-size: 13px;
+}
+
+.settings-updates__channel select {
+  appearance: none;
+  border: var(--border);
+  border-radius: 10px;
+  padding: 8px 36px 8px 12px;
+  background: #ffffff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  color: var(--ink);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.settings-updates__channel select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
 .settings-updates__status {
   border: 1px solid var(--line);
   border-radius: 8px;

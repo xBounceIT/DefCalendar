@@ -271,7 +271,17 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   ipcMain.handle(IPC_CHANNELS.settingsUpdate, async (event, input) => {
     validateSender(event);
     const patch = userSettingsPatchSchema.parse(input);
-    return dependencies.settings.updateSettings(patch);
+    const previousSettings = dependencies.settings.getSettings();
+    const updatedSettings = dependencies.settings.updateSettings(patch);
+
+    if (
+      patch.updateChannel !== undefined &&
+      patch.updateChannel !== previousSettings.updateChannel
+    ) {
+      dependencies.updates.setAllowPrerelease(patch.updateChannel === "prerelease");
+    }
+
+    return updatedSettings;
   });
 
   ipcMain.handle(IPC_CHANNELS.reminderSnooze, async (_event, input) => {

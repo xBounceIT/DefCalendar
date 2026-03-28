@@ -48,7 +48,7 @@ async function bootstrap(): Promise<void> {
 
   const graph = new GraphCalendarService(auth, config);
   const sync = new SyncService({ auth, graph, db, settings, reminders, config });
-  const updates = new UpdateService();
+  const updates = new UpdateService(savedSettings.updateChannel === "prerelease");
 
   ipcMain.handle(IPC_CHANNELS.appSetLocale, async (_event, locale: unknown) => {
     if (typeof locale === "string" && (locale === "en" || locale === "it")) {

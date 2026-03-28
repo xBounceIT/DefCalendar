@@ -26,7 +26,7 @@ class UpdateService {
     state: "unsupported",
   };
 
-  constructor() {
+  constructor(allowPrerelease = false) {
     if (this.isPackaged) {
       this.status.state = "idle";
     } else {
@@ -35,7 +35,7 @@ class UpdateService {
 
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
-    autoUpdater.allowPrerelease = false;
+    autoUpdater.allowPrerelease = allowPrerelease;
 
     autoUpdater.on("checking-for-update", () => {
       this.setStatus({
@@ -202,6 +202,10 @@ class UpdateService {
     }
 
     autoUpdater.quitAndInstall();
+  }
+
+  setAllowPrerelease(allow: boolean): void {
+    autoUpdater.allowPrerelease = allow;
   }
 
   private resolveReleaseNotes(info: ReleaseInfo | UpdateDownloadedEvent): null | string {
