@@ -57,7 +57,7 @@ describe("auth screen", () => {
     const approvalButton = screen.getByRole("button", { name: "Retry with Admin Approval" });
     fireEvent.click(approvalButton);
 
-    expect(onAdminApproval).toHaveBeenCalledTimes(1);
+    expect(onAdminApproval).toHaveBeenCalledOnce();
   });
 
   it("shows a pending admin approval label while the retry is running", () => {

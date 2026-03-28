@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  extractHardcodedStrings,
-  getAllTsxFiles,
-} from "./i18n-utils";
+import { extractHardcodedStrings, getAllTsxFiles } from "./i18n-utils";
 import { resolve } from "node:path";
 
 describe("i18n hardcoded string detection", () => {
@@ -20,9 +17,15 @@ describe("i18n hardcoded string detection", () => {
     }
 
     const filteredStrings = hardcodedStrings.filter((str) => {
-      if (str.text.length < 2) {return false;}
-      if (/^\s*$/.test(str.text)) {return false;}
-      if (/^\d+\.?\d*$/.test(str.text)) {return false;}
+      if (str.text.length < 2) {
+        return false;
+      }
+      if (/^\s*$/.test(str.text)) {
+        return false;
+      }
+      if (/^\d+\.?\d*$/.test(str.text)) {
+        return false;
+      }
       if (/^[A-Za-z0-9_\-.]+$/.test(str.text) && str.text.length < 10) {
         return false;
       }

@@ -1,12 +1,12 @@
-import type { AccountInfo, AuthenticationResult, Configuration } from '@azure/msal-node';
-import { LogLevel, PublicClientApplication } from '@main/auth/msal-runtime';
-import { getSignInPrompt, normalizeMicrosoftSignInError } from '@main/auth/auth-sign-in';
-import { hasConfiguredClientId } from '@main/auth/app-registration';
-import type { AppConfig } from '@main/config';
-import { shell } from 'electron';
-import type { AuthSignInMode, AuthState } from '@shared/schemas';
-import type SafeStorageTokenCache from '@main/auth/cache-plugin';
-import { EXCHANGE365_CLIENT_ID_NOT_CONFIGURED_MESSAGE } from '@shared/exchange-auth';
+import type { AccountInfo, AuthenticationResult, Configuration } from "@azure/msal-node";
+import { LogLevel, PublicClientApplication } from "@main/auth/msal-runtime";
+import { getSignInPrompt, normalizeMicrosoftSignInError } from "@main/auth/auth-sign-in";
+import { hasConfiguredClientId } from "@main/auth/app-registration";
+import type { AppConfig } from "@main/config";
+import { shell } from "electron";
+import type { AuthSignInMode, AuthState } from "@shared/schemas";
+import type SafeStorageTokenCache from "@main/auth/cache-plugin";
+import { EXCHANGE365_CLIENT_ID_NOT_CONFIGURED_MESSAGE } from "@shared/exchange-auth";
 
 function buildSuccessTemplate(): string {
   return `
@@ -86,11 +86,11 @@ class MsalAuthService {
 
   getAuthState(): AuthState {
     if (!this.account) {
-      return { status: 'signed_out' };
+      return { status: "signed_out" };
     }
 
     return {
-      status: 'signed_in',
+      status: "signed_in",
       account: {
         homeAccountId: this.account.homeAccountId,
         username: this.account.username,
@@ -100,7 +100,7 @@ class MsalAuthService {
     };
   }
 
-  async signIn(mode: AuthSignInMode = 'user'): Promise<AuthState> {
+  async signIn(mode: AuthSignInMode = "user"): Promise<AuthState> {
     const result = await this.acquireInteractiveToken(mode);
     this.account = result.account ?? this.account;
     return this.getAuthState();
@@ -137,7 +137,7 @@ class MsalAuthService {
       }
     }
 
-    throw new Error('Unable to acquire an access token for Microsoft Graph.');
+    throw new Error("Unable to acquire an access token for Microsoft Graph.");
   }
 
   private async ensureAccount(): Promise<AccountInfo> {
@@ -147,7 +147,7 @@ class MsalAuthService {
 
     const accounts = await this.getPca().getAllAccounts();
     if (!accounts.length) {
-      throw new Error('Sign in with Exchange 365 before syncing calendars.');
+      throw new Error("Sign in with Exchange 365 before syncing calendars.");
     }
 
     const [account] = accounts;
@@ -155,7 +155,9 @@ class MsalAuthService {
     return this.account;
   }
 
-  private async acquireInteractiveToken(mode: AuthSignInMode = 'user'): Promise<AuthenticationResult> {
+  private async acquireInteractiveToken(
+    mode: AuthSignInMode = "user",
+  ): Promise<AuthenticationResult> {
     try {
       // MSAL Node uses a loopback localhost redirect for system-browser auth.
       // Register http://localhost in Entra instead of trying to pass a redirect URI here.

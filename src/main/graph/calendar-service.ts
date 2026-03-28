@@ -9,10 +9,10 @@ import type {
   ParticipantResponseStatus,
   Recurrence,
   RespondToEventArgs,
-} from '@shared/schemas';
-import type { AppConfig } from '@main/config';
-import type MsalAuthService from '@main/auth/msal-auth-service';
-import delay from 'delay';
+} from "@shared/schemas";
+import type { AppConfig } from "@main/config";
+import type MsalAuthService from "@main/auth/msal-auth-service";
+import delay from "delay";
 
 interface ParsedGraphCollection {
   nextLink?: string;
@@ -65,7 +65,7 @@ interface GraphLocation {
 interface GraphOnlineMeeting {
   conferenceId?: string;
   joinUrl?: string;
-  phones?: Array<{ number?: string }>;
+  phones?: { number?: string }[];
 }
 
 interface GraphRecurrence {
@@ -93,7 +93,7 @@ interface GraphResponseStatus {
 }
 
 interface GraphEvent {
-  '@odata.etag'?: string;
+  "@odata.etag"?: string;
   allowNewTimeProposals?: boolean;
   attendees?: GraphAttendee[];
   body?: GraphBody;
@@ -136,11 +136,11 @@ interface SendRequestArgs {
 }
 
 const EVENT_SELECT =
-  'id,subject,body,bodyPreview,location,locations,start,end,isAllDay,isReminderOn,reminderMinutesBeforeStart,webLink,changeKey,type,attendees,organizer,recurrence,onlineMeeting,onlineMeetingProvider,isOnlineMeeting,lastModifiedDateTime,allowNewTimeProposals,responseRequested,showAs,sensitivity,categories,seriesMasterId,responseStatus,hasAttachments,isOrganizer,isCancelled,originalStart';
+  "id,subject,body,bodyPreview,location,locations,start,end,isAllDay,isReminderOn,reminderMinutesBeforeStart,webLink,changeKey,type,attendees,organizer,recurrence,onlineMeeting,onlineMeetingProvider,isOnlineMeeting,lastModifiedDateTime,allowNewTimeProposals,responseRequested,showAs,sensitivity,categories,seriesMasterId,responseStatus,hasAttachments,isOrganizer,isCancelled,originalStart";
 
 class GraphCalendarService {
   private readonly auth: MsalAuthService;
-  private readonly baseUrl = 'https://graph.microsoft.com/v1.0';
+  private readonly baseUrl = "https://graph.microsoft.com/v1.0";
   private readonly config: AppConfig;
 
   constructor(auth: MsalAuthService, config: AppConfig) {
@@ -150,7 +150,7 @@ class GraphCalendarService {
 
   async listCalendars(): Promise<CalendarSummary[]> {
     const response = await this.paginate(
-      '/me/calendars?$select=id,name,color,hexColor,canEdit,canShare,isDefaultCalendar,owner',
+      "/me/calendars?$select=id,name,color,hexColor,canEdit,canShare,isDefaultCalendar,owner",
       parseGraphCalendar,
     );
 
@@ -167,17 +167,21 @@ class GraphCalendarService {
         id: calendar.id,
         isDefaultCalendar: Boolean(calendar.isDefaultCalendar),
         isVisible: true,
-        name: calendar.name ?? 'Untitled calendar',
+        name: calendar.name ?? "Untitled calendar",
         ownerAddress: calendar.owner?.address ?? null,
         ownerName: calendar.owner?.name ?? null,
       };
     });
   }
 
-  async listCalendarView(calendarId: string, rangeStart: string, rangeEnd: string): Promise<CalendarEvent[]> {
+  async listCalendarView(
+    calendarId: string,
+    rangeStart: string,
+    rangeEnd: string,
+  ): Promise<CalendarEvent[]> {
     const query = new URLSearchParams({
-      '$select': EVENT_SELECT,
-      '$top': '250',
+      $select: EVENT_SELECT,
+      $top: "250",
       endDateTime: rangeEnd,
       startDateTime: rangeStart,
     });
@@ -193,11 +197,11 @@ class GraphCalendarService {
   async createEvent(draft: EventDraft): Promise<CalendarEvent> {
     const response = parseGraphEvent(
       await this.requestJson(`/me/calendars/${encodeURIComponent(draft.calendarId)}/events`, {
-        body: JSON.stringify(this.toGraphEventPayload(draft, 'create')),
+        body: JSON.stringify(this.toGraphEventPayload(draft, "create")),
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
-        method: 'POST',
+        method: "POST",
       }),
     );
 
@@ -207,23 +211,23 @@ class GraphCalendarService {
 
   async updateEvent(draft: EventDraft): Promise<CalendarEvent> {
     if (!draft.id) {
-      throw new Error('Event id is required for updates.');
+      throw new Error("Event id is required for updates.");
     }
 
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     };
 
     if (draft.etag) {
-      headers['If-Match'] = draft.etag;
+      headers["If-Match"] = draft.etag;
     }
 
     await this.requestJson(
       `/me/calendars/${encodeURIComponent(draft.calendarId)}/events/${encodeURIComponent(draft.id)}`,
       {
-        body: JSON.stringify(this.toGraphEventPayload(draft, 'update')),
+        body: JSON.stringify(this.toGraphEventPayload(draft, "update")),
         headers,
-        method: 'PATCH',
+        method: "PATCH",
       },
     );
 
@@ -233,7 +237,7 @@ class GraphCalendarService {
 
   async getEvent(calendarId: string, eventId: string): Promise<CalendarEvent> {
     const query = new URLSearchParams({
-      '$select': EVENT_SELECT,
+      $select: EVENT_SELECT,
     });
 
     const response = parseGraphEvent(
@@ -248,24 +252,27 @@ class GraphCalendarService {
   async deleteEvent(calendarId: string, eventId: string, etag?: null | string): Promise<void> {
     const headers: Record<string, string> = {};
     if (etag) {
-      headers['If-Match'] = etag;
+      headers["If-Match"] = etag;
     }
 
-    await this.requestNoContent(`/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, {
-      headers,
-      method: 'DELETE',
-    });
+    await this.requestNoContent(
+      `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+      {
+        headers,
+        method: "DELETE",
+      },
+    );
   }
 
-  async cancelEvent(calendarId: string, eventId: string, comment = ''): Promise<void> {
+  async cancelEvent(calendarId: string, eventId: string, comment = ""): Promise<void> {
     await this.requestNoContent(
       `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}/cancel`,
       {
         body: JSON.stringify({ Comment: comment }),
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
-        method: 'POST',
+        method: "POST",
       },
     );
   }
@@ -279,16 +286,16 @@ class GraphCalendarService {
           sendResponse: args.sendResponse,
         }),
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
-        method: 'POST',
+        method: "POST",
       },
     );
   }
 
   async listAttachments(calendarId: string, eventId: string): Promise<EventAttachment[]> {
     const query = new URLSearchParams({
-      '$select': 'id,name,contentType,size,isInline',
+      $select: "id,name,contentType,size,isInline",
     });
     const response = parseGraphCollection(
       await this.requestJson(
@@ -299,38 +306,50 @@ class GraphCalendarService {
     return response.value.map(parseGraphAttachment);
   }
 
-  async addAttachment(calendarId: string, eventId: string, attachment: AttachmentUpload): Promise<EventAttachment[]> {
+  async addAttachment(
+    calendarId: string,
+    eventId: string,
+    attachment: AttachmentUpload,
+  ): Promise<EventAttachment[]> {
     await this.requestJson(
       `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}/attachments`,
       {
         body: JSON.stringify({
-          '@odata.type': '#microsoft.graph.fileAttachment',
+          "@odata.type": "#microsoft.graph.fileAttachment",
           contentBytes: attachment.contentBytes,
           contentType: attachment.contentType,
           name: attachment.name,
         }),
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
-        method: 'POST',
+        method: "POST",
       },
     );
 
     return this.listAttachments(calendarId, eventId);
   }
 
-  async removeAttachment(calendarId: string, eventId: string, attachmentId: string): Promise<EventAttachment[]> {
+  async removeAttachment(
+    calendarId: string,
+    eventId: string,
+    attachmentId: string,
+  ): Promise<EventAttachment[]> {
     await this.requestNoContent(
       `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}/attachments/${encodeURIComponent(attachmentId)}`,
       {
-        method: 'DELETE',
+        method: "DELETE",
       },
     );
 
     return this.listAttachments(calendarId, eventId);
   }
 
-  private async syncAttachmentOperations(calendarId: string, eventId: string, draft: EventDraft): Promise<void> {
+  private async syncAttachmentOperations(
+    calendarId: string,
+    eventId: string,
+    draft: EventDraft,
+  ): Promise<void> {
     for (const attachmentId of draft.attachmentIdsToRemove) {
       await this.removeAttachment(calendarId, eventId, attachmentId);
     }
@@ -340,7 +359,10 @@ class GraphCalendarService {
     }
   }
 
-  private async paginate<TItem>(pathOrUrl: string, parseItem: (value: unknown) => TItem): Promise<TItem[]> {
+  private async paginate<TItem>(
+    pathOrUrl: string,
+    parseItem: (value: unknown) => TItem,
+  ): Promise<TItem[]> {
     const items: TItem[] = [];
     let nextUrl: string | undefined = pathOrUrl;
 
@@ -374,19 +396,14 @@ class GraphCalendarService {
   }
 
   private async sendRequest(args: SendRequestArgs): Promise<Response> {
-    const {
-      forceRefresh = false,
-      init = {},
-      pathOrUrl,
-      retryCount = 0,
-    } = args;
+    const { forceRefresh = false, init = {}, pathOrUrl, retryCount = 0 } = args;
     const headers = new Headers(init.headers);
-    headers.set('Accept', 'application/json');
-    headers.set('Authorization', `Bearer ${await this.auth.getAccessToken(forceRefresh)}`);
-    headers.set('Prefer', `outlook.timezone="${this.config.timeZone}"`);
+    headers.set("Accept", "application/json");
+    headers.set("Authorization", `Bearer ${await this.auth.getAccessToken(forceRefresh)}`);
+    headers.set("Prefer", `outlook.timezone="${this.config.timeZone}"`);
 
     let requestUrl = `${this.baseUrl}${pathOrUrl}`;
-    if (pathOrUrl.startsWith('http')) {
+    if (pathOrUrl.startsWith("http")) {
       requestUrl = pathOrUrl;
     }
 
@@ -406,7 +423,7 @@ class GraphCalendarService {
 
     const shouldRetry = (response.status === 429 || response.status === 503) && retryCount < 3;
     if (shouldRetry) {
-      await delay(this.getRetryDelay(response.headers.get('Retry-After'), retryCount));
+      await delay(this.getRetryDelay(response.headers.get("Retry-After"), retryCount));
       return this.sendRequest({
         forceRefresh,
         init,
@@ -450,24 +467,26 @@ class GraphCalendarService {
 
   private toCalendarEvent(event: GraphEvent, calendarId: string): CalendarEvent {
     const authState = this.auth.getAuthState();
-    const currentEmail = authState.status === 'signed_in' ? authState.account.username.toLowerCase() : null;
+    const currentEmail =
+      authState.status === "signed_in" ? authState.account.username.toLowerCase() : null;
     const organizer = event.organizer ? toParticipant(event.organizer) : null;
     const organizerEmail = organizer?.email?.toLowerCase() ?? null;
-    const isOrganizer = event.isOrganizer ?? (currentEmail !== null && organizerEmail === currentEmail);
+    const isOrganizer =
+      event.isOrganizer ?? (currentEmail !== null && organizerEmail === currentEmail);
 
     return {
       allowNewTimeProposals: event.allowNewTimeProposals ?? null,
       attendees: (event.attendees ?? []).map(toParticipant),
       attachments: [],
       body: event.body?.content ?? null,
-      bodyContentType: event.body?.contentType?.toLowerCase() === 'text' ? 'text' : 'html',
+      bodyContentType: event.body?.contentType?.toLowerCase() === "text" ? "text" : "html",
       bodyPreview: trimOrNull(event.bodyPreview) ?? trimOrNull(stripHtml(event.body?.content)),
       calendarId,
       cancelled: Boolean(event.isCancelled),
       categories: event.categories ?? [],
       changeKey: event.changeKey ?? null,
       end: normalizeGraphDateTime(event.end?.dateTime),
-      etag: event['@odata.etag'] ?? null,
+      etag: event["@odata.etag"] ?? null,
       hasAttachments: Boolean(event.hasAttachments),
       id: event.id,
       isAllDay: Boolean(event.isAllDay),
@@ -485,14 +504,16 @@ class GraphCalendarService {
       organizer,
       recurrence: parseRecurrence(event.recurrence),
       reminderMinutesBeforeStart:
-        typeof event.reminderMinutesBeforeStart === 'number' ? event.reminderMinutesBeforeStart : null,
+        typeof event.reminderMinutesBeforeStart === "number"
+          ? event.reminderMinutesBeforeStart
+          : null,
       responseRequested: event.responseRequested ?? null,
       responseStatus: parseResponseStatus(event.responseStatus),
       sensitivity: parseSensitivity(event.sensitivity),
       seriesMasterId: event.seriesMasterId ?? null,
       showAs: parseShowAs(event.showAs),
       start: normalizeGraphDateTime(event.start?.dateTime),
-      subject: trimOrFallback(event.subject, '(no title)'),
+      subject: trimOrFallback(event.subject, "(no title)"),
       timeZone: event.start?.timeZone ?? this.config.timeZone,
       type: event.type ?? null,
       unsupportedReason: getUnsupportedReason(event),
@@ -500,7 +521,10 @@ class GraphCalendarService {
     };
   }
 
-  private toGraphEventPayload(draft: EventDraft, mode: 'create' | 'update'): Record<string, unknown> {
+  private toGraphEventPayload(
+    draft: EventDraft,
+    mode: "create" | "update",
+  ): Record<string, unknown> {
     const payload: Record<string, unknown> = {
       allowNewTimeProposals: draft.allowNewTimeProposals,
       attendees: draft.attendees.map((attendee) => ({
@@ -508,7 +532,12 @@ class GraphCalendarService {
           address: attendee.email,
           name: attendee.name,
         },
-        type: attendee.type === 'resource' ? 'resource' : attendee.type === 'optional' ? 'optional' : 'required',
+        type:
+          attendee.type === "resource"
+            ? "resource"
+            : attendee.type === "optional"
+              ? "optional"
+              : "required",
       })),
       categories: draft.categories,
       end: {
@@ -531,12 +560,12 @@ class GraphCalendarService {
     if (draft.body?.trim()) {
       payload.body = {
         content: draft.body,
-        contentType: draft.bodyContentType === 'text' ? 'Text' : 'HTML',
+        contentType: draft.bodyContentType === "text" ? "Text" : "HTML",
       };
-    } else if (mode === 'update') {
+    } else if (mode === "update") {
       payload.body = {
-        content: '',
-        contentType: 'Text',
+        content: "",
+        contentType: "Text",
       };
     }
 
@@ -544,11 +573,13 @@ class GraphCalendarService {
       payload.location = {
         displayName: draft.location.trim(),
       };
-    } else if (mode === 'update') {
+    } else if (mode === "update") {
       payload.location = null;
     }
 
-    payload.reminderMinutesBeforeStart = draft.isReminderOn ? (draft.reminderMinutesBeforeStart ?? 15) : null;
+    payload.reminderMinutesBeforeStart = draft.isReminderOn
+      ? (draft.reminderMinutesBeforeStart ?? 15)
+      : null;
 
     if (draft.recurrence) {
       payload.recurrence = {
@@ -569,14 +600,14 @@ class GraphCalendarService {
           type: draft.recurrence.range.type,
         },
       };
-    } else if (mode === 'update') {
+    } else if (mode === "update") {
       payload.recurrence = null;
     }
 
     if (draft.isOnlineMeeting) {
-      payload.onlineMeetingProvider = 'teamsForBusiness';
-    } else if (mode === 'update') {
-      payload.onlineMeetingProvider = 'unknown';
+      payload.onlineMeetingProvider = "teamsForBusiness";
+    } else if (mode === "update") {
+      payload.onlineMeetingProvider = "unknown";
     }
 
     return payload;
@@ -585,15 +616,15 @@ class GraphCalendarService {
 
 function formatGraphDateTime(iso: string, timeZone: string): string {
   const date = new Date(iso);
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    day: '2-digit',
-    hour: '2-digit',
-    hourCycle: 'h23',
-    minute: '2-digit',
-    month: '2-digit',
-    second: '2-digit',
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+    minute: "2-digit",
+    month: "2-digit",
+    second: "2-digit",
     timeZone,
-    year: 'numeric',
+    year: "numeric",
   });
   const parts = Object.fromEntries(
     formatter.formatToParts(date).map((part) => [part.type, part.value]),
@@ -604,14 +635,14 @@ function formatGraphDateTime(iso: string, timeZone: string): string {
 
 function getUnsupportedReason(event: GraphEvent): null | string {
   if (!event.start?.dateTime || !event.end?.dateTime) {
-    return 'This event has incomplete schedule data and cannot be edited here.';
+    return "This event has incomplete schedule data and cannot be edited here.";
   }
 
   return null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+  return typeof value === "object" && value !== null;
 }
 
 function normalizeGraphDateTime(value?: string): string {
@@ -629,15 +660,15 @@ function normalizeGraphDateTime(value?: string): string {
 
 function parseGraphAttachment(value: unknown): EventAttachment {
   if (!isRecord(value)) {
-    throw new Error('Unexpected attachment payload.');
+    throw new Error("Unexpected attachment payload.");
   }
 
   return {
-    contentType: readOptionalString(value, 'contentType') ?? null,
-    id: readRequiredString(value, 'id'),
-    isInline: Boolean(readOptionalBoolean(value, 'isInline')),
-    name: trimOrFallback(readOptionalString(value, 'name'), 'Attachment'),
-    size: readOptionalNumber(value, 'size') ?? 0,
+    contentType: readOptionalString(value, "contentType") ?? null,
+    id: readRequiredString(value, "id"),
+    isInline: Boolean(readOptionalBoolean(value, "isInline")),
+    name: trimOrFallback(readOptionalString(value, "name"), "Attachment"),
+    size: readOptionalNumber(value, "size") ?? 0,
   };
 }
 
@@ -648,24 +679,24 @@ function parseGraphAttendees(value?: unknown[]): GraphAttendee[] | undefined {
 
   return value.map((entry) => {
     if (!isRecord(entry)) {
-      throw new Error('Unexpected attendee payload.');
+      throw new Error("Unexpected attendee payload.");
     }
 
     const recipient = parseGraphRecipient(entry);
-    const status = readOptionalRecord(entry, 'status');
-    let attendeeStatus: GraphAttendee['status'] = undefined;
+    const status = readOptionalRecord(entry, "status");
+    let attendeeStatus: GraphAttendee["status"] = undefined;
 
     if (status) {
       attendeeStatus = {
-        response: readOptionalString(status, 'response'),
-        time: readOptionalString(status, 'time'),
+        response: readOptionalString(status, "response"),
+        time: readOptionalString(status, "time"),
       };
     }
 
     return {
       emailAddress: recipient?.emailAddress,
       status: attendeeStatus,
-      type: readOptionalString(entry, 'type'),
+      type: readOptionalString(entry, "type"),
     };
   });
 }
@@ -676,44 +707,44 @@ function parseGraphBody(value?: Record<string, unknown>): GraphBody | undefined 
   }
 
   return {
-    content: readOptionalString(value, 'content'),
-    contentType: readOptionalString(value, 'contentType'),
+    content: readOptionalString(value, "content"),
+    contentType: readOptionalString(value, "contentType"),
   };
 }
 
 function parseGraphCalendar(value: unknown): GraphCalendar {
   if (!isRecord(value)) {
-    throw new Error('Unexpected Microsoft Graph calendar payload.');
+    throw new Error("Unexpected Microsoft Graph calendar payload.");
   }
 
-  const owner = readOptionalRecord(value, 'owner');
-  let parsedOwner: GraphCalendar['owner'] = undefined;
+  const owner = readOptionalRecord(value, "owner");
+  let parsedOwner: GraphCalendar["owner"] = undefined;
   if (owner) {
     parsedOwner = {
-      address: readOptionalString(owner, 'address'),
-      name: readOptionalString(owner, 'name'),
+      address: readOptionalString(owner, "address"),
+      name: readOptionalString(owner, "name"),
     };
   }
 
   return {
-    canEdit: readOptionalBoolean(value, 'canEdit'),
-    canShare: readOptionalBoolean(value, 'canShare'),
-    color: readOptionalNullableString(value, 'color'),
-    hexColor: readOptionalNullableString(value, 'hexColor'),
-    id: readRequiredString(value, 'id'),
-    isDefaultCalendar: readOptionalBoolean(value, 'isDefaultCalendar'),
-    name: readOptionalString(value, 'name'),
+    canEdit: readOptionalBoolean(value, "canEdit"),
+    canShare: readOptionalBoolean(value, "canShare"),
+    color: readOptionalNullableString(value, "color"),
+    hexColor: readOptionalNullableString(value, "hexColor"),
+    id: readRequiredString(value, "id"),
+    isDefaultCalendar: readOptionalBoolean(value, "isDefaultCalendar"),
+    name: readOptionalString(value, "name"),
     owner: parsedOwner,
   };
 }
 
 function parseGraphCollection(value: unknown): ParsedGraphCollection {
   if (!isRecord(value) || !Array.isArray(value.value)) {
-    throw new Error('Unexpected Microsoft Graph collection payload.');
+    throw new Error("Unexpected Microsoft Graph collection payload.");
   }
 
   return {
-    nextLink: typeof value['@odata.nextLink'] === 'string' ? value['@odata.nextLink'] : undefined,
+    nextLink: typeof value["@odata.nextLink"] === "string" ? value["@odata.nextLink"] : undefined,
     value: value.value,
   };
 }
@@ -723,56 +754,56 @@ function parseGraphDateTime(value?: Record<string, unknown>): GraphDateTimeTimeZ
     return undefined;
   }
 
-  const dateTime = readOptionalString(value, 'dateTime');
+  const dateTime = readOptionalString(value, "dateTime");
   if (!dateTime) {
     return undefined;
   }
 
   return {
     dateTime,
-    timeZone: readOptionalString(value, 'timeZone'),
+    timeZone: readOptionalString(value, "timeZone"),
   };
 }
 
 function parseGraphEvent(value: unknown): GraphEvent {
   if (!isRecord(value)) {
-    throw new Error('Unexpected Microsoft Graph event payload.');
+    throw new Error("Unexpected Microsoft Graph event payload.");
   }
 
   return {
-    '@odata.etag': readOptionalString(value, '@odata.etag'),
-    allowNewTimeProposals: readOptionalBoolean(value, 'allowNewTimeProposals'),
-    attendees: parseGraphAttendees(readOptionalArray(value, 'attendees')),
-    body: parseGraphBody(readOptionalRecord(value, 'body')),
-    bodyPreview: readOptionalString(value, 'bodyPreview'),
-    categories: readOptionalStringArray(value, 'categories'),
-    changeKey: readOptionalString(value, 'changeKey'),
-    end: parseGraphDateTime(readOptionalRecord(value, 'end')),
-    hasAttachments: readOptionalBoolean(value, 'hasAttachments'),
-    id: readRequiredString(value, 'id'),
-    isAllDay: readOptionalBoolean(value, 'isAllDay'),
-    isCancelled: readOptionalBoolean(value, 'isCancelled'),
-    isOnlineMeeting: readOptionalBoolean(value, 'isOnlineMeeting'),
-    isOrganizer: readOptionalBoolean(value, 'isOrganizer'),
-    isReminderOn: readOptionalBoolean(value, 'isReminderOn'),
-    lastModifiedDateTime: readOptionalString(value, 'lastModifiedDateTime'),
-    location: parseGraphLocation(readOptionalRecord(value, 'location')),
-    locations: parseGraphLocations(readOptionalArray(value, 'locations')),
-    onlineMeeting: parseGraphOnlineMeeting(readOptionalRecord(value, 'onlineMeeting')),
-    onlineMeetingProvider: readOptionalString(value, 'onlineMeetingProvider'),
-    organizer: parseGraphRecipient(readOptionalRecord(value, 'organizer')),
-    originalStart: readOptionalString(value, 'originalStart'),
-    recurrence: parseGraphRecurrence(readOptionalRecord(value, 'recurrence')),
-    reminderMinutesBeforeStart: readOptionalNumber(value, 'reminderMinutesBeforeStart'),
-    responseRequested: readOptionalBoolean(value, 'responseRequested'),
-    responseStatus: parseGraphResponseStatus(readOptionalRecord(value, 'responseStatus')),
-    sensitivity: readOptionalString(value, 'sensitivity'),
-    seriesMasterId: readOptionalString(value, 'seriesMasterId'),
-    showAs: readOptionalString(value, 'showAs'),
-    start: parseGraphDateTime(readOptionalRecord(value, 'start')),
-    subject: readOptionalString(value, 'subject'),
-    type: readOptionalString(value, 'type'),
-    webLink: readOptionalString(value, 'webLink'),
+    "@odata.etag": readOptionalString(value, "@odata.etag"),
+    allowNewTimeProposals: readOptionalBoolean(value, "allowNewTimeProposals"),
+    attendees: parseGraphAttendees(readOptionalArray(value, "attendees")),
+    body: parseGraphBody(readOptionalRecord(value, "body")),
+    bodyPreview: readOptionalString(value, "bodyPreview"),
+    categories: readOptionalStringArray(value, "categories"),
+    changeKey: readOptionalString(value, "changeKey"),
+    end: parseGraphDateTime(readOptionalRecord(value, "end")),
+    hasAttachments: readOptionalBoolean(value, "hasAttachments"),
+    id: readRequiredString(value, "id"),
+    isAllDay: readOptionalBoolean(value, "isAllDay"),
+    isCancelled: readOptionalBoolean(value, "isCancelled"),
+    isOnlineMeeting: readOptionalBoolean(value, "isOnlineMeeting"),
+    isOrganizer: readOptionalBoolean(value, "isOrganizer"),
+    isReminderOn: readOptionalBoolean(value, "isReminderOn"),
+    lastModifiedDateTime: readOptionalString(value, "lastModifiedDateTime"),
+    location: parseGraphLocation(readOptionalRecord(value, "location")),
+    locations: parseGraphLocations(readOptionalArray(value, "locations")),
+    onlineMeeting: parseGraphOnlineMeeting(readOptionalRecord(value, "onlineMeeting")),
+    onlineMeetingProvider: readOptionalString(value, "onlineMeetingProvider"),
+    organizer: parseGraphRecipient(readOptionalRecord(value, "organizer")),
+    originalStart: readOptionalString(value, "originalStart"),
+    recurrence: parseGraphRecurrence(readOptionalRecord(value, "recurrence")),
+    reminderMinutesBeforeStart: readOptionalNumber(value, "reminderMinutesBeforeStart"),
+    responseRequested: readOptionalBoolean(value, "responseRequested"),
+    responseStatus: parseGraphResponseStatus(readOptionalRecord(value, "responseStatus")),
+    sensitivity: readOptionalString(value, "sensitivity"),
+    seriesMasterId: readOptionalString(value, "seriesMasterId"),
+    showAs: readOptionalString(value, "showAs"),
+    start: parseGraphDateTime(readOptionalRecord(value, "start")),
+    subject: readOptionalString(value, "subject"),
+    type: readOptionalString(value, "type"),
+    webLink: readOptionalString(value, "webLink"),
   };
 }
 
@@ -782,7 +813,7 @@ function parseGraphLocation(value?: Record<string, unknown>): GraphLocation | un
   }
 
   return {
-    displayName: readOptionalString(value, 'displayName'),
+    displayName: readOptionalString(value, "displayName"),
   };
 }
 
@@ -801,17 +832,19 @@ function parseGraphOnlineMeeting(value?: Record<string, unknown>): GraphOnlineMe
     return undefined;
   }
 
-  const phonesValue = readOptionalArray(value, 'phones');
-  let phones: Array<{ number?: string }> | undefined = undefined;
+  const phonesValue = readOptionalArray(value, "phones");
+  let phones: { number?: string }[] | undefined = undefined;
   if (phonesValue) {
     phones = phonesValue
-      .map((entry) => (isRecord(entry) ? { number: readOptionalString(entry, 'number') } : undefined))
+      .map((entry) =>
+        isRecord(entry) ? { number: readOptionalString(entry, "number") } : undefined,
+      )
       .filter((entry): entry is { number?: string } => Boolean(entry));
   }
 
   return {
-    conferenceId: readOptionalString(value, 'conferenceId'),
-    joinUrl: readOptionalString(value, 'joinUrl'),
+    conferenceId: readOptionalString(value, "conferenceId"),
+    joinUrl: readOptionalString(value, "joinUrl"),
     phones,
   };
 }
@@ -821,12 +854,12 @@ function parseGraphRecipient(value?: Record<string, unknown>): GraphRecipient | 
     return undefined;
   }
 
-  const emailAddress = readOptionalRecord(value, 'emailAddress');
-  let parsedAddress: GraphRecipient['emailAddress'] = undefined;
+  const emailAddress = readOptionalRecord(value, "emailAddress");
+  let parsedAddress: GraphRecipient["emailAddress"] = undefined;
   if (emailAddress) {
     parsedAddress = {
-      address: readOptionalString(emailAddress, 'address'),
-      name: readOptionalString(emailAddress, 'name'),
+      address: readOptionalString(emailAddress, "address"),
+      name: readOptionalString(emailAddress, "name"),
     };
   }
 
@@ -840,41 +873,43 @@ function parseGraphRecurrence(value?: Record<string, unknown>): GraphRecurrence 
     return undefined;
   }
 
-  const pattern = readOptionalRecord(value, 'pattern');
-  const range = readOptionalRecord(value, 'range');
+  const pattern = readOptionalRecord(value, "pattern");
+  const range = readOptionalRecord(value, "range");
 
   return {
     pattern: pattern
       ? {
-          dayOfMonth: readOptionalNumber(pattern, 'dayOfMonth'),
-          daysOfWeek: readOptionalStringArray(pattern, 'daysOfWeek'),
-          firstDayOfWeek: readOptionalString(pattern, 'firstDayOfWeek'),
-          index: readOptionalString(pattern, 'index'),
-          interval: readOptionalNumber(pattern, 'interval'),
-          month: readOptionalNumber(pattern, 'month'),
-          type: readOptionalString(pattern, 'type'),
+          dayOfMonth: readOptionalNumber(pattern, "dayOfMonth"),
+          daysOfWeek: readOptionalStringArray(pattern, "daysOfWeek"),
+          firstDayOfWeek: readOptionalString(pattern, "firstDayOfWeek"),
+          index: readOptionalString(pattern, "index"),
+          interval: readOptionalNumber(pattern, "interval"),
+          month: readOptionalNumber(pattern, "month"),
+          type: readOptionalString(pattern, "type"),
         }
       : undefined,
     range: range
       ? {
-          endDate: readOptionalString(range, 'endDate'),
-          numberOfOccurrences: readOptionalNumber(range, 'numberOfOccurrences'),
-          recurrenceTimeZone: readOptionalString(range, 'recurrenceTimeZone'),
-          startDate: readOptionalString(range, 'startDate'),
-          type: readOptionalString(range, 'type'),
+          endDate: readOptionalString(range, "endDate"),
+          numberOfOccurrences: readOptionalNumber(range, "numberOfOccurrences"),
+          recurrenceTimeZone: readOptionalString(range, "recurrenceTimeZone"),
+          startDate: readOptionalString(range, "startDate"),
+          type: readOptionalString(range, "type"),
         }
       : undefined,
   };
 }
 
-function parseGraphResponseStatus(value?: Record<string, unknown>): GraphResponseStatus | undefined {
+function parseGraphResponseStatus(
+  value?: Record<string, unknown>,
+): GraphResponseStatus | undefined {
   if (!value) {
     return undefined;
   }
 
   return {
-    response: readOptionalString(value, 'response'),
-    time: readOptionalString(value, 'time'),
+    response: readOptionalString(value, "response"),
+    time: readOptionalString(value, "time"),
   };
 }
 
@@ -894,7 +929,10 @@ function parseOnlineMeetingInfo(event: GraphEvent): null | OnlineMeetingInfo {
   let joinUrl = event.onlineMeeting?.joinUrl ?? null;
 
   if (!joinUrl) {
-    joinUrl = extractGoogleMeetUrl(event.body?.content) ?? extractGoogleMeetUrl(event.location?.displayName) ?? null;
+    joinUrl =
+      extractGoogleMeetUrl(event.body?.content) ??
+      extractGoogleMeetUrl(event.location?.displayName) ??
+      null;
   }
 
   return {
@@ -910,13 +948,15 @@ function parseRecurrence(value?: GraphRecurrence): null | Recurrence {
     return null;
   }
 
-  const interval = typeof value.pattern.interval === 'number' ? value.pattern.interval : 1;
+  const interval = typeof value.pattern.interval === "number" ? value.pattern.interval : 1;
   const startDate = value.range.startDate ?? new Date().toISOString().slice(0, 10);
 
   return {
     pattern: {
       dayOfMonth: value.pattern.dayOfMonth ?? null,
-      daysOfWeek: (value.pattern.daysOfWeek ?? []).filter(isString) as Recurrence['pattern']['daysOfWeek'],
+      daysOfWeek: (value.pattern.daysOfWeek ?? []).filter(
+        isString,
+      ) as Recurrence["pattern"]["daysOfWeek"],
       firstDayOfWeek: normalizeDayOfWeek(value.pattern.firstDayOfWeek),
       index: value.pattern.index ?? null,
       interval,
@@ -944,22 +984,27 @@ function parseResponseStatus(value?: GraphResponseStatus): null | ParticipantRes
   };
 }
 
-function parseSensitivity(value?: string): CalendarEvent['sensitivity'] {
-  if (value === 'personal' || value === 'private' || value === 'confidential' || value === 'normal') {
+function parseSensitivity(value?: string): CalendarEvent["sensitivity"] {
+  if (
+    value === "personal" ||
+    value === "private" ||
+    value === "confidential" ||
+    value === "normal"
+  ) {
     return value;
   }
 
   return null;
 }
 
-function parseShowAs(value?: string): CalendarEvent['showAs'] {
+function parseShowAs(value?: string): CalendarEvent["showAs"] {
   if (
-    value === 'free' ||
-    value === 'tentative' ||
-    value === 'busy' ||
-    value === 'oof' ||
-    value === 'workingElsewhere' ||
-    value === 'unknown'
+    value === "free" ||
+    value === "tentative" ||
+    value === "busy" ||
+    value === "oof" ||
+    value === "workingElsewhere" ||
+    value === "unknown"
   ) {
     return value;
   }
@@ -972,12 +1017,12 @@ function readGraphErrorMessage(value: unknown): null | string {
     return null;
   }
 
-  const error = readOptionalRecord(value, 'error');
+  const error = readOptionalRecord(value, "error");
   if (!error) {
     return null;
   }
 
-  return readOptionalString(error, 'message') ?? null;
+  return readOptionalString(error, "message") ?? null;
 }
 
 function readOptionalArray(value: Record<string, unknown>, key: string): unknown[] | undefined {
@@ -991,20 +1036,23 @@ function readOptionalArray(value: Record<string, unknown>, key: string): unknown
 
 function readOptionalBoolean(value: Record<string, unknown>, key: string): boolean | undefined {
   const result = value[key];
-  if (typeof result === 'boolean') {
+  if (typeof result === "boolean") {
     return result;
   }
 
   return undefined;
 }
 
-function readOptionalNullableString(value: Record<string, unknown>, key: string): null | string | undefined {
+function readOptionalNullableString(
+  value: Record<string, unknown>,
+  key: string,
+): null | string | undefined {
   const result = value[key];
   if (result === null) {
     return null;
   }
 
-  if (typeof result === 'string') {
+  if (typeof result === "string") {
     return result;
   }
 
@@ -1013,14 +1061,17 @@ function readOptionalNullableString(value: Record<string, unknown>, key: string)
 
 function readOptionalNumber(value: Record<string, unknown>, key: string): number | undefined {
   const result = value[key];
-  if (typeof result === 'number') {
+  if (typeof result === "number") {
     return result;
   }
 
   return undefined;
 }
 
-function readOptionalRecord(value: Record<string, unknown>, key: string): Record<string, unknown> | undefined {
+function readOptionalRecord(
+  value: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> | undefined {
   const result = value[key];
   if (isRecord(result)) {
     return result;
@@ -1031,14 +1082,17 @@ function readOptionalRecord(value: Record<string, unknown>, key: string): Record
 
 function readOptionalString(value: Record<string, unknown>, key: string): string | undefined {
   const result = value[key];
-  if (typeof result === 'string') {
+  if (typeof result === "string") {
     return result;
   }
 
   return undefined;
 }
 
-function readOptionalStringArray(value: Record<string, unknown>, key: string): string[] | undefined {
+function readOptionalStringArray(
+  value: Record<string, unknown>,
+  key: string,
+): string[] | undefined {
   const result = value[key];
   if (!Array.isArray(result)) {
     return undefined;
@@ -1062,18 +1116,18 @@ function stripHtml(value?: string): string | undefined {
   }
 
   return value
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n\n')
-    .replace(/<\/div>/gi, '\n')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<script[\s\S]*?<\/script[^>]*>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n[ \t]+/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script[^>]*>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
     .trim();
 }
 
@@ -1084,15 +1138,15 @@ function extractPlainTextFromGraphHtml(value?: string): null | string {
 function toParticipant(value: GraphAttendee | GraphRecipient): EventParticipant {
   let status: ParticipantResponseStatus | null = null;
   let response: null | string = null;
-  let type: EventParticipant['type'] = 'required';
-  if ('status' in value) {
+  let type: EventParticipant["type"] = "required";
+  if ("status" in value) {
     response = value.status?.response ?? null;
     status = {
       response: value.status?.response ?? null,
       time: value.status?.time ?? null,
     };
-    if (value.type === 'optional' || value.type === 'resource') {
-      type = value.type;
+    if (value.type === "optional" || value.type === "resource") {
+      ({ type } = value);
     }
   }
 
@@ -1123,31 +1177,36 @@ function trimOrNull(value: null | string | undefined): null | string {
   return null;
 }
 
-function normalizePatternType(value?: string): Recurrence['pattern']['type'] {
-  if (value === 'daily' || value === 'weekly' || value === 'absoluteMonthly' || value === 'absoluteYearly') {
-    return value;
-  }
-
-  return 'daily';
-}
-
-function normalizeRangeType(value?: string): Recurrence['range']['type'] {
-  if (value === 'endDate' || value === 'numbered' || value === 'noEnd') {
-    return value;
-  }
-
-  return 'noEnd';
-}
-
-function normalizeDayOfWeek(value?: string): Recurrence['pattern']['firstDayOfWeek'] {
+function normalizePatternType(value?: string): Recurrence["pattern"]["type"] {
   if (
-    value === 'sunday' ||
-    value === 'monday' ||
-    value === 'tuesday' ||
-    value === 'wednesday' ||
-    value === 'thursday' ||
-    value === 'friday' ||
-    value === 'saturday'
+    value === "daily" ||
+    value === "weekly" ||
+    value === "absoluteMonthly" ||
+    value === "absoluteYearly"
+  ) {
+    return value;
+  }
+
+  return "daily";
+}
+
+function normalizeRangeType(value?: string): Recurrence["range"]["type"] {
+  if (value === "endDate" || value === "numbered" || value === "noEnd") {
+    return value;
+  }
+
+  return "noEnd";
+}
+
+function normalizeDayOfWeek(value?: string): Recurrence["pattern"]["firstDayOfWeek"] {
+  if (
+    value === "sunday" ||
+    value === "monday" ||
+    value === "tuesday" ||
+    value === "wednesday" ||
+    value === "thursday" ||
+    value === "friday" ||
+    value === "saturday"
   ) {
     return value;
   }
@@ -1156,7 +1215,7 @@ function normalizeDayOfWeek(value?: string): Recurrence['pattern']['firstDayOfWe
 }
 
 function isString(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0;
+  return typeof value === "string" && value.length > 0;
 }
 
 export { extractPlainTextFromGraphHtml };

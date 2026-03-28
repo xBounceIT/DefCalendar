@@ -56,8 +56,7 @@ const calendarApi: CalendarApi = {
   reminder: {
     snooze: (dedupeKey: string, minutes: number) =>
       ipcRenderer.invoke(IPC_CHANNELS.reminderSnooze, { dedupeKey, minutes }),
-    dismiss: (dedupeKey: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.reminderDismiss, { dedupeKey }),
+    dismiss: (dedupeKey: string) => ipcRenderer.invoke(IPC_CHANNELS.reminderDismiss, { dedupeKey }),
     dismissAll: () => ipcRenderer.invoke(IPC_CHANNELS.reminderDismissAll),
   },
   window: {

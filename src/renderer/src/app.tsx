@@ -12,19 +12,19 @@ import { addMinutesToIso, isEventEditable } from "@shared/calendar";
 import { isAdminApprovalRequiredMessage } from "@shared/exchange-auth";
 import type { CalendarApi } from "@shared/ipc";
 import { calendarViewSchema } from "@shared/schema-values";
-import {
-  type AccountSummary,
-  type AuthSignInMode,
-  type AttachmentDeleteArgs,
-  type AttachmentUploadArgs,
-  type CalendarEvent,
-  type CalendarSummary,
-  type CancelEventArgs,
-  type EventDraft,
-  type RespondToEventArgs,
-  type EventResponseAction,
-  type SyncStatus,
-  createDefaultSettings,
+import { createDefaultSettings } from "@shared/schemas";
+import type {
+  AccountSummary,
+  AttachmentDeleteArgs,
+  AttachmentUploadArgs,
+  AuthSignInMode,
+  CalendarEvent,
+  CalendarSummary,
+  CancelEventArgs,
+  EventDraft,
+  EventResponseAction,
+  RespondToEventArgs,
+  SyncStatus,
 } from "@shared/schemas";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -693,7 +693,10 @@ function buildCalendarEvents(
     const calendar = calendarMap.get(event.calendarId);
     const supportsDirectManipulation = event.recurrence === null && !event.cancelled;
     const canEditEvent =
-      Boolean(calendar?.canEdit) && isEventEditable(event) && event.isOrganizer && supportsDirectManipulation;
+      Boolean(calendar?.canEdit) &&
+      isEventEditable(event) &&
+      event.isOrganizer &&
+      supportsDirectManipulation;
     let classNames: string[] = [];
     if (event.unsupportedReason) {
       classNames = ["calendar-event--readonly"];

@@ -1,5 +1,11 @@
 import { CALENDAR_VIEW_ORDER } from "@shared/calendar";
-import type { DateSelectArg, DatesSetArg, EventClickArg, EventDropArg, EventInput } from "@fullcalendar/core";
+import type {
+  DateSelectArg,
+  DatesSetArg,
+  EventClickArg,
+  EventDropArg,
+  EventInput,
+} from "@fullcalendar/core";
 
 import CalendarBoard from "./calendar-board";
 import type { CalendarView } from "@shared/schemas";
@@ -31,7 +37,16 @@ interface WorkspacePanelProps {
 
 function ChevronLeftIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <polyline points="15 18 9 12 15 6" />
     </svg>
   );
@@ -39,7 +54,16 @@ function ChevronLeftIcon() {
 
 function ChevronRightIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <polyline points="9 18 15 12 9 6" />
     </svg>
   );
@@ -47,7 +71,16 @@ function ChevronRightIcon() {
 
 function PlusIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <line x1="12" y1="5" x2="12" y2="19" />
       <line x1="5" y1="12" x2="19" y2="12" />
     </svg>
@@ -63,13 +96,23 @@ function NavigationGroup({
 
   return (
     <div className="date-nav-group">
-      <button className="icon-button" onClick={onPrev} type="button" aria-label={t("workspace.previous")}>
+      <button
+        className="icon-button"
+        onClick={onPrev}
+        type="button"
+        aria-label={t("workspace.previous")}
+      >
         <ChevronLeftIcon />
       </button>
       <button className="today-button" onClick={onToday} type="button">
         {t("workspace.today")}
       </button>
-      <button className="icon-button" onClick={onNext} type="button" aria-label={t("workspace.next")}>
+      <button
+        className="icon-button"
+        onClick={onNext}
+        type="button"
+        aria-label={t("workspace.next")}
+      >
         <ChevronRightIcon />
       </button>
     </div>
@@ -79,11 +122,7 @@ function NavigationGroup({
 function DateDisplay({ selectedDate }: { selectedDate: string }) {
   const formattedDate = formatHeaderDate(selectedDate);
 
-  return (
-    <h2 className="date-display">
-      {formattedDate}
-    </h2>
-  );
+  return <h2 className="date-display">{formattedDate}</h2>;
 }
 
 function ViewButton({
@@ -108,11 +147,7 @@ function ViewButton({
   }
 
   return (
-    <button
-      className={buttonClassName}
-      onClick={() => onViewSelect(view)}
-      type="button"
-    >
+    <button className={buttonClassName} onClick={() => onViewSelect(view)} type="button">
       {labelMap[view]}
     </button>
   );
@@ -156,7 +191,14 @@ function NewEventButton({
 function WorkspaceHeader(
   props: Pick<
     WorkspacePanelProps,
-    "activeView" | "canCreateEvent" | "onCreateEvent" | "onNext" | "onPrev" | "onToday" | "onViewSelect" | "selectedDate"
+    | "activeView"
+    | "canCreateEvent"
+    | "onCreateEvent"
+    | "onNext"
+    | "onPrev"
+    | "onToday"
+    | "onViewSelect"
+    | "selectedDate"
   >,
 ) {
   return (

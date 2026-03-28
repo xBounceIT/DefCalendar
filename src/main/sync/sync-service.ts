@@ -1,12 +1,12 @@
-import type { AppConfig } from '@main/config';
-import type AppDatabase from '@main/db/database';
-import type GraphCalendarService from '@main/graph/calendar-service';
-import type MsalAuthService from '@main/auth/msal-auth-service';
-import type ReminderService from '@main/reminders/reminder-service';
-import type SettingsService from '@main/settings/settings-service';
-import type { SyncStatus } from '@shared/schemas';
+import type { AppConfig } from "@main/config";
+import type AppDatabase from "@main/db/database";
+import type GraphCalendarService from "@main/graph/calendar-service";
+import type MsalAuthService from "@main/auth/msal-auth-service";
+import type ReminderService from "@main/reminders/reminder-service";
+import type SettingsService from "@main/settings/settings-service";
+import type { SyncStatus } from "@shared/schemas";
 
-type SyncReason = 'startup' | 'sign-in' | 'manual' | 'interval' | 'mutation';
+type SyncReason = "startup" | "sign-in" | "manual" | "interval" | "mutation";
 
 interface SyncServiceDependencies {
   auth: MsalAuthService;
@@ -37,7 +37,7 @@ class SyncService {
     }
 
     this.timer = setInterval(() => {
-      void this.syncAll('interval');
+      void this.syncAll("interval");
     }, this.intervalMs);
   }
 
@@ -51,8 +51,8 @@ class SyncService {
   reset(): void {
     this.setStatus({
       lastSyncedAt: null,
-      message: 'Sign in to sync Exchange 365.',
-      state: 'idle',
+      message: "Sign in to sync Exchange 365.",
+      state: "idle",
     });
   }
 
@@ -89,22 +89,22 @@ class SyncService {
     if (!this.dependencies.auth.hasSession()) {
       const idleStatus = {
         lastSyncedAt: this.status.lastSyncedAt,
-        message: 'Sign in to sync Exchange 365.',
-        state: 'idle' as const,
+        message: "Sign in to sync Exchange 365.",
+        state: "idle" as const,
       };
       this.setStatus(idleStatus);
       return idleStatus;
     }
 
-    let syncMessage = 'Syncing Exchange 365…';
-    if (reason === 'sign-in') {
-      syncMessage = 'Connecting to Exchange 365…';
+    let syncMessage = "Syncing Exchange 365…";
+    if (reason === "sign-in") {
+      syncMessage = "Connecting to Exchange 365…";
     }
 
     this.setStatus({
       lastSyncedAt: this.status.lastSyncedAt,
       message: syncMessage,
-      state: 'syncing',
+      state: "syncing",
     });
 
     try {
@@ -151,23 +151,23 @@ class SyncService {
 
       const totalEvents = syncedCalendars.reduce((sum, sc) => sum + sc.events.length, 0);
 
-      let calendarSuffix = 's';
+      let calendarSuffix = "s";
       if (calendars.length === 1) {
-        calendarSuffix = '';
+        calendarSuffix = "";
       }
-      let eventSuffix = 's';
+      let eventSuffix = "s";
       if (totalEvents === 1) {
-        eventSuffix = '';
+        eventSuffix = "";
       }
       const nextStatus: SyncStatus = {
         lastSyncedAt: finishedAt,
         message: `Synced ${calendars.length} calendar${calendarSuffix}, ${totalEvents} event${eventSuffix}.`,
-        state: 'idle',
+        state: "idle",
       };
       this.setStatus(nextStatus);
       return nextStatus;
     } catch (error) {
-      let errorMessage = 'Exchange 365 sync failed.';
+      let errorMessage = "Exchange 365 sync failed.";
       if (error instanceof Error) {
         const { message } = error;
         errorMessage = message;
@@ -176,7 +176,7 @@ class SyncService {
       const nextStatus: SyncStatus = {
         lastSyncedAt: this.status.lastSyncedAt,
         message: errorMessage,
-        state: 'error',
+        state: "error",
       };
       this.setStatus(nextStatus);
       return nextStatus;

@@ -36,12 +36,20 @@ function parseParams(): ParsedParams {
 }
 
 function formatEventTime(start: string, end: string): string {
-  if (!start) {return "";}
+  if (!start) {
+    return "";
+  }
   const startDate = new Date(start);
-  if (Number.isNaN(startDate.getTime())) {return start;}
+  if (Number.isNaN(startDate.getTime())) {
+    return start;
+  }
 
   const endDate = end ? new Date(end) : null;
-  const timeFmt: Intl.DateTimeFormatOptions = { hour: "numeric", hourCycle: "h23", minute: "2-digit" };
+  const timeFmt: Intl.DateTimeFormatOptions = {
+    hour: "numeric",
+    hourCycle: "h23",
+    minute: "2-digit",
+  };
 
   const startStr = new Intl.DateTimeFormat(undefined, {
     weekday: "short",
@@ -96,7 +104,7 @@ function ReminderPopup() {
   const [params] = useState<ParsedParams>(parseParams);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const {calendarApi} = globalThis;
+  const { calendarApi } = globalThis;
 
   const snoozeOptions = [
     { label: t("reminder.snooze5min"), minutes: 5 },

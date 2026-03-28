@@ -22,8 +22,10 @@ class ReminderWindowManager {
     const columnIndex = this.nextIndex % 3;
     const rowIndex = Math.floor(this.nextIndex / 3);
 
-    const posX = x + Math.round((width - POPUP_WIDTH) / 2) + columnIndex * (POPUP_WIDTH + POPUP_GAP);
-    const posY = y + Math.round((height - POPUP_HEIGHT) / 2) + rowIndex * (POPUP_HEIGHT + POPUP_GAP);
+    const posX =
+      x + Math.round((width - POPUP_WIDTH) / 2) + columnIndex * (POPUP_WIDTH + POPUP_GAP);
+    const posY =
+      y + Math.round((height - POPUP_HEIGHT) / 2) + rowIndex * (POPUP_HEIGHT + POPUP_GAP);
 
     this.nextIndex++;
 
@@ -65,7 +67,9 @@ class ReminderWindowManager {
     });
 
     if (process.env.ELECTRON_RENDERER_URL) {
-      void window.loadURL(`${process.env.ELECTRON_RENDERER_URL}/reminder-popup.html?${params.toString()}`);
+      void window.loadURL(
+        `${process.env.ELECTRON_RENDERER_URL}/reminder-popup.html?${params.toString()}`,
+      );
     } else {
       void window.loadFile(join(__dirname, "../renderer/reminder-popup.html"), {
         search: params.toString(),
@@ -115,8 +119,10 @@ class ReminderWindowManager {
       const { x, y, width, height } = display.workArea;
       const columnIndex = i % 3;
       const rowIndex = Math.floor(i / 3);
-      const posX = x + Math.round((width - POPUP_WIDTH) / 2) + columnIndex * (POPUP_WIDTH + POPUP_GAP);
-      const posY = y + Math.round((height - POPUP_HEIGHT) / 2) + rowIndex * (POPUP_HEIGHT + POPUP_GAP);
+      const posX =
+        x + Math.round((width - POPUP_WIDTH) / 2) + columnIndex * (POPUP_WIDTH + POPUP_GAP);
+      const posY =
+        y + Math.round((height - POPUP_HEIGHT) / 2) + rowIndex * (POPUP_HEIGHT + POPUP_GAP);
       window.setPosition(Math.round(posX), Math.round(posY));
       i++;
     }

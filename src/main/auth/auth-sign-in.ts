@@ -1,34 +1,34 @@
-import { PromptValue } from '@main/auth/msal-runtime';
+import { PromptValue } from "@main/auth/msal-runtime";
 import {
   EXCHANGE365_ADMIN_APPROVAL_REQUIRED_MESSAGE,
   EXCHANGE365_REPLY_URL_NOT_CONFIGURED_MESSAGE,
-} from '@shared/exchange-auth';
-import type { AuthSignInMode } from '@shared/schemas';
+} from "@shared/exchange-auth";
+import type { AuthSignInMode } from "@shared/schemas";
 
 const ADMIN_APPROVAL_ERROR_FRAGMENTS = [
-  'aadsts65001',
-  'aadsts90094',
-  'aadsts900941',
-  'admin approval',
-  'admin consent',
-  'consent_required',
-  'has not consented',
-  'has not been verified',
-  'needs permission to access resources in your organization',
-  'permission requested by the app',
-  'publisher has not been verified',
-  'user or administrator has not consented',
+  "aadsts65001",
+  "aadsts90094",
+  "aadsts900941",
+  "admin approval",
+  "admin consent",
+  "consent_required",
+  "has not consented",
+  "has not been verified",
+  "needs permission to access resources in your organization",
+  "permission requested by the app",
+  "publisher has not been verified",
+  "user or administrator has not consented",
 ];
 
 const REPLY_URL_ERROR_FRAGMENTS = [
-  'aadsts500113',
-  'no reply address is registered for the application',
-  'reply url',
-  'reply address',
+  "aadsts500113",
+  "no reply address is registered for the application",
+  "reply url",
+  "reply address",
 ];
 
 function getSignInPrompt(mode: AuthSignInMode): string {
-  if (mode === 'admin_consent') {
+  if (mode === "admin_consent") {
     return PromptValue.CONSENT;
   }
 
@@ -53,7 +53,7 @@ function normalizeMicrosoftSignInError(error: unknown): Error {
     return new Error(message);
   }
 
-  return new Error('Authentication with Exchange 365 failed.');
+  return new Error("Authentication with Exchange 365 failed.");
 }
 
 function requiresAdminApproval(message: string): boolean {
@@ -75,7 +75,7 @@ function toErrorMessage(value: unknown): null | string {
     return value.message;
   }
 
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     return value;
   }
 

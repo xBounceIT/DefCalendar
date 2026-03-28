@@ -21,9 +21,7 @@ export const LOCALE_LABELS: Record<AppLocale, string> = {
 function detectSystemLocale(): AppLocale {
   try {
     const systemLang =
-      globalThis.calendarApi != null
-        ? undefined
-        : navigator.language ?? navigator.languages?.[0];
+      globalThis.calendarApi != null ? undefined : (navigator.language ?? navigator.languages?.[0]);
 
     if (systemLang?.startsWith("it")) {
       return "it";
@@ -36,8 +34,7 @@ function detectSystemLocale(): AppLocale {
 
 export function initI18n(savedLocale?: string | null): void {
   const fallback = detectSystemLocale();
-  const lng: AppLocale =
-    savedLocale === "en" || savedLocale === "it" ? savedLocale : fallback;
+  const lng: AppLocale = savedLocale === "en" || savedLocale === "it" ? savedLocale : fallback;
 
   void i18n.use(initReactI18next).init({
     resources,
@@ -56,7 +53,9 @@ export function setAppLocale(locale: AppLocale): void {
 
 export function getAppLocale(): AppLocale {
   const lng = i18n.language;
-  if (lng === "it") {return "it";}
+  if (lng === "it") {
+    return "it";
+  }
   return "en";
 }
 

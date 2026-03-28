@@ -1,16 +1,22 @@
-import type { CalendarEvent, CalendarSummary, EventListArgs, SyncStatus, UserSettings } from '@shared/schemas';
+import type {
+  CalendarEvent,
+  CalendarSummary,
+  EventListArgs,
+  SyncStatus,
+  UserSettings,
+} from "@shared/schemas";
 import {
   calendarEventSchema,
   calendarSummarySchema,
   createDefaultSettings,
   userSettingsSchema,
-} from '@shared/schema-values';
-import { dirname, join } from 'pathe';
-import Database from 'better-sqlite3';
-import { app } from 'electron';
-import fs from 'fs-extra';
+} from "@shared/schema-values";
+import { dirname, join } from "pathe";
+import Database from "better-sqlite3";
+import { app } from "electron";
+import fs from "fs-extra";
 
-const SETTINGS_KEY = 'user-settings';
+const SETTINGS_KEY = "user-settings";
 
 interface ReplaceEventsForCalendarRangeArgs {
   calendarId: string;
@@ -31,12 +37,12 @@ class AppDatabase {
   private readonly db: Database.Database;
 
   constructor() {
-    const databasePath = join(app.getPath('userData'), 'project-calendar.sqlite');
+    const databasePath = join(app.getPath("userData"), "project-calendar.sqlite");
     fs.mkdirSync(dirname(databasePath), { recursive: true });
 
     this.db = new Database(databasePath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('foreign_keys = ON');
+    this.db.pragma("journal_mode = WAL");
+    this.db.pragma("foreign_keys = ON");
     this.migrate();
   }
 
@@ -49,14 +55,16 @@ class AppDatabase {
 
     return statement
       .all()
-      .map((row) => calendarSummarySchema.parse(JSON.parse(readStringProperty(row, 'payload_json'))));
+      .map((row) =>
+        calendarSummarySchema.parse(JSON.parse(readStringProperty(row, "payload_json"))),
+      );
   }
 
   listCalendarIds(): string[] {
     return this.db
-      .prepare('SELECT id FROM calendars')
+      .prepare("SELECT id FROM calendars")
       .all()
-      .map((row) => readStringProperty(row, 'id'));
+      .map((row) => readStringProperty(row, "id"));
   }
 
   upsertCalendars(calendars: CalendarSummary[]): void {
@@ -97,7 +105,10 @@ class AppDatabase {
     `);
 
     const existingIds = new Set(
-      this.db.prepare('SELECT id FROM calendars').all().map((row) => readStringProperty(row, 'id')),
+      this.db
+        .prepare("SELECT id FROM calendars")
+        .all()
+        .map((row) => readStringProperty(row, "id")),
     );
     const incomingIds = new Set(calendars.map((calendar) => calendar.id));
 
@@ -119,9 +130,9 @@ class AppDatabase {
 
       for (const calendarId of existingIds) {
         if (!incomingIds.has(calendarId)) {
-          this.db.prepare('DELETE FROM calendars WHERE id = ?').run(calendarId);
-          this.db.prepare('DELETE FROM events WHERE calendar_id = ?').run(calendarId);
-          this.db.prepare('DELETE FROM sync_state WHERE calendar_id = ?').run(calendarId);
+          this.db.prepare("DELETE FROM calendars WHERE id = ?").run(calendarId);
+          this.db.prepare("DELETE FROM events WHERE calendar_id = ?").run(calendarId);
+          this.db.prepare("DELETE FROM sync_state WHERE calendar_id = ?").run(calendarId);
         }
       }
     });
@@ -174,7 +185,7 @@ class AppDatabase {
 
     const transaction = this.db.transaction((items: CalendarEvent[]) => {
       this.db
-        .prepare('DELETE FROM events WHERE calendar_id = ? AND start_sort < ? AND end_sort > ?')
+        .prepare("DELETE FROM events WHERE calendar_id = ? AND start_sort < ? AND end_sort > ?")
         .run(calendarId, rangeEnd, rangeStart);
 
       for (const event of items) {
@@ -259,23 +270,23 @@ class AppDatabase {
   }
 
   deleteEvent(calendarId: string, eventId: string): void {
-    this.db.prepare('DELETE FROM events WHERE calendar_id = ? AND id = ?').run(calendarId, eventId);
+    this.db.prepare("DELETE FROM events WHERE calendar_id = ? AND id = ?").run(calendarId, eventId);
   }
 
   getEvent(calendarId: string, eventId: string): CalendarEvent | null {
     const row = this.db
-      .prepare('SELECT payload_json FROM events WHERE calendar_id = ? AND id = ?')
+      .prepare("SELECT payload_json FROM events WHERE calendar_id = ? AND id = ?")
       .get(calendarId, eventId);
 
     if (!row) {
       return null;
     }
 
-    return calendarEventSchema.parse(JSON.parse(readStringProperty(row, 'payload_json')));
+    return calendarEventSchema.parse(JSON.parse(readStringProperty(row, "payload_json")));
   }
 
   listEvents(args: EventListArgs): CalendarEvent[] {
-    const filters: string[] = ['start_sort < @end', 'end_sort > @start'];
+    const filters: string[] = ["start_sort < @end", "end_sort > @start"];
     const parameters: Record<string, string> = {
       end: args.end,
       start: args.start,
@@ -283,7 +294,7 @@ class AppDatabase {
 
     if (args.calendarIds?.length) {
       const placeholders = args.calendarIds.map((_calendarId, index) => `@calendar_${index}`);
-      filters.push(`calendar_id IN (${placeholders.join(', ')})`);
+      filters.push(`calendar_id IN (${placeholders.join(", ")})`);
       args.calendarIds.forEach((calendarId, index) => {
         parameters[`calendar_${index}`] = calendarId;
       });
@@ -292,13 +303,13 @@ class AppDatabase {
     const statement = this.db.prepare(`
       SELECT payload_json
       FROM events
-      WHERE ${filters.join(' AND ')}
+      WHERE ${filters.join(" AND ")}
       ORDER BY start_sort ASC, subject COLLATE NOCASE ASC
     `);
 
     return statement
       .all(parameters)
-      .map((row) => calendarEventSchema.parse(JSON.parse(readStringProperty(row, 'payload_json'))));
+      .map((row) => calendarEventSchema.parse(JSON.parse(readStringProperty(row, "payload_json"))));
   }
 
   listReminderCandidates(windowStart: string, windowEnd: string): CalendarEvent[] {
@@ -314,11 +325,11 @@ class AppDatabase {
 
     return statement
       .all(windowStart, windowEnd)
-      .map((row) => calendarEventSchema.parse(JSON.parse(readStringProperty(row, 'payload_json'))));
+      .map((row) => calendarEventSchema.parse(JSON.parse(readStringProperty(row, "payload_json"))));
   }
 
   getSettings(): UserSettings {
-    const row = this.db.prepare('SELECT value_json FROM settings WHERE key = ?').get(SETTINGS_KEY);
+    const row = this.db.prepare("SELECT value_json FROM settings WHERE key = ?").get(SETTINGS_KEY);
 
     if (!row) {
       const defaults = createDefaultSettings();
@@ -326,7 +337,7 @@ class AppDatabase {
       return defaults;
     }
 
-    return userSettingsSchema.parse(JSON.parse(readStringProperty(row, 'value_json')));
+    return userSettingsSchema.parse(JSON.parse(readStringProperty(row, "value_json")));
   }
 
   saveSettings(settings: UserSettings): void {
@@ -363,34 +374,36 @@ class AppDatabase {
 
   getLatestSyncStatus(): SyncStatus {
     const row = this.db
-      .prepare('SELECT MAX(last_synced_at) AS lastSyncedAt, MAX(error_message) AS errorMessage FROM sync_state')
+      .prepare(
+        "SELECT MAX(last_synced_at) AS lastSyncedAt, MAX(error_message) AS errorMessage FROM sync_state",
+      )
       .get();
 
-    const lastSyncedAt = readNullableStringProperty(row, 'lastSyncedAt');
-    const errorMessage = readNullableStringProperty(row, 'errorMessage');
+    const lastSyncedAt = readNullableStringProperty(row, "lastSyncedAt");
+    const errorMessage = readNullableStringProperty(row, "errorMessage");
 
     if (errorMessage) {
       return {
         lastSyncedAt,
         message: errorMessage,
-        state: 'error',
+        state: "error",
       };
     }
 
-    let message = 'Sign in to sync Exchange 365.';
+    let message = "Sign in to sync Exchange 365.";
     if (lastSyncedAt) {
-      message = 'Calendar cache is up to date.';
+      message = "Calendar cache is up to date.";
     }
 
     return {
       lastSyncedAt,
       message,
-      state: 'idle',
+      state: "idle",
     };
   }
 
   hasNotificationFired(key: string): boolean {
-    const row = this.db.prepare('SELECT 1 FROM notification_state WHERE dedupe_key = ?').get(key);
+    const row = this.db.prepare("SELECT 1 FROM notification_state WHERE dedupe_key = ?").get(key);
     return Boolean(row);
   }
 
@@ -407,7 +420,7 @@ class AppDatabase {
   }
 
   pruneNotificationState(beforeIso: string): void {
-    this.db.prepare('DELETE FROM notification_state WHERE fired_at < ?').run(beforeIso);
+    this.db.prepare("DELETE FROM notification_state WHERE fired_at < ?").run(beforeIso);
   }
 
   clearUserData(): void {
@@ -478,7 +491,7 @@ class AppDatabase {
 }
 
 function hasProperty(row: unknown, key: string): row is Record<string, unknown> {
-  return typeof row === 'object' && row !== null && key in row;
+  return typeof row === "object" && row !== null && key in row;
 }
 
 function readNullableStringProperty(row: unknown, key: string): null | string {
@@ -487,7 +500,7 @@ function readNullableStringProperty(row: unknown, key: string): null | string {
     return null;
   }
 
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     return value;
   }
 
@@ -504,7 +517,7 @@ function readProperty(row: unknown, key: string): unknown {
 
 function readStringProperty(row: unknown, key: string): string {
   const value = readProperty(row, key);
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     return value;
   }
 

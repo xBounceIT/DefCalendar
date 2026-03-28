@@ -5,9 +5,9 @@ import {
   authSignInRequestSchema,
   cancelEventArgsSchema,
   deleteEventArgsSchema,
-  eventReferenceArgsSchema,
   eventDraftSchema,
   eventListArgsSchema,
+  eventReferenceArgsSchema,
   openExternalArgsSchema,
   reminderDismissArgsSchema,
   reminderSnoozeArgsSchema,
@@ -188,7 +188,11 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   ipcMain.handle(IPC_CHANNELS.eventsAddAttachment, async (event, input) => {
     validateSender(event);
     const args = attachmentUploadArgsSchema.parse(input);
-    const attachments = await dependencies.graph.addAttachment(args.calendarId, args.eventId, args.attachment);
+    const attachments = await dependencies.graph.addAttachment(
+      args.calendarId,
+      args.eventId,
+      args.attachment,
+    );
     const refreshed = await dependencies.graph.getEvent(args.calendarId, args.eventId);
     dependencies.db.upsertEvent({
       ...refreshed,
@@ -202,7 +206,11 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   ipcMain.handle(IPC_CHANNELS.eventsRemoveAttachment, async (event, input) => {
     validateSender(event);
     const args = attachmentDeleteArgsSchema.parse(input);
-    const attachments = await dependencies.graph.removeAttachment(args.calendarId, args.eventId, args.attachmentId);
+    const attachments = await dependencies.graph.removeAttachment(
+      args.calendarId,
+      args.eventId,
+      args.attachmentId,
+    );
     const refreshed = await dependencies.graph.getEvent(args.calendarId, args.eventId);
     dependencies.db.upsertEvent({
       ...refreshed,

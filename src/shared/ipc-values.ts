@@ -1,3 +1,3 @@
-import { IPC_CHANNELS } from './ipc';
+import { IPC_CHANNELS } from "./ipc";
 
 export default IPC_CHANNELS;

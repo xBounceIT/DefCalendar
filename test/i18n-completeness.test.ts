@@ -42,13 +42,13 @@ describe("i18n translation completeness", () => {
 
   it("should not have orphaned keys (defined but not used)", () => {
     // Keys used via dynamic patterns (template literals like `miniCalendar.weekdays.${day}`,
-    // lookup tables like VIEW_KEYS["dayGridMonth"] -> "calendarViews.month") that static
-    // regex analysis cannot detect.
+    // Lookup tables like VIEW_KEYS["dayGridMonth"] -> "calendarViews.month") that static
+    // Regex analysis cannot detect.
     const DYNAMIC_KEY_PREFIXES = [
       "miniCalendar.weekdays.", // Used via t(`miniCalendar.weekdays.${key}`)
-      "calendarViews.",         // Used via a VIEW_KEYS record lookup
-      "tray.",                  // Used by main process i18n (separate translation system)
-      "sync.",                  // Used by main process + via translateSyncMessage() lookup
+      "calendarViews.", // Used via a VIEW_KEYS record lookup
+      "tray.", // Used by main process i18n (separate translation system)
+      "sync.", // Used by main process + via translateSyncMessage() lookup
     ];
 
     // Keys that are defined for completeness or future use but not yet actively referenced
@@ -93,7 +93,7 @@ describe("i18n translation completeness", () => {
       }
 
       // Check if this is a pluralization variant of a used base key
-      // e.g. "sync.synced_one" / "sync.synced_other" are used via t("sync.synced", {count})
+      // E.g. "sync.synced_one" / "sync.synced_other" are used via t("sync.synced", {count})
       const pluralBase = key.replace(/_(one|other|zero|few|many)$/, "");
       if (pluralBase !== key && usedKeys.has(pluralBase)) {
         continue;

@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery } from "@tanstack/react-query";
 
 export function useVersion(): {
   error: Error | null;
@@ -7,7 +7,7 @@ export function useVersion(): {
 } {
   const { data, error, isLoading } = useQuery({
     queryFn: () => globalThis.calendarApi.app.getVersion(),
-    queryKey: ['app-version'],
+    queryKey: ["app-version"],
     staleTime: Number.POSITIVE_INFINITY,
   });
 
