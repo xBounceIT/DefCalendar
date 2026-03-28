@@ -41,10 +41,70 @@ const calendarSummarySchema = z.object({
   ownerAddress: z.string().nullable(),
 });
 
+const attendeeTypeSchema = z.enum(['required', 'optional', 'resource']);
+
+const participantResponseStatusSchema = z.object({
+  response: z.string().nullable(),
+  time: z.string().nullable(),
+});
+
 const eventParticipantSchema = z.object({
   name: z.string().nullable(),
   email: z.string().nullable(),
   response: z.string().nullable(),
+  type: attendeeTypeSchema.default('required'),
+  status: participantResponseStatusSchema.nullable().optional(),
+});
+
+const eventAttachmentSchema = z.object({
+  contentType: z.string().nullable(),
+  id: z.string(),
+  isInline: z.boolean(),
+  name: z.string(),
+  size: z.number().int().nonnegative(),
+});
+
+const onlineMeetingInfoSchema = z.object({
+  conferenceId: z.string().nullable(),
+  joinUrl: z.string().nullable(),
+  phones: z.array(z.string()).default([]),
+  provider: z.string().nullable(),
+});
+
+const recurrencePatternTypeSchema = z.enum(['daily', 'weekly', 'absoluteMonthly', 'absoluteYearly']);
+const recurrenceRangeTypeSchema = z.enum(['endDate', 'noEnd', 'numbered']);
+const dayOfWeekSchema = z.enum(['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']);
+
+const recurrenceSchema = z.object({
+  pattern: z.object({
+    dayOfMonth: z.number().int().min(1).max(31).nullable().optional(),
+    daysOfWeek: z.array(dayOfWeekSchema).default([]),
+    firstDayOfWeek: dayOfWeekSchema.nullable().optional(),
+    index: z.string().nullable().optional(),
+    interval: z.number().int().min(1),
+    month: z.number().int().min(1).max(12).nullable().optional(),
+    type: recurrencePatternTypeSchema,
+  }),
+  range: z.object({
+    endDate: z.string().nullable().optional(),
+    numberOfOccurrences: z.number().int().min(1).nullable().optional(),
+    recurrenceTimeZone: z.string().nullable().optional(),
+    startDate: z.string().min(1),
+    type: recurrenceRangeTypeSchema,
+  }),
+});
+
+const bodyContentTypeSchema = z.enum(['text', 'html']);
+const recurrenceEditScopeSchema = z.enum(['single', 'series']);
+const availabilitySchema = z.enum(['free', 'tentative', 'busy', 'oof', 'workingElsewhere', 'unknown']);
+const sensitivitySchema = z.enum(['normal', 'personal', 'private', 'confidential']);
+const eventResponseActionSchema = z.enum(['accept', 'tentative', 'decline']);
+
+const attachmentUploadSchema = z.object({
+  contentBytes: z.string().min(1),
+  contentType: z.string().min(1),
+  name: z.string().min(1),
+  size: z.number().int().nonnegative(),
 });
 
 const calendarEventSchema = z.object({
@@ -52,6 +112,7 @@ const calendarEventSchema = z.object({
   calendarId: z.string(),
   subject: z.string(),
   body: z.string().nullable(),
+  bodyContentType: bodyContentTypeSchema.default('html'),
   bodyPreview: z.string().nullable(),
   location: z.string().nullable(),
   start: dateTimeStringSchema,
@@ -66,6 +127,23 @@ const calendarEventSchema = z.object({
   type: z.string().nullable(),
   attendees: z.array(eventParticipantSchema),
   organizer: eventParticipantSchema.nullable(),
+  locations: z.array(z.object({ displayName: z.string().nullable() })).default([]),
+  onlineMeeting: onlineMeetingInfoSchema.nullable().default(null),
+  isOnlineMeeting: z.boolean().default(false),
+  onlineMeetingProvider: z.string().nullable().optional(),
+  recurrence: recurrenceSchema.nullable().default(null),
+  seriesMasterId: z.string().nullable().optional(),
+  occurrenceId: z.string().nullable().optional(),
+  showAs: availabilitySchema.nullable().optional(),
+  sensitivity: sensitivitySchema.nullable().optional(),
+  allowNewTimeProposals: z.boolean().nullable().optional(),
+  responseRequested: z.boolean().nullable().optional(),
+  categories: z.array(z.string()).default([]),
+  hasAttachments: z.boolean().default(false),
+  attachments: z.array(eventAttachmentSchema).default([]),
+  isOrganizer: z.boolean().default(true),
+  responseStatus: participantResponseStatusSchema.nullable().optional(),
+  cancelled: z.boolean().default(false),
   unsupportedReason: z.string().nullable(),
   lastModifiedDateTime: z.string().nullable(),
 });
@@ -77,12 +155,24 @@ const eventDraftSchema = z
     subject: z.string().trim().min(1, 'Subject is required'),
     body: z.string().nullable().optional(),
     location: z.string().nullable().optional(),
+    attendees: z.array(eventParticipantSchema).default([]),
     start: dateTimeStringSchema,
     end: dateTimeStringSchema,
     timeZone: z.string().min(1),
     isAllDay: z.boolean().default(false),
     isReminderOn: z.boolean().default(true),
     reminderMinutesBeforeStart: z.number().int().min(0).max(20_160).nullable().optional(),
+    bodyContentType: bodyContentTypeSchema.default('html'),
+    recurrence: recurrenceSchema.nullable().optional(),
+    recurrenceEditScope: recurrenceEditScopeSchema.default('single'),
+    isOnlineMeeting: z.boolean().default(false),
+    showAs: availabilitySchema.default('busy'),
+    sensitivity: sensitivitySchema.default('normal'),
+    allowNewTimeProposals: z.boolean().default(true),
+    responseRequested: z.boolean().default(true),
+    categories: z.array(z.string()).default([]),
+    attachmentsToAdd: z.array(attachmentUploadSchema).default([]),
+    attachmentIdsToRemove: z.array(z.string()).default([]),
     etag: z.string().nullable().optional(),
     webLink: z.string().url().nullable().optional(),
   })
@@ -92,6 +182,44 @@ const eventDraftSchema = z
         code: z.ZodIssueCode.custom,
         message: 'Event end must be after the start',
         path: ['end'],
+      });
+    }
+
+    const normalizedAttendees = new Set<string>();
+    for (const [index, attendee] of value.attendees.entries()) {
+      const normalizedEmail = attendee.email?.trim().toLowerCase();
+      if (!normalizedEmail) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Attendee email is required',
+          path: ['attendees', index, 'email'],
+        });
+        continue;
+      }
+
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Attendee email must be valid',
+          path: ['attendees', index, 'email'],
+        });
+      }
+
+      if (normalizedAttendees.has(normalizedEmail)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Duplicate attendee email',
+          path: ['attendees', index, 'email'],
+        });
+      }
+      normalizedAttendees.add(normalizedEmail);
+    }
+
+    if (value.isAllDay && value.recurrence?.range.recurrenceTimeZone === null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'All-day recurring events must remain date-based.',
+        path: ['recurrence'],
       });
     }
   });
@@ -121,6 +249,38 @@ const deleteEventArgsSchema = z.object({
   calendarId: z.string(),
   eventId: z.string(),
   etag: z.string().nullable().optional(),
+});
+
+const eventReferenceArgsSchema = z.object({
+  calendarId: z.string(),
+  eventId: z.string(),
+});
+
+const respondToEventArgsSchema = z.object({
+  action: eventResponseActionSchema,
+  calendarId: z.string(),
+  comment: z.string().default(''),
+  eventId: z.string(),
+  sendResponse: z.boolean().default(true),
+});
+
+const cancelEventArgsSchema = z.object({
+  calendarId: z.string(),
+  comment: z.string().default(''),
+  eventId: z.string(),
+  etag: z.string().nullable().optional(),
+});
+
+const attachmentUploadArgsSchema = z.object({
+  attachment: attachmentUploadSchema,
+  calendarId: z.string(),
+  eventId: z.string(),
+});
+
+const attachmentDeleteArgsSchema = z.object({
+  attachmentId: z.string(),
+  calendarId: z.string(),
+  eventId: z.string(),
 });
 
 const openExternalArgsSchema = z.object({
@@ -157,12 +317,28 @@ type AuthState = z.infer<typeof authStateSchema>;
 type AuthSignInMode = z.infer<typeof authSignInModeSchema>;
 type AuthSignInRequest = z.infer<typeof authSignInRequestSchema>;
 type CalendarSummary = z.infer<typeof calendarSummarySchema>;
+type AttendeeType = z.infer<typeof attendeeTypeSchema>;
+type ParticipantResponseStatus = z.infer<typeof participantResponseStatusSchema>;
 type EventParticipant = z.infer<typeof eventParticipantSchema>;
+type EventAttachment = z.infer<typeof eventAttachmentSchema>;
+type OnlineMeetingInfo = z.infer<typeof onlineMeetingInfoSchema>;
+type Recurrence = z.infer<typeof recurrenceSchema>;
+type BodyContentType = z.infer<typeof bodyContentTypeSchema>;
+type RecurrenceEditScope = z.infer<typeof recurrenceEditScopeSchema>;
+type Availability = z.infer<typeof availabilitySchema>;
+type Sensitivity = z.infer<typeof sensitivitySchema>;
+type EventResponseAction = z.infer<typeof eventResponseActionSchema>;
+type AttachmentUpload = z.infer<typeof attachmentUploadSchema>;
 type CalendarEvent = z.infer<typeof calendarEventSchema>;
 type EventDraft = z.infer<typeof eventDraftSchema>;
 type EventListArgs = z.infer<typeof eventListArgsSchema>;
 type SetCalendarVisibilityArgs = z.infer<typeof setCalendarVisibilityArgsSchema>;
 type DeleteEventArgs = z.infer<typeof deleteEventArgsSchema>;
+type EventReferenceArgs = z.infer<typeof eventReferenceArgsSchema>;
+type RespondToEventArgs = z.infer<typeof respondToEventArgsSchema>;
+type CancelEventArgs = z.infer<typeof cancelEventArgsSchema>;
+type AttachmentUploadArgs = z.infer<typeof attachmentUploadArgsSchema>;
+type AttachmentDeleteArgs = z.infer<typeof attachmentDeleteArgsSchema>;
 type ReminderSnoozeArgs = z.infer<typeof reminderSnoozeArgsSchema>;
 type ReminderDismissArgs = z.infer<typeof reminderDismissArgsSchema>;
 type SyncStatus = z.infer<typeof syncStatusSchema>;
@@ -186,32 +362,67 @@ export {
   calendarEventSchema,
   calendarSummarySchema,
   calendarViewSchema,
+  cancelEventArgsSchema,
   createDefaultSettings,
   deleteEventArgsSchema,
+  eventReferenceArgsSchema,
+  attachmentDeleteArgsSchema,
+  attachmentUploadArgsSchema,
+  attachmentUploadSchema,
+  attendeeTypeSchema,
+  availabilitySchema,
+  bodyContentTypeSchema,
+  dayOfWeekSchema,
   eventDraftSchema,
+  eventAttachmentSchema,
   eventListArgsSchema,
   eventParticipantSchema,
+  eventResponseActionSchema,
   openExternalArgsSchema,
+  onlineMeetingInfoSchema,
+  participantResponseStatusSchema,
   reminderDismissArgsSchema,
   reminderSnoozeArgsSchema,
+  recurrenceEditScopeSchema,
+  recurrencePatternTypeSchema,
+  recurrenceRangeTypeSchema,
+  recurrenceSchema,
+  respondToEventArgsSchema,
   setCalendarVisibilityArgsSchema,
+  sensitivitySchema,
   syncStatusSchema,
   userSettingsPatchSchema,
   userSettingsSchema,
   type AccountSummary,
+  type AttachmentDeleteArgs,
+  type AttachmentUpload,
+  type AttachmentUploadArgs,
+  type AttendeeType,
   type AuthState,
   type AuthSignInMode,
   type AuthSignInRequest,
+  type Availability,
+  type BodyContentType,
   type CalendarEvent,
   type CalendarSummary,
   type CalendarView,
+  type CancelEventArgs,
   type DeleteEventArgs,
+  type EventAttachment,
   type ReminderDismissArgs,
   type ReminderSnoozeArgs,
   type EventDraft,
   type EventListArgs,
   type EventParticipant,
+  type EventReferenceArgs,
+  type EventResponseAction,
+  type OnlineMeetingInfo,
+  type ParticipantResponseStatus,
+  type Recurrence,
+  type RecurrenceEditScope,
+  type RespondToEventArgs,
   type SetCalendarVisibilityArgs,
+  type Sensitivity,
   type SyncStatus,
   type UserSettings,
   type UserSettingsPatch,

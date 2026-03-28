@@ -31,6 +31,11 @@ const calendarApi: CalendarApi = {
     create: (draft) => ipcRenderer.invoke(IPC_CHANNELS.eventsCreate, draft),
     update: (draft) => ipcRenderer.invoke(IPC_CHANNELS.eventsUpdate, draft),
     delete: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsDelete, args),
+    respond: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsRespond, args),
+    cancel: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsCancel, args),
+    listAttachments: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsListAttachments, args),
+    addAttachment: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsAddAttachment, args),
+    removeAttachment: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsRemoveAttachment, args),
     openWebLink: (url) => ipcRenderer.invoke(IPC_CHANNELS.eventsOpenWebLink, url),
   },
   sync: {

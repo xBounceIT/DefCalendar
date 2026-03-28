@@ -1,12 +1,17 @@
 import type { BrowserWindow, IpcMainInvokeEvent } from "electron";
 import {
+  attachmentDeleteArgsSchema,
+  attachmentUploadArgsSchema,
   authSignInRequestSchema,
+  cancelEventArgsSchema,
   deleteEventArgsSchema,
+  eventReferenceArgsSchema,
   eventDraftSchema,
   eventListArgsSchema,
   openExternalArgsSchema,
   reminderDismissArgsSchema,
   reminderSnoozeArgsSchema,
+  respondToEventArgsSchema,
   setCalendarVisibilityArgsSchema,
   syncStatusSchema,
   userSettingsPatchSchema,
@@ -148,6 +153,64 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     await dependencies.graph.deleteEvent(args.calendarId, args.eventId, args.etag);
     dependencies.db.deleteEvent(args.calendarId, args.eventId);
     void dependencies.sync.syncAll("mutation");
+  });
+
+  ipcMain.handle(IPC_CHANNELS.eventsRespond, async (event, input) => {
+    validateSender(event);
+    const args = respondToEventArgsSchema.parse(input);
+    await dependencies.graph.respondToEvent(args);
+    void dependencies.sync.syncAll("mutation");
+  });
+
+  ipcMain.handle(IPC_CHANNELS.eventsCancel, async (event, input) => {
+    validateSender(event);
+    const args = cancelEventArgsSchema.parse(input);
+    await dependencies.graph.cancelEvent(args.calendarId, args.eventId, args.comment);
+    dependencies.db.deleteEvent(args.calendarId, args.eventId);
+    void dependencies.sync.syncAll("mutation");
+  });
+
+  ipcMain.handle(IPC_CHANNELS.eventsListAttachments, async (event, input) => {
+    validateSender(event);
+    const args = eventReferenceArgsSchema.parse(input);
+    const attachments = await dependencies.graph.listAttachments(args.calendarId, args.eventId);
+    const current = dependencies.db.getEvent(args.calendarId, args.eventId);
+    if (current) {
+      dependencies.db.upsertEvent({
+        ...current,
+        attachments,
+        hasAttachments: attachments.length > 0,
+      });
+    }
+    return attachments;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.eventsAddAttachment, async (event, input) => {
+    validateSender(event);
+    const args = attachmentUploadArgsSchema.parse(input);
+    const attachments = await dependencies.graph.addAttachment(args.calendarId, args.eventId, args.attachment);
+    const refreshed = await dependencies.graph.getEvent(args.calendarId, args.eventId);
+    dependencies.db.upsertEvent({
+      ...refreshed,
+      attachments,
+      hasAttachments: attachments.length > 0,
+    });
+    void dependencies.sync.syncAll("mutation");
+    return attachments;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.eventsRemoveAttachment, async (event, input) => {
+    validateSender(event);
+    const args = attachmentDeleteArgsSchema.parse(input);
+    const attachments = await dependencies.graph.removeAttachment(args.calendarId, args.eventId, args.attachmentId);
+    const refreshed = await dependencies.graph.getEvent(args.calendarId, args.eventId);
+    dependencies.db.upsertEvent({
+      ...refreshed,
+      attachments,
+      hasAttachments: attachments.length > 0,
+    });
+    void dependencies.sync.syncAll("mutation");
+    return attachments;
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsOpenWebLink, async (event, input) => {

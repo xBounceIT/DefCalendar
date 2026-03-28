@@ -1,4 +1,15 @@
-import type { CalendarEvent, CalendarSummary, EventDraft, EventParticipant } from '@shared/schemas';
+import type {
+  AttachmentUpload,
+  CalendarEvent,
+  CalendarSummary,
+  EventAttachment,
+  EventDraft,
+  EventParticipant,
+  OnlineMeetingInfo,
+  ParticipantResponseStatus,
+  Recurrence,
+  RespondToEventArgs,
+} from '@shared/schemas';
 import type { AppConfig } from '@main/config';
 import type MsalAuthService from '@main/auth/msal-auth-service';
 import delay from 'delay';
@@ -37,29 +48,80 @@ interface GraphRecipient {
 interface GraphAttendee extends GraphRecipient {
   status?: {
     response?: string;
+    time?: string;
   };
+  type?: string;
+}
+
+interface GraphBody {
+  content?: string;
+  contentType?: string;
+}
+
+interface GraphLocation {
+  displayName?: string;
+}
+
+interface GraphOnlineMeeting {
+  conferenceId?: string;
+  joinUrl?: string;
+  phones?: Array<{ number?: string }>;
+}
+
+interface GraphRecurrence {
+  pattern?: {
+    dayOfMonth?: number;
+    daysOfWeek?: string[];
+    firstDayOfWeek?: string;
+    index?: string;
+    interval?: number;
+    month?: number;
+    type?: string;
+  };
+  range?: {
+    endDate?: string;
+    numberOfOccurrences?: number;
+    recurrenceTimeZone?: string;
+    startDate?: string;
+    type?: string;
+  };
+}
+
+interface GraphResponseStatus {
+  response?: string;
+  time?: string;
 }
 
 interface GraphEvent {
   '@odata.etag'?: string;
+  allowNewTimeProposals?: boolean;
   attendees?: GraphAttendee[];
-  body?: {
-    content?: string;
-  };
+  body?: GraphBody;
   bodyPreview?: string;
+  categories?: string[];
   changeKey?: string;
   end?: GraphDateTimeTimeZone;
+  hasAttachments?: boolean;
   id: string;
   isAllDay?: boolean;
+  isCancelled?: boolean;
+  isOnlineMeeting?: boolean;
+  isOrganizer?: boolean;
   isReminderOn?: boolean;
   lastModifiedDateTime?: string;
-  location?: {
-    displayName?: string;
-  };
+  location?: GraphLocation;
+  locations?: GraphLocation[];
+  onlineMeeting?: GraphOnlineMeeting;
   onlineMeetingProvider?: string;
   organizer?: GraphRecipient;
-  recurrence?: unknown;
+  originalStart?: string;
+  recurrence?: GraphRecurrence;
   reminderMinutesBeforeStart?: number;
+  responseRequested?: boolean;
+  responseStatus?: GraphResponseStatus;
+  sensitivity?: string;
+  seriesMasterId?: string;
+  showAs?: string;
   start?: GraphDateTimeTimeZone;
   subject?: string;
   type?: string;
@@ -72,6 +134,9 @@ interface SendRequestArgs {
   pathOrUrl: string;
   retryCount?: number;
 }
+
+const EVENT_SELECT =
+  'id,subject,body,bodyPreview,location,locations,start,end,isAllDay,isReminderOn,reminderMinutesBeforeStart,webLink,changeKey,type,attendees,organizer,recurrence,onlineMeeting,onlineMeetingProvider,isOnlineMeeting,lastModifiedDateTime,allowNewTimeProposals,responseRequested,showAs,sensitivity,categories,seriesMasterId,responseStatus,hasAttachments,isOrganizer,isCancelled,originalStart';
 
 class GraphCalendarService {
   private readonly auth: MsalAuthService;
@@ -111,8 +176,7 @@ class GraphCalendarService {
 
   async listCalendarView(calendarId: string, rangeStart: string, rangeEnd: string): Promise<CalendarEvent[]> {
     const query = new URLSearchParams({
-      '$select':
-        'id,subject,body,bodyPreview,location,start,end,isAllDay,isReminderOn,reminderMinutesBeforeStart,webLink,changeKey,type,attendees,organizer,recurrence,onlineMeetingProvider,lastModifiedDateTime',
+      '$select': EVENT_SELECT,
       '$top': '250',
       endDateTime: rangeEnd,
       startDateTime: rangeStart,
@@ -129,7 +193,7 @@ class GraphCalendarService {
   async createEvent(draft: EventDraft): Promise<CalendarEvent> {
     const response = parseGraphEvent(
       await this.requestJson(`/me/calendars/${encodeURIComponent(draft.calendarId)}/events`, {
-        body: JSON.stringify(this.toGraphEventPayload(draft)),
+        body: JSON.stringify(this.toGraphEventPayload(draft, 'create')),
         headers: {
           'Content-Type': 'application/json',
         },
@@ -137,7 +201,8 @@ class GraphCalendarService {
       }),
     );
 
-    return this.toCalendarEvent(response, draft.calendarId);
+    await this.syncAttachmentOperations(draft.calendarId, response.id, draft);
+    return this.getEvent(draft.calendarId, response.id);
   }
 
   async updateEvent(draft: EventDraft): Promise<CalendarEvent> {
@@ -153,18 +218,31 @@ class GraphCalendarService {
       headers['If-Match'] = draft.etag;
     }
 
+    await this.requestJson(
+      `/me/calendars/${encodeURIComponent(draft.calendarId)}/events/${encodeURIComponent(draft.id)}`,
+      {
+        body: JSON.stringify(this.toGraphEventPayload(draft, 'update')),
+        headers,
+        method: 'PATCH',
+      },
+    );
+
+    await this.syncAttachmentOperations(draft.calendarId, draft.id, draft);
+    return this.getEvent(draft.calendarId, draft.id);
+  }
+
+  async getEvent(calendarId: string, eventId: string): Promise<CalendarEvent> {
+    const query = new URLSearchParams({
+      '$select': EVENT_SELECT,
+    });
+
     const response = parseGraphEvent(
       await this.requestJson(
-        `/me/calendars/${encodeURIComponent(draft.calendarId)}/events/${encodeURIComponent(draft.id)}`,
-        {
-          body: JSON.stringify(this.toGraphEventPayload(draft)),
-          headers,
-          method: 'PATCH',
-        },
+        `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}?${query.toString()}`,
       ),
     );
 
-    return this.toCalendarEvent(response, draft.calendarId);
+    return this.toCalendarEvent(response, calendarId);
   }
 
   async deleteEvent(calendarId: string, eventId: string, etag?: null | string): Promise<void> {
@@ -179,12 +257,94 @@ class GraphCalendarService {
     });
   }
 
+  async cancelEvent(calendarId: string, eventId: string, comment = ''): Promise<void> {
+    await this.requestNoContent(
+      `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}/cancel`,
+      {
+        body: JSON.stringify({ Comment: comment }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      },
+    );
+  }
+
+  async respondToEvent(args: RespondToEventArgs): Promise<void> {
+    await this.requestNoContent(
+      `/me/calendars/${encodeURIComponent(args.calendarId)}/events/${encodeURIComponent(args.eventId)}/${args.action}`,
+      {
+        body: JSON.stringify({
+          comment: args.comment,
+          sendResponse: args.sendResponse,
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      },
+    );
+  }
+
+  async listAttachments(calendarId: string, eventId: string): Promise<EventAttachment[]> {
+    const query = new URLSearchParams({
+      '$select': 'id,name,contentType,size,isInline',
+    });
+    const response = parseGraphCollection(
+      await this.requestJson(
+        `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}/attachments?${query.toString()}`,
+      ),
+    );
+
+    return response.value.map(parseGraphAttachment);
+  }
+
+  async addAttachment(calendarId: string, eventId: string, attachment: AttachmentUpload): Promise<EventAttachment[]> {
+    await this.requestJson(
+      `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}/attachments`,
+      {
+        body: JSON.stringify({
+          '@odata.type': '#microsoft.graph.fileAttachment',
+          contentBytes: attachment.contentBytes,
+          contentType: attachment.contentType,
+          name: attachment.name,
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        method: 'POST',
+      },
+    );
+
+    return this.listAttachments(calendarId, eventId);
+  }
+
+  async removeAttachment(calendarId: string, eventId: string, attachmentId: string): Promise<EventAttachment[]> {
+    await this.requestNoContent(
+      `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}/attachments/${encodeURIComponent(attachmentId)}`,
+      {
+        method: 'DELETE',
+      },
+    );
+
+    return this.listAttachments(calendarId, eventId);
+  }
+
+  private async syncAttachmentOperations(calendarId: string, eventId: string, draft: EventDraft): Promise<void> {
+    for (const attachmentId of draft.attachmentIdsToRemove) {
+      await this.removeAttachment(calendarId, eventId, attachmentId);
+    }
+
+    for (const attachment of draft.attachmentsToAdd) {
+      await this.addAttachment(calendarId, eventId, attachment);
+    }
+  }
+
   private async paginate<TItem>(pathOrUrl: string, parseItem: (value: unknown) => TItem): Promise<TItem[]> {
     const items: TItem[] = [];
     let nextUrl: string | undefined = pathOrUrl;
 
     while (nextUrl) {
-      // oxlint-disable-next-line no-await-in-loop -- Graph pagination is cursor-based.
       const response = parseGraphCollection(await this.requestJson(nextUrl));
       items.push(...response.value.map(parseItem));
       nextUrl = response.nextLink;
@@ -208,7 +368,7 @@ class GraphCalendarService {
       throw new Error(await this.getErrorMessage(response));
     }
 
-    if (response.status !== 204) {
+    if (response.status !== 204 && response.status !== 202) {
       await response.arrayBuffer();
     }
   }
@@ -289,31 +449,48 @@ class GraphCalendarService {
   }
 
   private toCalendarEvent(event: GraphEvent, calendarId: string): CalendarEvent {
-    let reminderMinutesBeforeStart: null | number = null;
-    if (typeof event.reminderMinutesBeforeStart === 'number') {
-      ({ reminderMinutesBeforeStart } = event);
-    }
-
-    let organizer: EventParticipant | null = null;
-    if (event.organizer) {
-      organizer = toParticipant(event.organizer);
-    }
+    const authState = this.auth.getAuthState();
+    const currentEmail = authState.status === 'signed_in' ? authState.account.username.toLowerCase() : null;
+    const organizer = event.organizer ? toParticipant(event.organizer) : null;
+    const organizerEmail = organizer?.email?.toLowerCase() ?? null;
+    const isOrganizer = event.isOrganizer ?? (currentEmail !== null && organizerEmail === currentEmail);
 
     return {
+      allowNewTimeProposals: event.allowNewTimeProposals ?? null,
       attendees: (event.attendees ?? []).map(toParticipant),
-      body: stripHtml(event.body?.content),
-      bodyPreview: trimOrNull(event.bodyPreview),
+      attachments: [],
+      body: event.body?.content ?? null,
+      bodyContentType: event.body?.contentType?.toLowerCase() === 'text' ? 'text' : 'html',
+      bodyPreview: trimOrNull(event.bodyPreview) ?? trimOrNull(stripHtml(event.body?.content)),
       calendarId,
+      cancelled: Boolean(event.isCancelled),
+      categories: event.categories ?? [],
       changeKey: event.changeKey ?? null,
       end: normalizeGraphDateTime(event.end?.dateTime),
       etag: event['@odata.etag'] ?? null,
+      hasAttachments: Boolean(event.hasAttachments),
       id: event.id,
       isAllDay: Boolean(event.isAllDay),
+      isOnlineMeeting: Boolean(event.isOnlineMeeting),
+      isOrganizer: Boolean(isOrganizer),
       isReminderOn: Boolean(event.isReminderOn),
       lastModifiedDateTime: event.lastModifiedDateTime ?? null,
       location: trimOrNull(event.location?.displayName),
+      locations: (event.locations ?? []).map((location) => ({
+        displayName: trimOrNull(location.displayName),
+      })),
+      occurrenceId: event.originalStart ?? null,
+      onlineMeeting: parseOnlineMeetingInfo(event),
+      onlineMeetingProvider: trimOrNull(event.onlineMeetingProvider),
       organizer,
-      reminderMinutesBeforeStart,
+      recurrence: parseRecurrence(event.recurrence),
+      reminderMinutesBeforeStart:
+        typeof event.reminderMinutesBeforeStart === 'number' ? event.reminderMinutesBeforeStart : null,
+      responseRequested: event.responseRequested ?? null,
+      responseStatus: parseResponseStatus(event.responseStatus),
+      sensitivity: parseSensitivity(event.sensitivity),
+      seriesMasterId: event.seriesMasterId ?? null,
+      showAs: parseShowAs(event.showAs),
       start: normalizeGraphDateTime(event.start?.dateTime),
       subject: trimOrFallback(event.subject, '(no title)'),
       timeZone: event.start?.timeZone ?? this.config.timeZone,
@@ -323,43 +500,86 @@ class GraphCalendarService {
     };
   }
 
-  private toGraphEventPayload(draft: EventDraft): Record<string, unknown> {
-    let body: { content: string; contentType: string } | undefined = undefined;
-    if (draft.body?.trim()) {
-      body = {
-        content: draft.body.trim(),
-        contentType: 'Text',
-      };
-    }
-
-    let location: { displayName: string } | undefined = undefined;
-    if (draft.location?.trim()) {
-      location = {
-        displayName: draft.location.trim(),
-      };
-    }
-
-    let reminderMinutesBeforeStart: null | number = null;
-    if (draft.isReminderOn) {
-      reminderMinutesBeforeStart = draft.reminderMinutesBeforeStart ?? 15;
-    }
-
-    return {
-      body,
+  private toGraphEventPayload(draft: EventDraft, mode: 'create' | 'update'): Record<string, unknown> {
+    const payload: Record<string, unknown> = {
+      allowNewTimeProposals: draft.allowNewTimeProposals,
+      attendees: draft.attendees.map((attendee) => ({
+        emailAddress: {
+          address: attendee.email,
+          name: attendee.name,
+        },
+        type: attendee.type === 'resource' ? 'resource' : attendee.type === 'optional' ? 'optional' : 'required',
+      })),
+      categories: draft.categories,
       end: {
         dateTime: formatGraphDateTime(draft.end, draft.timeZone),
         timeZone: draft.timeZone,
       },
       isAllDay: draft.isAllDay,
+      isOnlineMeeting: draft.isOnlineMeeting,
       isReminderOn: draft.isReminderOn,
-      location,
-      reminderMinutesBeforeStart,
+      responseRequested: draft.responseRequested,
+      sensitivity: draft.sensitivity,
+      showAs: draft.showAs,
       start: {
         dateTime: formatGraphDateTime(draft.start, draft.timeZone),
         timeZone: draft.timeZone,
       },
       subject: draft.subject,
     };
+
+    if (draft.body?.trim()) {
+      payload.body = {
+        content: draft.body,
+        contentType: draft.bodyContentType === 'text' ? 'Text' : 'HTML',
+      };
+    } else if (mode === 'update') {
+      payload.body = {
+        content: '',
+        contentType: 'Text',
+      };
+    }
+
+    if (draft.location?.trim()) {
+      payload.location = {
+        displayName: draft.location.trim(),
+      };
+    } else if (mode === 'update') {
+      payload.location = null;
+    }
+
+    payload.reminderMinutesBeforeStart = draft.isReminderOn ? (draft.reminderMinutesBeforeStart ?? 15) : null;
+
+    if (draft.recurrence) {
+      payload.recurrence = {
+        pattern: {
+          dayOfMonth: draft.recurrence.pattern.dayOfMonth ?? undefined,
+          daysOfWeek: draft.recurrence.pattern.daysOfWeek,
+          firstDayOfWeek: draft.recurrence.pattern.firstDayOfWeek ?? undefined,
+          index: draft.recurrence.pattern.index ?? undefined,
+          interval: draft.recurrence.pattern.interval,
+          month: draft.recurrence.pattern.month ?? undefined,
+          type: draft.recurrence.pattern.type,
+        },
+        range: {
+          endDate: draft.recurrence.range.endDate ?? undefined,
+          numberOfOccurrences: draft.recurrence.range.numberOfOccurrences ?? undefined,
+          recurrenceTimeZone: draft.recurrence.range.recurrenceTimeZone ?? draft.timeZone,
+          startDate: draft.recurrence.range.startDate,
+          type: draft.recurrence.range.type,
+        },
+      };
+    } else if (mode === 'update') {
+      payload.recurrence = null;
+    }
+
+    if (draft.isOnlineMeeting) {
+      payload.onlineMeetingProvider = 'teamsForBusiness';
+    } else if (mode === 'update') {
+      payload.onlineMeetingProvider = 'unknown';
+    }
+
+    return payload;
   }
 }
 
@@ -383,17 +603,8 @@ function formatGraphDateTime(iso: string, timeZone: string): string {
 }
 
 function getUnsupportedReason(event: GraphEvent): null | string {
-  const eventType = event.type ?? '';
-  if (event.recurrence || ['seriesMaster', 'occurrence', 'exception'].includes(eventType)) {
-    return 'Recurring events are view-only in this version. Use Outlook for changes to the series.';
-  }
-
-  if ((event.attendees?.length ?? 0) > 0) {
-    return 'Meetings with attendees are view-only in this version. Use Outlook to manage participants.';
-  }
-
-  if (event.onlineMeetingProvider && event.onlineMeetingProvider !== 'unknown') {
-    return 'Online meeting metadata is view-only in this version. Use Outlook for advanced meeting edits.';
+  if (!event.start?.dateTime || !event.end?.dateTime) {
+    return 'This event has incomplete schedule data and cannot be edited here.';
   }
 
   return null;
@@ -416,6 +627,20 @@ function normalizeGraphDateTime(value?: string): string {
   return new Date(`${value}Z`).toISOString();
 }
 
+function parseGraphAttachment(value: unknown): EventAttachment {
+  if (!isRecord(value)) {
+    throw new Error('Unexpected attachment payload.');
+  }
+
+  return {
+    contentType: readOptionalString(value, 'contentType') ?? null,
+    id: readRequiredString(value, 'id'),
+    isInline: Boolean(readOptionalBoolean(value, 'isInline')),
+    name: trimOrFallback(readOptionalString(value, 'name'), 'Attachment'),
+    size: readOptionalNumber(value, 'size') ?? 0,
+  };
+}
+
 function parseGraphAttendees(value?: unknown[]): GraphAttendee[] | undefined {
   if (!value) {
     return undefined;
@@ -433,23 +658,26 @@ function parseGraphAttendees(value?: unknown[]): GraphAttendee[] | undefined {
     if (status) {
       attendeeStatus = {
         response: readOptionalString(status, 'response'),
+        time: readOptionalString(status, 'time'),
       };
     }
 
     return {
       emailAddress: recipient?.emailAddress,
       status: attendeeStatus,
+      type: readOptionalString(entry, 'type'),
     };
   });
 }
 
-function parseGraphBody(value?: Record<string, unknown>): GraphEvent['body'] {
+function parseGraphBody(value?: Record<string, unknown>): GraphBody | undefined {
   if (!value) {
     return undefined;
   }
 
   return {
     content: readOptionalString(value, 'content'),
+    contentType: readOptionalString(value, 'contentType'),
   };
 }
 
@@ -484,13 +712,8 @@ function parseGraphCollection(value: unknown): ParsedGraphCollection {
     throw new Error('Unexpected Microsoft Graph collection payload.');
   }
 
-  let nextLink: string | undefined = undefined;
-  if (typeof value['@odata.nextLink'] === 'string') {
-    nextLink = value['@odata.nextLink'];
-  }
-
   return {
-    nextLink,
+    nextLink: typeof value['@odata.nextLink'] === 'string' ? value['@odata.nextLink'] : undefined,
     value: value.value,
   };
 }
@@ -518,20 +741,34 @@ function parseGraphEvent(value: unknown): GraphEvent {
 
   return {
     '@odata.etag': readOptionalString(value, '@odata.etag'),
+    allowNewTimeProposals: readOptionalBoolean(value, 'allowNewTimeProposals'),
     attendees: parseGraphAttendees(readOptionalArray(value, 'attendees')),
     body: parseGraphBody(readOptionalRecord(value, 'body')),
     bodyPreview: readOptionalString(value, 'bodyPreview'),
+    categories: readOptionalStringArray(value, 'categories'),
     changeKey: readOptionalString(value, 'changeKey'),
     end: parseGraphDateTime(readOptionalRecord(value, 'end')),
+    hasAttachments: readOptionalBoolean(value, 'hasAttachments'),
     id: readRequiredString(value, 'id'),
     isAllDay: readOptionalBoolean(value, 'isAllDay'),
+    isCancelled: readOptionalBoolean(value, 'isCancelled'),
+    isOnlineMeeting: readOptionalBoolean(value, 'isOnlineMeeting'),
+    isOrganizer: readOptionalBoolean(value, 'isOrganizer'),
     isReminderOn: readOptionalBoolean(value, 'isReminderOn'),
     lastModifiedDateTime: readOptionalString(value, 'lastModifiedDateTime'),
     location: parseGraphLocation(readOptionalRecord(value, 'location')),
+    locations: parseGraphLocations(readOptionalArray(value, 'locations')),
+    onlineMeeting: parseGraphOnlineMeeting(readOptionalRecord(value, 'onlineMeeting')),
     onlineMeetingProvider: readOptionalString(value, 'onlineMeetingProvider'),
     organizer: parseGraphRecipient(readOptionalRecord(value, 'organizer')),
-    recurrence: readUnknown(value, 'recurrence'),
+    originalStart: readOptionalString(value, 'originalStart'),
+    recurrence: parseGraphRecurrence(readOptionalRecord(value, 'recurrence')),
     reminderMinutesBeforeStart: readOptionalNumber(value, 'reminderMinutesBeforeStart'),
+    responseRequested: readOptionalBoolean(value, 'responseRequested'),
+    responseStatus: parseGraphResponseStatus(readOptionalRecord(value, 'responseStatus')),
+    sensitivity: readOptionalString(value, 'sensitivity'),
+    seriesMasterId: readOptionalString(value, 'seriesMasterId'),
+    showAs: readOptionalString(value, 'showAs'),
     start: parseGraphDateTime(readOptionalRecord(value, 'start')),
     subject: readOptionalString(value, 'subject'),
     type: readOptionalString(value, 'type'),
@@ -539,13 +776,43 @@ function parseGraphEvent(value: unknown): GraphEvent {
   };
 }
 
-function parseGraphLocation(value?: Record<string, unknown>): GraphEvent['location'] {
+function parseGraphLocation(value?: Record<string, unknown>): GraphLocation | undefined {
   if (!value) {
     return undefined;
   }
 
   return {
     displayName: readOptionalString(value, 'displayName'),
+  };
+}
+
+function parseGraphLocations(values?: unknown[]): GraphLocation[] | undefined {
+  if (!values) {
+    return undefined;
+  }
+
+  return values
+    .map((entry) => (isRecord(entry) ? parseGraphLocation(entry) : undefined))
+    .filter((entry): entry is GraphLocation => Boolean(entry));
+}
+
+function parseGraphOnlineMeeting(value?: Record<string, unknown>): GraphOnlineMeeting | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const phonesValue = readOptionalArray(value, 'phones');
+  let phones: Array<{ number?: string }> | undefined = undefined;
+  if (phonesValue) {
+    phones = phonesValue
+      .map((entry) => (isRecord(entry) ? { number: readOptionalString(entry, 'number') } : undefined))
+      .filter((entry): entry is { number?: string } => Boolean(entry));
+  }
+
+  return {
+    conferenceId: readOptionalString(value, 'conferenceId'),
+    joinUrl: readOptionalString(value, 'joinUrl'),
+    phones,
   };
 }
 
@@ -566,6 +833,124 @@ function parseGraphRecipient(value?: Record<string, unknown>): GraphRecipient | 
   return {
     emailAddress: parsedAddress,
   };
+}
+
+function parseGraphRecurrence(value?: Record<string, unknown>): GraphRecurrence | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const pattern = readOptionalRecord(value, 'pattern');
+  const range = readOptionalRecord(value, 'range');
+
+  return {
+    pattern: pattern
+      ? {
+          dayOfMonth: readOptionalNumber(pattern, 'dayOfMonth'),
+          daysOfWeek: readOptionalStringArray(pattern, 'daysOfWeek'),
+          firstDayOfWeek: readOptionalString(pattern, 'firstDayOfWeek'),
+          index: readOptionalString(pattern, 'index'),
+          interval: readOptionalNumber(pattern, 'interval'),
+          month: readOptionalNumber(pattern, 'month'),
+          type: readOptionalString(pattern, 'type'),
+        }
+      : undefined,
+    range: range
+      ? {
+          endDate: readOptionalString(range, 'endDate'),
+          numberOfOccurrences: readOptionalNumber(range, 'numberOfOccurrences'),
+          recurrenceTimeZone: readOptionalString(range, 'recurrenceTimeZone'),
+          startDate: readOptionalString(range, 'startDate'),
+          type: readOptionalString(range, 'type'),
+        }
+      : undefined,
+  };
+}
+
+function parseGraphResponseStatus(value?: Record<string, unknown>): GraphResponseStatus | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  return {
+    response: readOptionalString(value, 'response'),
+    time: readOptionalString(value, 'time'),
+  };
+}
+
+function parseOnlineMeetingInfo(event: GraphEvent): null | OnlineMeetingInfo {
+  if (!event.onlineMeeting && !event.onlineMeetingProvider) {
+    return null;
+  }
+
+  return {
+    conferenceId: event.onlineMeeting?.conferenceId ?? null,
+    joinUrl: event.onlineMeeting?.joinUrl ?? null,
+    phones: (event.onlineMeeting?.phones ?? []).map((phone) => phone.number).filter(isString),
+    provider: trimOrNull(event.onlineMeetingProvider),
+  };
+}
+
+function parseRecurrence(value?: GraphRecurrence): null | Recurrence {
+  if (!value?.pattern || !value.range) {
+    return null;
+  }
+
+  const interval = typeof value.pattern.interval === 'number' ? value.pattern.interval : 1;
+  const startDate = value.range.startDate ?? new Date().toISOString().slice(0, 10);
+
+  return {
+    pattern: {
+      dayOfMonth: value.pattern.dayOfMonth ?? null,
+      daysOfWeek: (value.pattern.daysOfWeek ?? []).filter(isString) as Recurrence['pattern']['daysOfWeek'],
+      firstDayOfWeek: normalizeDayOfWeek(value.pattern.firstDayOfWeek),
+      index: value.pattern.index ?? null,
+      interval,
+      month: value.pattern.month ?? null,
+      type: normalizePatternType(value.pattern.type),
+    },
+    range: {
+      endDate: value.range.endDate ?? null,
+      numberOfOccurrences: value.range.numberOfOccurrences ?? null,
+      recurrenceTimeZone: value.range.recurrenceTimeZone ?? null,
+      startDate,
+      type: normalizeRangeType(value.range.type),
+    },
+  };
+}
+
+function parseResponseStatus(value?: GraphResponseStatus): null | ParticipantResponseStatus {
+  if (!value) {
+    return null;
+  }
+
+  return {
+    response: value.response ?? null,
+    time: value.time ?? null,
+  };
+}
+
+function parseSensitivity(value?: string): CalendarEvent['sensitivity'] {
+  if (value === 'personal' || value === 'private' || value === 'confidential' || value === 'normal') {
+    return value;
+  }
+
+  return null;
+}
+
+function parseShowAs(value?: string): CalendarEvent['showAs'] {
+  if (
+    value === 'free' ||
+    value === 'tentative' ||
+    value === 'busy' ||
+    value === 'oof' ||
+    value === 'workingElsewhere' ||
+    value === 'unknown'
+  ) {
+    return value;
+  }
+
+  return null;
 }
 
 function readGraphErrorMessage(value: unknown): null | string {
@@ -639,6 +1024,15 @@ function readOptionalString(value: Record<string, unknown>, key: string): string
   return undefined;
 }
 
+function readOptionalStringArray(value: Record<string, unknown>, key: string): string[] | undefined {
+  const result = value[key];
+  if (!Array.isArray(result)) {
+    return undefined;
+  }
+
+  return result.filter(isString);
+}
+
 function readRequiredString(value: Record<string, unknown>, key: string): string {
   const result = readOptionalString(value, key);
   if (result) {
@@ -648,37 +1042,52 @@ function readRequiredString(value: Record<string, unknown>, key: string): string
   throw new Error(`Expected "${key}" to be a string.`);
 }
 
-function readUnknown(value: Record<string, unknown>, key: string): unknown {
-  return value[key];
-}
-
-function stripHtml(value?: string): null | string {
+function stripHtml(value?: string): string | undefined {
   if (!value) {
-    return null;
+    return undefined;
   }
 
   return value
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<\/div>/gi, '\n')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script[^>]*>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/\s+/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/[ \t]{2,}/g, ' ')
     .trim();
 }
 
+function extractPlainTextFromGraphHtml(value?: string): null | string {
+  return trimOrNull(stripHtml(value));
+}
+
 function toParticipant(value: GraphAttendee | GraphRecipient): EventParticipant {
+  let status: ParticipantResponseStatus | null = null;
   let response: null | string = null;
+  let type: EventParticipant['type'] = 'required';
   if ('status' in value) {
     response = value.status?.response ?? null;
+    status = {
+      response: value.status?.response ?? null,
+      time: value.status?.time ?? null,
+    };
+    if (value.type === 'optional' || value.type === 'resource') {
+      type = value.type;
+    }
   }
 
   return {
     email: value.emailAddress?.address ?? null,
     name: value.emailAddress?.name ?? null,
     response,
+    status,
+    type,
   };
 }
 
@@ -700,4 +1109,41 @@ function trimOrNull(value: null | string | undefined): null | string {
   return null;
 }
 
+function normalizePatternType(value?: string): Recurrence['pattern']['type'] {
+  if (value === 'daily' || value === 'weekly' || value === 'absoluteMonthly' || value === 'absoluteYearly') {
+    return value;
+  }
+
+  return 'daily';
+}
+
+function normalizeRangeType(value?: string): Recurrence['range']['type'] {
+  if (value === 'endDate' || value === 'numbered' || value === 'noEnd') {
+    return value;
+  }
+
+  return 'noEnd';
+}
+
+function normalizeDayOfWeek(value?: string): Recurrence['pattern']['firstDayOfWeek'] {
+  if (
+    value === 'sunday' ||
+    value === 'monday' ||
+    value === 'tuesday' ||
+    value === 'wednesday' ||
+    value === 'thursday' ||
+    value === 'friday' ||
+    value === 'saturday'
+  ) {
+    return value;
+  }
+
+  return null;
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
+export { extractPlainTextFromGraphHtml };
 export default GraphCalendarService;

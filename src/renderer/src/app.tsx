@@ -15,9 +15,14 @@ import { calendarViewSchema } from "@shared/schema-values";
 import {
   type AccountSummary,
   type AuthSignInMode,
+  type AttachmentDeleteArgs,
+  type AttachmentUploadArgs,
   type CalendarEvent,
   type CalendarSummary,
+  type CancelEventArgs,
   type EventDraft,
+  type RespondToEventArgs,
+  type EventResponseAction,
   type SyncStatus,
   createDefaultSettings,
 } from "@shared/schemas";
@@ -213,6 +218,28 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     },
   });
 
+  const respondToEventMutation = useMutation({
+    mutationFn: (args: RespondToEventArgs) => calendarApi.events.respond(args),
+    onError: (error) => {
+      setDialogError(toErrorMessage(error));
+    },
+    onSuccess: async () => {
+      resetEditor(setDialogError, setEditorState);
+      await queryClient.invalidateQueries({ queryKey: ["events"] });
+    },
+  });
+
+  const cancelEventMutation = useMutation({
+    mutationFn: (args: CancelEventArgs) => calendarApi.events.cancel(args),
+    onError: (error) => {
+      setDialogError(toErrorMessage(error));
+    },
+    onSuccess: async () => {
+      resetEditor(setDialogError, setEditorState);
+      await queryClient.invalidateQueries({ queryKey: ["events"] });
+    },
+  });
+
   useEffect(() => {
     async function loadSyncStatus(): Promise<void> {
       const status = await calendarApi.sync.getStatus();
@@ -331,7 +358,9 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     refreshMutation.isPending ||
     createEventMutation.isPending ||
     updateEventMutation.isPending ||
-    deleteEventMutation.isPending;
+    deleteEventMutation.isPending ||
+    respondToEventMutation.isPending ||
+    cancelEventMutation.isPending;
 
   async function handleCalendarToggle(calendar: CalendarSummary): Promise<void> {
     const nextCalendars = await calendarApi.calendars.setVisibility({
@@ -445,6 +474,44 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
 
   async function deleteDraft(event: CalendarEvent): Promise<void> {
     await deleteEventMutation.mutateAsync(event);
+  }
+
+  async function cancelMeeting(event: CalendarEvent, comment: string): Promise<void> {
+    await cancelEventMutation.mutateAsync({
+      calendarId: event.calendarId,
+      comment,
+      etag: event.etag,
+      eventId: event.id,
+    });
+  }
+
+  async function respondToMeeting(
+    event: CalendarEvent,
+    action: EventResponseAction,
+    comment: string,
+  ): Promise<void> {
+    await respondToEventMutation.mutateAsync({
+      action,
+      calendarId: event.calendarId,
+      comment,
+      eventId: event.id,
+      sendResponse: true,
+    });
+  }
+
+  async function listEventAttachments(event: CalendarEvent) {
+    return calendarApi.events.listAttachments({
+      calendarId: event.calendarId,
+      eventId: event.id,
+    });
+  }
+
+  async function addEventAttachment(args: AttachmentUploadArgs) {
+    return calendarApi.events.addAttachment(args);
+  }
+
+  async function removeEventAttachment(args: AttachmentDeleteArgs) {
+    return calendarApi.events.removeAttachment(args);
   }
 
   function dismissEditor(): void {
@@ -577,12 +644,17 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         }}
       />
       <EventEditorDialog
+        onAddAttachment={addEventAttachment}
+        onCancelMeeting={cancelMeeting}
         busy={busy}
         calendars={calendars}
         errorMessage={dialogError}
+        onListAttachments={listEventAttachments}
         onDelete={deleteDraft}
         onDismiss={dismissEditor}
         onOpenInOutlook={openExternalEvent}
+        onRemoveAttachment={removeEventAttachment}
+        onRespond={respondToMeeting}
         onSave={saveDraft}
         state={editorState}
       />
@@ -619,10 +691,14 @@ function buildCalendarEvents(
 ): EventInput[] {
   return events.map((event) => {
     const calendar = calendarMap.get(event.calendarId);
-    const canEditEvent = Boolean(calendar?.canEdit) && isEventEditable(event);
+    const supportsDirectManipulation = event.recurrence === null && !event.cancelled;
+    const canEditEvent =
+      Boolean(calendar?.canEdit) && isEventEditable(event) && event.isOrganizer && supportsDirectManipulation;
     let classNames: string[] = [];
     if (event.unsupportedReason) {
       classNames = ["calendar-event--readonly"];
+    } else if (!supportsDirectManipulation) {
+      classNames = ["calendar-event--managed"];
     }
 
     return {

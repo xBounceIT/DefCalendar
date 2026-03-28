@@ -1,11 +1,18 @@
 import type {
+  AttachmentDeleteArgs,
+  AttachmentUploadArgs,
   AuthSignInMode,
   AuthState,
   CalendarEvent,
   CalendarSummary,
+  CancelEventArgs,
   DeleteEventArgs,
   EventDraft,
+  EventReferenceArgs,
+  EventResponseAction,
   EventListArgs,
+  EventAttachment,
+  RespondToEventArgs,
   SetCalendarVisibilityArgs,
   SyncStatus,
   UserSettings,
@@ -26,6 +33,11 @@ export const IPC_CHANNELS = {
   eventsCreate: "events:create",
   eventsUpdate: "events:update",
   eventsDelete: "events:delete",
+  eventsRespond: "events:respond",
+  eventsCancel: "events:cancel",
+  eventsListAttachments: "events:list-attachments",
+  eventsAddAttachment: "events:add-attachment",
+  eventsRemoveAttachment: "events:remove-attachment",
   eventsOpenWebLink: "events:open-web-link",
   syncRefresh: "sync:refresh",
   syncGetStatus: "sync:get-status",
@@ -62,6 +74,11 @@ export interface CalendarApi {
     create: (draft: EventDraft) => Promise<CalendarEvent>;
     update: (draft: EventDraft) => Promise<CalendarEvent>;
     delete: (args: DeleteEventArgs) => Promise<void>;
+    respond: (args: RespondToEventArgs) => Promise<void>;
+    cancel: (args: CancelEventArgs) => Promise<void>;
+    listAttachments: (args: EventReferenceArgs) => Promise<EventAttachment[]>;
+    addAttachment: (args: AttachmentUploadArgs) => Promise<EventAttachment[]>;
+    removeAttachment: (args: AttachmentDeleteArgs) => Promise<EventAttachment[]>;
     openWebLink: (url: string) => Promise<void>;
   };
   sync: {
@@ -93,3 +110,5 @@ export interface ReminderPopupData {
   start: string;
   end: string;
 }
+
+export type { EventAttachment, EventResponseAction };
