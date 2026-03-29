@@ -39,11 +39,11 @@ interface RegisterIpcDependencies {
 }
 
 function registerIpc(dependencies: RegisterIpcDependencies): void {
-  const enrichCalendars = () => {
+  const enrichCalendars = (homeAccountId?: string) => {
     const settings = dependencies.settings.getSettings();
     const visible = new Set(settings.visibleCalendarIds);
 
-    return dependencies.db.listCalendars().map((calendar) => ({
+    return dependencies.db.listCalendars(homeAccountId).map((calendar) => ({
       ...calendar,
       isVisible: visible.has(calendar.id),
     }));
@@ -89,10 +89,15 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     return state;
   });
 
-  ipcMain.handle(IPC_CHANNELS.authSignOut, async (event) => {
+  ipcMain.handle(IPC_CHANNELS.authSignOut, async (event, homeAccountId?: string) => {
     validateSender(event);
-    await dependencies.auth.signOut();
-    dependencies.db.clearUserData();
+    const activeAccountId = homeAccountId ?? dependencies.auth.getActiveAccountId();
+    await dependencies.auth.signOut(activeAccountId ?? undefined);
+    if (activeAccountId) {
+      dependencies.db.clearUserData(activeAccountId);
+    } else {
+      dependencies.db.clearUserData();
+    }
     dependencies.sync.reset();
     const state = dependencies.auth.getAuthState();
     broadcast(IPC_CHANNELS.authStateChanged, state);
@@ -100,16 +105,27 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     return state;
   });
 
+  ipcMain.handle(IPC_CHANNELS.authSwitchAccount, async (event, homeAccountId: string) => {
+    validateSender(event);
+    const state = await dependencies.auth.switchAccount(homeAccountId);
+    await dependencies.sync.syncAll("switch-account");
+    broadcast(IPC_CHANNELS.authStateChanged, state);
+    broadcast(IPC_CHANNELS.syncStatusChanged, dependencies.sync.getStatus());
+    return state;
+  });
+
   ipcMain.handle(IPC_CHANNELS.calendarsList, async (event) => {
     validateSender(event);
-    return enrichCalendars();
+    const homeAccountId = dependencies.auth.getActiveAccountId() ?? undefined;
+    return enrichCalendars(homeAccountId);
   });
 
   ipcMain.handle(IPC_CHANNELS.calendarsSetVisibility, async (event, input) => {
     validateSender(event);
     const args = setCalendarVisibilityArgsSchema.parse(input);
     dependencies.settings.setCalendarVisibility(args.calendarId, args.isVisible);
-    return enrichCalendars();
+    const homeAccountId = dependencies.auth.getActiveAccountId() ?? undefined;
+    return enrichCalendars(homeAccountId);
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsList, async (event, input) => {

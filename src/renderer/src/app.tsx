@@ -82,6 +82,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   const [editorState, setEditorState] = useState<EditorState | null>(null);
   const [pendingSignInMode, setPendingSignInMode] = useState<AuthSignInMode>("user");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [showAuthScreen, setShowAuthScreen] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
     lastSyncedAt: null,
     message: t("sync.signInToSync"),
@@ -152,17 +153,28 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     },
     onSuccess: async () => {
       setBannerError(null);
+      setShowAuthScreen(false);
       await invalidateCalendarData(queryClient);
     },
   });
 
   const signOutMutation = useMutation({
-    mutationFn: () => calendarApi.auth.signOut(),
+    mutationFn: (homeAccountId?: string) => calendarApi.auth.signOut(homeAccountId),
     onError: (error) => {
       setBannerError(toErrorMessage(error));
     },
     onSuccess: async () => {
       setEditorState(null);
+      await invalidateCalendarData(queryClient);
+    },
+  });
+
+  const switchAccountMutation = useMutation({
+    mutationFn: (homeAccountId: string) => calendarApi.auth.switchAccount(homeAccountId),
+    onError: (error) => {
+      setBannerError(toErrorMessage(error));
+    },
+    onSuccess: async () => {
       await invalidateCalendarData(queryClient);
     },
   });
@@ -320,11 +332,10 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     }
   }, [activeView, hydrated, selectedDate]);
 
-  let account: AccountSummary | null = null;
-  if (signedIn && authQuery.data?.status === "signed_in") {
-    const { account: signedInAccount } = authQuery.data;
-    account = signedInAccount;
-  }
+  const accounts: AccountSummary[] = authQuery.data?.accounts ?? [];
+  const activeAccountId = authQuery.data?.activeAccountId ?? null;
+
+  const activeAccount = accounts.find((a) => a.homeAccountId === activeAccountId) ?? null;
 
   const calendars = calendarsQuery.data ?? EMPTY_CALENDARS;
   let events = EMPTY_EVENTS;
@@ -563,7 +574,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     return <div className="loading-shell">{t("app.loading")}</div>;
   }
 
-  if (!signedIn) {
+  if (!signedIn || showAuthScreen) {
     let signInError = bannerError;
     if (!signInError) {
       signInError = toErrorMessage(signInMutation.error);
@@ -572,10 +583,12 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     return (
       <AuthScreen
         errorMessage={signInError}
+        isAddAccountMode={signedIn && showAuthScreen}
         isPending={signInMutation.isPending}
         onAdminApproval={() => {
           startSignIn("admin_consent");
         }}
+        onCancel={signedIn? () => setShowAuthScreen(false) : undefined}
         onSignIn={() => {
           startSignIn("user");
         }}
@@ -583,11 +596,6 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         showAdminApprovalAction={isAdminApprovalRequiredMessage(signInError)}
       />
     );
-  }
-
-  let accountName: string | null = null;
-  if (account?.name) {
-    accountName = account.name;
   }
 
   const bannerMessage = buildBannerMessage({
@@ -609,11 +617,13 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     <div className="app-shell">
       <TitleBar />
       <CalendarSidebar
-        accountEmail={account?.username ?? ""}
-        accountName={accountName}
+        accounts={accounts}
+        activeAccountId={activeAccountId}
         calendars={calendars}
         canCreateEvent={Boolean(editableCalendar)}
         isRefreshing={refreshMutation.isPending}
+        onAccountAdd={() => setShowAuthScreen(true)}
+        onAccountSwitch={(homeAccountId) => switchAccountMutation.mutate(homeAccountId)}
         onCalendarToggle={(calendar) => {
           void handleCalendarToggle(calendar);
         }}
@@ -667,10 +677,10 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         busy={busy}
         calendars={calendars}
         currentUser={
-          account
+          activeAccount
             ? {
-                email: account.username,
-                name: account.name,
+                email: activeAccount.username,
+                name: activeAccount.name,
                 response: null,
                 status: null,
                 type: "required",

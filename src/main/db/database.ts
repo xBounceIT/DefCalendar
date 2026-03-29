@@ -2,6 +2,7 @@ import type {
   CalendarEvent,
   CalendarSummary,
   EventListArgs,
+  StoredAccount,
   SyncStatus,
   UserSettings,
 } from "@shared/schemas";
@@ -9,6 +10,7 @@ import {
   calendarEventSchema,
   calendarSummarySchema,
   createDefaultSettings,
+  storedAccountSchema,
   userSettingsSchema,
 } from "@shared/schema-values";
 import { dirname, join } from "pathe";
@@ -46,13 +48,26 @@ class AppDatabase {
     this.migrate();
   }
 
-  listCalendars(): CalendarSummary[] {
-    const statement = this.db.prepare(`
+  listCalendars(homeAccountId?: string): CalendarSummary[] {
+    let statement;
+    if (homeAccountId) {
+      statement = this.db.prepare(`
+        SELECT payload_json
+        FROM calendars
+        WHERE home_account_id = ?
+        ORDER BY is_default_calendar DESC, name COLLATE NOCASE ASC
+      `);
+      return statement
+        .all(homeAccountId)
+        .map((row) =>
+          calendarSummarySchema.parse(JSON.parse(readStringProperty(row, "payload_json"))),
+        );
+    }
+    statement = this.db.prepare(`
       SELECT payload_json
       FROM calendars
       ORDER BY is_default_calendar DESC, name COLLATE NOCASE ASC
     `);
-
     return statement
       .all()
       .map((row) =>
@@ -60,17 +75,24 @@ class AppDatabase {
       );
   }
 
-  listCalendarIds(): string[] {
+  listCalendarIds(homeAccountId?: string): string[] {
+    if (homeAccountId) {
+      return this.db
+        .prepare("SELECT id FROM calendars WHERE home_account_id = ?")
+        .all(homeAccountId)
+        .map((row) => readStringProperty(row, "id"));
+    }
     return this.db
       .prepare("SELECT id FROM calendars")
       .all()
       .map((row) => readStringProperty(row, "id"));
   }
 
-  upsertCalendars(calendars: CalendarSummary[]): void {
+  upsertCalendars(calendars: CalendarSummary[], homeAccountId: string): void {
     const upsert = this.db.prepare(`
       INSERT INTO calendars (
         id,
+        home_account_id,
         name,
         color,
         can_edit,
@@ -82,6 +104,7 @@ class AppDatabase {
         updated_at
       ) VALUES (
         @id,
+        @home_account_id,
         @name,
         @color,
         @can_edit,
@@ -93,6 +116,7 @@ class AppDatabase {
         @updated_at
       )
       ON CONFLICT(id) DO UPDATE SET
+        home_account_id = excluded.home_account_id,
         name = excluded.name,
         color = excluded.color,
         can_edit = excluded.can_edit,
@@ -106,8 +130,8 @@ class AppDatabase {
 
     const existingIds = new Set(
       this.db
-        .prepare("SELECT id FROM calendars")
-        .all()
+        .prepare("SELECT id FROM calendars WHERE home_account_id = ?")
+        .all(homeAccountId)
         .map((row) => readStringProperty(row, "id")),
     );
     const incomingIds = new Set(calendars.map((calendar) => calendar.id));
@@ -118,6 +142,7 @@ class AppDatabase {
           can_edit: toSqliteBoolean(calendar.canEdit),
           can_share: toSqliteBoolean(calendar.canShare),
           color: calendar.color,
+          home_account_id: homeAccountId,
           id: calendar.id,
           is_default_calendar: toSqliteBoolean(calendar.isDefaultCalendar),
           name: calendar.name,
@@ -423,20 +448,95 @@ class AppDatabase {
     this.db.prepare("DELETE FROM notification_state WHERE fired_at < ?").run(beforeIso);
   }
 
-  clearUserData(): void {
+  clearUserData(homeAccountId?: string): void {
+    if (homeAccountId) {
+      this.db.exec(`
+        DELETE FROM notification_state;
+        DELETE FROM sync_state WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = '${homeAccountId}');
+        DELETE FROM events WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = '${homeAccountId}');
+        DELETE FROM calendars WHERE home_account_id = '${homeAccountId}';
+        DELETE FROM accounts WHERE home_account_id = '${homeAccountId}';
+      `);
+      return;
+    }
     this.db.exec(`
       DELETE FROM notification_state;
       DELETE FROM sync_state;
       DELETE FROM events;
       DELETE FROM calendars;
       DELETE FROM settings;
+      DELETE FROM accounts;
     `);
+  }
+
+  saveAccounts(accounts: StoredAccount[]): void {
+    const upsert = this.db.prepare(`
+      INSERT INTO accounts (
+        home_account_id,
+        username,
+        name,
+        tenant_id,
+        color,
+        last_signed_in_at,
+        payload_json
+      ) VALUES (
+        @home_account_id,
+        @username,
+        @name,
+        @tenant_id,
+        @color,
+        @last_signed_in_at,
+        @payload_json
+      )
+      ON CONFLICT(home_account_id) DO UPDATE SET
+        username = excluded.username,
+        name = excluded.name,
+        tenant_id = excluded.tenant_id,
+        color = excluded.color,
+        last_signed_in_at = excluded.last_signed_in_at,
+        payload_json = excluded.payload_json
+    `);
+
+    const transaction = this.db.transaction((items: StoredAccount[]) => {
+      for (const account of items) {
+        upsert.run({
+          color: account.color,
+          home_account_id: account.homeAccountId,
+          last_signed_in_at: account.lastSignedInAt,
+          name: account.name,
+          payload_json: JSON.stringify(account),
+          tenant_id: account.tenantId,
+          username: account.username,
+        });
+      }
+    });
+
+    transaction(accounts);
+  }
+
+  getAccounts(): StoredAccount[] {
+    const statement = this.db.prepare(`
+      SELECT payload_json
+      FROM accounts
+      ORDER BY last_signed_in_at DESC
+    `);
+
+    return statement
+      .all()
+      .map((row) =>
+        storedAccountSchema.parse(JSON.parse(readStringProperty(row, "payload_json"))),
+      );
+  }
+
+  removeAccount(homeAccountId: string): void {
+    this.db.prepare("DELETE FROM accounts WHERE home_account_id = ?").run(homeAccountId);
   }
 
   private migrate(): void {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS calendars (
         id TEXT PRIMARY KEY,
+        home_account_id TEXT NOT NULL,
         name TEXT NOT NULL,
         color TEXT,
         can_edit INTEGER NOT NULL,
@@ -486,7 +586,32 @@ class AppDatabase {
         value_json TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS accounts (
+        home_account_id TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        name TEXT,
+        tenant_id TEXT,
+        color TEXT NOT NULL,
+        last_signed_in_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+      );
     `);
+    this.migrateCalendarsTable();
+  }
+
+  private migrateCalendarsTable(): void {
+    const tableInfo = this.db.prepare("PRAGMA table_info(calendars)").all();
+    const hasHomeAccountId = tableInfo.some(
+      (col: unknown) =>
+        typeof col === "object" &&
+        col !== null &&
+        "name" in col &&
+        (col as Record<string, unknown>).name === "home_account_id",
+    );
+    if (!hasHomeAccountId) {
+      this.db.exec("ALTER TABLE calendars ADD COLUMN home_account_id TEXT NOT NULL DEFAULT ''");
+    }
   }
 }
 

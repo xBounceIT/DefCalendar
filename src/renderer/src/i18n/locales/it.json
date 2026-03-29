@@ -28,7 +28,10 @@
     "signInGoogleWorkspace": "Sincronizza Google Workspace",
     "signInGooglePersonal": "Sincronizza Google Personale",
     "signInMicrosoftPersonal": "Sincronizza Microsoft Personale",
-    "comingSoon": "Presto disponibile"
+    "comingSoon": "Presto disponibile",
+    "addAccountTitle": "Aggiungi Account",
+    "addAccountSubtitle": "Connetti un altro account calendario.",
+    "back": "Indietro"
   },
   "titleBar": {
     "minimize": "Riduci a icona",
@@ -192,8 +195,11 @@
     "dismiss": "Ignora",
     "untitledEvent": "Evento senza titolo",
     "snooze5min": "5 minuti",
+    "snooze10min": "10 minuti",
     "snooze15min": "15 minuti",
+    "snooze30min": "30 minuti",
     "snooze1hour": "1 ora",
+    "snooze2hours": "2 ore",
     "snoozeTomorrow": "Domani"
   },
   "dateFormatting": {

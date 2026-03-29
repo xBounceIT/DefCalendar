@@ -28,7 +28,10 @@
     "signInGoogleWorkspace": "Sync Google Workspace",
     "signInGooglePersonal": "Sync Google Personal",
     "signInMicrosoftPersonal": "Sync Microsoft Personal",
-    "comingSoon": "Coming soon"
+    "comingSoon": "Coming soon",
+    "addAccountTitle": "Add Account",
+    "addAccountSubtitle": "Connect another calendar account.",
+    "back": "Back"
   },
   "titleBar": {
     "minimize": "Minimize",
@@ -192,8 +195,11 @@
     "dismiss": "Dismiss",
     "untitledEvent": "Untitled event",
     "snooze5min": "5 minutes",
+    "snooze10min": "10 minutes",
     "snooze15min": "15 minutes",
+    "snooze30min": "30 minutes",
     "snooze1hour": "1 hour",
+    "snooze2hours": "2 hours",
     "snoozeTomorrow": "Tomorrow"
   },
   "dateFormatting": {

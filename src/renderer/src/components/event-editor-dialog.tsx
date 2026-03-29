@@ -329,12 +329,12 @@ function EventToolbar({
 
   const reminderOptions = [
     { value: "0", label: t("reminder.snooze5min") },
-    { value: "5", label: `5 ${t("reminder.snooze5min").replace("5 ", "")}` },
-    { value: "10", label: `10 ${t("reminder.snooze5min").replace("5 ", "")}` },
-    { value: "15", label: `15 ${t("reminder.snooze5min").replace("5 ", "")}` },
-    { value: "30", label: `30 ${t("reminder.snooze5min").replace("5 ", "")}` },
+    { value: "5", label: t("reminder.snooze5min") },
+    { value: "10", label: t("reminder.snooze10min") },
+    { value: "15", label: t("reminder.snooze15min") },
+    { value: "30", label: t("reminder.snooze30min") },
     { value: "60", label: t("reminder.snooze1hour") },
-    { value: "120", label: `2 ${t("reminder.snooze1hour").replace("1 ", "")}` },
+    { value: "120", label: t("reminder.snooze2hours") },
     { value: "1440", label: t("reminder.snoozeTomorrow") },
   ];
 

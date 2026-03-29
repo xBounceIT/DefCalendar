@@ -4,9 +4,22 @@ import { getSignInPrompt, normalizeMicrosoftSignInError } from "@main/auth/auth-
 import { hasConfiguredClientId } from "@main/auth/app-registration";
 import type { AppConfig } from "@main/config";
 import { shell } from "electron";
-import type { AuthSignInMode, AuthState } from "@shared/schemas";
+import type { AuthSignInMode, AuthState, StoredAccount } from "@shared/schemas";
 import type SafeStorageTokenCache from "@main/auth/cache-plugin";
 import { EXCHANGE365_CLIENT_ID_NOT_CONFIGURED_MESSAGE } from "@shared/exchange-auth";
+
+const ACCOUNT_COLORS = [
+  "#4F46E5",
+  "#059669",
+  "#DC2626",
+  "#D97706",
+  "#7C3AED",
+  "#0891B2",
+  "#DB2777",
+  "#65A30D",
+  "#EA580C",
+  "#0D9488",
+];
 
 function buildSuccessTemplate(): string {
   return `
@@ -36,11 +49,29 @@ function buildErrorTemplate(): string {
   `;
 }
 
+function generateRandomColor(): string {
+  return ACCOUNT_COLORS[Math.floor(Math.random() * ACCOUNT_COLORS.length)];
+}
+
+interface DatabaseStore {
+  getAccounts(): StoredAccount[];
+  saveAccounts(accounts: StoredAccount[]): void;
+}
+
+interface SettingsStore {
+  getSettings(): { activeAccountId?: string | null };
+  updateSettings(patch: { activeAccountId: string | null }): void;
+}
+
 class MsalAuthService {
   private readonly config: AppConfig;
   private readonly pca: PublicClientApplication | null;
   private readonly tokenCache: SafeStorageTokenCache;
-  private account: AccountInfo | null = null;
+  private accounts: AccountInfo[] = [];
+  private activeAccountId: string | null = null;
+  private accountColors: Map<string, string> = new Map();
+  private db: DatabaseStore | null = null;
+  private settings: SettingsStore | null = null;
 
   constructor(config: AppConfig, tokenCache: SafeStorageTokenCache) {
     this.config = config;
@@ -71,48 +102,151 @@ class MsalAuthService {
     this.pca = null;
   }
 
+  setDatabase(db: DatabaseStore): void {
+    this.db = db;
+  }
+
+  setSettings(settings: SettingsStore): void {
+    this.settings = settings;
+  }
+
   async initialize(): Promise<void> {
     if (!this.pca) {
       return;
     }
 
-    const accounts = await this.pca.getAllAccounts();
-    this.account = accounts[0] ?? null;
+    const msalAccounts = await this.pca.getAllAccounts();
+    this.accounts = msalAccounts;
+
+    if (this.db) {
+      const storedAccounts = this.db.getAccounts();
+      for (const stored of storedAccounts) {
+        this.accountColors.set(stored.homeAccountId, stored.color);
+      }
+    }
+
+    if (this.settings) {
+      const savedActiveId = this.settings.getSettings().activeAccountId;
+      if (savedActiveId && this.accounts.some((a) => a.homeAccountId === savedActiveId)) {
+        this.activeAccountId = savedActiveId;
+      } else if (this.accounts.length > 0) {
+        this.activeAccountId = this.accounts[0].homeAccountId;
+      }
+    } else if (this.accounts.length > 0) {
+      this.activeAccountId = this.accounts[0].homeAccountId;
+    }
+  }
+
+  private persistActiveAccountId(): void {
+    if (this.settings) {
+      this.settings.updateSettings({ activeAccountId: this.activeAccountId });
+    }
   }
 
   hasSession(): boolean {
-    return this.account !== null;
+    return this.activeAccountId !== null && this.accounts.some((a) => a.homeAccountId === this.activeAccountId);
   }
 
   getAuthState(): AuthState {
-    if (!this.account) {
-      return { status: "signed_out" };
+    if (!this.activeAccountId || this.accounts.length === 0) {
+      return { status: "signed_out", accounts: [] };
+    }
+
+    const activeAccount = this.accounts.find((a) => a.homeAccountId === this.activeAccountId);
+    if (!activeAccount) {
+      return { status: "signed_out", accounts: this.buildAccountsList() };
     }
 
     return {
       status: "signed_in",
       account: {
-        homeAccountId: this.account.homeAccountId,
-        username: this.account.username,
-        name: this.account.name ?? null,
-        tenantId: this.account.tenantId ?? null,
+        homeAccountId: activeAccount.homeAccountId,
+        username: activeAccount.username,
+        name: activeAccount.name ?? null,
+        tenantId: activeAccount.tenantId ?? null,
+        color: this.accountColors.get(activeAccount.homeAccountId) ?? generateRandomColor(),
       },
+      accounts: this.buildAccountsList(),
+      activeAccountId: this.activeAccountId,
     };
+  }
+
+  private buildAccountsList(): StoredAccount[] {
+    return this.accounts.map((account) => ({
+      homeAccountId: account.homeAccountId,
+      username: account.username,
+      name: account.name ?? null,
+      tenantId: account.tenantId ?? null,
+      color: this.accountColors.get(account.homeAccountId) ?? generateRandomColor(),
+      lastSignedInAt: new Date().toISOString(),
+    }));
+  }
+
+  private persistAccounts(): void {
+    if (!this.db) return;
+    const storedAccounts = this.buildAccountsList();
+    this.db.saveAccounts(storedAccounts);
   }
 
   async signIn(mode: AuthSignInMode = "user"): Promise<AuthState> {
     const result = await this.acquireInteractiveToken(mode);
-    this.account = result.account ?? this.account;
+
+    if (result.account) {
+      const existingIndex = this.accounts.findIndex(
+        (a) => a.homeAccountId === result.account!.homeAccountId,
+      );
+
+      if (existingIndex >= 0) {
+        this.accounts[existingIndex] = result.account;
+      } else {
+        this.accounts.push(result.account);
+        if (!this.accountColors.has(result.account.homeAccountId)) {
+          this.accountColors.set(result.account.homeAccountId, generateRandomColor());
+        }
+      }
+
+      this.activeAccountId = result.account.homeAccountId;
+      this.persistAccounts();
+      this.persistActiveAccountId();
+    }
+
     return this.getAuthState();
   }
 
-  async signOut(): Promise<void> {
-    if (this.account && this.pca) {
-      await this.pca.signOut({ account: this.account });
+  async signOut(homeAccountId?: string): Promise<void> {
+    const targetAccountId = homeAccountId ?? this.activeAccountId;
+    if (!targetAccountId) return;
+
+    const account = this.accounts.find((a) => a.homeAccountId === targetAccountId);
+    if (account && this.pca) {
+      await this.pca.signOut({ account });
     }
 
-    this.account = null;
-    this.tokenCache.clear();
+    this.accounts = this.accounts.filter((a) => a.homeAccountId !== targetAccountId);
+    this.accountColors.delete(targetAccountId);
+
+    if (this.activeAccountId === targetAccountId) {
+      this.activeAccountId = this.accounts.length > 0 ? this.accounts[0].homeAccountId : null;
+    }
+
+    this.persistAccounts();
+    this.persistActiveAccountId();
+  }
+
+  async switchAccount(homeAccountId: string): Promise<AuthState> {
+    const account = this.accounts.find((a) => a.homeAccountId === homeAccountId);
+    if (!account) {
+      throw new Error("Account not found");
+    }
+
+    this.activeAccountId = homeAccountId;
+    this.persistAccounts();
+    this.persistActiveAccountId();
+    return this.getAuthState();
+  }
+
+  getActiveAccountId(): string | null {
+    return this.activeAccountId;
   }
 
   async getAccessToken(forceRefresh = false): Promise<string> {
@@ -131,7 +265,18 @@ class MsalAuthService {
       }
     } catch {
       const interactive = await this.acquireInteractiveToken();
-      this.account = interactive.account ?? this.account;
+      if (interactive.account) {
+        const existingIndex = this.accounts.findIndex(
+          (a) => a.homeAccountId === interactive.account!.homeAccountId,
+        );
+        if (existingIndex >= 0) {
+          this.accounts[existingIndex] = interactive.account;
+        } else {
+          this.accounts.push(interactive.account);
+        }
+        this.activeAccountId = interactive.account.homeAccountId;
+        this.persistAccounts();
+      }
       if (interactive.accessToken) {
         return interactive.accessToken;
       }
@@ -141,26 +286,32 @@ class MsalAuthService {
   }
 
   private async ensureAccount(): Promise<AccountInfo> {
-    if (this.account) {
-      return this.account;
+    if (this.activeAccountId) {
+      const account = this.accounts.find((a) => a.homeAccountId === this.activeAccountId);
+      if (account) {
+        return account;
+      }
     }
 
-    const accounts = await this.getPca().getAllAccounts();
-    if (!accounts.length) {
+    const msalAccounts = await this.getPca().getAllAccounts();
+    if (!msalAccounts.length) {
       throw new Error("Sign in with Exchange 365 before syncing calendars.");
     }
 
-    const [account] = accounts;
-    this.account = account;
-    return this.account;
+    this.accounts = msalAccounts;
+    const account = msalAccounts[0];
+    this.activeAccountId = account.homeAccountId;
+    if (!this.accountColors.has(account.homeAccountId)) {
+      this.accountColors.set(account.homeAccountId, generateRandomColor());
+    }
+    this.persistAccounts();
+    return account;
   }
 
   private async acquireInteractiveToken(
     mode: AuthSignInMode = "user",
   ): Promise<AuthenticationResult> {
     try {
-      // MSAL Node uses a loopback localhost redirect for system-browser auth.
-      // Register http://localhost in Entra instead of trying to pass a redirect URI here.
       return await this.getPca().acquireTokenInteractive({
         scopes: this.config.graphScopes,
         prompt: getSignInPrompt(mode),

@@ -43,6 +43,8 @@ async function bootstrap(): Promise<void> {
     config,
     new SafeStorageTokenCache(join(app.getPath("userData"), "msal-token-cache.bin")),
   );
+  auth.setDatabase(db);
+  auth.setSettings(settings);
 
   await auth.initialize();
 

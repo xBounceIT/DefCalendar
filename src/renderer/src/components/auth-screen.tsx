@@ -3,7 +3,9 @@ import { useTranslation } from "react-i18next";
 
 interface AuthScreenProps {
   errorMessage: null | string;
+  isAddAccountMode?: boolean;
   isPending: boolean;
+  onCancel?: () => void;
   pendingMode: "admin_consent" | "user";
   onAdminApproval: () => void;
   onSignIn: () => void;
@@ -102,13 +104,16 @@ function DisabledButton({
   );
 }
 
-function AuthHeader() {
+function AuthHeader({ isAddAccountMode }: { isAddAccountMode: boolean }) {
   const { t } = useTranslation();
+
+  const title = isAddAccountMode ? t("auth.addAccountTitle") : t("auth.welcomeTitle");
+  const subtitle = isAddAccountMode? t("auth.addAccountSubtitle") : t("auth.welcomeSubtitle");
 
   return (
     <div className="auth-header">
-      <h1 className="auth-title">{t("auth.welcomeTitle")}</h1>
-      <p className="auth-welcome-message">{t("auth.welcomeSubtitle")}</p>
+      <h1 className="auth-title">{title}</h1>
+      <p className="auth-welcome-message">{subtitle}</p>
     </div>
   );
 }
@@ -166,8 +171,10 @@ function AuthActions({
 
 function AuthCard({
   errorMessage,
+  isAddAccountMode,
   isPending,
   onAdminApproval,
+  onCancel,
   onSignIn,
   pendingMode,
   showAdminApprovalAction,
@@ -189,10 +196,18 @@ function AuthCard({
     errorBanner = <p className="banner banner--error">{errorMessage}</p>;
   }
 
+  let cancelButton: React.JSX.Element | null = null;
+  if (isAddAccountMode && onCancel) {
+    cancelButton = (
+      <button className="secondary-button" onClick={onCancel} type="button">
+        {t("auth.back")}
+      </button>
+    );
+  }
+
   return (
     <div className="auth-card">
-      <AuthHeader />
-      <div className="auth-content">
+      <AuthHeader isAddAccountMode={isAddAccountMode ?? false} /><div className="auth-content">
         <AuthActions
           adminApprovalLabel={adminApprovalLabel}
           buttonLabel={buttonLabel}
@@ -202,6 +217,7 @@ function AuthCard({
           showAdminApprovalAction={showAdminApprovalAction}
         />
         {errorBanner}
+        {cancelButton}
       </div>
     </div>
   );
@@ -212,8 +228,10 @@ function AuthScreen(props: AuthScreenProps) {
     <div className="auth-shell">
       <AuthCard
         errorMessage={props.errorMessage}
+        isAddAccountMode={props.isAddAccountMode}
         isPending={props.isPending}
         onAdminApproval={props.onAdminApproval}
+        onCancel={props.onCancel}
         onSignIn={props.onSignIn}
         pendingMode={props.pendingMode}
         showAdminApprovalAction={props.showAdminApprovalAction}

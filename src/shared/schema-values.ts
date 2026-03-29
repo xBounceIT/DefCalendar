@@ -3,5 +3,6 @@ export {
   calendarSummarySchema,
   calendarViewSchema,
   createDefaultSettings,
+  storedAccountSchema,
   userSettingsSchema,
 } from "./schemas";

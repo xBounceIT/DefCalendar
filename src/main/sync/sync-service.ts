@@ -6,7 +6,7 @@ import type ReminderService from "@main/reminders/reminder-service";
 import type SettingsService from "@main/settings/settings-service";
 import type { SyncStatus } from "@shared/schemas";
 
-type SyncReason = "startup" | "sign-in" | "manual" | "interval" | "mutation";
+type SyncReason = "startup" | "sign-in" | "switch-account" | "manual" | "interval" | "mutation";
 
 interface SyncServiceDependencies {
   auth: MsalAuthService;
@@ -96,8 +96,9 @@ class SyncService {
       return idleStatus;
     }
 
+    const homeAccountId = this.dependencies.auth.getActiveAccountId();
     let syncMessage = "Syncing Exchange 365…";
-    if (reason === "sign-in") {
+    if (reason === "sign-in" || reason === "switch-account") {
       syncMessage = "Connecting to Exchange 365…";
     }
 
@@ -108,9 +109,9 @@ class SyncService {
     });
 
     try {
-      const knownCalendarIds = this.dependencies.db.listCalendarIds();
+      const knownCalendarIds = this.dependencies.db.listCalendarIds(homeAccountId ?? undefined);
       const calendars = await this.dependencies.graph.listCalendars();
-      this.dependencies.db.upsertCalendars(calendars);
+      this.dependencies.db.upsertCalendars(calendars, homeAccountId ?? "");
       this.dependencies.settings.syncVisibleCalendars({
         calendarIds: calendars.map((calendar) => calendar.id),
         knownCalendarIds,
