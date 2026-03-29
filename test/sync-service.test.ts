@@ -49,6 +49,8 @@ function createFixture(args?: {
     getLatestSyncStatus: vi.fn().mockReturnValue({
       lastSyncedAt: null,
       message: "Sign in to sync Exchange 365.",
+      messageKey: "sync.signInToSync",
+      counts: null,
       state: "idle",
     }),
     listCalendarIds: vi.fn().mockReturnValue(args?.knownCalendarIds ?? []),
@@ -110,6 +112,8 @@ describe("sync service", () => {
     expect(status).toStrictEqual({
       lastSyncedAt: null,
       message: "Choose calendars to sync.",
+      messageKey: "sync.chooseCalendars",
+      counts: null,
       state: "idle",
     });
     expect(fixture.graph.listCalendars).toHaveBeenCalledOnce();
@@ -135,6 +139,8 @@ describe("sync service", () => {
     const status = await fixture.service.syncAll("manual");
 
     expect(status.message).toBe("Synced 2 calendars, 0 events.");
+    expect(status.messageKey).toBe("sync.synced");
+    expect(status.counts).toStrictEqual({ calendars: 2, events: 0 });
     expect(fixture.graph.listCalendarView).toHaveBeenCalledTimes(2);
     expect(fixture.graph.listCalendarView.mock.calls.map((call) => call[0])).toStrictEqual([
       "calendar-a",
@@ -156,6 +162,8 @@ describe("sync service", () => {
     expect(status).toStrictEqual({
       lastSyncedAt: null,
       message: "Select at least one calendar to sync.",
+      messageKey: "sync.selectCalendars",
+      counts: null,
       state: "idle",
     });
     expect(fixture.graph.listCalendarView).toHaveBeenCalledTimes(0);

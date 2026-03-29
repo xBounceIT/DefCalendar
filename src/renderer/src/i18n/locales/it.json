@@ -224,6 +224,13 @@
     "connecting": "Connessione a Exchange 365…",
     "chooseCalendars": "Scegli i calendari da sincronizzare.",
     "selectCalendars": "Seleziona almeno un calendario da sincronizzare.",
+    "cacheUpToDate": "La cache del calendario è aggiornata.",
+    "synced": {
+      "oneCalendarOneEvent": "Sincronizzato {{calendars}} calendario, {{events}} evento.",
+      "oneCalendarOtherEvents": "Sincronizzato {{calendars}} calendario, {{events}} eventi.",
+      "otherCalendarsOneEvent": "Sincronizzati {{calendars}} calendari, {{events}} evento.",
+      "otherCalendarsOtherEvents": "Sincronizzati {{calendars}} calendari, {{events}} eventi."
+    },
     "synced_one": "Sincronizzato {{calendars}} calendario, {{events}} evento.",
     "synced_other": "Sincronizzati {{calendars}} calendari, {{events}} eventi.",
     "syncFailed": "Sincronizzazione Exchange 365 fallita."
@@ -240,7 +247,13 @@
       "appearance": {
         "label": "Aspetto",
         "title": "Impostazioni Aspetto",
-        "description": "Personalizza l'aspetto dell'applicazione calendario."
+        "description": "Personalizza l'aspetto dell'applicazione calendario.",
+        "timeFormat": "Formato orario",
+        "timeFormatOptions": {
+          "system": "Sistema",
+          "12h": "12 ore",
+          "24h": "24 ore"
+        }
       },
       "calendarDefaults": {
         "label": "Predefiniti Calendario",
@@ -251,7 +264,12 @@
       "language": {
         "label": "Lingua",
         "title": "Impostazioni Lingua",
-        "selectLanguage": "Seleziona Lingua"
+        "selectLanguage": "Seleziona Lingua",
+        "options": {
+          "system": "Sistema",
+          "en": "English",
+          "it": "Italiano"
+        }
       },
       "notifications": {
         "label": "Notifiche",

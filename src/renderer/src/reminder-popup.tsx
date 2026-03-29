@@ -2,16 +2,52 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import i18n from "i18next";
 import { initReactI18next, useTranslation } from "react-i18next";
+import type { UserSettings } from "@shared/schemas";
 
 import en from "./i18n/locales/en.json";
 import it from "./i18n/locales/it.json";
+
+type TimeFormatSetting = UserSettings["timeFormat"];
+
+function detectLocaleFromLanguageTag(languageTag: null | string | undefined): "en" | "it" {
+  if (typeof languageTag === "string" && languageTag.toLowerCase().startsWith("it")) {
+    return "it";
+  }
+
+  return "en";
+}
+
+function resolveLanguageSetting(
+  language: null | string | undefined,
+  systemLanguageTag: null | string | undefined,
+): "en" | "it" {
+  if (language === "en" || language === "it") {
+    return language;
+  }
+
+  return detectLocaleFromLanguageTag(systemLanguageTag);
+}
+
+function applyTimeFormat(
+  options: Intl.DateTimeFormatOptions,
+  timeFormat: TimeFormatSetting,
+): Intl.DateTimeFormatOptions {
+  if (timeFormat === "system") {
+    return options;
+  }
+
+  return {
+    ...options,
+    hour12: timeFormat === "12h",
+  };
+}
 
 void i18n.use(initReactI18next).init({
   resources: {
     en: { translation: en },
     it: { translation: it },
   },
-  lng: navigator.language?.startsWith("it") ? "it" : "en",
+  lng: detectLocaleFromLanguageTag(navigator.language ?? navigator.languages?.[0]),
   fallbackLng: "en",
   interpolation: { escapeValue: false },
 });
@@ -35,7 +71,7 @@ function parseParams(): ParsedParams {
   };
 }
 
-function formatEventTime(start: string, end: string): string {
+function formatEventTime(start: string, end: string, timeFormat: TimeFormatSetting): string {
   if (!start) {
     return "";
   }
@@ -45,11 +81,13 @@ function formatEventTime(start: string, end: string): string {
   }
 
   const endDate = end ? new Date(end) : null;
-  const timeFmt: Intl.DateTimeFormatOptions = {
-    hour: "numeric",
-    hourCycle: "h23",
-    minute: "2-digit",
-  };
+  const timeFmt = applyTimeFormat(
+    {
+      hour: "numeric",
+      minute: "2-digit",
+    },
+    timeFormat,
+  );
 
   const startStr = new Intl.DateTimeFormat(undefined, {
     weekday: "short",
@@ -103,6 +141,7 @@ function ReminderPopup() {
   const { t } = useTranslation();
   const [params] = useState<ParsedParams>(parseParams);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [timeFormat, setTimeFormat] = useState<TimeFormatSetting>("system");
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { calendarApi } = globalThis;
 
@@ -148,7 +187,42 @@ function ReminderPopup() {
     }
   }, [dropdownOpen]);
 
-  const timeStr = formatEventTime(params.start, params.end);
+  useEffect(() => {
+    if (!calendarApi) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function applyPreferences(): Promise<void> {
+      try {
+        const settings = await calendarApi.settings.get();
+        let systemLanguageTag: string | undefined = undefined;
+        try {
+          systemLanguageTag = await calendarApi.app.getLocale();
+        } catch {
+          systemLanguageTag = undefined;
+        }
+
+        if (cancelled) {
+          return;
+        }
+
+        setTimeFormat(settings.timeFormat);
+        void i18n.changeLanguage(resolveLanguageSetting(settings.language, systemLanguageTag));
+      } catch {
+        return;
+      }
+    }
+
+    void applyPreferences();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [calendarApi]);
+
+  const timeStr = formatEventTime(params.start, params.end, timeFormat);
   const subject = params.subject || t("reminder.untitledEvent");
 
   return (

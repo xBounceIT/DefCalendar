@@ -400,29 +400,66 @@ class AppDatabase {
   getLatestSyncStatus(): SyncStatus {
     const row = this.db
       .prepare(
-        "SELECT MAX(last_synced_at) AS lastSyncedAt, MAX(error_message) AS errorMessage FROM sync_state",
+        `
+          SELECT
+            MAX(last_synced_at) AS lastSyncedAt,
+            MAX(error_message) AS errorMessage,
+            COALESCE(SUM(CASE WHEN last_synced_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS calendarsSynced,
+            (SELECT COUNT(*) FROM events) AS eventsSynced
+          FROM sync_state
+        `,
       )
       .get();
 
     const lastSyncedAt = readNullableStringProperty(row, "lastSyncedAt");
     const errorMessage = readNullableStringProperty(row, "errorMessage");
+    const calendarsSynced = readNumberProperty(row, "calendarsSynced");
+    const eventsSynced = readNumberProperty(row, "eventsSynced");
 
     if (errorMessage) {
       return {
         lastSyncedAt,
         message: errorMessage,
+        messageKey: errorMessage === "Exchange 365 sync failed." ? "sync.syncFailed" : null,
+        counts: null,
         state: "error",
       };
     }
 
+    if (lastSyncedAt && calendarsSynced > 0) {
+      let calendarSuffix = "s";
+      if (calendarsSynced === 1) {
+        calendarSuffix = "";
+      }
+      let eventSuffix = "s";
+      if (eventsSynced === 1) {
+        eventSuffix = "";
+      }
+
+      return {
+        lastSyncedAt,
+        message: `Synced ${calendarsSynced} calendar${calendarSuffix}, ${eventsSynced} event${eventSuffix}.`,
+        messageKey: "sync.synced",
+        counts: {
+          calendars: calendarsSynced,
+          events: eventsSynced,
+        },
+        state: "idle",
+      };
+    }
+
     let message = "Sign in to sync Exchange 365.";
+    let messageKey = "sync.signInToSync";
     if (lastSyncedAt) {
       message = "Calendar cache is up to date.";
+      messageKey = "sync.cacheUpToDate";
     }
 
     return {
       lastSyncedAt,
       message,
+      messageKey,
+      counts: null,
       state: "idle",
     };
   }
@@ -523,9 +560,7 @@ class AppDatabase {
 
     return statement
       .all()
-      .map((row) =>
-        storedAccountSchema.parse(JSON.parse(readStringProperty(row, "payload_json"))),
-      );
+      .map((row) => storedAccountSchema.parse(JSON.parse(readStringProperty(row, "payload_json"))));
   }
 
   removeAccount(homeAccountId: string): void {
@@ -647,6 +682,18 @@ function readStringProperty(row: unknown, key: string): string {
   }
 
   throw new Error(`Expected "${key}" to be a string.`);
+}
+
+function readNumberProperty(row: unknown, key: string): number {
+  const value = readProperty(row, key);
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value === "bigint") {
+    return Number(value);
+  }
+
+  throw new Error(`Expected "${key}" to be a number.`);
 }
 
 function toSqliteBoolean(value: boolean): 0 | 1 {

@@ -224,6 +224,13 @@
     "connecting": "Connecting to Exchange 365…",
     "chooseCalendars": "Choose calendars to sync.",
     "selectCalendars": "Select at least one calendar to sync.",
+    "cacheUpToDate": "Calendar cache is up to date.",
+    "synced": {
+      "oneCalendarOneEvent": "Synced {{calendars}} calendar, {{events}} event.",
+      "oneCalendarOtherEvents": "Synced {{calendars}} calendar, {{events}} events.",
+      "otherCalendarsOneEvent": "Synced {{calendars}} calendars, {{events}} event.",
+      "otherCalendarsOtherEvents": "Synced {{calendars}} calendars, {{events}} events."
+    },
     "synced_one": "Synced {{calendars}} calendar, {{events}} event.",
     "synced_other": "Synced {{calendars}} calendars, {{events}} events.",
     "syncFailed": "Exchange 365 sync failed."
@@ -240,7 +247,13 @@
       "appearance": {
         "label": "Appearance",
         "title": "Appearance Settings",
-        "description": "Customize the look and feel of the calendar application."
+        "description": "Customize the look and feel of the calendar application.",
+        "timeFormat": "Time format",
+        "timeFormatOptions": {
+          "system": "System",
+          "12h": "12-hour",
+          "24h": "24-hour"
+        }
       },
       "calendarDefaults": {
         "label": "Calendar Defaults",
@@ -251,7 +264,12 @@
       "language": {
         "label": "Language",
         "title": "Language Settings",
-        "selectLanguage": "Select Language"
+        "selectLanguage": "Select Language",
+        "options": {
+          "system": "System",
+          "en": "English",
+          "it": "Italiano"
+        }
       },
       "notifications": {
         "label": "Notifications",

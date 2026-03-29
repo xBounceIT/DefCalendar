@@ -52,6 +52,8 @@ class SyncService {
     this.setStatus({
       lastSyncedAt: null,
       message: "Sign in to sync Exchange 365.",
+      messageKey: "sync.signInToSync",
+      counts: null,
       state: "idle",
     });
   }
@@ -90,6 +92,8 @@ class SyncService {
       const idleStatus = {
         lastSyncedAt: this.status.lastSyncedAt,
         message: "Sign in to sync Exchange 365.",
+        messageKey: "sync.signInToSync",
+        counts: null,
         state: "idle" as const,
       };
       this.setStatus(idleStatus);
@@ -98,13 +102,17 @@ class SyncService {
 
     const homeAccountId = this.dependencies.auth.getActiveAccountId();
     let syncMessage = "Syncing Exchange 365…";
+    let syncMessageKey = "sync.syncing";
     if (reason === "sign-in" || reason === "switch-account") {
       syncMessage = "Connecting to Exchange 365…";
+      syncMessageKey = "sync.connecting";
     }
 
     this.setStatus({
       lastSyncedAt: this.status.lastSyncedAt,
       message: syncMessage,
+      messageKey: syncMessageKey,
+      counts: null,
       state: "syncing",
     });
 
@@ -121,6 +129,8 @@ class SyncService {
         const nextStatus: SyncStatus = {
           lastSyncedAt: this.status.lastSyncedAt,
           message: "Choose calendars to sync.",
+          messageKey: "sync.chooseCalendars",
+          counts: null,
           state: "idle",
         };
         this.setStatus(nextStatus);
@@ -133,6 +143,8 @@ class SyncService {
         const nextStatus: SyncStatus = {
           lastSyncedAt: this.status.lastSyncedAt,
           message: "Select at least one calendar to sync.",
+          messageKey: "sync.selectCalendars",
+          counts: null,
           state: "idle",
         };
         this.setStatus(nextStatus);
@@ -185,20 +197,31 @@ class SyncService {
       const nextStatus: SyncStatus = {
         lastSyncedAt: finishedAt,
         message: `Synced ${calendarsToSync.length} calendar${calendarSuffix}, ${totalEvents} event${eventSuffix}.`,
+        messageKey: "sync.synced",
+        counts: {
+          calendars: calendarsToSync.length,
+          events: totalEvents,
+        },
         state: "idle",
       };
       this.setStatus(nextStatus);
       return nextStatus;
     } catch (error) {
       let errorMessage = "Exchange 365 sync failed.";
+      let messageKey: null | string = "sync.syncFailed";
       if (error instanceof Error) {
         const { message } = error;
         errorMessage = message;
+        if (message !== "Exchange 365 sync failed.") {
+          messageKey = null;
+        }
       }
 
       const nextStatus: SyncStatus = {
         lastSyncedAt: this.status.lastSyncedAt,
         message: errorMessage,
+        messageKey,
+        counts: null,
         state: "error",
       };
       this.setStatus(nextStatus);

@@ -9,13 +9,14 @@ import type {
   EventParticipant,
   EventResponseAction,
   Recurrence,
+  UserSettings,
 } from "@shared/schemas";
 import React, { useEffect, useRef, useState } from "react";
 import { fromDateTimeInputValue, toDateTimeInputValue } from "@shared/calendar";
 import { useTranslation } from "react-i18next";
 
 import type { EditorState } from "../event-editor-state";
-import { formatHeaderDate } from "../date-formatting";
+import { formatHeaderDate, formatLocalizedDate } from "../date-formatting";
 import teamsIcon from "../assets/teams.png";
 import gmeetIcon from "../assets/gmeet.png";
 
@@ -35,6 +36,7 @@ interface EventEditorDialogProps {
   onRespond: (event: CalendarEvent, action: EventResponseAction, comment: string) => Promise<void>;
   onSave: (draft: EventDraft) => Promise<void>;
   state: EditorState | null;
+  timeFormat: UserSettings["timeFormat"];
 }
 
 interface EditorFormState {
@@ -221,7 +223,12 @@ function EventEditorDialog(props: EventEditorDialogProps) {
 
           <div className="slide-panel__section">
             <div className="scheduling-teams-stack">
-              <SchedulingSection disabled={readOnlyForAttendee} form={form} onChange={setForm} />
+              <SchedulingSection
+                disabled={readOnlyForAttendee}
+                form={form}
+                onChange={setForm}
+                timeFormat={props.timeFormat}
+              />
               {!editedEvent?.onlineMeeting?.joinUrl && (
                 <TeamsSection
                   disabled={readOnlyForAttendee}
@@ -262,6 +269,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
             event={editedEvent}
             attendees={form.attendees}
             organizer={props.currentUser}
+            timeFormat={props.timeFormat}
           />
         </aside>
 
@@ -392,7 +400,7 @@ function EventToolbar({
           className={`event-toolbar__toggle ${form.recurrenceEnabled ? "event-toolbar__toggle--active" : ""}`}
           onClick={() => updateForm(onChange, { recurrenceEnabled: true })}
         >
-{t("eventEditor.recurring")}
+          {t("eventEditor.recurring")}
         </button>
       </div>
 
@@ -430,7 +438,9 @@ function EventToolbar({
           onClick={() => setOpenDropdown(openDropdown === "showAs" ? null : "showAs")}
         >
           <span className="event-toolbar__dropdown-label">{getShowAsLabel()}</span>
-          <ChevronDownIcon className={`event-toolbar__dropdown-arrow ${openDropdown === "showAs" ? "expanded" : ""}`} />
+          <ChevronDownIcon
+            className={`event-toolbar__dropdown-arrow ${openDropdown === "showAs" ? "expanded" : ""}`}
+          />
         </button>
         {openDropdown === "showAs" && (
           <div className="event-toolbar__dropdown">
@@ -459,7 +469,9 @@ function EventToolbar({
         >
           <BellIcon />
           <span className="event-toolbar__dropdown-label">{getReminderLabel()}</span>
-          <ChevronDownIcon className={`event-toolbar__dropdown-arrow ${openDropdown === "reminder" ? "expanded" : ""}`} />
+          <ChevronDownIcon
+            className={`event-toolbar__dropdown-arrow ${openDropdown === "reminder" ? "expanded" : ""}`}
+          />
         </button>
         {openDropdown === "reminder" && (
           <div className="event-toolbar__dropdown">
@@ -471,22 +483,21 @@ function EventToolbar({
               />
               <span>{t("eventEditor.desktopReminder")}</span>
             </label>
-            {form.isReminderOn && (
-              <div className="event-toolbar__dropdown-divider" />
-            )}
-            {form.isReminderOn && reminderOptions.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={`event-toolbar__dropdown-item ${form.reminderMinutesBeforeStart === option.value ? "event-toolbar__dropdown-item--selected" : ""}`}
-                onClick={() => {
-                  updateForm(onChange, { reminderMinutesBeforeStart: option.value });
-                  setOpenDropdown(null);
-                }}
-              >
-                {option.label}
-              </button>
-            ))}
+            {form.isReminderOn && <div className="event-toolbar__dropdown-divider" />}
+            {form.isReminderOn &&
+              reminderOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`event-toolbar__dropdown-item ${form.reminderMinutesBeforeStart === option.value ? "event-toolbar__dropdown-item--selected" : ""}`}
+                  onClick={() => {
+                    updateForm(onChange, { reminderMinutesBeforeStart: option.value });
+                    setOpenDropdown(null);
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
           </div>
         )}
       </div>
@@ -501,7 +512,9 @@ function EventToolbar({
           <span className="event-toolbar__dropdown-label">
             {form.categories ? form.categories.split(",")[0].trim() : t("eventEditor.categories")}
           </span>
-          <ChevronDownIcon className={`event-toolbar__dropdown-arrow ${openDropdown === "categories" ? "expanded" : ""}`} />
+          <ChevronDownIcon
+            className={`event-toolbar__dropdown-arrow ${openDropdown === "categories" ? "expanded" : ""}`}
+          />
         </button>
         {openDropdown === "categories" && (
           <div className="event-toolbar__dropdown event-toolbar__dropdown--categories">
@@ -524,7 +537,9 @@ function EventToolbar({
         >
           <LockIcon />
           <span className="event-toolbar__dropdown-label">{getSensitivityLabel()}</span>
-          <ChevronDownIcon className={`event-toolbar__dropdown-arrow ${openDropdown === "sensitivity" ? "expanded" : ""}`} />
+          <ChevronDownIcon
+            className={`event-toolbar__dropdown-arrow ${openDropdown === "sensitivity" ? "expanded" : ""}`}
+          />
         </button>
         {openDropdown === "sensitivity" && (
           <div className="event-toolbar__dropdown">
@@ -534,7 +549,9 @@ function EventToolbar({
                 type="button"
                 className={`event-toolbar__dropdown-item ${form.sensitivity === option.value ? "event-toolbar__dropdown-item--selected" : ""}`}
                 onClick={() => {
-                  updateForm(onChange, { sensitivity: option.value as EditorFormState["sensitivity"] });
+                  updateForm(onChange, {
+                    sensitivity: option.value as EditorFormState["sensitivity"],
+                  });
                   setOpenDropdown(null);
                 }}
               >
@@ -552,12 +569,14 @@ function SchedulingSection({
   disabled,
   form,
   onChange,
+  timeFormat,
 }: {
   disabled: boolean;
   form: EditorFormState;
   onChange: React.Dispatch<React.SetStateAction<EditorFormState | null>>;
+  timeFormat: UserSettings["timeFormat"];
 }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -565,7 +584,8 @@ function SchedulingSection({
     form.startInput,
     form.endInput,
     form.allDay,
-    i18n.language,
+    timeFormat,
+    t,
   );
 
   const extractDate = (input: string) => input.slice(0, 10);
@@ -837,10 +857,12 @@ function AttendeesSidebar({
   event,
   attendees,
   organizer,
+  timeFormat,
 }: {
   event: CalendarEvent | null;
   attendees: EventParticipant[];
   organizer: EventParticipant | null;
+  timeFormat: UserSettings["timeFormat"];
 }) {
   const { t } = useTranslation();
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
@@ -915,18 +937,22 @@ function AttendeesSidebar({
   };
 
   const formatSentTime = (event: CalendarEvent | null): string => {
-    if (!event?.created) {
+    if (!event?.lastModifiedDateTime) {
       return "";
     }
-    const date = new Date(event.created);
-    return date.toLocaleString("it-IT", {
-      weekday: "long",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    const date = new Date(event.lastModifiedDateTime);
+    return formatLocalizedDate(
+      date,
+      {
+        weekday: "long",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      },
+      timeFormat,
+    );
   };
 
   const displayOrganizer = event?.organizer ?? organizer;
@@ -945,7 +971,7 @@ function AttendeesSidebar({
               <span className="attendees-sidebar__organizer-name">
                 {displayOrganizer.name || displayOrganizer.email}
               </span>
-              {event?.created && (
+              {event?.lastModifiedDateTime && (
                 <span className="attendees-sidebar__organizer-meta">
                   {t("eventEditor.invitationSent", { date: formatSentTime(event) })}
                 </span>
@@ -1257,7 +1283,17 @@ function ChevronDownIcon({ className = "" }: { className?: string }) {
 
 function TrashIcon() {
   return (
-    <svg aria-hidden="true" fill="none" height="18" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="18">
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="18"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="18"
+    >
       <polyline points="3 6 5 6 21 6" />
       <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
       <line x1="10" x2="10" y1="11" y2="17" />
@@ -1268,7 +1304,17 @@ function TrashIcon() {
 
 function CopyIcon() {
   return (
-    <svg aria-hidden="true" fill="none" height="18" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="18">
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="18"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="18"
+    >
       <rect height="14" width="14" x="8" y="8" rx="2" ry="2" />
       <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
     </svg>
@@ -1277,7 +1323,17 @@ function CopyIcon() {
 
 function BellIcon() {
   return (
-    <svg aria-hidden="true" fill="none" height="18" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="18">
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="18"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="18"
+    >
       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
       <path d="M13.73 21a2 2 0 0 1-3.46 0" />
     </svg>
@@ -1286,7 +1342,17 @@ function BellIcon() {
 
 function TagIcon() {
   return (
-    <svg aria-hidden="true" fill="none" height="18" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="18">
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="18"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="18"
+    >
       <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
       <line x1="7" x2="7.01" y1="7" y2="7" />
     </svg>
@@ -1295,7 +1361,17 @@ function TagIcon() {
 
 function LockIcon() {
   return (
-    <svg aria-hidden="true" fill="none" height="18" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="18">
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="18"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="18"
+    >
       <rect height="11" width="18" x="3" y="11" rx="2" ry="2" />
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
     </svg>
@@ -1315,41 +1391,54 @@ function formatDateRangeSummary(
   startInput: string,
   endInput: string,
   allDay: boolean,
-  locale: string,
+  timeFormat: UserSettings["timeFormat"],
+  t: (key: string, options?: Record<string, unknown>) => string,
 ): string {
   const startDate = new Date(startInput);
   const endDate = new Date(endInput);
 
-  const dayNames: Record<string, string[]> = {
-    en: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
-    it: ["Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"],
-    es: ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"],
-    fr: ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"],
-    de: ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"],
-  };
-
-  const lang = locale.split("-")[0];
-  const days = dayNames[lang] || dayNames["en"];
-
-  const formatDate = (date: Date) => {
-    const day = days[date.getDay()];
-    const d = date.getDate().toString().padStart(2, "0");
-    const m = (date.getMonth() + 1).toString().padStart(2, "0");
-    const y = date.getFullYear();
-    return `${day} ${d}/${m}/${y}`;
-  };
-
-  const formatTime = (date: Date) => {
-    const h = date.getHours().toString().padStart(2, "0");
-    const min = date.getMinutes().toString().padStart(2, "0");
-    return `${h}:${min}`;
-  };
-
-  if (allDay) {
-    return `${formatDate(startDate)} (${locale.startsWith("it") ? "Giornata intera" : locale.startsWith("es") ? "Todo el día" : "All day"})`;
+  if (Number.isNaN(startDate.getTime())) {
+    return "";
   }
 
-  return `${formatDate(startDate)} ${formatTime(startDate)} - ${formatTime(endDate)}`;
+  const dateText = formatLocalizedDate(
+    startDate,
+    {
+      weekday: "short",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    },
+    timeFormat,
+  );
+
+  if (allDay) {
+    return `${dateText} (${t("eventEditor.allDay")})`;
+  }
+
+  if (Number.isNaN(endDate.getTime())) {
+    return dateText;
+  }
+
+  const startTimeText = formatLocalizedDate(
+    startDate,
+    {
+      hour: "numeric",
+      minute: "2-digit",
+    },
+    timeFormat,
+  );
+
+  const endTimeText = formatLocalizedDate(
+    endDate,
+    {
+      hour: "numeric",
+      minute: "2-digit",
+    },
+    timeFormat,
+  );
+
+  return `${dateText} ${startTimeText} - ${endTimeText}`;
 }
 
 function CollapsibleSection({
@@ -1616,7 +1705,7 @@ function buildFormState(state: EventEditorDialogProps["state"]): EditorFormState
     body: event?.body ?? draft?.body ?? "",
     bodyContentType: event?.bodyContentType ?? draft?.bodyContentType ?? "text",
     calendarId: state.mode === "create" ? state.calendarId : event!.calendarId,
-    categories: ((event?.categories ?? draft?.categories) ?? []).join(", "),
+    categories: (event?.categories ?? draft?.categories ?? []).join(", "),
     endInput: buildEndInput(state),
     isOnlineMeeting: event?.isOnlineMeeting ?? draft?.isOnlineMeeting ?? false,
     isReminderOn: event?.isReminderOn ?? draft?.isReminderOn ?? true,
@@ -1630,7 +1719,9 @@ function buildFormState(state: EventEditorDialogProps["state"]): EditorFormState
     recurrenceRangeType: recurrence?.range.type ?? "noEnd",
     recurrenceType: recurrence?.pattern.type ?? "weekly",
     reminderMinutesBeforeStart: (
-      event?.reminderMinutesBeforeStart ?? draft?.reminderMinutesBeforeStart ?? 15
+      event?.reminderMinutesBeforeStart ??
+      draft?.reminderMinutesBeforeStart ??
+      15
     ).toString(),
     responseComment: "",
     responseRequested: event?.responseRequested ?? draft?.responseRequested ?? true,

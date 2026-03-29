@@ -1,4 +1,4 @@
-import type { AccountSummary, CalendarSummary, SyncStatus } from "@shared/schemas";
+import type { AccountSummary, CalendarSummary, SyncStatus, UserSettings } from "@shared/schemas";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCircleUser, faPlus } from "@fortawesome/free-solid-svg-icons";
 import { getCalendarAccent } from "@shared/calendar";
@@ -23,6 +23,7 @@ interface CalendarSidebarProps {
   onSignOut: () => void;
   selectedDate: string;
   syncStatus: SyncStatus;
+  timeFormat: UserSettings["timeFormat"];
 }
 
 function ChevronIcon({ expanded }: { expanded: boolean }) {
@@ -52,7 +53,12 @@ function CalendarListHeader({ onAdd }: { onAdd: () => void }) {
   return (
     <div className="calendar-list-header">
       <h2>{t("sidebar.accounts")}</h2>
-      <button className="add-account-btn" onClick={onAdd} title={t("sidebar.addAccount")} type="button">
+      <button
+        className="add-account-btn"
+        onClick={onAdd}
+        title={t("sidebar.addAccount")}
+        type="button"
+      >
         <FontAwesomeIcon icon={faPlus} />
       </button>
     </div>
@@ -110,10 +116,7 @@ function CalendarListGroup({
     <div className="calendar-list-group">
       <div className="account-card">
         <button className="account-header" onClick={onToggle} type="button">
-          <span
-            className="account-color-dot"
-            style={{ backgroundColor: account.color }}
-          />
+          <span className="account-color-dot" style={{ backgroundColor: account.color }} />
           <FontAwesomeIcon className="account-icon" icon={faCircleUser} />
           <ChevronIcon expanded={isExpanded} />
           <span className="account-email">{account.username}</span>
@@ -168,10 +171,7 @@ function CalendarList({
     return grouped;
   }, [calendars]);
 
-  const accountEmails = React.useMemo(
-    () => new Set(accounts.map((a) => a.username)),
-    [accounts],
-  );
+  const accountEmails = React.useMemo(() => new Set(accounts.map((a) => a.username)), [accounts]);
 
   const entries = React.useMemo(
     () => accounts.map((account) => [account.username, account] as const),
@@ -219,10 +219,12 @@ function SyncCard({
   isRefreshing,
   onRefresh,
   syncStatus,
+  timeFormat,
 }: {
   isRefreshing: boolean;
   onRefresh: () => void;
   syncStatus: SyncStatus;
+  timeFormat: UserSettings["timeFormat"];
 }) {
   const { t } = useTranslation();
   const { lastSyncedAt, message: syncMessage } = syncStatus;
@@ -233,7 +235,7 @@ function SyncCard({
 
   const iconClassName = isRefreshing ? "refresh-icon--spinning" : "";
 
-  const syncTimestamp = formatSyncTimestamp(lastSyncedAt);
+  const syncTimestamp = formatSyncTimestamp(lastSyncedAt, timeFormat);
 
   return (
     <div className={`sync-card sync-card--${syncStatus.state}`}>
@@ -373,6 +375,7 @@ function CalendarSidebar(props: CalendarSidebarProps) {
           isRefreshing={props.isRefreshing}
           onRefresh={props.onRefresh}
           syncStatus={props.syncStatus}
+          timeFormat={props.timeFormat}
         />
         <SettingsButton onClick={props.onSettingsClick} />
         <hr className="sidebar-divider" />

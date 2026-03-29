@@ -154,13 +154,29 @@ function createCalendarApiMock(): CalendarApi {
       update: vi.fn(),
     },
     settings: {
-      get: vi.fn(),
-      update: vi.fn(),
+      get: vi.fn().mockResolvedValue({
+        activeView: "timeGridWeek",
+        selectedDate: signedInSelectedDate,
+        visibleCalendarIds: [],
+        language: "system",
+        timeFormat: "system",
+        updateChannel: "stable",
+      }),
+      update: vi.fn().mockResolvedValue({
+        activeView: "timeGridWeek",
+        selectedDate: signedInSelectedDate,
+        visibleCalendarIds: [],
+        language: "system",
+        timeFormat: "system",
+        updateChannel: "stable",
+      }),
     },
     sync: {
       getStatus: vi.fn().mockResolvedValue({
         lastSyncedAt: null,
         message: "Sign in to sync Exchange 365.",
+        messageKey: "sync.signInToSync",
+        counts: null,
         state: "idle",
       }),
       onStatus: vi.fn().mockReturnValue(() => undefined),
@@ -262,14 +278,16 @@ function createSignedInCalendarApiMock(): CalendarApi {
         activeView: "timeGridWeek",
         selectedDate: signedInSelectedDate,
         visibleCalendarIds: ["calendar-1"],
-        language: "en",
+        language: "system",
+        timeFormat: "system",
         updateChannel: "stable",
       }),
       update: vi.fn().mockResolvedValue({
         activeView: "timeGridWeek",
         selectedDate: signedInSelectedDate,
         visibleCalendarIds: ["calendar-1"],
-        language: "en",
+        language: "system",
+        timeFormat: "system",
         updateChannel: "stable",
       }),
     },
@@ -277,6 +295,11 @@ function createSignedInCalendarApiMock(): CalendarApi {
       getStatus: vi.fn().mockResolvedValue({
         lastSyncedAt: "2026-03-27T15:43:00.000Z",
         message: "Synced 3 calendars, 0 events.",
+        messageKey: "sync.synced",
+        counts: {
+          calendars: 3,
+          events: 0,
+        },
         state: "idle",
       }),
       onStatus: vi.fn().mockReturnValue(() => undefined),
@@ -400,14 +423,16 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
         activeView: "timeGridWeek",
         selectedDate: signedInSelectedDate,
         visibleCalendarIds: ["calendar-1", "calendar-2"],
-        language: "en",
+        language: "system",
+        timeFormat: "system",
         updateChannel: "stable",
       }),
       update: vi.fn().mockResolvedValue({
         activeView: "timeGridWeek",
         selectedDate: signedInSelectedDate,
         visibleCalendarIds: ["calendar-1", "calendar-2"],
-        language: "en",
+        language: "system",
+        timeFormat: "system",
         updateChannel: "stable",
       }),
     },
@@ -415,12 +440,19 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
       getStatus: vi.fn().mockResolvedValue({
         lastSyncedAt: null,
         message: "Choose calendars to sync.",
+        messageKey: "sync.chooseCalendars",
+        counts: null,
         state: "idle",
       }),
       onStatus: vi.fn().mockReturnValue(() => undefined),
       refresh: vi.fn().mockResolvedValue({
         lastSyncedAt: null,
         message: "Synced 2 calendars, 0 events.",
+        messageKey: "sync.synced",
+        counts: {
+          calendars: 2,
+          events: 0,
+        },
         state: "idle",
       }),
     },
@@ -521,6 +553,50 @@ describe("app startup", () => {
     }
   });
 
+  it("localizes sync summary with calendar and event counts", async () => {
+    try {
+      installResizeObserverMock();
+      const calendarApi = createSignedInCalendarApiMock();
+      calendarApi.app.getLocale = vi.fn().mockResolvedValue("it-IT");
+      calendarApi.settings.get = vi.fn().mockResolvedValue({
+        activeView: "timeGridWeek",
+        selectedDate: signedInSelectedDate,
+        visibleCalendarIds: ["calendar-1"],
+        language: "it",
+        timeFormat: "system",
+        updateChannel: "stable",
+      });
+      calendarApi.settings.update = vi.fn().mockResolvedValue({
+        activeView: "timeGridWeek",
+        selectedDate: signedInSelectedDate,
+        visibleCalendarIds: ["calendar-1"],
+        language: "it",
+        timeFormat: "system",
+        updateChannel: "stable",
+      });
+      calendarApi.sync.getStatus = vi.fn().mockResolvedValue({
+        lastSyncedAt: "2026-03-27T15:43:00.000Z",
+        message: "Synced 1 calendar, 18 events.",
+        messageKey: "sync.synced",
+        counts: {
+          calendars: 1,
+          events: 18,
+        },
+        state: "idle",
+      });
+      installCalendarApi(calendarApi);
+
+      renderApp();
+
+      await expect(
+        screen.findByText("Sincronizzato 1 calendario, 18 eventi."),
+      ).resolves.not.toBeNull();
+    } finally {
+      restoreCalendarApi();
+      restoreResizeObserver();
+    }
+  });
+
   it("shows a startup error when the preload bridge is missing", () => {
     try {
       installResizeObserverMock();
@@ -528,8 +604,8 @@ describe("app startup", () => {
 
       renderApp();
 
-      expect(screen.getByText(/secure desktop bridge/i)).not.toBeNull();
-      expect(screen.getByText(/Restart the app/i)).not.toBeNull();
+      expect(screen.getByText(/secure desktop bridge|ponte desktop sicuro/i)).not.toBeNull();
+      expect(screen.getByText(/Restart the app|Riavvia l’app/i)).not.toBeNull();
     } finally {
       restoreCalendarApi();
       restoreResizeObserver();

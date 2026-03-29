@@ -332,10 +332,17 @@ const reminderDismissArgsSchema = z.object({
   dedupeKey: z.string().min(1),
 });
 
+const syncStatusCountsSchema = z.object({
+  calendars: z.number().int().nonnegative(),
+  events: z.number().int().nonnegative(),
+});
+
 const syncStatusSchema = z.object({
   state: z.enum(["idle", "syncing", "error"]),
   lastSyncedAt: z.string().nullable(),
   message: z.string().nullable(),
+  messageKey: z.string().nullable().optional(),
+  counts: syncStatusCountsSchema.nullable().optional(),
 });
 
 const appUpdateStateSchema = z.enum([
@@ -360,13 +367,26 @@ const appUpdateStatusSchema = z.object({
 });
 
 const updateChannelSchema = z.enum(["stable", "prerelease"]);
+const languageSettingSchema = z.enum(["system", "en", "it"]);
+const timeFormatSettingSchema = z.enum(["system", "12h", "24h"]);
+
+const languagePreferenceSchema = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  languageSettingSchema.default("system"),
+);
+
+const timeFormatPreferenceSchema = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  timeFormatSettingSchema.default("system"),
+);
 
 const userSettingsSchema = z.object({
   activeAccountId: z.string().nullable().optional(),
   visibleCalendarIds: z.array(z.string()),
   activeView: calendarViewSchema,
   selectedDate: dateTimeStringSchema,
-  language: z.enum(["en", "it"]).nullable().optional(),
+  language: languagePreferenceSchema,
+  timeFormat: timeFormatPreferenceSchema,
   updateChannel: updateChannelSchema.default("stable"),
 });
 
@@ -416,7 +436,8 @@ function createDefaultSettings(): UserSettings {
     visibleCalendarIds: [],
     activeView: "timeGridWeek",
     selectedDate: new Date().toISOString(),
-    language: null,
+    language: "system",
+    timeFormat: "system",
     updateChannel: "stable",
   };
 }
