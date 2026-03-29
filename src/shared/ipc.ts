@@ -1,6 +1,7 @@
 import type {
   AttachmentDeleteArgs,
   AttachmentUploadArgs,
+  AppUpdateStatus,
   AuthSignInMode,
   AuthState,
   CalendarEvent,
@@ -11,13 +12,13 @@ import type {
   EventDraft,
   EventListArgs,
   EventReferenceArgs,
-  EventResponseAction,
   RespondToEventArgs,
   SetCalendarVisibilityArgs,
   SyncStatus,
   UserSettings,
   UserSettingsPatch,
 } from "./schemas";
+import type { EventResponseAction, ReminderPopupData } from "./ipc-types";
 
 export const IPC_CHANNELS = {
   appGetLocale: "app:get-locale",
@@ -42,6 +43,11 @@ export const IPC_CHANNELS = {
   syncRefresh: "sync:refresh",
   syncGetStatus: "sync:get-status",
   syncStatusChanged: "sync:status-changed",
+  updatesGetStatus: "updates:get-status",
+  updatesCheck: "updates:check",
+  updatesDownload: "updates:download",
+  updatesInstall: "updates:install",
+  updatesStatusChanged: "updates:status-changed",
   settingsGet: "settings:get",
   settingsUpdate: "settings:update",
   reminderSnooze: "reminder:snooze",
@@ -53,7 +59,7 @@ export const IPC_CHANNELS = {
   windowIsMaximized: "window:is-maximized",
 } as const;
 
-export interface CalendarApi {
+interface CalendarApi {
   app: {
     getLocale: () => Promise<string>;
     getVersion: () => Promise<string>;
@@ -86,6 +92,13 @@ export interface CalendarApi {
     getStatus: () => Promise<SyncStatus>;
     onStatus: (listener: (status: SyncStatus) => void) => () => void;
   };
+  updates: {
+    getStatus: () => Promise<AppUpdateStatus>;
+    check: () => Promise<AppUpdateStatus>;
+    download: () => Promise<AppUpdateStatus>;
+    install: () => Promise<void>;
+    onStatus: (listener: (status: AppUpdateStatus) => void) => () => void;
+  };
   settings: {
     get: () => Promise<UserSettings>;
     update: (patch: UserSettingsPatch) => Promise<UserSettings>;
@@ -103,12 +116,4 @@ export interface CalendarApi {
   };
 }
 
-export interface ReminderPopupData {
-  dedupeKey: string;
-  subject: string;
-  location: null | string;
-  start: string;
-  end: string;
-}
-
-export type { EventAttachment, EventResponseAction };
+export { type CalendarApi, type EventAttachment, type EventResponseAction, type ReminderPopupData };

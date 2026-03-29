@@ -1,7 +1,17 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { CalendarSummary, UserSettings } from "@shared/schemas";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import {
+  faArrowsRotate,
+  faCircleInfo,
+  faGlobe,
+  faPalette,
+} from "@fortawesome/free-solid-svg-icons";
+import { faBell, faCalendar } from "@fortawesome/free-regular-svg-icons";
+import type { CalendarSummary, UpdateChannel, UserSettings } from "@shared/schemas";
 import type { AppLocale } from "../i18n";
+import { useUpdater } from "../hooks/use-updater";
+import { useVersion } from "../hooks/use-version";
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -11,7 +21,13 @@ interface SettingsDialogProps {
   onSave: (settings: Partial<UserSettings>) => void;
 }
 
-type SettingsSection = "appearance" | "calendarDefaults" | "notifications" | "language" | "sync";
+type SettingsSection =
+  | "appearance"
+  | "calendarDefaults"
+  | "language"
+  | "notifications"
+  | "sync"
+  | "about";
 
 function CloseIcon() {
   return (
@@ -132,7 +148,182 @@ function SyncSection() {
   );
 }
 
-function SettingsDialog({ isOpen, onClose, calendars }: SettingsDialogProps): JSX.Element | null {
+interface AboutSectionProps {
+  onSave: (settings: Partial<UserSettings>) => void;
+  settings: UserSettings;
+}
+
+function AboutSection({ onSave, settings }: AboutSectionProps) {
+  const { t } = useTranslation();
+  const { isLoading: isVersionLoading, version } = useVersion();
+  const {
+    check,
+    download,
+    install,
+    isChecking,
+    isDownloading,
+    status,
+    statusError,
+    statusLoading,
+  } = useUpdater();
+
+  const updateChannelOptions: UpdateChannel[] = ["stable", "prerelease"];
+  const updateChannelLabels: Record<UpdateChannel, string> = {
+    stable: t("settings.updates.channel.stable"),
+    prerelease: t("settings.updates.channel.prerelease"),
+  };
+
+  const updateStatusLabel = useMemo(() => {
+    if (!status) {
+      return t("settings.updates.status.idle");
+    }
+
+    switch (status.state) {
+      case "checking": {
+        return t("settings.updates.status.checking");
+      }
+      case "available": {
+        return t("settings.updates.status.available", {
+          version: status.latestVersion ?? t("settings.updates.unknownVersion"),
+        });
+      }
+      case "not_available": {
+        return t("settings.updates.status.notAvailable");
+      }
+      case "downloading": {
+        return t("settings.updates.status.downloading", {
+          percent: Math.round(status.downloadPercent ?? 0),
+        });
+      }
+      case "downloaded": {
+        return t("settings.updates.status.downloaded", {
+          version: status.latestVersion ?? t("settings.updates.unknownVersion"),
+        });
+      }
+      case "error": {
+        return t("settings.updates.status.error");
+      }
+      case "unsupported": {
+        return t("settings.updates.status.unsupported");
+      }
+      case "idle":
+      default: {
+        return t("settings.updates.status.idle");
+      }
+    }
+  }, [status, t]);
+
+  const isBusy = isChecking || isDownloading;
+  const canCheck = !isBusy && status?.state !== "unsupported";
+  const canDownload = !isBusy && status?.state === "available";
+  const canInstall = status?.state === "downloaded";
+
+  let lastChecked = t("settings.updates.notCheckedYet");
+  if (status?.checkedAt) {
+    const value = new Date(status.checkedAt).toLocaleString();
+    lastChecked = t("settings.updates.lastChecked", { value });
+  }
+
+  const effectiveVersion = version ?? status?.currentVersion ?? null;
+
+  return (
+    <div className="settings-section">
+      <h3>{t("settings.sections.about.title")}</h3>
+      <div className="settings-fields">
+        <div className="settings-updates">
+          <h4>{t("settings.updates.title")}</h4>
+          <div className="settings-updates__meta">
+            <span>{t("settings.updates.currentVersion")}</span>
+            <strong>
+              {isVersionLoading && !effectiveVersion
+                ? t("settings.updates.loading")
+                : (effectiveVersion ?? t("settings.updates.unknownVersion"))}
+            </strong>
+          </div>
+          <div className="settings-updates__channel">
+            <span>{t("settings.updates.channel.label")}</span>
+            <select
+              value={settings.updateChannel}
+              onChange={(e) => {
+                onSave({ updateChannel: e.target.value as UpdateChannel });
+              }}
+            >
+              {updateChannelOptions.map((channel) => (
+                <option key={channel} value={channel}>
+                  {updateChannelLabels[channel]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div
+            className={`settings-updates__status settings-updates__status--${status?.state ?? "idle"}`}
+          >
+            {updateStatusLabel}
+          </div>
+          {status?.state === "downloading" && (
+            <progress
+              className="settings-updates__progress"
+              max={100}
+              value={Math.round(status.downloadPercent ?? 0)}
+            />
+          )}
+          {status?.releaseNotes && (
+            <details className="settings-updates__notes">
+              <summary>{t("settings.updates.releaseNotes")}</summary>
+              <pre>{status.releaseNotes}</pre>
+            </details>
+          )}
+          {(status?.error || statusError instanceof Error) && (
+            <p className="settings-updates__error">{status?.error ?? statusError.message}</p>
+          )}
+          <p className="settings-updates__timestamp">
+            {statusLoading ? t("settings.updates.loading") : lastChecked}
+          </p>
+          <div className="settings-updates__actions">
+            <button
+              className="settings-updates__action"
+              disabled={!canCheck}
+              onClick={check}
+              type="button"
+            >
+              {isChecking
+                ? t("settings.updates.actions.checking")
+                : t("settings.updates.actions.check")}
+            </button>
+            <button
+              className="settings-updates__action"
+              disabled={!canDownload}
+              onClick={download}
+              type="button"
+            >
+              {isDownloading
+                ? t("settings.updates.actions.downloading")
+                : t("settings.updates.actions.download")}
+            </button>
+            <button
+              className="settings-updates__action settings-updates__action--primary"
+              disabled={!canInstall}
+              onClick={() => {
+                install();
+              }}
+              type="button"
+            >
+              {t("settings.updates.actions.install")}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingsDialog({
+  isOpen,
+  onClose,
+  calendars,
+  settings,
+  onSave,
+}: SettingsDialogProps): JSX.Element | null {
   const { t } = useTranslation();
   const [activeSection, setActiveSection] = useState<SettingsSection>("appearance");
 
@@ -140,13 +331,18 @@ function SettingsDialog({ isOpen, onClose, calendars }: SettingsDialogProps): JS
     return null;
   }
 
-  const sections: { id: SettingsSection; label: string }[] = [
-    { id: "appearance", label: t("settings.sections.appearance.label") },
-    { id: "calendarDefaults", label: t("settings.sections.calendarDefaults.label") },
-    { id: "language", label: t("settings.sections.language.label") },
-    { id: "notifications", label: t("settings.sections.notifications.label") },
-    { id: "sync", label: t("settings.sections.sync.label") },
-  ].toSorted((a, b) => a.label.localeCompare(b.label));
+  const sections: { id: SettingsSection; label: string; icon: typeof faPalette }[] = [
+    { id: "appearance", label: t("settings.sections.appearance.label"), icon: faPalette },
+    {
+      id: "calendarDefaults",
+      label: t("settings.sections.calendarDefaults.label"),
+      icon: faCalendar,
+    },
+    { id: "language", label: t("settings.sections.language.label"), icon: faGlobe },
+    { id: "notifications", label: t("settings.sections.notifications.label"), icon: faBell },
+    { id: "sync", label: t("settings.sections.sync.label"), icon: faArrowsRotate },
+    { id: "about", label: t("settings.sections.about.label"), icon: faCircleInfo },
+  ];
 
   function renderSectionContent() {
     switch (activeSection) {
@@ -164,6 +360,9 @@ function SettingsDialog({ isOpen, onClose, calendars }: SettingsDialogProps): JS
       }
       case "sync": {
         return <SyncSection />;
+      }
+      case "about": {
+        return <AboutSection onSave={onSave} settings={settings} />;
       }
       default: {
         return <AppearanceSection />;
@@ -197,7 +396,8 @@ function SettingsDialog({ isOpen, onClose, calendars }: SettingsDialogProps): JS
                 onClick={() => setActiveSection(section.id)}
                 type="button"
               >
-                {section.label}
+                <FontAwesomeIcon className="settings-nav__icon" icon={section.icon} />
+                <span>{section.label}</span>
               </button>
             ))}
           </nav>

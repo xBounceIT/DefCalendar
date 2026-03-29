@@ -11,13 +11,15 @@
     "build": "electron-vite build",
     "package": "electron-vite build && electron-builder --dir",
     "dist": "electron-vite build && electron-builder",
+    "dist:publish": "electron-vite build && electron-builder --publish always",
     "lint": "oxlint --tsconfig tsconfig.json src test electron.vite.config.ts",
     "lint:fix": "oxlint --tsconfig tsconfig.json --fix src test electron.vite.config.ts",
     "format": "oxfmt --write src test electron.vite.config.ts",
     "format:check": "oxfmt --check src test electron.vite.config.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "prepare": "husky"
   },
   "build": {
     "appId": "com.daniel.defcalendar",
@@ -34,6 +36,13 @@
         "nsis"
       ]
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "xBounceIT",
+        "repo": "DefCalendar"
+      }
+    ],
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
@@ -55,6 +64,7 @@
     "date-fns": "^4.1.0",
     "delay": "^7.0.0",
     "dotenv": "^17.3.1",
+    "electron-updater": "^6.8.3",
     "fs-extra": "^11.3.4",
     "html-to-text": "^9.0.5",
     "i18next": "^25.10.10",
@@ -77,6 +87,7 @@
     "electron": "^41.1.0",
     "electron-builder": "^26.8.2",
     "electron-vite": "^5.0.0",
+    "husky": "^9.1.7",
     "jsdom": "^29.0.1",
     "oxfmt": "^0.42.0",
     "oxlint": "^1.57.0",

@@ -137,12 +137,12 @@ function EventEditorDialog(props: EventEditorDialogProps) {
               <button
                 className="ghost-button"
                 onClick={() => {
-                  window.open(editedEvent.onlineMeeting!.joinUrl!, "_blank");
+                  void props.onOpenInOutlook(editedEvent.onlineMeeting!.joinUrl!);
                 }}
                 type="button"
               >
                 <MeetingIcon url={editedEvent.onlineMeeting!.joinUrl!} />
-                <span>Partecipate</span>
+                <span>{t("eventEditor.joinMeeting")}</span>
               </button>
             )}
             {editedEvent && editedEvent.isOrganizer && editedEvent.attendees.length === 0 && (
@@ -230,11 +230,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
 
           <div className="slide-panel__section">
             <h4 className="slide-panel__section-title">{t("eventEditor.notes")}</h4>
-            <NotesSection
-              disabled={readOnlyForAttendee}
-              form={form}
-              onChange={setForm}
-            />
+            <NotesSection disabled={readOnlyForAttendee} form={form} onChange={setForm} />
           </div>
 
           {editedEvent && (
@@ -345,7 +341,9 @@ function SchedulingSection({
           disabled={disabled}
         >
           <span className="scheduling-summary__text">{summaryText}</span>
-          <ChevronDownIcon className={`scheduling-summary__arrow ${isExpanded ? "expanded" : ""}`} />
+          <ChevronDownIcon
+            className={`scheduling-summary__arrow ${isExpanded ? "expanded" : ""}`}
+          />
         </button>
       </div>
 
@@ -1043,10 +1041,7 @@ function ChevronDownIcon({ className = "" }: { className?: string }) {
 function isGoogleMeetUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
-    return (
-      parsed.hostname === "meet.google.com" ||
-      parsed.hostname.endsWith(".meet.google.com")
-    );
+    return parsed.hostname === "meet.google.com" || parsed.hostname.endsWith(".meet.google.com");
   } catch {
     return false;
   }
@@ -1730,11 +1725,11 @@ function convertHtmlBodyToPlainText(value: string): string {
 function decodeHtmlEntities(value: string): string {
   if (typeof DOMParser !== "function") {
     return value
+      .replace(/&amp;/gi, "&")
       .replace(/&lt;/gi, "<")
       .replace(/&gt;/gi, ">")
       .replace(/&quot;/gi, '"')
-      .replace(/&#39;/gi, "'")
-      .replace(/&amp;/gi, "&");
+      .replace(/&#39;/gi, "'");
   }
 
   const parsed = new DOMParser().parseFromString(value, "text/html");

@@ -43,6 +43,7 @@ Electron desktop calendar app for Microsoft 365 Exchange Online with:
 - `npm run build`: compile main, preload, and renderer output into `out/`
 - `npm run package`: compile the app and create an unpacked distributable
 - `npm run dist`: create installer artifacts with `electron-builder`
+- `npm run dist:publish`: create installer artifacts and publish a GitHub Release update
 
 ## Notes
 
@@ -54,3 +55,5 @@ Electron desktop calendar app for Microsoft 365 Exchange Online with:
 - Shared/delegate calendars are not implemented in this version.
 - Recurring events and attendee-managed meetings are shown but edited as read-only, with an Outlook handoff.
 - On WSL2, native Windows packaging is not the right verification environment. Build Windows installers on native Windows or CI.
+- Auto-updates use GitHub Releases and are user-initiated from `Settings > Sync`.
+- Publishing updates requires a `GH_TOKEN` environment variable with repository release permissions.

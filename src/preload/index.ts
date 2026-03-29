@@ -1,4 +1,4 @@
-import type { AuthSignInMode, AuthState, SyncStatus } from "@shared/schemas";
+import type { AppUpdateStatus, AuthSignInMode, AuthState, SyncStatus } from "@shared/schemas";
 import { contextBridge, ipcRenderer } from "electron";
 import type { CalendarApi } from "@shared/ipc";
 import IPC_CHANNELS from "@shared/ipc-values";
@@ -46,6 +46,20 @@ const calendarApi: CalendarApi = {
       ipcRenderer.on(IPC_CHANNELS.syncStatusChanged, wrapped);
       return () => {
         ipcRenderer.removeListener(IPC_CHANNELS.syncStatusChanged, wrapped);
+      };
+    },
+  },
+  updates: {
+    getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.updatesGetStatus),
+    check: () => ipcRenderer.invoke(IPC_CHANNELS.updatesCheck),
+    download: () => ipcRenderer.invoke(IPC_CHANNELS.updatesDownload),
+    install: () => ipcRenderer.invoke(IPC_CHANNELS.updatesInstall),
+    onStatus: (listener: (status: AppUpdateStatus) => void) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, status: AppUpdateStatus) =>
+        listener(status);
+      ipcRenderer.on(IPC_CHANNELS.updatesStatusChanged, wrapped);
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.updatesStatusChanged, wrapped);
       };
     },
   },

@@ -325,11 +325,35 @@ const syncStatusSchema = z.object({
   message: z.string().nullable(),
 });
 
+const appUpdateStateSchema = z.enum([
+  "idle",
+  "checking",
+  "available",
+  "not_available",
+  "downloading",
+  "downloaded",
+  "error",
+  "unsupported",
+]);
+
+const appUpdateStatusSchema = z.object({
+  state: appUpdateStateSchema,
+  currentVersion: z.string().min(1),
+  latestVersion: z.string().nullable(),
+  checkedAt: z.string().nullable(),
+  downloadPercent: z.number().min(0).max(100).nullable(),
+  releaseNotes: z.string().nullable(),
+  error: z.string().nullable(),
+});
+
+const updateChannelSchema = z.enum(["stable", "prerelease"]);
+
 const userSettingsSchema = z.object({
   visibleCalendarIds: z.array(z.string()),
   activeView: calendarViewSchema,
   selectedDate: dateTimeStringSchema,
   language: z.enum(["en", "it"]).nullable().optional(),
+  updateChannel: updateChannelSchema.default("stable"),
 });
 
 const userSettingsPatchSchema = userSettingsSchema.partial();
@@ -365,8 +389,11 @@ type AttachmentDeleteArgs = z.infer<typeof attachmentDeleteArgsSchema>;
 type ReminderSnoozeArgs = z.infer<typeof reminderSnoozeArgsSchema>;
 type ReminderDismissArgs = z.infer<typeof reminderDismissArgsSchema>;
 type SyncStatus = z.infer<typeof syncStatusSchema>;
+type AppUpdateState = z.infer<typeof appUpdateStateSchema>;
+type AppUpdateStatus = z.infer<typeof appUpdateStatusSchema>;
 type UserSettings = z.infer<typeof userSettingsSchema>;
 type UserSettingsPatch = z.infer<typeof userSettingsPatchSchema>;
+type UpdateChannel = z.infer<typeof updateChannelSchema>;
 
 function createDefaultSettings(): UserSettings {
   return {
@@ -374,6 +401,7 @@ function createDefaultSettings(): UserSettings {
     activeView: "timeGridWeek",
     selectedDate: new Date().toISOString(),
     language: null,
+    updateChannel: "stable",
   };
 }
 
@@ -413,7 +441,10 @@ export {
   respondToEventArgsSchema,
   setCalendarVisibilityArgsSchema,
   sensitivitySchema,
+  appUpdateStateSchema,
+  appUpdateStatusSchema,
   syncStatusSchema,
+  updateChannelSchema,
   userSettingsPatchSchema,
   userSettingsSchema,
   type AccountSummary,
@@ -447,6 +478,9 @@ export {
   type SetCalendarVisibilityArgs,
   type Sensitivity,
   type SyncStatus,
+  type AppUpdateState,
+  type AppUpdateStatus,
+  type UpdateChannel,
   type UserSettings,
   type UserSettingsPatch,
 };
