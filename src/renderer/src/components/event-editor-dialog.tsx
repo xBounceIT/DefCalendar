@@ -28,6 +28,7 @@ interface EventEditorDialogProps {
   onCancelMeeting: (event: CalendarEvent, comment: string) => Promise<void>;
   onDelete: (event: CalendarEvent) => Promise<void>;
   onDismiss: () => void;
+  onDuplicate: (draft: EventDraft) => void;
   onListAttachments: (event: CalendarEvent) => Promise<EventAttachment[]>;
   onOpenInOutlook: (url: string) => Promise<void>;
   onRemoveAttachment: (args: AttachmentDeleteArgs) => Promise<EventAttachment[]>;
@@ -167,6 +168,9 @@ function EventEditorDialog(props: EventEditorDialogProps) {
                 }
               : undefined
           }
+          onDuplicate={() => {
+            void props.onDuplicate(buildDraft(form, editedEvent));
+          }}
         />
 
         <div className="slide-panel__body">
@@ -295,11 +299,13 @@ function EventToolbar({
   form,
   onChange,
   onDelete,
+  onDuplicate,
 }: {
   editedEvent: CalendarEvent | null;
   form: EditorFormState;
   onChange: React.Dispatch<React.SetStateAction<EditorFormState | null>>;
   onDelete?: () => void;
+  onDuplicate: () => void;
 }) {
   const { t } = useTranslation();
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
@@ -409,7 +415,7 @@ function EventToolbar({
       <button
         type="button"
         className="event-toolbar__button"
-        onClick={() => {}}
+        onClick={onDuplicate}
         title={t("eventEditor.duplicate")}
       >
         <CopyIcon />

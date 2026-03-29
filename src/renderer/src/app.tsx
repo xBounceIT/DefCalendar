@@ -387,6 +387,23 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     });
   }
 
+  function handleDuplicate(draft: EventDraft): void {
+    if (!editableCalendar) {
+      setBannerError(t("app.noWritableCalendar"));
+      return;
+    }
+
+    setDialogError(null);
+    setEditorState({
+      allDay: draft.isAllDay,
+      calendarId: draft.calendarId,
+      draft,
+      end: draft.end,
+      mode: "create",
+      start: draft.start,
+    });
+  }
+
   function handleSelection(selection: DateSelectArg): void {
     openCreateDialog({
       allDay: selection.allDay,
@@ -664,6 +681,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         onListAttachments={listEventAttachments}
         onDelete={deleteDraft}
         onDismiss={dismissEditor}
+        onDuplicate={handleDuplicate}
         onOpenInOutlook={openExternalEvent}
         onRemoveAttachment={removeEventAttachment}
         onRespond={respondToMeeting}
