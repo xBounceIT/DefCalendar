@@ -70,6 +70,7 @@ class MsalAuthService {
   private accounts: AccountInfo[] = [];
   private activeAccountId: string | null = null;
   private accountColors = new Map<string, string>();
+  private lastSignedInAtMap = new Map<string, string>();
   private db: DatabaseStore | null = null;
   private settings: SettingsStore | null = null;
 
@@ -122,6 +123,9 @@ class MsalAuthService {
       const storedAccounts = this.db.getAccounts();
       for (const stored of storedAccounts) {
         this.accountColors.set(stored.homeAccountId, stored.color);
+        if (stored.lastSignedInAt) {
+          this.lastSignedInAtMap.set(stored.homeAccountId, stored.lastSignedInAt);
+        }
       }
     }
 
@@ -161,8 +165,12 @@ class MsalAuthService {
   }
 
   getAuthState(): AuthState {
-    if (!this.activeAccountId || this.accounts.length === 0) {
+    if (this.accounts.length === 0) {
       return { status: "signed_out", accounts: [] };
+    }
+
+    if (!this.activeAccountId) {
+      return { status: "signed_out", accounts: this.buildAccountsList() };
     }
 
     const activeAccount = this.accounts.find((a) => a.homeAccountId === this.activeAccountId);
@@ -191,7 +199,7 @@ class MsalAuthService {
       name: account.name ?? null,
       tenantId: account.tenantId ?? null,
       color: this.getOrAssignColor(account.homeAccountId),
-      lastSignedInAt: new Date().toISOString(),
+      lastSignedInAt: this.lastSignedInAtMap.get(account.homeAccountId) ?? new Date().toISOString(),
     }));
   }
 
@@ -213,6 +221,7 @@ class MsalAuthService {
       this.accounts[existingIndex] = account;
     } else {
       this.accounts.push(account);
+      this.lastSignedInAtMap.set(account.homeAccountId, new Date().toISOString());
     }
 
     this.getOrAssignColor(account.homeAccountId);
@@ -246,6 +255,7 @@ class MsalAuthService {
 
     this.accounts = this.accounts.filter((a) => a.homeAccountId !== targetAccountId);
     this.accountColors.delete(targetAccountId);
+    this.lastSignedInAtMap.delete(targetAccountId);
 
     if (this.activeAccountId === targetAccountId) {
       this.activeAccountId = this.accounts.length > 0 ? this.accounts[0].homeAccountId : null;
@@ -266,6 +276,7 @@ class MsalAuthService {
     this.accounts = [];
     this.activeAccountId = null;
     this.accountColors.clear();
+    this.lastSignedInAtMap.clear();
     this.persistAccounts();
     this.persistActiveAccountId();
   }

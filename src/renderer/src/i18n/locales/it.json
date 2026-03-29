@@ -211,7 +211,10 @@
     "snooze30min": "30 minuti",
     "snooze1hour": "1 ora",
     "snooze2hours": "2 ore",
-    "snoozeTomorrow": "Domani"
+    "snoozeTomorrow": "Domani",
+    "minutes": "{{count}} min",
+    "hours": "{{count}} h",
+    "zeroMinutes": "0 min"
   },
   "dateFormatting": {
     "fallbackCalendar": "Calendario",

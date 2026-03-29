@@ -360,7 +360,7 @@ function EventToolbar({
   }, [openDropdown]);
 
   const reminderOptions = [
-    { value: "0", label: "0 min" },
+    { value: "0", label: t("reminder.zeroMinutes") },
     { value: "5", label: t("reminder.snooze5min") },
     { value: "10", label: t("reminder.snooze10min") },
     { value: "15", label: t("reminder.snooze15min") },
@@ -393,13 +393,13 @@ function EventToolbar({
   const getReminderLabel = () => {
     const minutes = Number(form.reminderMinutesBeforeStart);
     if (minutes === 0) {
-      return "0 min";
+      return t("reminder.zeroMinutes");
     }
     if (minutes < 60) {
-      return `${minutes} min`;
+      return t("reminder.minutes", { count: minutes });
     }
     if (minutes < 1440) {
-      return `${minutes / 60} h`;
+      return t("reminder.hours", { count: Math.floor(minutes / 60) });
     }
     return t("reminder.snoozeTomorrow");
   };

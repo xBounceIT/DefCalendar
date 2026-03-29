@@ -211,7 +211,10 @@
     "snooze30min": "30 minutes",
     "snooze1hour": "1 hour",
     "snooze2hours": "2 hours",
-    "snoozeTomorrow": "Tomorrow"
+    "snoozeTomorrow": "Tomorrow",
+    "minutes": "{{count}} min",
+    "hours": "{{count}} h",
+    "zeroMinutes": "0 min"
   },
   "dateFormatting": {
     "fallbackCalendar": "Calendar",
