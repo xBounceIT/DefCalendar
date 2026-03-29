@@ -29,7 +29,15 @@
     },
     "files": [
       "out/**/*",
-      "package.json"
+      "package.json",
+      "resources/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": ".",
+        "filter": ["**/*"]
+      }
     ],
     "win": {
       "target": [

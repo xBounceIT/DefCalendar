@@ -1,4 +1,6 @@
 import { Menu, Tray, nativeImage } from "electron";
+import { join } from "pathe";
+import { app } from "@main/electron-runtime";
 
 interface TrayHandlers {
   showWindow: () => void;
@@ -20,7 +22,7 @@ class TrayService {
       return;
     }
 
-    this.tray = new Tray(nativeImage.createEmpty());
+    this.tray = new Tray(createTrayIcon());
     this.tray.setToolTip("DefCalendar");
     this.tray.on("click", () => {
       this.handlers.showWindow();
@@ -60,6 +62,14 @@ class TrayService {
       },
     ]);
   }
+}
+
+function createTrayIcon() {
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, "tray-icon.png")
+    : join(process.cwd(), "resources", "tray-icon.png");
+
+  return nativeImage.createFromPath(iconPath);
 }
 
 export default TrayService;
