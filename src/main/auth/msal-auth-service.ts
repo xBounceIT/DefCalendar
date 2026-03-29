@@ -144,7 +144,10 @@ class MsalAuthService {
   }
 
   hasSession(): boolean {
-    return this.activeAccountId !== null && this.accounts.some((a) => a.homeAccountId === this.activeAccountId);
+    return (
+      this.activeAccountId !== null &&
+      this.accounts.some((a) => a.homeAccountId === this.activeAccountId)
+    );
   }
 
   getAuthState(): AuthState {

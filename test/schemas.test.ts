@@ -41,6 +41,8 @@ describe("shared schemas", () => {
     const defaults = createDefaultSettings();
 
     expect(defaults.activeView).toBe("timeGridWeek");
+    expect(defaults.language).toBe("system");
+    expect(defaults.timeFormat).toBe("system");
     expect(defaults.visibleCalendarIds).toEqual([]);
   });
 

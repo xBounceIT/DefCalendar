@@ -13,7 +13,8 @@ const calendarApi: CalendarApi = {
     getState: () => ipcRenderer.invoke(IPC_CHANNELS.authGetState),
     signInWithExchange365: (mode: AuthSignInMode = "user") =>
       ipcRenderer.invoke(IPC_CHANNELS.authSignIn, { mode }),
-    signOut: (homeAccountId?: string) => ipcRenderer.invoke(IPC_CHANNELS.authSignOut, homeAccountId),
+    signOut: (homeAccountId?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.authSignOut, homeAccountId),
     switchAccount: (homeAccountId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.authSwitchAccount, homeAccountId),
     onState: (listener: (state: AuthState) => void) => {

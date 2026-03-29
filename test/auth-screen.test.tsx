@@ -55,7 +55,9 @@ describe("auth screen", () => {
 
     const googleWorkspaceBtns = screen.getAllByRole("button", { name: /Sync Google Workspace/ });
     const googlePersonalBtns = screen.getAllByRole("button", { name: /Sync Google Personal/ });
-    const microsoftPersonalBtns = screen.getAllByRole("button", { name: /Sync Microsoft Personal/ });
+    const microsoftPersonalBtns = screen.getAllByRole("button", {
+      name: /Sync Microsoft Personal/,
+    });
 
     expect(googleWorkspaceBtns[0]).toBeInTheDocument();
     expect(googleWorkspaceBtns[0]).toBeDisabled();
