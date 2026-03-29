@@ -1,6 +1,6 @@
 import { Menu, Tray, nativeImage } from "electron";
-import { app } from "@main/electron-runtime";
 import { join } from "pathe";
+import { app } from "@main/electron-runtime";
 
 interface TrayHandlers {
   showWindow: () => void;
