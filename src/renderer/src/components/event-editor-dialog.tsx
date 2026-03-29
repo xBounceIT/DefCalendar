@@ -145,18 +145,6 @@ function EventEditorDialog(props: EventEditorDialogProps) {
                 <span>{t("eventEditor.joinMeeting")}</span>
               </button>
             )}
-            {editedEvent && editedEvent.isOrganizer && editedEvent.attendees.length === 0 && (
-              <button
-                className="ghost-button ghost-button--danger"
-                disabled={props.busy}
-                onClick={() => {
-                  void props.onDelete(editedEvent);
-                }}
-                type="button"
-              >
-                {t("common.delete")}
-              </button>
-            )}
             <button
               className="icon-button"
               onClick={props.onDismiss}
@@ -167,6 +155,19 @@ function EventEditorDialog(props: EventEditorDialogProps) {
             </button>
           </div>
         </header>
+
+        <EventToolbar
+          editedEvent={editedEvent}
+          form={form}
+          onChange={setForm}
+          onDelete={
+            editedEvent && editedEvent.isOrganizer && editedEvent.attendees.length === 0
+              ? () => {
+                  void props.onDelete(editedEvent);
+                }
+              : undefined
+          }
+        />
 
         <div className="slide-panel__body">
           {props.errorMessage && <div className="banner banner--error">{props.errorMessage}</div>}
@@ -285,6 +286,258 @@ function EventEditorDialog(props: EventEditorDialogProps) {
           </div>
         </footer>
       </section>
+    </div>
+  );
+}
+
+function EventToolbar({
+  editedEvent,
+  form,
+  onChange,
+  onDelete,
+}: {
+  editedEvent: CalendarEvent | null;
+  form: EditorFormState;
+  onChange: React.Dispatch<React.SetStateAction<EditorFormState | null>>;
+  onDelete?: () => void;
+}) {
+  const { t } = useTranslation();
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpenDropdown(null);
+      }
+    }
+
+    if (openDropdown) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [openDropdown]);
+
+  const reminderOptions = [
+    { value: "0", label: t("reminder.snooze5min") },
+    { value: "5", label: `5 ${t("reminder.snooze5min").replace("5 ", "")}` },
+    { value: "10", label: `10 ${t("reminder.snooze5min").replace("5 ", "")}` },
+    { value: "15", label: `15 ${t("reminder.snooze5min").replace("5 ", "")}` },
+    { value: "30", label: `30 ${t("reminder.snooze5min").replace("5 ", "")}` },
+    { value: "60", label: t("reminder.snooze1hour") },
+    { value: "120", label: `2 ${t("reminder.snooze1hour").replace("1 ", "")}` },
+    { value: "1440", label: t("reminder.snoozeTomorrow") },
+  ];
+
+  const showAsOptions = [
+    { value: "busy", label: t("eventEditor.showAsBusy") },
+    { value: "free", label: t("eventEditor.showAsFree") },
+    { value: "tentative", label: t("eventEditor.showAsTentative") },
+    { value: "oof", label: t("eventEditor.showAsOof") },
+    { value: "workingElsewhere", label: t("eventEditor.showAsWorkingElsewhere") },
+  ];
+
+  const sensitivityOptions = [
+    { value: "normal", label: t("eventEditor.sensitivityNormal") },
+    { value: "personal", label: t("eventEditor.sensitivityPersonal") },
+    { value: "private", label: t("eventEditor.sensitivityPrivate") },
+    { value: "confidential", label: t("eventEditor.sensitivityConfidential") },
+  ];
+
+  const getShowAsLabel = () => {
+    const option = showAsOptions.find((o) => o.value === form.showAs);
+    return option?.label || form.showAs;
+  };
+
+  const getReminderLabel = () => {
+    const minutes = Number(form.reminderMinutesBeforeStart);
+    if (minutes === 0) {
+      return t("reminder.snooze5min");
+    }
+    if (minutes < 60) {
+      return `${minutes} min`;
+    }
+    if (minutes < 1440) {
+      return `${minutes / 60} h`;
+    }
+    return t("reminder.snoozeTomorrow");
+  };
+
+  const getSensitivityLabel = () => {
+    const option = sensitivityOptions.find((o) => o.value === form.sensitivity);
+    return option?.label || form.sensitivity;
+  };
+
+  return (
+    <div className="event-toolbar" ref={containerRef}>
+      <div className="event-toolbar__group">
+        <button
+          type="button"
+          className={`event-toolbar__toggle ${!form.recurrenceEnabled ? "event-toolbar__toggle--active" : ""}`}
+          onClick={() => updateForm(onChange, { recurrenceEnabled: false })}
+        >
+          {t("eventEditor.tabs.details")}
+        </button>
+        <button
+          type="button"
+          className={`event-toolbar__toggle ${form.recurrenceEnabled ? "event-toolbar__toggle--active" : ""}`}
+          onClick={() => updateForm(onChange, { recurrenceEnabled: true })}
+        >
+          {t("eventEditor.recurringEvent")}
+        </button>
+      </div>
+
+      <div className="event-toolbar__separator" />
+
+      {onDelete && (
+        <>
+          <button
+            type="button"
+            className="event-toolbar__button event-toolbar__button--danger"
+            onClick={onDelete}
+            title={t("common.delete")}
+          >
+            <TrashIcon />
+          </button>
+          <div className="event-toolbar__separator" />
+        </>
+      )}
+
+      <button
+        type="button"
+        className="event-toolbar__button"
+        onClick={() => {}}
+        title={t("eventEditor.duplicate")}
+      >
+        <CopyIcon />
+      </button>
+
+      <div className="event-toolbar__separator" />
+
+      <div className="event-toolbar__dropdown-container">
+        <button
+          type="button"
+          className={`event-toolbar__dropdown-trigger ${openDropdown === "showAs" ? "event-toolbar__dropdown-trigger--open" : ""}`}
+          onClick={() => setOpenDropdown(openDropdown === "showAs" ? null : "showAs")}
+        >
+          <span className="event-toolbar__dropdown-label">{getShowAsLabel()}</span>
+          <ChevronDownIcon className={`event-toolbar__dropdown-arrow ${openDropdown === "showAs" ? "expanded" : ""}`} />
+        </button>
+        {openDropdown === "showAs" && (
+          <div className="event-toolbar__dropdown">
+            {showAsOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`event-toolbar__dropdown-item ${form.showAs === option.value ? "event-toolbar__dropdown-item--selected" : ""}`}
+                onClick={() => {
+                  updateForm(onChange, { showAs: option.value as EditorFormState["showAs"] });
+                  setOpenDropdown(null);
+                }}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="event-toolbar__dropdown-container">
+        <button
+          type="button"
+          className={`event-toolbar__dropdown-trigger ${openDropdown === "reminder" ? "event-toolbar__dropdown-trigger--open" : ""}`}
+          onClick={() => setOpenDropdown(openDropdown === "reminder" ? null : "reminder")}
+        >
+          <BellIcon />
+          <span className="event-toolbar__dropdown-label">{getReminderLabel()}</span>
+          <ChevronDownIcon className={`event-toolbar__dropdown-arrow ${openDropdown === "reminder" ? "expanded" : ""}`} />
+        </button>
+        {openDropdown === "reminder" && (
+          <div className="event-toolbar__dropdown">
+            <label className="event-toolbar__dropdown-checkbox">
+              <input
+                type="checkbox"
+                checked={form.isReminderOn}
+                onChange={(e) => updateForm(onChange, { isReminderOn: e.target.checked })}
+              />
+              <span>{t("eventEditor.desktopReminder")}</span>
+            </label>
+            {form.isReminderOn && (
+              <div className="event-toolbar__dropdown-divider" />
+            )}
+            {form.isReminderOn && reminderOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`event-toolbar__dropdown-item ${form.reminderMinutesBeforeStart === option.value ? "event-toolbar__dropdown-item--selected" : ""}`}
+                onClick={() => {
+                  updateForm(onChange, { reminderMinutesBeforeStart: option.value });
+                  setOpenDropdown(null);
+                }}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="event-toolbar__dropdown-container">
+        <button
+          type="button"
+          className={`event-toolbar__dropdown-trigger ${openDropdown === "categories" ? "event-toolbar__dropdown-trigger--open" : ""}`}
+          onClick={() => setOpenDropdown(openDropdown === "categories" ? null : "categories")}
+        >
+          <TagIcon />
+          <span className="event-toolbar__dropdown-label">
+            {form.categories ? form.categories.split(",")[0].trim() : t("eventEditor.categories")}
+          </span>
+          <ChevronDownIcon className={`event-toolbar__dropdown-arrow ${openDropdown === "categories" ? "expanded" : ""}`} />
+        </button>
+        {openDropdown === "categories" && (
+          <div className="event-toolbar__dropdown event-toolbar__dropdown--categories">
+            <input
+              type="text"
+              className="event-toolbar__categories-input"
+              placeholder={t("eventEditor.categoriesPlaceholder")}
+              value={form.categories}
+              onChange={(e) => updateForm(onChange, { categories: e.target.value })}
+            />
+          </div>
+        )}
+      </div>
+
+      <div className="event-toolbar__dropdown-container">
+        <button
+          type="button"
+          className={`event-toolbar__dropdown-trigger ${openDropdown === "sensitivity" ? "event-toolbar__dropdown-trigger--open" : ""}`}
+          onClick={() => setOpenDropdown(openDropdown === "sensitivity" ? null : "sensitivity")}
+        >
+          <LockIcon />
+          <span className="event-toolbar__dropdown-label">{getSensitivityLabel()}</span>
+          <ChevronDownIcon className={`event-toolbar__dropdown-arrow ${openDropdown === "sensitivity" ? "expanded" : ""}`} />
+        </button>
+        {openDropdown === "sensitivity" && (
+          <div className="event-toolbar__dropdown">
+            {sensitivityOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={`event-toolbar__dropdown-item ${form.sensitivity === option.value ? "event-toolbar__dropdown-item--selected" : ""}`}
+                onClick={() => {
+                  updateForm(onChange, { sensitivity: option.value as EditorFormState["sensitivity"] });
+                  setOpenDropdown(null);
+                }}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -433,48 +686,6 @@ function SchedulingSection({
 
           <CollapsibleSection title={t("eventEditor.optionalScheduling")}>
             <div className="dialog-grid dialog-grid--compact">
-              <label className="checkbox-field">
-                <input
-                  checked={form.isReminderOn}
-                  disabled={disabled}
-                  onChange={(event) => updateForm(onChange, { isReminderOn: event.target.checked })}
-                  type="checkbox"
-                />
-                <span>{t("eventEditor.desktopReminder")}</span>
-              </label>
-              <label className="field">
-                <span>{t("eventEditor.reminderMinutes")}</span>
-                <input
-                  disabled={disabled || !form.isReminderOn}
-                  min="0"
-                  onChange={(event) =>
-                    updateForm(onChange, { reminderMinutesBeforeStart: event.target.value })
-                  }
-                  step="5"
-                  type="number"
-                  value={form.reminderMinutesBeforeStart}
-                />
-              </label>
-              <label className="field">
-                <span>{t("eventEditor.showAs")}</span>
-                <select
-                  disabled={disabled}
-                  onChange={(event) =>
-                    updateForm(onChange, {
-                      showAs: event.target.value as EditorFormState["showAs"],
-                    })
-                  }
-                  value={form.showAs}
-                >
-                  <option value="busy">{t("eventEditor.showAsBusy")}</option>
-                  <option value="free">{t("eventEditor.showAsFree")}</option>
-                  <option value="tentative">{t("eventEditor.showAsTentative")}</option>
-                  <option value="oof">{t("eventEditor.showAsOof")}</option>
-                  <option value="workingElsewhere">
-                    {t("eventEditor.showAsWorkingElsewhere")}
-                  </option>
-                </select>
-              </label>
               <label className="checkbox-field">
                 <input
                   checked={form.allowNewTimeProposals}
@@ -1038,6 +1249,53 @@ function ChevronDownIcon({ className = "" }: { className?: string }) {
   );
 }
 
+function TrashIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" height="18" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="18">
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <line x1="10" x2="10" y1="11" y2="17" />
+      <line x1="14" x2="14" y1="11" y2="17" />
+    </svg>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" height="18" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="18">
+      <rect height="14" width="14" x="8" y="8" rx="2" ry="2" />
+      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </svg>
+  );
+}
+
+function BellIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" height="18" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="18">
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </svg>
+  );
+}
+
+function TagIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" height="18" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="18">
+      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+      <line x1="7" x2="7.01" y1="7" y2="7" />
+    </svg>
+  );
+}
+
+function LockIcon() {
+  return (
+    <svg aria-hidden="true" fill="none" height="18" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" width="18">
+      <rect height="11" width="18" x="3" y="11" rx="2" ry="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  );
+}
+
 function isGoogleMeetUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
@@ -1487,10 +1745,15 @@ function toggleAllDayForm(form: EditorFormState, nextAllDay: boolean): Partial<E
     };
   }
 
+  const now = new Date();
+  const currentDate = form.startInput.slice(0, 10);
+  const currentHour = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
+  const nextHour = `${((now.getHours() + 1) % 24).toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
+
   return {
     allDay: false,
-    endInput: toDateTimeInputValue(addDays(fromDateTimeInputValue(form.endInput, true), 1), false),
-    startInput: toDateTimeInputValue(fromDateTimeInputValue(form.startInput, true), false),
+    endInput: `${currentDate}T${nextHour}`,
+    startInput: `${currentDate}T${currentHour}`,
   };
 }
 

@@ -24,7 +24,11 @@
     "signIn": "Sync Microsoft 365",
     "connecting": "Connecting…",
     "adminApproval": "Retry with Admin Approval",
-    "requestingApproval": "Requesting Approval…"
+    "requestingApproval": "Requesting Approval…",
+    "signInGoogleWorkspace": "Sync Google Workspace",
+    "signInGooglePersonal": "Sync Google Personal",
+    "signInMicrosoftPersonal": "Sync Microsoft Personal",
+    "comingSoon": "Coming soon"
   },
   "titleBar": {
     "minimize": "Minimize",
@@ -99,7 +103,6 @@
     "sensitivityPersonal": "Personal",
     "sensitivityPrivate": "Private",
     "sensitivityConfidential": "Confidential",
-    "showAs": "Show as",
     "showAsBusy": "Busy",
     "showAsFree": "Free",
     "showAsTentative": "Tentative",
@@ -133,6 +136,7 @@
     "yourResponse": "Your response: {{response}}",
     "comment": "Comment",
     "cancelMeeting": "Cancel meeting",
+    "duplicate": "Duplicate event",
     "recurringEvent": "Recurring event",
     "recurrencePattern": "Pattern",
     "recurrenceDaily": "Daily",

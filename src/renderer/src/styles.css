@@ -219,6 +219,47 @@ button {
   flex-shrink: 0;
 }
 
+.google-icon {
+  flex-shrink: 0;
+}
+
+.disabled-sync-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  padding: 12px 24px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink-secondary);
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  box-shadow: 0 2px 4px -2px rgba(0, 0, 0, 0.07);
+  border-radius: 10px;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.disabled-button-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: center;
+}
+
+.disabled-button-label {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink-secondary);
+}
+
+.coming-soon-badge {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-tertiary);
+}
+
 .account-email,
 .muted-label,
 .calendar-copy small,
@@ -2047,9 +2088,10 @@ button {
   max-height: calc(100vh - 48px);
   display: grid;
   grid-template-columns: 1fr 320px;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto auto 1fr auto;
   grid-template-areas:
     "header header"
+    "toolbar toolbar"
     "body sidebar"
     "footer footer";
   background: var(--surface);
@@ -2174,6 +2216,208 @@ button {
   font-size: 13px;
   font-weight: 600;
   color: var(--ink-secondary);
+}
+
+/* Event Toolbar */
+.event-toolbar {
+  grid-area: toolbar;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.event-toolbar__group {
+  display: flex;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.event-toolbar__toggle {
+  padding: 6px 14px;
+  border: none;
+  background: transparent;
+  color: var(--ink-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.event-toolbar__toggle:hover:not(.event-toolbar__toggle--active) {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.event-toolbar__toggle--active {
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.event-toolbar__separator {
+  width: 1px;
+  height: 24px;
+  background: var(--line);
+  margin: 0 4px;
+}
+
+.event-toolbar__button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.event-toolbar__button:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+.event-toolbar__button--danger:hover {
+  background: rgba(234, 62, 53, 0.1);
+  color: var(--danger);
+  border-color: rgba(234, 62, 53, 0.3);
+}
+
+.event-toolbar__dropdown-container {
+  position: relative;
+}
+
+.event-toolbar__dropdown-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.event-toolbar__dropdown-trigger:hover {
+  background: var(--surface-hover);
+  border-color: var(--line-strong);
+}
+
+.event-toolbar__dropdown-trigger--open {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.event-toolbar__dropdown-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.event-toolbar__dropdown-arrow {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.event-toolbar__dropdown-arrow.expanded {
+  transform: rotate(180deg);
+}
+
+.event-toolbar__dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 180px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 100;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+}
+
+.event-toolbar__dropdown--categories {
+  min-width: 240px;
+}
+
+.event-toolbar__dropdown-item {
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.1s ease;
+}
+
+.event-toolbar__dropdown-item:hover {
+  background: var(--surface-hover);
+}
+
+.event-toolbar__dropdown-item--selected {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.event-toolbar__dropdown-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.event-toolbar__dropdown-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.event-toolbar__dropdown-divider {
+  height: 1px;
+  background: var(--line);
+  margin: 4px 0;
+}
+
+.event-toolbar__categories-input {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--surface);
+  color: var(--ink);
+  width: 100%;
+}
+
+.event-toolbar__categories-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 /* Field rows with icons (Subject, Location, Calendar) */

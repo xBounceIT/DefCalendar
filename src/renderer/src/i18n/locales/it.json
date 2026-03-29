@@ -24,7 +24,11 @@
     "signIn": "Sincronizza Microsoft 365",
     "connecting": "Connessione…",
     "adminApproval": "Riprova con approvazione amministratore",
-    "requestingApproval": "Richiesta approvazione…"
+    "requestingApproval": "Richiesta approvazione…",
+    "signInGoogleWorkspace": "Sincronizza Google Workspace",
+    "signInGooglePersonal": "Sincronizza Google Personale",
+    "signInMicrosoftPersonal": "Sincronizza Microsoft Personale",
+    "comingSoon": "Presto disponibile"
   },
   "titleBar": {
     "minimize": "Riduci a icona",
@@ -99,7 +103,6 @@
     "sensitivityPersonal": "Personale",
     "sensitivityPrivate": "Privato",
     "sensitivityConfidential": "Confidenziale",
-    "showAs": "Mostra come",
     "showAsBusy": "Occupato",
     "showAsFree": "Libero",
     "showAsTentative": "Provvisorio",
@@ -133,6 +136,7 @@
     "yourResponse": "La tua risposta: {{response}}",
     "comment": "Commento",
     "cancelMeeting": "Annulla riunione",
+    "duplicate": "Duplica evento",
     "recurringEvent": "Evento ricorrente",
     "recurrencePattern": "Schema",
     "recurrenceDaily": "Giornaliero",
