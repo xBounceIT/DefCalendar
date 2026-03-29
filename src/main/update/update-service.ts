@@ -18,7 +18,7 @@ class UpdateService {
   private readonly isPackaged = app.isPackaged;
   private status: AppUpdateStatus = {
     checkedAt: null,
-    currentVersion: app.getVersion(),
+    currentVersion: `v${app.getVersion()}`,
     downloadPercent: null,
     error: null,
     latestVersion: null,
