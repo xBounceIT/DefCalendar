@@ -20,7 +20,7 @@ class TrayService {
       return;
     }
 
-    this.tray = new Tray(nativeImage.createEmpty());
+    this.tray = new Tray(createTrayIcon());
     this.tray.setToolTip("DefCalendar");
     this.tray.on("click", () => {
       this.handlers.showWindow();
@@ -60,6 +60,24 @@ class TrayService {
       },
     ]);
   }
+}
+
+function createTrayIcon() {
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+      <rect width="64" height="64" rx="18" fill="#13213a" />
+      <rect x="14" y="18" width="36" height="32" rx="8" fill="#f4efe7" />
+      <rect x="14" y="26" width="36" height="8" fill="#2368ff" />
+      <circle cx="24" cy="40" r="3.5" fill="#13213a" />
+      <circle cx="40" cy="40" r="3.5" fill="#13213a" />
+      <rect x="20" y="10" width="6" height="14" rx="3" fill="#f57d51" />
+      <rect x="38" y="10" width="6" height="14" rx="3" fill="#f57d51" />
+    </svg>
+  `;
+
+  return nativeImage
+    .createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`)
+    .resize({ width: 18, height: 18 });
 }
 
 export default TrayService;
