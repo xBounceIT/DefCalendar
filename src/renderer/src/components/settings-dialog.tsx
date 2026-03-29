@@ -317,7 +317,13 @@ function AboutSection({ onSave, settings }: AboutSectionProps) {
   );
 }
 
-function SettingsDialog({ isOpen, onClose, calendars, settings, onSave }: SettingsDialogProps): JSX.Element | null {
+function SettingsDialog({
+  isOpen,
+  onClose,
+  calendars,
+  settings,
+  onSave,
+}: SettingsDialogProps): JSX.Element | null {
   const { t } = useTranslation();
   const [activeSection, setActiveSection] = useState<SettingsSection>("appearance");
 
