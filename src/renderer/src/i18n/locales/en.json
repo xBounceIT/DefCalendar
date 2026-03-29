@@ -138,6 +138,7 @@
     "cancelMeeting": "Cancel meeting",
     "duplicate": "Duplicate event",
     "recurringEvent": "Recurring event",
+    "recurring": "Recurring",
     "recurrencePattern": "Pattern",
     "recurrenceDaily": "Daily",
     "recurrenceWeekly": "Weekly",

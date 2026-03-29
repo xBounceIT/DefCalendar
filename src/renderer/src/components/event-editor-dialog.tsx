@@ -392,7 +392,7 @@ function EventToolbar({
           className={`event-toolbar__toggle ${form.recurrenceEnabled ? "event-toolbar__toggle--active" : ""}`}
           onClick={() => updateForm(onChange, { recurrenceEnabled: true })}
         >
-          {t("eventEditor.recurringEvent")}
+{t("eventEditor.recurring")}
         </button>
       </div>
 

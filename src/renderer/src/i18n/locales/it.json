@@ -138,6 +138,7 @@
     "cancelMeeting": "Annulla riunione",
     "duplicate": "Duplica evento",
     "recurringEvent": "Evento ricorrente",
+    "recurring": "Ricorrente",
     "recurrencePattern": "Schema",
     "recurrenceDaily": "Giornaliero",
     "recurrenceWeekly": "Settimanale",
