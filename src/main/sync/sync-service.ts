@@ -112,10 +112,32 @@ class SyncService {
       const knownCalendarIds = this.dependencies.db.listCalendarIds(homeAccountId ?? undefined);
       const calendars = await this.dependencies.graph.listCalendars();
       this.dependencies.db.upsertCalendars(calendars, homeAccountId ?? "");
-      this.dependencies.settings.syncVisibleCalendars({
+      const settings = this.dependencies.settings.syncVisibleCalendars({
         calendarIds: calendars.map((calendar) => calendar.id),
         knownCalendarIds,
       });
+
+      if (reason === "sign-in") {
+        const nextStatus: SyncStatus = {
+          lastSyncedAt: this.status.lastSyncedAt,
+          message: "Choose calendars to sync.",
+          state: "idle",
+        };
+        this.setStatus(nextStatus);
+        return nextStatus;
+      }
+
+      const visibleCalendarIdSet = new Set(settings.visibleCalendarIds);
+      const calendarsToSync = calendars.filter((calendar) => visibleCalendarIdSet.has(calendar.id));
+      if (calendarsToSync.length === 0) {
+        const nextStatus: SyncStatus = {
+          lastSyncedAt: this.status.lastSyncedAt,
+          message: "Select at least one calendar to sync.",
+          state: "idle",
+        };
+        this.setStatus(nextStatus);
+        return nextStatus;
+      }
 
       const rangeStart = new Date(
         Date.now() - this.dependencies.config.syncLookBehindDays * 24 * 60 * 60 * 1000,
@@ -126,7 +148,7 @@ class SyncService {
       const finishedAt = new Date().toISOString();
 
       const syncedCalendars = await Promise.all(
-        calendars.map(async (calendar) => ({
+        calendarsToSync.map(async (calendar) => ({
           calendarId: calendar.id,
           events: await this.dependencies.graph.listCalendarView(calendar.id, rangeStart, rangeEnd),
         })),
@@ -153,7 +175,7 @@ class SyncService {
       const totalEvents = syncedCalendars.reduce((sum, sc) => sum + sc.events.length, 0);
 
       let calendarSuffix = "s";
-      if (calendars.length === 1) {
+      if (calendarsToSync.length === 1) {
         calendarSuffix = "";
       }
       let eventSuffix = "s";
@@ -162,7 +184,7 @@ class SyncService {
       }
       const nextStatus: SyncStatus = {
         lastSyncedAt: finishedAt,
-        message: `Synced ${calendars.length} calendar${calendarSuffix}, ${totalEvents} event${eventSuffix}.`,
+        message: `Synced ${calendarsToSync.length} calendar${calendarSuffix}, ${totalEvents} event${eventSuffix}.`,
         state: "idle",
       };
       this.setStatus(nextStatus);

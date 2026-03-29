@@ -33,6 +33,7 @@ import { setAppLocale } from "./i18n";
 
 import AuthScreen from "./components/auth-screen";
 import CalendarSidebar from "./components/calendar-sidebar";
+import CalendarSelectionScreen from "./components/calendar-selection-screen";
 import SettingsDialog from "./components/settings-dialog";
 import type { EditorState } from "./event-editor-state";
 import EventEditorDialog from "./components/event-editor-dialog";
@@ -83,6 +84,8 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   const [pendingSignInMode, setPendingSignInMode] = useState<AuthSignInMode>("user");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showAuthScreen, setShowAuthScreen] = useState(false);
+  const [showCalendarSelection, setShowCalendarSelection] = useState(false);
+  const [isApplyingCalendarSelection, setIsApplyingCalendarSelection] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
     lastSyncedAt: null,
     message: t("sync.signInToSync"),
@@ -105,6 +108,10 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     queryKey: ["auth"],
   });
   const signedIn = authQuery.data?.status === "signed_in";
+  const accounts: AccountSummary[] = authQuery.data?.accounts ?? [];
+  const activeAccountId =
+    authQuery.data?.status === "signed_in" ? authQuery.data.activeAccountId : null;
+  const activeAccount = accounts.find((a) => a.homeAccountId === activeAccountId) ?? null;
 
   const settingsQuery = useQuery({
     enabled: signedIn,
@@ -154,6 +161,9 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     onSuccess: async () => {
       setBannerError(null);
       setShowAuthScreen(false);
+      setShowCalendarSelection(true);
+      queryClient.setQueryData(["calendars"], EMPTY_CALENDARS);
+      queryClient.setQueryData(["events"], EMPTY_EVENTS);
       await invalidateCalendarData(queryClient);
     },
   });
@@ -164,6 +174,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
       setBannerError(toErrorMessage(error));
     },
     onSuccess: async () => {
+      setShowCalendarSelection(false);
       setEditorState(null);
       await invalidateCalendarData(queryClient);
     },
@@ -332,11 +343,6 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     }
   }, [activeView, hydrated, selectedDate]);
 
-  const accounts: AccountSummary[] = authQuery.data?.accounts ?? [];
-  const activeAccountId = authQuery.data?.activeAccountId ?? null;
-
-  const activeAccount = accounts.find((a) => a.homeAccountId === activeAccountId) ?? null;
-
   const calendars = calendarsQuery.data ?? EMPTY_CALENDARS;
   let events = EMPTY_EVENTS;
   if (visibleCalendarIds.length > 0 && eventsQuery.data) {
@@ -452,15 +458,27 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     }
 
     const nextDraft: EventDraft = {
+      allowNewTimeProposals: source.allowNewTimeProposals ?? true,
+      attachmentIdsToRemove: [],
+      attachmentsToAdd: [],
+      attendees: source.attendees,
       body: source.body,
+      bodyContentType: source.bodyContentType,
       calendarId: source.calendarId,
+      categories: source.categories,
       end: getEventBoundary(changeInfo.event.end, source.end),
       etag: source.etag,
       id: source.id,
       isAllDay: source.isAllDay,
+      isOnlineMeeting: source.isOnlineMeeting,
       isReminderOn: source.isReminderOn,
       location: source.location,
+      recurrence: source.recurrence,
+      recurrenceEditScope: "single",
       reminderMinutesBeforeStart: source.reminderMinutesBeforeStart,
+      responseRequested: source.responseRequested ?? true,
+      sensitivity: source.sensitivity ?? "normal",
+      showAs: source.showAs ?? "busy",
       start: getEventBoundary(changeInfo.event.start, source.start),
       subject: source.subject,
       timeZone: source.timeZone,
@@ -570,6 +588,46 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     signInMutation.mutate(mode);
   }
 
+  async function handleCalendarSelectionContinue(selectedCalendarIds: string[]): Promise<void> {
+    const selectionCalendars = calendarsQuery.data ?? EMPTY_CALENDARS;
+    if (selectionCalendars.length > 0 && selectedCalendarIds.length === 0) {
+      setBannerError(t("calendarSelection.selectAtLeastOne"));
+      return;
+    }
+
+    setBannerError(null);
+    setIsApplyingCalendarSelection(true);
+
+    try {
+      const selectedIds = new Set(selectedCalendarIds);
+
+      for (const calendar of selectionCalendars) {
+        const shouldBeVisible = selectedIds.has(calendar.id);
+        if (calendar.isVisible !== shouldBeVisible) {
+          await calendarApi.calendars.setVisibility({
+            calendarId: calendar.id,
+            isVisible: shouldBeVisible,
+          });
+        }
+      }
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["calendars"] }),
+        queryClient.invalidateQueries({ queryKey: ["events"] }),
+      ]);
+
+      if (selectedCalendarIds.length > 0) {
+        await refreshMutation.mutateAsync();
+      }
+
+      setShowCalendarSelection(false);
+    } catch (error) {
+      setBannerError(toErrorMessage(error));
+    } finally {
+      setIsApplyingCalendarSelection(false);
+    }
+  }
+
   if (authQuery.isLoading) {
     return <div className="loading-shell">{t("app.loading")}</div>;
   }
@@ -588,12 +646,31 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         onAdminApproval={() => {
           startSignIn("admin_consent");
         }}
-        onCancel={signedIn? () => setShowAuthScreen(false) : undefined}
+        onCancel={signedIn ? () => setShowAuthScreen(false) : undefined}
         onSignIn={() => {
           startSignIn("user");
         }}
         pendingMode={pendingSignInMode}
         showAdminApprovalAction={isAdminApprovalRequiredMessage(signInError)}
+      />
+    );
+  }
+
+  if (showCalendarSelection) {
+    let calendarSelectionError = bannerError;
+    if (!calendarSelectionError) {
+      calendarSelectionError = toErrorMessage(calendarsQuery.error);
+    }
+
+    return (
+      <CalendarSelectionScreen
+        accountEmail={activeAccount?.username ?? null}
+        calendars={calendarsQuery.data ?? EMPTY_CALENDARS}
+        errorMessage={calendarSelectionError}
+        isPending={isApplyingCalendarSelection || refreshMutation.isPending}
+        onContinue={(selectedCalendarIds) => {
+          void handleCalendarSelectionContinue(selectedCalendarIds);
+        }}
       />
     );
   }
@@ -634,7 +711,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         }}
         onSettingsClick={() => setIsSettingsOpen(true)}
         onSignOut={() => {
-          signOutMutation.mutate();
+          signOutMutation.mutate(undefined);
         }}
         selectedDate={selectedDate}
         syncStatus={syncStatus}
@@ -815,6 +892,8 @@ const SYNC_MESSAGE_MAP: Record<string, string> = {
   "Sign in to sync Exchange 365.": "sync.signInToSync",
   "Syncing Exchange 365\u2026": "sync.syncing",
   "Connecting to Exchange 365\u2026": "sync.connecting",
+  "Choose calendars to sync.": "sync.chooseCalendars",
+  "Select at least one calendar to sync.": "sync.selectCalendars",
   "Exchange 365 sync failed.": "sync.syncFailed",
 };
 
@@ -829,7 +908,7 @@ function translateSyncMessage(
   const syncMatch = message.match(/^Synced (\d+) calendar\(s?\), (\d+) event\(s?\)\.$/);
   if (syncMatch) {
     const calendars = Number.parseInt(syncMatch[1], 10);
-    const events = Number.parseInt(syncMatch[3], 10);
+    const events = Number.parseInt(syncMatch[2], 10);
     return t("sync.synced", { count: events, calendars, events });
   }
 

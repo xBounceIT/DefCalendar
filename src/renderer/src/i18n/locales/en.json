@@ -33,6 +33,17 @@
     "addAccountSubtitle": "Connect another calendar account.",
     "back": "Back"
   },
+  "calendarSelection": {
+    "title": "Choose calendars to sync",
+    "subtitle": "Select the calendars DefCalendar should actively sync for this account.",
+    "account": "Signed in as {{email}}",
+    "empty": "No calendars were found for this account.",
+    "selectAtLeastOne": "Select at least one calendar to continue.",
+    "selectedCount_one": "{{count}} of {{total}} calendar selected",
+    "selectedCount_other": "{{count}} of {{total}} calendars selected",
+    "continue": "Start syncing",
+    "continuePending": "Starting sync…"
+  },
   "titleBar": {
     "minimize": "Minimize",
     "restore": "Restore",
@@ -211,6 +222,8 @@
     "signInToSync": "Sign in to sync Exchange 365.",
     "syncing": "Syncing Exchange 365…",
     "connecting": "Connecting to Exchange 365…",
+    "chooseCalendars": "Choose calendars to sync.",
+    "selectCalendars": "Select at least one calendar to sync.",
     "synced_one": "Synced {{calendars}} calendar, {{events}} event.",
     "synced_other": "Synced {{calendars}} calendars, {{events}} events.",
     "syncFailed": "Exchange 365 sync failed."

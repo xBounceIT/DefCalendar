@@ -33,6 +33,17 @@
     "addAccountSubtitle": "Connetti un altro account calendario.",
     "back": "Indietro"
   },
+  "calendarSelection": {
+    "title": "Scegli i calendari da sincronizzare",
+    "subtitle": "Seleziona i calendari che DefCalendar deve sincronizzare attivamente per questo account.",
+    "account": "Accesso effettuato come {{email}}",
+    "empty": "Nessun calendario trovato per questo account.",
+    "selectAtLeastOne": "Seleziona almeno un calendario per continuare.",
+    "selectedCount_one": "{{count}} calendario selezionato su {{total}}",
+    "selectedCount_other": "{{count}} calendari selezionati su {{total}}",
+    "continue": "Avvia sincronizzazione",
+    "continuePending": "Avvio sincronizzazione…"
+  },
   "titleBar": {
     "minimize": "Riduci a icona",
     "restore": "Ripristina",
@@ -211,6 +222,8 @@
     "signInToSync": "Accedi per sincronizzare Exchange 365.",
     "syncing": "Sincronizzazione Exchange 365…",
     "connecting": "Connessione a Exchange 365…",
+    "chooseCalendars": "Scegli i calendari da sincronizzare.",
+    "selectCalendars": "Seleziona almeno un calendario da sincronizzare.",
     "synced_one": "Sincronizzato {{calendars}} calendario, {{events}} evento.",
     "synced_other": "Sincronizzati {{calendars}} calendari, {{events}} eventi.",
     "syncFailed": "Sincronizzazione Exchange 365 fallita."
