@@ -368,13 +368,16 @@ class MsalAuthService {
       this.getOrAssignColor(account.homeAccountId);
     }
 
-    const account =
-      (targetAccountId
-        ? msalAccounts.find((item) => item.homeAccountId === targetAccountId)
-        : undefined) ?? msalAccounts[0];
+    const account = targetAccountId
+      ? msalAccounts.find((item) => item.homeAccountId === targetAccountId) ?? null
+      : msalAccounts[0] ?? null;
 
     if (!account) {
-      throw new Error("Sign in with Exchange 365 before syncing calendars.");
+      throw new Error(
+        targetAccountId
+          ? `Account ${targetAccountId} not found. Please sign in again.`
+          : "Sign in with Exchange 365 before syncing calendars.",
+      );
     }
 
     if (!homeAccountId) {
