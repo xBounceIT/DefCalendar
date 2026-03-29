@@ -95,11 +95,9 @@ function DisabledButton({
 }) {
   return (
     <button className="disabled-sync-button" disabled type="button">
+      <span className="coming-soon-badge">{comingSoonLabel}</span>
       {icon}
-      <span className="disabled-button-content">
-        <span className="disabled-button-label">{buttonLabel}</span>
-        <span className="coming-soon-badge">{comingSoonLabel}</span>
-      </span>
+      <span className="disabled-button-label">{buttonLabel}</span>
     </button>
   );
 }
@@ -199,7 +197,7 @@ function AuthCard({
   let cancelButton: React.JSX.Element | null = null;
   if (isAddAccountMode && onCancel) {
     cancelButton = (
-      <button className="secondary-button" onClick={onCancel} type="button">
+      <button className="secondary-button auth-back-button" onClick={onCancel} type="button">
         {t("auth.back")}
       </button>
     );

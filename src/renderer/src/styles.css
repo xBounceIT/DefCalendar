@@ -179,9 +179,13 @@ button {
   margin-top: auto;
 }
 
+.auth-back-button {
+  margin-top: 12px;
+}
+
 .auth-actions {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 
 .microsoft-button {
@@ -224,12 +228,13 @@ button {
 }
 
 .disabled-sync-button {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 14px;
   width: 100%;
-  padding: 12px 24px;
+  padding: 16px 24px;
   font-size: 15px;
   font-weight: 500;
   color: var(--ink-secondary);
@@ -241,13 +246,6 @@ button {
   opacity: 0.6;
 }
 
-.disabled-button-content {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  text-align: center;
-}
-
 .disabled-button-label {
   font-size: 15px;
   font-weight: 500;
@@ -255,9 +253,18 @@ button {
 }
 
 .coming-soon-badge {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--ink-tertiary);
+  position: absolute;
+  top: 0;
+  right: 14px;
+  transform: translateY(-50%);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #5b7cfa;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-radius: 999px;
 }
 
 .account-email,
