@@ -1,4 +1,5 @@
 import type {
+  AccountSummary,
   AttachmentDeleteArgs,
   AttachmentUploadArgs,
   BodyContentType,
@@ -21,9 +22,9 @@ import teamsIcon from "../assets/teams.png";
 import gmeetIcon from "../assets/gmeet.png";
 
 interface EventEditorDialogProps {
+  accounts: AccountSummary[];
   busy: boolean;
   calendars: CalendarSummary[];
-  currentUser: EventParticipant | null;
   errorMessage: null | string;
   onAddAttachment: (args: AttachmentUploadArgs) => Promise<EventAttachment[]>;
   onCancelMeeting: (event: CalendarEvent, comment: string) => Promise<void>;
@@ -66,6 +67,20 @@ interface EditorFormState {
   showAs: NonNullable<CalendarEvent["showAs"]>;
   startInput: string;
   subject: string;
+}
+
+function buildAccountParticipant(account: AccountSummary | null): EventParticipant | null {
+  if (!account) {
+    return null;
+  }
+
+  return {
+    email: account.username,
+    name: account.name,
+    response: null,
+    status: null,
+    type: "required",
+  };
 }
 
 function EventEditorDialog(props: EventEditorDialogProps) {
@@ -121,6 +136,15 @@ function EventEditorDialog(props: EventEditorDialogProps) {
   const editedEvent = props.state.mode === "edit" ? props.state.event : null;
   const isEdit = Boolean(editedEvent);
   const readOnlyForAttendee = Boolean(editedEvent && !editedEvent.isOrganizer);
+  const selectedCalendar =
+    props.calendars.find((calendar) => calendar.id === form.calendarId) ?? null;
+  const organizer = selectedCalendar
+    ? buildAccountParticipant(
+        props.accounts.find(
+          (account) => account.homeAccountId === selectedCalendar.homeAccountId,
+        ) ?? null,
+      )
+    : null;
 
   return (
     <div className="slide-panel-backdrop">
@@ -268,7 +292,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
           <AttendeesSidebar
             event={editedEvent}
             attendees={form.attendees}
-            organizer={props.currentUser}
+            organizer={organizer}
             timeFormat={props.timeFormat}
           />
         </aside>

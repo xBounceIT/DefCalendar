@@ -17,6 +17,7 @@ function createCalendar(): CalendarSummary {
     canEdit: true,
     canShare: false,
     color: "#5b7cfa",
+    homeAccountId: "account-1",
     id: "calendar-1",
     isDefaultCalendar: true,
     isVisible: true,
@@ -97,9 +98,17 @@ function renderDialog(props?: Partial<React.ComponentProps<typeof EventEditorDia
   render(
     <I18nextProvider i18n={i18n}>
       <EventEditorDialog
+        accounts={[
+          {
+            color: "#5b7cfa",
+            homeAccountId: "account-1",
+            name: "Test User",
+            tenantId: "tenant-1",
+            username: "user@example.com",
+          },
+        ]}
         busy={false}
         calendars={[createCalendar()]}
-        currentUser={createParticipant()}
         errorMessage={null}
         onAddAttachment={vi.fn().mockResolvedValue([])}
         onCancelMeeting={vi.fn().mockResolvedValue(undefined)}

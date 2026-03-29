@@ -69,7 +69,7 @@ class MsalAuthService {
   private readonly tokenCache: SafeStorageTokenCache;
   private accounts: AccountInfo[] = [];
   private activeAccountId: string | null = null;
-  private accountColors: Map<string, string> = new Map();
+  private accountColors = new Map<string, string>();
   private db: DatabaseStore | null = null;
   private settings: SettingsStore | null = null;
 
@@ -196,31 +196,38 @@ class MsalAuthService {
   }
 
   private persistAccounts(): void {
-    if (!this.db) return;
+    if (!this.db) {
+      return;
+    }
+
     const storedAccounts = this.buildAccountsList();
     this.db.saveAccounts(storedAccounts);
+  }
+
+  private upsertAccount(account: AccountInfo, setActive = true): void {
+    const existingIndex = this.accounts.findIndex(
+      (item) => item.homeAccountId === account.homeAccountId,
+    );
+
+    if (existingIndex !== -1) {
+      this.accounts[existingIndex] = account;
+    } else {
+      this.accounts.push(account);
+    }
+
+    this.getOrAssignColor(account.homeAccountId);
+    if (setActive) {
+      this.activeAccountId = account.homeAccountId;
+      this.persistActiveAccountId();
+    }
+    this.persistAccounts();
   }
 
   async signIn(mode: AuthSignInMode = "user"): Promise<AuthState> {
     const result = await this.acquireInteractiveToken(mode);
 
     if (result.account) {
-      const existingIndex = this.accounts.findIndex(
-        (a) => a.homeAccountId === result.account!.homeAccountId,
-      );
-
-      if (existingIndex >= 0) {
-        this.accounts[existingIndex] = result.account;
-      } else {
-        this.accounts.push(result.account);
-        if (!this.accountColors.has(result.account.homeAccountId)) {
-          this.accountColors.set(result.account.homeAccountId, generateRandomColor());
-        }
-      }
-
-      this.activeAccountId = result.account.homeAccountId;
-      this.persistAccounts();
-      this.persistActiveAccountId();
+      this.upsertAccount(result.account);
     }
 
     return this.getAuthState();
@@ -228,7 +235,9 @@ class MsalAuthService {
 
   async signOut(homeAccountId?: string): Promise<void> {
     const targetAccountId = homeAccountId ?? this.activeAccountId;
-    if (!targetAccountId) return;
+    if (!targetAccountId) {
+      return;
+    }
 
     const account = this.accounts.find((a) => a.homeAccountId === targetAccountId);
     if (account && this.pca) {
@@ -242,6 +251,21 @@ class MsalAuthService {
       this.activeAccountId = this.accounts.length > 0 ? this.accounts[0].homeAccountId : null;
     }
 
+    this.persistAccounts();
+    this.persistActiveAccountId();
+  }
+
+  async signOutAll(): Promise<void> {
+    const accounts = [...this.accounts];
+    if (this.pca) {
+      for (const account of accounts) {
+        await this.pca.signOut({ account });
+      }
+    }
+
+    this.accounts = [];
+    this.activeAccountId = null;
+    this.accountColors.clear();
     this.persistAccounts();
     this.persistActiveAccountId();
   }
@@ -262,8 +286,26 @@ class MsalAuthService {
     return this.activeAccountId;
   }
 
+  getAccountIds(): string[] {
+    return this.accounts.map((account) => account.homeAccountId);
+  }
+
+  getAccountUsername(homeAccountId: string): null | string {
+    const account = this.accounts.find((item) => item.homeAccountId === homeAccountId);
+    return account?.username ?? null;
+  }
+
   async getAccessToken(forceRefresh = false): Promise<string> {
     const account = await this.ensureAccount();
+    return this.acquireAccessToken(account, forceRefresh);
+  }
+
+  async getAccessTokenForAccount(homeAccountId: string, forceRefresh = false): Promise<string> {
+    const account = await this.ensureAccount(homeAccountId);
+    return this.acquireAccessToken(account, forceRefresh);
+  }
+
+  private async acquireAccessToken(account: AccountInfo, forceRefresh = false): Promise<string> {
     const pca = this.getPca();
 
     try {
@@ -277,18 +319,16 @@ class MsalAuthService {
         return result.accessToken;
       }
     } catch {
-      const interactive = await this.acquireInteractiveToken();
+      const interactive = await this.acquireInteractiveToken("user", account.username);
       if (interactive.account) {
-        const existingIndex = this.accounts.findIndex(
-          (a) => a.homeAccountId === interactive.account!.homeAccountId,
-        );
-        if (existingIndex >= 0) {
-          this.accounts[existingIndex] = interactive.account;
-        } else {
-          this.accounts.push(interactive.account);
+        if (interactive.account.homeAccountId !== account.homeAccountId) {
+          throw new Error(`Unable to refresh the Microsoft 365 session for ${account.username}.`);
         }
-        this.activeAccountId = interactive.account.homeAccountId;
-        this.persistAccounts();
+
+        this.upsertAccount(
+          interactive.account,
+          interactive.account.homeAccountId === this.activeAccountId,
+        );
       }
       if (interactive.accessToken) {
         return interactive.accessToken;
@@ -298,9 +338,10 @@ class MsalAuthService {
     throw new Error("Unable to acquire an access token for Microsoft Graph.");
   }
 
-  private async ensureAccount(): Promise<AccountInfo> {
-    if (this.activeAccountId) {
-      const account = this.accounts.find((a) => a.homeAccountId === this.activeAccountId);
+  private async ensureAccount(homeAccountId?: string): Promise<AccountInfo> {
+    const targetAccountId = homeAccountId ?? this.activeAccountId;
+    if (targetAccountId) {
+      const account = this.accounts.find((a) => a.homeAccountId === targetAccountId);
       if (account) {
         return account;
       }
@@ -312,20 +353,35 @@ class MsalAuthService {
     }
 
     this.accounts = msalAccounts;
-    const account = msalAccounts[0];
-    this.activeAccountId = account.homeAccountId;
-    if (!this.accountColors.has(account.homeAccountId)) {
-      this.accountColors.set(account.homeAccountId, generateRandomColor());
+    for (const account of msalAccounts) {
+      this.getOrAssignColor(account.homeAccountId);
     }
+
+    const account =
+      (targetAccountId
+        ? msalAccounts.find((item) => item.homeAccountId === targetAccountId)
+        : undefined) ?? msalAccounts[0];
+
+    if (!account) {
+      throw new Error("Sign in with Exchange 365 before syncing calendars.");
+    }
+
+    if (!homeAccountId) {
+      this.activeAccountId = account.homeAccountId;
+      this.persistActiveAccountId();
+    }
+
     this.persistAccounts();
     return account;
   }
 
   private async acquireInteractiveToken(
     mode: AuthSignInMode = "user",
+    loginHint?: string,
   ): Promise<AuthenticationResult> {
     try {
       return await this.getPca().acquireTokenInteractive({
+        loginHint,
         scopes: this.config.graphScopes,
         prompt: getSignInPrompt(mode),
         successTemplate: buildSuccessTemplate(),

@@ -1,5 +1,6 @@
 import {
   appUpdateStatusSchema,
+  calendarSummarySchema,
   createDefaultSettings,
   eventDraftSchema,
 } from "../src/shared/schemas";
@@ -44,6 +45,23 @@ describe("shared schemas", () => {
     expect(defaults.language).toBe("system");
     expect(defaults.timeFormat).toBe("system");
     expect(defaults.visibleCalendarIds).toEqual([]);
+  });
+
+  it("accepts calendar summaries with account ownership", () => {
+    const calendar = calendarSummarySchema.parse({
+      canEdit: true,
+      canShare: false,
+      color: "#5b7cfa",
+      homeAccountId: "account-1",
+      id: "calendar-1",
+      isDefaultCalendar: true,
+      isVisible: true,
+      name: "Primary",
+      ownerAddress: "user@example.com",
+      ownerName: "Test User",
+    });
+
+    expect(calendar.homeAccountId).toBe("account-1");
   });
 
   it("accepts a valid app update status payload", () => {

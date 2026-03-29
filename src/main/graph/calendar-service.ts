@@ -130,6 +130,7 @@ interface GraphEvent {
 
 interface SendRequestArgs {
   forceRefresh?: boolean;
+  homeAccountId?: string;
   init?: RequestInit;
   pathOrUrl: string;
   retryCount?: number;
@@ -148,10 +149,11 @@ class GraphCalendarService {
     this.config = config;
   }
 
-  async listCalendars(): Promise<CalendarSummary[]> {
+  async listCalendars(homeAccountId: string): Promise<CalendarSummary[]> {
     const response = await this.paginate(
       "/me/calendars?$select=id,name,color,hexColor,canEdit,canShare,isDefaultCalendar,owner",
       parseGraphCalendar,
+      homeAccountId,
     );
 
     return response.map((calendar) => {
@@ -164,6 +166,7 @@ class GraphCalendarService {
         canEdit: Boolean(calendar.canEdit),
         canShare: Boolean(calendar.canShare),
         color,
+        homeAccountId,
         id: calendar.id,
         isDefaultCalendar: Boolean(calendar.isDefaultCalendar),
         isVisible: true,
@@ -178,6 +181,7 @@ class GraphCalendarService {
     calendarId: string,
     rangeStart: string,
     rangeEnd: string,
+    homeAccountId: string,
   ): Promise<CalendarEvent[]> {
     const query = new URLSearchParams({
       $select: EVENT_SELECT,
@@ -189,27 +193,32 @@ class GraphCalendarService {
     const response = await this.paginate(
       `/me/calendars/${encodeURIComponent(calendarId)}/calendarView?${query.toString()}`,
       parseGraphEvent,
+      homeAccountId,
     );
 
-    return response.map((event) => this.toCalendarEvent(event, calendarId));
+    return response.map((event) => this.toCalendarEvent(event, calendarId, homeAccountId));
   }
 
-  async createEvent(draft: EventDraft): Promise<CalendarEvent> {
+  async createEvent(draft: EventDraft, homeAccountId: string): Promise<CalendarEvent> {
     const response = parseGraphEvent(
-      await this.requestJson(`/me/calendars/${encodeURIComponent(draft.calendarId)}/events`, {
-        body: JSON.stringify(this.toGraphEventPayload(draft, "create")),
-        headers: {
-          "Content-Type": "application/json",
+      await this.requestJson(
+        `/me/calendars/${encodeURIComponent(draft.calendarId)}/events`,
+        {
+          body: JSON.stringify(this.toGraphEventPayload(draft, "create")),
+          headers: {
+            "Content-Type": "application/json",
+          },
+          method: "POST",
         },
-        method: "POST",
-      }),
+        homeAccountId,
+      ),
     );
 
-    await this.syncAttachmentOperations(draft.calendarId, response.id, draft);
-    return this.getEvent(draft.calendarId, response.id);
+    await this.syncAttachmentOperations(draft.calendarId, response.id, draft, homeAccountId);
+    return this.getEvent(draft.calendarId, response.id, homeAccountId);
   }
 
-  async updateEvent(draft: EventDraft): Promise<CalendarEvent> {
+  async updateEvent(draft: EventDraft, homeAccountId: string): Promise<CalendarEvent> {
     if (!draft.id) {
       throw new Error("Event id is required for updates.");
     }
@@ -229,13 +238,18 @@ class GraphCalendarService {
         headers,
         method: "PATCH",
       },
+      homeAccountId,
     );
 
-    await this.syncAttachmentOperations(draft.calendarId, draft.id, draft);
-    return this.getEvent(draft.calendarId, draft.id);
+    await this.syncAttachmentOperations(draft.calendarId, draft.id, draft, homeAccountId);
+    return this.getEvent(draft.calendarId, draft.id, homeAccountId);
   }
 
-  async getEvent(calendarId: string, eventId: string): Promise<CalendarEvent> {
+  async getEvent(
+    calendarId: string,
+    eventId: string,
+    homeAccountId: string,
+  ): Promise<CalendarEvent> {
     const query = new URLSearchParams({
       $select: EVENT_SELECT,
     });
@@ -243,13 +257,20 @@ class GraphCalendarService {
     const response = parseGraphEvent(
       await this.requestJson(
         `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}?${query.toString()}`,
+        {},
+        homeAccountId,
       ),
     );
 
-    return this.toCalendarEvent(response, calendarId);
+    return this.toCalendarEvent(response, calendarId, homeAccountId);
   }
 
-  async deleteEvent(calendarId: string, eventId: string, etag?: null | string): Promise<void> {
+  async deleteEvent(
+    calendarId: string,
+    eventId: string,
+    homeAccountId: string,
+    etag?: null | string,
+  ): Promise<void> {
     const headers: Record<string, string> = {};
     if (etag) {
       headers["If-Match"] = etag;
@@ -261,10 +282,16 @@ class GraphCalendarService {
         headers,
         method: "DELETE",
       },
+      homeAccountId,
     );
   }
 
-  async cancelEvent(calendarId: string, eventId: string, comment = ""): Promise<void> {
+  async cancelEvent(
+    calendarId: string,
+    eventId: string,
+    homeAccountId: string,
+    comment = "",
+  ): Promise<void> {
     await this.requestNoContent(
       `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}/cancel`,
       {
@@ -274,10 +301,11 @@ class GraphCalendarService {
         },
         method: "POST",
       },
+      homeAccountId,
     );
   }
 
-  async respondToEvent(args: RespondToEventArgs): Promise<void> {
+  async respondToEvent(args: RespondToEventArgs, homeAccountId: string): Promise<void> {
     await this.requestNoContent(
       `/me/calendars/${encodeURIComponent(args.calendarId)}/events/${encodeURIComponent(args.eventId)}/${args.action}`,
       {
@@ -290,16 +318,23 @@ class GraphCalendarService {
         },
         method: "POST",
       },
+      homeAccountId,
     );
   }
 
-  async listAttachments(calendarId: string, eventId: string): Promise<EventAttachment[]> {
+  async listAttachments(
+    calendarId: string,
+    eventId: string,
+    homeAccountId: string,
+  ): Promise<EventAttachment[]> {
     const query = new URLSearchParams({
       $select: "id,name,contentType,size,isInline",
     });
     const response = parseGraphCollection(
       await this.requestJson(
         `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}/attachments?${query.toString()}`,
+        {},
+        homeAccountId,
       ),
     );
 
@@ -310,6 +345,7 @@ class GraphCalendarService {
     calendarId: string,
     eventId: string,
     attachment: AttachmentUpload,
+    homeAccountId: string,
   ): Promise<EventAttachment[]> {
     await this.requestJson(
       `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}/attachments`,
@@ -325,49 +361,54 @@ class GraphCalendarService {
         },
         method: "POST",
       },
+      homeAccountId,
     );
 
-    return this.listAttachments(calendarId, eventId);
+    return this.listAttachments(calendarId, eventId, homeAccountId);
   }
 
   async removeAttachment(
     calendarId: string,
     eventId: string,
     attachmentId: string,
+    homeAccountId: string,
   ): Promise<EventAttachment[]> {
     await this.requestNoContent(
       `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}/attachments/${encodeURIComponent(attachmentId)}`,
       {
         method: "DELETE",
       },
+      homeAccountId,
     );
 
-    return this.listAttachments(calendarId, eventId);
+    return this.listAttachments(calendarId, eventId, homeAccountId);
   }
 
   private async syncAttachmentOperations(
     calendarId: string,
     eventId: string,
     draft: EventDraft,
+    homeAccountId: string,
   ): Promise<void> {
     for (const attachmentId of draft.attachmentIdsToRemove) {
-      await this.removeAttachment(calendarId, eventId, attachmentId);
+      await this.removeAttachment(calendarId, eventId, attachmentId, homeAccountId);
     }
 
     for (const attachment of draft.attachmentsToAdd) {
-      await this.addAttachment(calendarId, eventId, attachment);
+      await this.addAttachment(calendarId, eventId, attachment, homeAccountId);
     }
   }
 
   private async paginate<TItem>(
     pathOrUrl: string,
     parseItem: (value: unknown) => TItem,
+    homeAccountId: string,
   ): Promise<TItem[]> {
     const items: TItem[] = [];
     let nextUrl: string | undefined = pathOrUrl;
 
     while (nextUrl) {
-      const response = parseGraphCollection(await this.requestJson(nextUrl));
+      const response = parseGraphCollection(await this.requestJson(nextUrl, {}, homeAccountId));
       items.push(...response.value.map(parseItem));
       nextUrl = response.nextLink;
     }
@@ -375,8 +416,12 @@ class GraphCalendarService {
     return items;
   }
 
-  private async requestJson(pathOrUrl: string, init: RequestInit = {}): Promise<unknown> {
-    const response = await this.sendRequest({ init, pathOrUrl });
+  private async requestJson(
+    pathOrUrl: string,
+    init: RequestInit = {},
+    homeAccountId?: string,
+  ): Promise<unknown> {
+    const response = await this.sendRequest({ homeAccountId, init, pathOrUrl });
     if (!response.ok) {
       throw new Error(await this.getErrorMessage(response));
     }
@@ -384,8 +429,12 @@ class GraphCalendarService {
     return response.json();
   }
 
-  private async requestNoContent(pathOrUrl: string, init: RequestInit = {}): Promise<void> {
-    const response = await this.sendRequest({ init, pathOrUrl });
+  private async requestNoContent(
+    pathOrUrl: string,
+    init: RequestInit = {},
+    homeAccountId?: string,
+  ): Promise<void> {
+    const response = await this.sendRequest({ homeAccountId, init, pathOrUrl });
     if (!response.ok) {
       throw new Error(await this.getErrorMessage(response));
     }
@@ -396,10 +445,13 @@ class GraphCalendarService {
   }
 
   private async sendRequest(args: SendRequestArgs): Promise<Response> {
-    const { forceRefresh = false, init = {}, pathOrUrl, retryCount = 0 } = args;
+    const { forceRefresh = false, homeAccountId, init = {}, pathOrUrl, retryCount = 0 } = args;
     const headers = new Headers(init.headers);
     headers.set("Accept", "application/json");
-    headers.set("Authorization", `Bearer ${await this.auth.getAccessToken(forceRefresh)}`);
+    const accessToken = homeAccountId
+      ? await this.auth.getAccessTokenForAccount(homeAccountId, forceRefresh)
+      : await this.auth.getAccessToken(forceRefresh);
+    headers.set("Authorization", `Bearer ${accessToken}`);
     headers.set("Prefer", `outlook.timezone="${this.config.timeZone}"`);
 
     let requestUrl = `${this.baseUrl}${pathOrUrl}`;
@@ -415,6 +467,7 @@ class GraphCalendarService {
     if (response.status === 401 && !forceRefresh) {
       return this.sendRequest({
         forceRefresh: true,
+        homeAccountId,
         init,
         pathOrUrl,
         retryCount,
@@ -426,6 +479,7 @@ class GraphCalendarService {
       await delay(this.getRetryDelay(response.headers.get("Retry-After"), retryCount));
       return this.sendRequest({
         forceRefresh,
+        homeAccountId,
         init,
         pathOrUrl,
         retryCount: retryCount + 1,
@@ -465,10 +519,12 @@ class GraphCalendarService {
     return (retryCount + 1) * 1500;
   }
 
-  private toCalendarEvent(event: GraphEvent, calendarId: string): CalendarEvent {
-    const authState = this.auth.getAuthState();
-    const currentEmail =
-      authState.status === "signed_in" ? authState.account.username.toLowerCase() : null;
+  private toCalendarEvent(
+    event: GraphEvent,
+    calendarId: string,
+    homeAccountId: string,
+  ): CalendarEvent {
+    const currentEmail = this.auth.getAccountUsername(homeAccountId)?.toLowerCase() ?? null;
     const organizer = event.organizer ? toParticipant(event.organizer) : null;
     const organizerEmail = organizer?.email?.toLowerCase() ?? null;
     const isOrganizer =
@@ -835,11 +891,13 @@ function parseGraphOnlineMeeting(value?: Record<string, unknown>): GraphOnlineMe
   const phonesValue = readOptionalArray(value, "phones");
   let phones: { number?: string }[] | undefined = undefined;
   if (phonesValue) {
-    phones = phonesValue
-      .map((entry) =>
-        isRecord(entry) ? { number: readOptionalString(entry, "number") } : undefined,
-      )
-      .filter((entry): entry is { number?: string } => Boolean(entry));
+    phones = phonesValue.flatMap((entry) => {
+      if (!isRecord(entry)) {
+        return [];
+      }
+
+      return [{ number: readOptionalString(entry, "number") }];
+    });
   }
 
   return {

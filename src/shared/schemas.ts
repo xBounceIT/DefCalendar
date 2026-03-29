@@ -47,6 +47,7 @@ const authSignInRequestSchema = z.object({
 
 const calendarSummarySchema = z.object({
   id: z.string(),
+  homeAccountId: z.string(),
   name: z.string(),
   color: z.string().nullable(),
   canEdit: z.boolean(),

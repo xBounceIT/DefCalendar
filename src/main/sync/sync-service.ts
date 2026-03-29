@@ -4,7 +4,7 @@ import type GraphCalendarService from "@main/graph/calendar-service";
 import type MsalAuthService from "@main/auth/msal-auth-service";
 import type ReminderService from "@main/reminders/reminder-service";
 import type SettingsService from "@main/settings/settings-service";
-import type { SyncStatus } from "@shared/schemas";
+import type { CalendarSummary, SyncStatus } from "@shared/schemas";
 
 type SyncReason = "startup" | "sign-in" | "switch-account" | "manual" | "interval" | "mutation";
 
@@ -70,12 +70,12 @@ class SyncService {
     };
   }
 
-  async syncAll(reason: SyncReason): Promise<SyncStatus> {
+  async syncAll(reason: SyncReason, homeAccountId?: string): Promise<SyncStatus> {
     if (this.inFlight) {
       return this.inFlight;
     }
 
-    const nextSync = this.runSync(reason);
+    const nextSync = this.runSync(reason, homeAccountId);
     this.inFlight = nextSync;
 
     try {
@@ -87,7 +87,7 @@ class SyncService {
     }
   }
 
-  private async runSync(reason: SyncReason): Promise<SyncStatus> {
+  private async runSync(reason: SyncReason, homeAccountId?: string): Promise<SyncStatus> {
     if (!this.dependencies.auth.hasSession()) {
       const idleStatus = {
         lastSyncedAt: this.status.lastSyncedAt,
@@ -100,7 +100,19 @@ class SyncService {
       return idleStatus;
     }
 
-    const homeAccountId = this.dependencies.auth.getActiveAccountId();
+    const accountIds = this.resolveAccountIds(reason, homeAccountId);
+    if (accountIds.length === 0) {
+      const idleStatus = {
+        lastSyncedAt: this.status.lastSyncedAt,
+        message: "Sign in to sync Exchange 365.",
+        messageKey: "sync.signInToSync",
+        counts: null,
+        state: "idle" as const,
+      };
+      this.setStatus(idleStatus);
+      return idleStatus;
+    }
+
     let syncMessage = "Syncing Exchange 365…";
     let syncMessageKey = "sync.syncing";
     if (reason === "sign-in" || reason === "switch-account") {
@@ -117,13 +129,19 @@ class SyncService {
     });
 
     try {
-      const knownCalendarIds = this.dependencies.db.listCalendarIds(homeAccountId ?? undefined);
-      const calendars = await this.dependencies.graph.listCalendars();
-      this.dependencies.db.upsertCalendars(calendars, homeAccountId ?? "");
-      const settings = this.dependencies.settings.syncVisibleCalendars({
-        calendarIds: calendars.map((calendar) => calendar.id),
-        knownCalendarIds,
-      });
+      let settings = this.dependencies.settings.getSettings();
+      const calendars: CalendarSummary[] = [];
+
+      for (const accountId of accountIds) {
+        const knownCalendarIds = this.dependencies.db.listCalendarIds(accountId);
+        const accountCalendars = await this.dependencies.graph.listCalendars(accountId);
+        this.dependencies.db.upsertCalendars(accountCalendars, accountId);
+        settings = this.dependencies.settings.syncVisibleCalendars({
+          calendarIds: accountCalendars.map((calendar) => calendar.id),
+          knownCalendarIds,
+        });
+        calendars.push(...accountCalendars);
+      }
 
       if (reason === "sign-in") {
         const nextStatus: SyncStatus = {
@@ -162,7 +180,12 @@ class SyncService {
       const syncedCalendars = await Promise.all(
         calendarsToSync.map(async (calendar) => ({
           calendarId: calendar.id,
-          events: await this.dependencies.graph.listCalendarView(calendar.id, rangeStart, rangeEnd),
+          events: await this.dependencies.graph.listCalendarView(
+            calendar.id,
+            rangeStart,
+            rangeEnd,
+            calendar.homeAccountId,
+          ),
         })),
       );
 
@@ -227,6 +250,19 @@ class SyncService {
       this.setStatus(nextStatus);
       return nextStatus;
     }
+  }
+
+  private resolveAccountIds(reason: SyncReason, homeAccountId?: string): string[] {
+    if (homeAccountId) {
+      return [homeAccountId];
+    }
+
+    if (reason === "sign-in" || reason === "switch-account") {
+      const activeAccountId = this.dependencies.auth.getActiveAccountId();
+      return activeAccountId ? [activeAccountId] : [];
+    }
+
+    return this.dependencies.auth.getAccountIds();
   }
 
   private setStatus(status: SyncStatus): void {

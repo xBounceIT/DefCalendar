@@ -49,30 +49,46 @@ class AppDatabase {
   }
 
   listCalendars(homeAccountId?: string): CalendarSummary[] {
-    let statement;
     if (homeAccountId) {
-      statement = this.db.prepare(`
-        SELECT payload_json
+      return this.db
+        .prepare(`
+        SELECT
+          id,
+          home_account_id,
+          name,
+          color,
+          can_edit,
+          can_share,
+          is_default_calendar,
+          owner_name,
+          owner_address,
+          payload_json
         FROM calendars
         WHERE home_account_id = ?
         ORDER BY is_default_calendar DESC, name COLLATE NOCASE ASC
-      `);
-      return statement
+      `)
         .all(homeAccountId)
-        .map((row) =>
-          calendarSummarySchema.parse(JSON.parse(readStringProperty(row, "payload_json"))),
-        );
+        .map((row) => readCalendarSummary(row));
     }
-    statement = this.db.prepare(`
-      SELECT payload_json
+
+    return this.db
+      .prepare(`
+      SELECT
+        id,
+        home_account_id,
+        name,
+        color,
+        can_edit,
+        can_share,
+        is_default_calendar,
+        owner_name,
+        owner_address,
+        payload_json
       FROM calendars
       ORDER BY is_default_calendar DESC, name COLLATE NOCASE ASC
-    `);
-    return statement
+    `)
       .all()
-      .map((row) =>
-        calendarSummarySchema.parse(JSON.parse(readStringProperty(row, "payload_json"))),
-      );
+      .map((row) => readCalendarSummary(row));
   }
 
   listCalendarIds(homeAccountId?: string): string[] {
@@ -86,6 +102,18 @@ class AppDatabase {
       .prepare("SELECT id FROM calendars")
       .all()
       .map((row) => readStringProperty(row, "id"));
+  }
+
+  getCalendarHomeAccountId(calendarId: string): null | string {
+    const row = this.db
+      .prepare("SELECT home_account_id FROM calendars WHERE id = ?")
+      .get(calendarId);
+
+    if (!row) {
+      return null;
+    }
+
+    return readStringProperty(row, "home_account_id");
   }
 
   upsertCalendars(calendars: CalendarSummary[], homeAccountId: string): void {
@@ -138,17 +166,22 @@ class AppDatabase {
 
     const transaction = this.db.transaction((items: CalendarSummary[]) => {
       for (const calendar of items) {
+        const persistedCalendar = {
+          ...calendar,
+          homeAccountId,
+        };
+
         upsert.run({
-          can_edit: toSqliteBoolean(calendar.canEdit),
-          can_share: toSqliteBoolean(calendar.canShare),
-          color: calendar.color,
+          can_edit: toSqliteBoolean(persistedCalendar.canEdit),
+          can_share: toSqliteBoolean(persistedCalendar.canShare),
+          color: persistedCalendar.color,
           home_account_id: homeAccountId,
-          id: calendar.id,
-          is_default_calendar: toSqliteBoolean(calendar.isDefaultCalendar),
-          name: calendar.name,
-          owner_address: calendar.ownerAddress,
-          owner_name: calendar.ownerName,
-          payload_json: JSON.stringify(calendar),
+          id: persistedCalendar.id,
+          is_default_calendar: toSqliteBoolean(persistedCalendar.isDefaultCalendar),
+          name: persistedCalendar.name,
+          owner_address: persistedCalendar.ownerAddress,
+          owner_name: persistedCalendar.ownerName,
+          payload_json: JSON.stringify(persistedCalendar),
           updated_at: new Date().toISOString(),
         });
       }
@@ -488,7 +521,16 @@ class AppDatabase {
   clearUserData(homeAccountId?: string): void {
     if (homeAccountId) {
       const deleteUserData = this.db.transaction((accountId: string) => {
-        this.db.prepare("DELETE FROM notification_state").run();
+        const calendarIds = this.db
+          .prepare("SELECT id FROM calendars WHERE home_account_id = ?")
+          .all(accountId)
+          .map((row) => readStringProperty(row, "id"));
+
+        for (const calendarId of calendarIds) {
+          this.db
+            .prepare(String.raw`DELETE FROM notification_state WHERE dedupe_key LIKE ? ESCAPE '\'`)
+            .run(`${escapeLikePattern(calendarId)}:%`);
+        }
         this.db
           .prepare(
             "DELETE FROM sync_state WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
@@ -704,6 +746,30 @@ function readNumberProperty(row: unknown, key: string): number {
   }
 
   throw new Error(`Expected "${key}" to be a number.`);
+}
+
+function readCalendarSummary(row: unknown): CalendarSummary {
+  const stored = JSON.parse(readStringProperty(row, "payload_json")) as Record<string, unknown>;
+
+  return calendarSummarySchema.parse({
+    ...stored,
+    canEdit: Boolean(readNumberProperty(row, "can_edit")),
+    canShare: Boolean(readNumberProperty(row, "can_share")),
+    color: readNullableStringProperty(row, "color"),
+    homeAccountId: readStringProperty(row, "home_account_id"),
+    id: readStringProperty(row, "id"),
+    isDefaultCalendar: Boolean(readNumberProperty(row, "is_default_calendar")),
+    name: readStringProperty(row, "name"),
+    ownerAddress: readNullableStringProperty(row, "owner_address"),
+    ownerName: readNullableStringProperty(row, "owner_name"),
+  });
+}
+
+function escapeLikePattern(value: string): string {
+  return value
+    .replaceAll("\\", String.raw`\\`)
+    .replaceAll("%", String.raw`\%`)
+    .replaceAll("_", String.raw`\_`);
 }
 
 function toSqliteBoolean(value: boolean): 0 | 1 {

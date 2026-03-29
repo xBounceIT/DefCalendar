@@ -61,7 +61,7 @@ async function bootstrap(): Promise<void> {
   });
 
   const signOutEverywhere = async () => {
-    await auth.signOut();
+    await auth.signOutAll();
     db.clearUserData();
     sync.reset();
 

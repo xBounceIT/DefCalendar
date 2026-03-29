@@ -22,7 +22,6 @@ import type {
   CalendarSummary,
   CancelEventArgs,
   EventDraft,
-  EventParticipant,
   EventResponseAction,
   RespondToEventArgs,
   SyncStatus,
@@ -185,16 +184,6 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     },
   });
 
-  const switchAccountMutation = useMutation({
-    mutationFn: (homeAccountId: string) => calendarApi.auth.switchAccount(homeAccountId),
-    onError: (error) => {
-      setBannerError(toErrorMessage(error));
-    },
-    onSuccess: async () => {
-      await invalidateCalendarData(queryClient);
-    },
-  });
-
   const refreshMutation = useMutation({
     mutationFn: () => calendarApi.sync.refresh(),
     onError: (error) => {
@@ -351,6 +340,10 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   }, [activeView, hydrated, selectedDate]);
 
   const calendars = calendarsQuery.data ?? EMPTY_CALENDARS;
+  const activeAccountCalendars = useMemo(
+    () => calendars.filter((calendar) => calendar.homeAccountId === activeAccountId),
+    [activeAccountId, calendars],
+  );
   let events = EMPTY_EVENTS;
   if (visibleCalendarIds.length > 0 && eventsQuery.data) {
     events = eventsQuery.data;
@@ -361,11 +354,10 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     [calendars],
   );
 
-  let editableCalendar =
-    calendars.find((calendar) => calendar.isVisible && calendar.canEdit) ?? null;
-  if (!editableCalendar) {
-    editableCalendar = calendars.find((calendar) => calendar.canEdit) ?? null;
-  }
+  const editableCalendar = useMemo(
+    () => getPreferredEditableCalendar(calendars, activeAccountId),
+    [activeAccountId, calendars],
+  );
 
   const eventLookup = useMemo(
     () => new Map(events.map((event) => [`${event.calendarId}:${event.id}`, event])),
@@ -604,7 +596,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   }
 
   async function handleCalendarSelectionContinue(selectedCalendarIds: string[]): Promise<void> {
-    const selectionCalendars = calendarsQuery.data ?? EMPTY_CALENDARS;
+    const selectionCalendars = activeAccountCalendars;
     if (selectionCalendars.length > 0 && selectedCalendarIds.length === 0) {
       setBannerError(t("calendarSelection.selectAtLeastOne"));
       return;
@@ -680,7 +672,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     return (
       <CalendarSelectionScreen
         accountEmail={activeAccount?.username ?? null}
-        calendars={calendarsQuery.data ?? EMPTY_CALENDARS}
+        calendars={activeAccountCalendars}
         errorMessage={calendarSelectionError}
         isPending={isApplyingCalendarSelection || refreshMutation.isPending}
         onContinue={(selectedCalendarIds) => {
@@ -710,12 +702,10 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
       <TitleBar />
       <CalendarSidebar
         accounts={accounts}
-        activeAccountId={activeAccountId}
         calendars={calendars}
         canCreateEvent={Boolean(editableCalendar)}
         isRefreshing={refreshMutation.isPending}
         onAccountAdd={() => setShowAuthScreen(true)}
-        onAccountSwitch={(homeAccountId) => switchAccountMutation.mutate(homeAccountId)}
         onCalendarToggle={(calendar) => {
           void handleCalendarToggle(calendar);
         }}
@@ -777,21 +767,11 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         }}
       />
       <EventEditorDialog
+        accounts={accounts}
         onAddAttachment={addEventAttachment}
         onCancelMeeting={cancelMeeting}
         busy={busy}
         calendars={calendars}
-        currentUser={
-          activeAccount
-            ? {
-                email: activeAccount.username,
-                name: activeAccount.name,
-                response: null,
-                status: null,
-                type: "required",
-              }
-            : null
-        }
         errorMessage={dialogError}
         onListAttachments={listEventAttachments}
         onDelete={deleteDraft}
@@ -868,6 +848,23 @@ function buildCalendarEvents(
       title: event.subject,
     };
   });
+}
+
+function getPreferredEditableCalendar(
+  calendars: CalendarSummary[],
+  activeAccountId: null | string,
+): CalendarSummary | null {
+  const activeCalendars = calendars.filter(
+    (calendar) => calendar.homeAccountId === activeAccountId,
+  );
+
+  return (
+    activeCalendars.find((calendar) => calendar.isVisible && calendar.canEdit) ??
+    activeCalendars.find((calendar) => calendar.canEdit) ??
+    calendars.find((calendar) => calendar.isVisible && calendar.canEdit) ??
+    calendars.find((calendar) => calendar.canEdit) ??
+    null
+  );
 }
 
 function getEventBoundary(value: Date | null | undefined, fallback: string): string {

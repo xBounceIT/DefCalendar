@@ -23,11 +23,12 @@ interface SyncFixture {
   };
 }
 
-function createCalendar(id: string): CalendarSummary {
+function createCalendar(id: string, homeAccountId = "account-1"): CalendarSummary {
   return {
     canEdit: true,
     canShare: false,
     color: "#5b7cfa",
+    homeAccountId,
     id,
     isDefaultCalendar: false,
     isVisible: true,
@@ -38,6 +39,7 @@ function createCalendar(id: string): CalendarSummary {
 }
 
 function createFixture(args?: {
+  accountIds?: string[];
   calendars?: CalendarSummary[];
   knownCalendarIds?: string[];
   visibleCalendarIds?: string[];
@@ -69,12 +71,16 @@ function createFixture(args?: {
   };
 
   const settings = {
+    getSettings: vi.fn().mockReturnValue({
+      visibleCalendarIds,
+    }),
     syncVisibleCalendars: vi.fn().mockReturnValue({
       visibleCalendarIds,
     }),
   };
 
   const auth = {
+    getAccountIds: vi.fn().mockReturnValue(args?.accountIds ?? ["account-1"]),
     getActiveAccountId: vi.fn().mockReturnValue("account-1"),
     hasSession: vi.fn().mockReturnValue(true),
   };
@@ -117,13 +123,45 @@ describe("sync service", () => {
       state: "idle",
     });
     expect(fixture.graph.listCalendars).toHaveBeenCalledOnce();
-    expect(fixture.db.upsertCalendars).toHaveBeenCalledOnce();
+    expect(fixture.db.upsertCalendars).toHaveBeenCalledWith(
+      [createCalendar("calendar-a"), createCalendar("calendar-b")],
+      "account-1",
+    );
     expect(fixture.settings.syncVisibleCalendars).toHaveBeenCalledWith({
       calendarIds: ["calendar-a", "calendar-b"],
       knownCalendarIds: [],
     });
     expect(fixture.graph.listCalendarView).toHaveBeenCalledTimes(0);
     expect(fixture.reminders.checkNow).toHaveBeenCalledTimes(0);
+  });
+
+  it("syncs all signed-in accounts during manual refresh", async () => {
+    const fixture = createFixture({
+      accountIds: ["account-1", "account-2"],
+      calendars: [],
+      visibleCalendarIds: ["calendar-a", "calendar-b"],
+    });
+
+    fixture.graph.listCalendars = vi
+      .fn()
+      .mockImplementation(async (homeAccountId: string) =>
+        homeAccountId === "account-1"
+          ? [createCalendar("calendar-a", "account-1")]
+          : [createCalendar("calendar-b", "account-2")],
+      );
+
+    const status = await fixture.service.syncAll("manual");
+
+    expect(status.counts).toStrictEqual({ calendars: 2, events: 0 });
+    expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(2);
+    expect(fixture.graph.listCalendars.mock.calls.map(([accountId]) => accountId)).toStrictEqual([
+      "account-1",
+      "account-2",
+    ]);
+    expect(fixture.graph.listCalendarView.mock.calls).toStrictEqual([
+      ["calendar-a", expect.any(String), expect.any(String), "account-1"],
+      ["calendar-b", expect.any(String), expect.any(String), "account-2"],
+    ]);
   });
 
   it("syncs only selected calendars", async () => {

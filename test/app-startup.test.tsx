@@ -249,6 +249,7 @@ function createSignedInCalendarApiMock(): CalendarApi {
       list: vi.fn().mockResolvedValue([
         {
           id: "calendar-1",
+          homeAccountId: "account-1",
           name: "Calendario",
           color: "#bde7f6",
           canEdit: true,
@@ -383,6 +384,7 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
       list: vi.fn().mockResolvedValue([
         {
           id: "calendar-1",
+          homeAccountId: "account-1",
           name: "Calendar One",
           color: "#5b7cfa",
           canEdit: true,
@@ -394,6 +396,7 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
         },
         {
           id: "calendar-2",
+          homeAccountId: "account-2",
           name: "Calendar Two",
           color: "#34a853",
           canEdit: true,
@@ -518,6 +521,8 @@ describe("app startup", () => {
 
       await expect(screen.findByText("Choose calendars to sync")).resolves.not.toBeNull();
       expect(screen.getByRole("button", { name: "Start syncing" })).not.toBeNull();
+      expect(screen.getByText("Calendar One")).not.toBeNull();
+      expect(screen.queryByText("Calendar Two")).toBeNull();
     } finally {
       restoreCalendarApi();
       restoreResizeObserver();

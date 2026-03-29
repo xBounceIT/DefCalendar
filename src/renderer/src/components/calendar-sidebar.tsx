@@ -10,11 +10,9 @@ import { useTranslation } from "react-i18next";
 interface CalendarSidebarProps {
   onSettingsClick: () => void;
   accounts: AccountSummary[];
-  activeAccountId: string | null;
   calendars: CalendarSummary[];
   canCreateEvent: boolean;
   isRefreshing: boolean;
-  onAccountSwitch: (homeAccountId: string) => void;
   onAccountAdd: () => void;
   onCalendarToggle: (calendar: CalendarSummary) => void;
   onCreateEvent: () => void;
@@ -98,19 +96,15 @@ function CalendarRow({
 function CalendarListGroup({
   account,
   calendars,
-  isActive,
   onCalendarToggle,
   isExpanded,
   onToggle,
-  onSwitch,
 }: {
   account: AccountSummary;
   calendars: CalendarSummary[];
-  isActive: boolean;
   onCalendarToggle: (calendar: CalendarSummary) => void;
   isExpanded: boolean;
   onToggle: () => void;
-  onSwitch: () => void;
 }) {
   return (
     <div className="calendar-list-group">
@@ -121,11 +115,6 @@ function CalendarListGroup({
           <ChevronIcon expanded={isExpanded} />
           <span className="account-email">{account.username}</span>
         </button>
-        {!isActive && (
-          <button className="account-switch-btn" onClick={onSwitch} type="button">
-            Switch
-          </button>
-        )}
         <div className={`account-calendars-wrapper ${isExpanded ? "expanded" : ""}`}>
           <div className="account-calendars">
             {calendars.map((calendar) => (
@@ -144,15 +133,11 @@ function CalendarListGroup({
 
 function CalendarList({
   accounts,
-  activeAccountId,
   calendars,
-  onAccountSwitch,
   onCalendarToggle,
 }: {
   accounts: AccountSummary[];
-  activeAccountId: string | null;
   calendars: CalendarSummary[];
-  onAccountSwitch: (homeAccountId: string) => void;
   onCalendarToggle: (calendar: CalendarSummary) => void;
 }) {
   const [expandedGroups, setExpandedGroups] = React.useState<Set<string>>(() => new Set());
@@ -160,55 +145,43 @@ function CalendarList({
   const groups = React.useMemo(() => {
     const grouped = new Map<string, CalendarSummary[]>();
     for (const calendar of calendars) {
-      const email = calendar.ownerAddress ?? "Unknown";
-      const existing = grouped.get(email);
+      const existing = grouped.get(calendar.homeAccountId);
       if (existing) {
         existing.push(calendar);
       } else {
-        grouped.set(email, [calendar]);
+        grouped.set(calendar.homeAccountId, [calendar]);
       }
     }
     return grouped;
   }, [calendars]);
 
-  const accountEmails = React.useMemo(() => new Set(accounts.map((a) => a.username)), [accounts]);
-
   const entries = React.useMemo(
-    () => accounts.map((account) => [account.username, account] as const),
+    () => accounts.map((account) => [account.homeAccountId, account] as const),
     [accounts],
   );
 
-  const handleToggleGroup = React.useCallback((email: string) => {
+  const handleToggleGroup = React.useCallback((homeAccountId: string) => {
     setExpandedGroups((prev) => {
       const next = new Set(prev);
-      if (next.has(email)) {
-        next.delete(email);
+      if (next.has(homeAccountId)) {
+        next.delete(homeAccountId);
       } else {
-        next.add(email);
+        next.add(homeAccountId);
       }
       return next;
     });
   }, []);
 
-  const handleSwitchAccount = React.useCallback(
-    (homeAccountId: string) => {
-      onAccountSwitch(homeAccountId);
-    },
-    [onAccountSwitch],
-  );
-
   return (
     <div className="calendar-list-container">
-      {entries.map(([email, account]) => (
+      {entries.map(([homeAccountId, account]) => (
         <CalendarListGroup
           account={account}
-          calendars={groups.get(email) ?? []}
-          isActive={account.homeAccountId === activeAccountId}
-          isExpanded={expandedGroups.has(email)}
+          calendars={groups.get(homeAccountId) ?? []}
+          isExpanded={expandedGroups.has(homeAccountId)}
           key={account.homeAccountId}
           onCalendarToggle={onCalendarToggle}
-          onSwitch={() => handleSwitchAccount(account.homeAccountId)}
-          onToggle={() => handleToggleGroup(email)}
+          onToggle={() => handleToggleGroup(homeAccountId)}
         />
       ))}
     </div>
@@ -363,9 +336,7 @@ function CalendarSidebar(props: CalendarSidebarProps) {
         <CalendarListHeader onAdd={props.onAccountAdd} />
         <CalendarList
           accounts={props.accounts}
-          activeAccountId={props.activeAccountId}
           calendars={props.calendars}
-          onAccountSwitch={props.onAccountSwitch}
           onCalendarToggle={props.onCalendarToggle}
         />
       </div>
