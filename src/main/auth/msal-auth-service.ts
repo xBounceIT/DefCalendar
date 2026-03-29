@@ -143,6 +143,16 @@ class MsalAuthService {
     }
   }
 
+  private getOrAssignColor(homeAccountId: string): string {
+    let color = this.accountColors.get(homeAccountId);
+    if (!color) {
+      color = generateRandomColor();
+      this.accountColors.set(homeAccountId, color);
+    }
+
+    return color;
+  }
+
   hasSession(): boolean {
     return (
       this.activeAccountId !== null &&
@@ -167,7 +177,7 @@ class MsalAuthService {
         username: activeAccount.username,
         name: activeAccount.name ?? null,
         tenantId: activeAccount.tenantId ?? null,
-        color: this.accountColors.get(activeAccount.homeAccountId) ?? generateRandomColor(),
+        color: this.getOrAssignColor(activeAccount.homeAccountId),
       },
       accounts: this.buildAccountsList(),
       activeAccountId: this.activeAccountId,
@@ -180,7 +190,7 @@ class MsalAuthService {
       username: account.username,
       name: account.name ?? null,
       tenantId: account.tenantId ?? null,
-      color: this.accountColors.get(account.homeAccountId) ?? generateRandomColor(),
+      color: this.getOrAssignColor(account.homeAccountId),
       lastSignedInAt: new Date().toISOString(),
     }));
   }

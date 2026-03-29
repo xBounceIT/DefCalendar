@@ -487,13 +487,23 @@ class AppDatabase {
 
   clearUserData(homeAccountId?: string): void {
     if (homeAccountId) {
-      this.db.exec(`
-        DELETE FROM notification_state;
-        DELETE FROM sync_state WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = '${homeAccountId}');
-        DELETE FROM events WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = '${homeAccountId}');
-        DELETE FROM calendars WHERE home_account_id = '${homeAccountId}';
-        DELETE FROM accounts WHERE home_account_id = '${homeAccountId}';
-      `);
+      const deleteUserData = this.db.transaction((accountId: string) => {
+        this.db.prepare("DELETE FROM notification_state").run();
+        this.db
+          .prepare(
+            "DELETE FROM sync_state WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
+          )
+          .run(accountId);
+        this.db
+          .prepare(
+            "DELETE FROM events WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
+          )
+          .run(accountId);
+        this.db.prepare("DELETE FROM calendars WHERE home_account_id = ?").run(accountId);
+        this.db.prepare("DELETE FROM accounts WHERE home_account_id = ?").run(accountId);
+      });
+
+      deleteUserData(homeAccountId);
       return;
     }
     this.db.exec(`

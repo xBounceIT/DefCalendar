@@ -336,7 +336,7 @@ function EventToolbar({
   }, [openDropdown]);
 
   const reminderOptions = [
-    { value: "0", label: t("reminder.snooze5min") },
+    { value: "0", label: "0 min" },
     { value: "5", label: t("reminder.snooze5min") },
     { value: "10", label: t("reminder.snooze10min") },
     { value: "15", label: t("reminder.snooze15min") },
@@ -369,7 +369,7 @@ function EventToolbar({
   const getReminderLabel = () => {
     const minutes = Number(form.reminderMinutesBeforeStart);
     if (minutes === 0) {
-      return t("reminder.snooze5min");
+      return "0 min";
     }
     if (minutes < 60) {
       return `${minutes} min`;
@@ -1784,7 +1784,10 @@ function buildDraft(form: EditorFormState, event: CalendarEvent | null): EventDr
     recurrence: buildRecurrence(form, start),
     recurrenceEditScope: "single",
     reminderMinutesBeforeStart: form.isReminderOn
-      ? Number.parseInt(form.reminderMinutesBeforeStart, 10) || 15
+      ? (() => {
+          const reminderMinutes = Number.parseInt(form.reminderMinutesBeforeStart, 10);
+          return Number.isNaN(reminderMinutes) ? 15 : reminderMinutes;
+        })()
       : null,
     responseRequested: form.responseRequested,
     sensitivity: form.sensitivity,
