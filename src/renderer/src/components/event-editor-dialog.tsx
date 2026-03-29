@@ -1605,21 +1605,22 @@ function buildFormState(state: EventEditorDialogProps["state"]): EditorFormState
   }
 
   const event = state.mode === "edit" ? state.event : null;
-  const recurrence = event?.recurrence ?? null;
+  const draft = state.mode === "create" ? state.draft : null;
+  const recurrence = event?.recurrence ?? draft?.recurrence ?? null;
   const createAllDay = state.mode === "create" ? state.allDay : (event?.isAllDay ?? false);
 
   return {
     allDay: createAllDay,
-    allowNewTimeProposals: event?.allowNewTimeProposals ?? true,
-    attendees: event?.attendees ?? [],
-    body: event?.body ?? "",
-    bodyContentType: event?.bodyContentType ?? "text",
+    allowNewTimeProposals: event?.allowNewTimeProposals ?? draft?.allowNewTimeProposals ?? true,
+    attendees: event?.attendees ?? draft?.attendees ?? [],
+    body: event?.body ?? draft?.body ?? "",
+    bodyContentType: event?.bodyContentType ?? draft?.bodyContentType ?? "text",
     calendarId: state.mode === "create" ? state.calendarId : event!.calendarId,
-    categories: (event?.categories ?? []).join(", "),
+    categories: ((event?.categories ?? draft?.categories) ?? []).join(", "),
     endInput: buildEndInput(state),
-    isOnlineMeeting: event?.isOnlineMeeting ?? false,
-    isReminderOn: event?.isReminderOn ?? true,
-    location: event?.location ?? "",
+    isOnlineMeeting: event?.isOnlineMeeting ?? draft?.isOnlineMeeting ?? false,
+    isReminderOn: event?.isReminderOn ?? draft?.isReminderOn ?? true,
+    location: event?.location ?? draft?.location ?? "",
     recurrenceDayOfMonth: recurrence?.pattern.dayOfMonth?.toString() ?? "",
     recurrenceDaysOfWeek: recurrence?.pattern.daysOfWeek ?? [],
     recurrenceEnabled: Boolean(recurrence),
@@ -1628,16 +1629,18 @@ function buildFormState(state: EventEditorDialogProps["state"]): EditorFormState
     recurrenceOccurrences: recurrence?.range.numberOfOccurrences?.toString() ?? "10",
     recurrenceRangeType: recurrence?.range.type ?? "noEnd",
     recurrenceType: recurrence?.pattern.type ?? "weekly",
-    reminderMinutesBeforeStart: event?.reminderMinutesBeforeStart?.toString() ?? "15",
+    reminderMinutesBeforeStart: (
+      event?.reminderMinutesBeforeStart ?? draft?.reminderMinutesBeforeStart ?? 15
+    ).toString(),
     responseComment: "",
-    responseRequested: event?.responseRequested ?? true,
-    sensitivity: event?.sensitivity ?? "normal",
-    showAs: event?.showAs ?? "busy",
+    responseRequested: event?.responseRequested ?? draft?.responseRequested ?? true,
+    sensitivity: event?.sensitivity ?? draft?.sensitivity ?? "normal",
+    showAs: event?.showAs ?? draft?.showAs ?? "busy",
     startInput: toDateTimeInputValue(
       state.mode === "create" ? state.start : event!.start,
       createAllDay,
     ),
-    subject: event?.subject ?? "",
+    subject: event?.subject ?? draft?.subject ?? "",
   };
 }
 
