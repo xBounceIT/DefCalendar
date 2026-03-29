@@ -29,7 +29,15 @@
     },
     "files": [
       "out/**/*",
-      "package.json"
+      "package.json",
+      "resources/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": ".",
+        "filter": ["**/*"]
+      }
     ],
     "win": {
       "target": [
@@ -91,6 +99,7 @@
     "jsdom": "^29.0.1",
     "oxfmt": "^0.42.0",
     "oxlint": "^1.57.0",
+    "pngjs": "^7.0.0",
     "typescript": "^6.0.2",
     "vite": "^7.3.1",
     "vitest": "^4.1.2"
