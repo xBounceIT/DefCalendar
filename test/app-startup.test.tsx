@@ -21,9 +21,17 @@ vi.mock<MockedCalendarModule>(import("@fullcalendar/timegrid"), () => ({
   default: {},
 }));
 
+const signedInSelectedDate = "2026-03-27T09:00:00.000Z";
+const mockCalendarSurfaceDate = {
+  current: new Date(signedInSelectedDate),
+};
+
 const mockCalendarSurfaceApi = {
   changeView: vi.fn(),
-  gotoDate: vi.fn(),
+  getDate: vi.fn(() => mockCalendarSurfaceDate.current),
+  gotoDate: vi.fn((date: Date) => {
+    mockCalendarSurfaceDate.current = date;
+  }),
   next: vi.fn(),
   prev: vi.fn(),
   today: vi.fn(),
@@ -67,7 +75,6 @@ const originalResizeObserverDescriptor = Object.getOwnPropertyDescriptor(
   globalThis,
   "ResizeObserver",
 );
-const signedInSelectedDate = "2026-03-27T09:00:00.000Z";
 
 function restoreResizeObserver(): void {
   if (originalResizeObserverDescriptor) {
@@ -97,6 +104,7 @@ function installCalendarApi(calendarApi: CalendarApi): void {
 function restoreCalendarApi(): void {
   cleanup();
   vi.clearAllMocks();
+  mockCalendarSurfaceDate.current = new Date(signedInSelectedDate);
   mockCalendarSurfaceApi.view.type = "timeGridWeek";
 
   if (originalCalendarApiDescriptor) {
@@ -552,6 +560,64 @@ describe("app startup", () => {
           updated: true,
         });
       });
+    } finally {
+      restoreCalendarApi();
+      restoreResizeObserver();
+    }
+  });
+
+  it("focuses today on cold startup instead of the persisted date", async () => {
+    const persistedSelectedDate = "2025-12-15T09:00:00.000Z";
+    const startupDate = new Date();
+    const persistedHeaderDate = new Intl.DateTimeFormat("en-US", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(new Date(persistedSelectedDate));
+    const startupHeaderDate = new Intl.DateTimeFormat("en-US", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(startupDate);
+    const startupDateKey = startupDate.toISOString().slice(0, 10);
+
+    try {
+      installResizeObserverMock();
+      const calendarApi = createSignedInCalendarApiMock();
+      calendarApi.settings.get = vi.fn().mockResolvedValue({
+        activeView: "timeGridWeek",
+        selectedDate: persistedSelectedDate,
+        visibleCalendarIds: ["calendar-1"],
+        language: "system",
+        timeFormat: "system",
+        updateChannel: "stable",
+      });
+      calendarApi.settings.update = vi.fn().mockResolvedValue({
+        activeView: "timeGridWeek",
+        selectedDate: startupDate.toISOString(),
+        visibleCalendarIds: ["calendar-1"],
+        language: "system",
+        timeFormat: "system",
+        updateChannel: "stable",
+      });
+      installCalendarApi(calendarApi);
+
+      renderApp();
+
+      await expect(
+        screen.findByRole("heading", { level: 2, name: startupHeaderDate }),
+      ).resolves.not.toBeNull();
+      expect(screen.queryByRole("heading", { level: 2, name: persistedHeaderDate })).toBeNull();
+      await waitFor(() => {
+        expect(calendarApi.settings.update).toHaveBeenCalled();
+      });
+      const settingsUpdateArg = calendarApi.settings.update.mock.calls.at(-1)?.[0];
+      expect(settingsUpdateArg).toBeDefined();
+      expect(settingsUpdateArg?.activeView).toBe("timeGridWeek");
+      expect(settingsUpdateArg?.selectedDate.slice(0, 10)).toBe(startupDateKey);
+      expect(settingsUpdateArg?.selectedDate.slice(0, 10)).not.toBe(
+        persistedSelectedDate.slice(0, 10),
+      );
     } finally {
       restoreCalendarApi();
       restoreResizeObserver();
