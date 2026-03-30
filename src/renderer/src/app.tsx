@@ -23,6 +23,7 @@ import type {
   CalendarSummary,
   CancelEventArgs,
   EventDraft,
+  OutlookCategory,
   EventResponseAction,
   RespondToEventArgs,
   SyncStatus,
@@ -141,13 +142,38 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     queryKey: ["calendars"],
   });
 
+  const calendars = calendarsQuery.data ?? EMPTY_CALENDARS;
+
+  const categoryAccountIds = useMemo(
+    () =>
+      [...new Set(calendars.map((calendar) => calendar.homeAccountId))].toSorted((a, b) =>
+        a.localeCompare(b),
+      ),
+    [calendars],
+  );
+
+  const categoriesQuery = useQuery({
+    enabled: signedIn && editorState !== null && categoryAccountIds.length > 0,
+    queryFn: async () => {
+      const entries = await Promise.all(
+        categoryAccountIds.map(async (homeAccountId) => {
+          const categories = await calendarApi.categories.list({ homeAccountId });
+          return [homeAccountId, categories] as const;
+        }),
+      );
+
+      return Object.fromEntries(entries) as Record<string, OutlookCategory[]>;
+    },
+    queryKey: ["categories", ...categoryAccountIds],
+  });
+
   const visibleCalendarIds = useMemo(() => {
-    const ids = (calendarsQuery.data ?? [])
+    const ids = calendars
       .filter((calendar) => calendar.isVisible)
       .map((calendar) => calendar.id)
       .toSorted();
     return ids;
-  }, [calendarsQuery.data]);
+  }, [calendars]);
   const miniCalendarRange = useMemo(
     () => createMiniCalendarRange(miniCalendarMonth),
     [miniCalendarMonth],
@@ -366,7 +392,6 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     }
   }, [activeView, hydrated, selectedDate]);
 
-  const calendars = calendarsQuery.data ?? EMPTY_CALENDARS;
   const activeAccountCalendars = useMemo(
     () => calendars.filter((calendar) => calendar.homeAccountId === activeAccountId),
     [activeAccountId, calendars],
@@ -816,10 +841,12 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
       />
       <EventEditorDialog
         accounts={accounts}
+        availableCategoriesByAccount={categoriesQuery.data ?? {}}
         onAddAttachment={addEventAttachment}
         onCancelMeeting={cancelMeeting}
         busy={busy}
         calendars={calendars}
+        categoriesLoading={categoriesQuery.isLoading}
         errorMessage={dialogError}
         onListAttachments={listEventAttachments}
         onDelete={deleteDraft}
@@ -936,6 +963,7 @@ async function invalidateCalendarData(
     queryClient.invalidateQueries({ queryKey: ["auth"] }),
     queryClient.invalidateQueries({ queryKey: ["settings"] }),
     queryClient.invalidateQueries({ queryKey: ["calendars"] }),
+    queryClient.invalidateQueries({ queryKey: ["categories"] }),
     invalidateEventQueries(queryClient),
   ]);
 }

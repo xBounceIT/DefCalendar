@@ -29,6 +29,9 @@ const calendarApi: CalendarApi = {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.calendarsList),
     setVisibility: (args) => ipcRenderer.invoke(IPC_CHANNELS.calendarsSetVisibility, args),
   },
+  categories: {
+    list: (args) => ipcRenderer.invoke(IPC_CHANNELS.categoriesList, args),
+  },
   events: {
     list: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsList, args),
     create: (draft) => ipcRenderer.invoke(IPC_CHANNELS.eventsCreate, draft),

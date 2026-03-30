@@ -12,6 +12,8 @@ import type {
   EventDraft,
   EventListArgs,
   EventReferenceArgs,
+  ListOutlookCategoriesArgs,
+  OutlookCategory,
   RespondToEventArgs,
   SetCalendarVisibilityArgs,
   SyncStatus,
@@ -31,6 +33,7 @@ export const IPC_CHANNELS = {
   authStateChanged: "auth:state-changed",
   calendarsList: "calendars:list",
   calendarsSetVisibility: "calendars:set-visibility",
+  categoriesList: "categories:list",
   eventsList: "events:list",
   eventsCreate: "events:create",
   eventsUpdate: "events:update",
@@ -78,6 +81,9 @@ interface CalendarApi {
   calendars: {
     list: () => Promise<CalendarSummary[]>;
     setVisibility: (args: SetCalendarVisibilityArgs) => Promise<CalendarSummary[]>;
+  };
+  categories: {
+    list: (args: ListOutlookCategoriesArgs) => Promise<OutlookCategory[]>;
   };
   events: {
     list: (args: EventListArgs) => Promise<CalendarEvent[]>;

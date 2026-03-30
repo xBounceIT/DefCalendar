@@ -12,6 +12,10 @@ import enTranslations from "../src/renderer/src/i18n/locales/en.json";
 import type { EditorState } from "../src/renderer/src/event-editor-state";
 import type { CalendarEvent, CalendarSummary, EventParticipant } from "../src/shared/schemas";
 
+afterEach(() => {
+  cleanup();
+});
+
 function createCalendar(): CalendarSummary {
   return {
     canEdit: true,
@@ -125,8 +129,16 @@ function renderDialog(props?: Partial<React.ComponentProps<typeof EventEditorDia
             username: "user@example.com",
           },
         ]}
+        availableCategoriesByAccount={{
+          "account-1": [
+            { color: "preset7", displayName: "Blue category" },
+            { color: "preset4", displayName: "Green category" },
+            { color: "preset0", displayName: "Red category" },
+          ],
+        }}
         busy={false}
         calendars={[createCalendar()]}
+        categoriesLoading={false}
         errorMessage={null}
         onAddAttachment={vi.fn().mockResolvedValue([])}
         onCancelMeeting={vi.fn().mockResolvedValue(undefined)}
@@ -164,6 +176,22 @@ describe("event editor dialog", () => {
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
         reminderMinutesBeforeStart: 0,
+      }),
+    );
+  });
+
+it("selects categories from the tag dropdown", async () => {
+    const { onSave } = renderDialog();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Categories/i })[0]!);
+    fireEvent.click(screen.getByRole("button", { name: /Blue category/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Red category/i }));
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Save Changes" })[0]!);
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        categories: ["Blue category", "Red category"],
       }),
     );
   });
@@ -207,6 +235,26 @@ describe("event editor dialog", () => {
             type: "required",
           },
         ],
+      }),
+    );
+  });
+
+it("preserves selected categories missing from account master list", async () => {
+    const { onSave } = renderDialog({
+      availableCategoriesByAccount: {
+        "account-1": [{ color: "preset7", displayName: "Blue category" }],
+      },
+      state: {
+        event: createEvent({ categories: ["Legacy category"] }),
+        mode: "edit",
+      },
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Save Changes" })[0]!);
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        categories: ["Legacy category"],
       }),
     );
   });

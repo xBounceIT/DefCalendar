@@ -163,6 +163,9 @@ function createCalendarApiMock(): CalendarApi {
       list: vi.fn(),
       setVisibility: vi.fn(),
     },
+    categories: {
+      list: vi.fn().mockResolvedValue([]),
+    },
     events: {
       addAttachment: vi.fn(),
       cancel: vi.fn(),
@@ -289,6 +292,9 @@ function createSignedInCalendarApiMock(): CalendarApi {
         },
       ]),
       setVisibility: vi.fn(),
+    },
+    categories: {
+      list: vi.fn().mockResolvedValue([]),
     },
     events: {
       addAttachment: vi.fn(),
@@ -442,6 +448,9 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
         },
       ]),
       setVisibility: vi.fn(),
+    },
+    categories: {
+      list: vi.fn().mockResolvedValue([]),
     },
     events: {
       create: vi.fn(),
