@@ -113,7 +113,7 @@
     "saveChanges": "Save Changes",
     "categories": "Categories",
     "categoriesPlaceholder": "Comma-separated",
-"categoriesSelected": "{{count}} categories",
+    "categoriesSelected": "{{count}} categories",
     "categoriesEmpty": "No categories available",
     "sensitivity": "Sensitivity",
     "sensitivityNormal": "Normal",

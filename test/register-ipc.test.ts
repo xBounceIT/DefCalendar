@@ -132,9 +132,9 @@ function createFixture() {
     cancelEvent: vi.fn().mockResolvedValue(undefined),
     createEvent: vi.fn().mockResolvedValue(storedEvent),
     deleteEvent: vi.fn().mockResolvedValue(undefined),
-    listOutlookCategories: vi.fn().mockResolvedValue([
-      { color: "preset7", displayName: "Blue category" },
-    ]),
+    listOutlookCategories: vi
+      .fn()
+      .mockResolvedValue([{ color: "preset7", displayName: "Blue category" }]),
     updateEvent: vi.fn().mockResolvedValue(storedEvent),
   };
   const reminders = {
