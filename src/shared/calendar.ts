@@ -43,6 +43,15 @@ function addMinutesToIso(value: string, minutes: number): string {
   return new Date(new Date(value).getTime() + minutes * 60_000).toISOString();
 }
 
+function roundUpToNext15Minutes(date: Date): Date {
+  const result = new Date(date);
+  const minutes = result.getMinutes();
+  const remainder = minutes % 15;
+  const minutesToAdd = remainder === 0 ? 0 : 15 - remainder;
+  result.setMinutes(minutes + minutesToAdd, 0, 0);
+  return result;
+}
+
 const CALENDAR_COLORS: readonly { name: string; hex: string }[] = [
   { name: "blue", hex: "#3b82f6" },
   { name: "green", hex: "#22c55e" },
@@ -117,6 +126,7 @@ export {
   getCalendarAccent,
   getCalendarColorName,
   isEventEditable,
+  roundUpToNext15Minutes,
   toLocalDateKey,
   toDateTimeInputValue,
 };

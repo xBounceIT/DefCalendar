@@ -293,6 +293,7 @@ describe("reminder service", () => {
   });
 
   it("uses local reminder rules instead of synced event reminders when override is enabled", async () => {
+    vi.setSystemTime(new Date("2026-03-30T09:45:00.000Z"));
     const fixture = createFixture({
       localEvents: [
         {

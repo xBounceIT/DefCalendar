@@ -117,7 +117,7 @@ function renderDialog(props?: Partial<React.ComponentProps<typeof EventEditorDia
     mode: "edit",
   };
 
-  render(
+  const view = render(
     <I18nextProvider i18n={i18n}>
       <EventEditorDialog
         accounts={[
@@ -157,7 +157,19 @@ function renderDialog(props?: Partial<React.ComponentProps<typeof EventEditorDia
     </I18nextProvider>,
   );
 
-  return { onSave };
+  return { ...view, onSave };
+}
+
+function openSchedulingSection(container: HTMLElement) {
+  const schedulingButton = container.querySelector(".scheduling-summary");
+  if (!(schedulingButton instanceof HTMLButtonElement)) {
+    throw new Error("Scheduling summary button not found");
+  }
+  fireEvent.click(schedulingButton);
+}
+
+function toLocalIso(value: string): string {
+  return new Date(value).toISOString();
 }
 
 afterEach(() => {
@@ -176,6 +188,98 @@ describe("event editor dialog", () => {
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
         reminderMinutesBeforeStart: 0,
+      }),
+    );
+  });
+
+  it("allows selecting next-day midnight end time for late-night starts", () => {
+    const { container, onSave } = renderDialog({
+      state: {
+        allDay: false,
+        calendarId: "calendar-1",
+        end: toLocalIso("2026-01-15T23:30"),
+        mode: "create",
+        start: toLocalIso("2026-01-15T23:00"),
+      },
+    });
+
+    openSchedulingSection(container);
+
+    const startTimeBtn = screen.getByRole("button", { name: "Start time" });
+    fireEvent.click(startTimeBtn);
+    const option2330 = screen.getByText("23:30");
+    fireEvent.click(option2330);
+
+    fireEvent.change(screen.getByPlaceholderText("Subject"), {
+      target: { value: "Late event" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        end: toLocalIso("2026-01-16T00:00"),
+        start: toLocalIso("2026-01-15T23:30"),
+      }),
+    );
+  });
+
+  it("auto-adjusts end date to next day when start moves to 23:30", () => {
+    const { container, onSave } = renderDialog({
+      state: {
+        allDay: false,
+        calendarId: "calendar-1",
+        end: toLocalIso("2026-01-15T23:30"),
+        mode: "create",
+        start: toLocalIso("2026-01-15T23:00"),
+      },
+    });
+
+    openSchedulingSection(container);
+
+    const startTimeBtn = screen.getByRole("button", { name: "Start time" });
+    fireEvent.click(startTimeBtn);
+    const option2330 = screen.getByText("23:30");
+    fireEvent.click(option2330);
+
+    fireEvent.change(screen.getByPlaceholderText("Subject"), {
+      target: { value: "Late event" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        end: toLocalIso("2026-01-16T00:00"),
+        start: toLocalIso("2026-01-15T23:30"),
+      }),
+    );
+  });
+
+  it("shifts end date by the same delta when start date changes", () => {
+    const { container, onSave } = renderDialog({
+      state: {
+        allDay: false,
+        calendarId: "calendar-1",
+        end: toLocalIso("2026-01-16T00:30"),
+        mode: "create",
+        start: toLocalIso("2026-01-15T23:30"),
+      },
+    });
+
+    openSchedulingSection(container);
+
+    fireEvent.change(screen.getByLabelText("Start date"), {
+      target: { value: "2026-01-20" },
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Subject"), {
+      target: { value: "Late event" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        end: toLocalIso("2026-01-21T00:30"),
+        start: toLocalIso("2026-01-20T23:30"),
       }),
     );
   });

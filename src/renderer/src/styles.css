@@ -3341,11 +3341,11 @@ button {
 }
 
 .scheduling-field--date {
-  flex: 2;
+  flex: 1;
 }
 
 .scheduling-field--time {
-  flex: 1.2;
+  flex: 1;
 }
 
 .scheduling-field span {
@@ -3358,9 +3358,16 @@ button {
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 15px;
+  line-height: 1;
+  font-family: inherit;
   background: var(--surface);
   color: var(--ink);
+  height: 38px;
+}
+
+.scheduling-field input::-webkit-calendar-picker-indicator {
+  font-size: 15px;
 }
 
 .scheduling-field input:focus {
@@ -3371,6 +3378,126 @@ button {
 .scheduling-field input:disabled {
   background: var(--bg-tertiary);
   cursor: not-allowed;
+}
+
+.scheduling-field select {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 14px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+}
+
+.scheduling-field select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.scheduling-field select:disabled {
+  background: var(--bg-tertiary);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.scheduling-field--time-end {
+}
+
+.time-select {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.time-select__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 15px;
+  line-height: 1;
+  font-family: inherit;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  gap: 8px;
+  height: 38px;
+}
+
+.time-select__trigger span {
+  font-size: 15px;
+}
+
+.time-select__trigger:disabled {
+  background: var(--bg-tertiary);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.time-select__trigger:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.time-select__trigger svg {
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.time-select__trigger svg.expanded {
+  transform: rotate(180deg);
+}
+
+.time-select__dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  z-index: 110;
+}
+
+.time-select__list {
+  max-height: calc(5 * 36px);
+  overflow-y: auto;
+  padding: 4px;
+}
+
+.time-select__option {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.1s ease;
+  white-space: nowrap;
+}
+
+.time-select__option:hover {
+  background: var(--surface-hover);
+}
+
+.time-select__option--selected {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 500;
 }
 
 .scheduling-dropdown__options {

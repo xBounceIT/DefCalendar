@@ -686,6 +686,156 @@ function EventToolbar({
   );
 }
 
+function TimeSelect({
+  disabled,
+  onChange,
+  options,
+  scrollToSelected,
+  value,
+}: {
+  disabled: boolean;
+  onChange: (value: string) => void;
+  options: { label: string; value: string }[];
+  scrollToSelected: boolean;
+  value: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && listRef.current) {
+      if (scrollToSelected) {
+        const selectedOption = listRef.current.querySelector('[data-selected="true"]');
+        if (selectedOption && typeof selectedOption.scrollIntoView === "function") {
+          selectedOption.scrollIntoView({ block: "center" });
+        }
+      } else {
+        listRef.current.scrollTop = 0;
+      }
+    }
+  }, [isOpen, scrollToSelected]);
+
+  const selectedOption = options.find((opt) => opt.value === value);
+
+  return (
+    <div className="time-select" ref={containerRef}>
+      <button
+        className="time-select__trigger"
+        disabled={disabled}
+        onClick={() => setIsOpen(!isOpen)}
+        type="button"
+      >
+        <span>{selectedOption?.label || value}</span>
+        <ChevronDownIcon className={isOpen ? "expanded" : ""} />
+      </button>
+      {isOpen && (
+        <div className="time-select__dropdown">
+          <div className="time-select__list" ref={listRef}>
+            {options.map((opt) => (
+              <button
+                className={`time-select__option ${opt.value === value ? "time-select__option--selected" : ""}`}
+                data-selected={opt.value === value}
+                key={opt.value}
+                onClick={() => {
+                  onChange(opt.value);
+                  setIsOpen(false);
+                }}
+                type="button"
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function generateTimeOptions(): { label: string; value: string }[] {
+  const options: { label: string; value: string }[] = [];
+  for (let h = 0; h < 24; h++) {
+    for (const m of [0, 15, 30, 45]) {
+      const hour = h.toString().padStart(2, "0");
+      const minute = m.toString().padStart(2, "0");
+      const value = `${hour}:${minute}`;
+      options.push({ label: value, value });
+    }
+  }
+  return options;
+}
+
+function parseTimeToMinutes(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+}
+
+function dateInputToDate(value: string): Date {
+  return new Date(`${value}T00:00:00`);
+}
+
+function formatDateInput(date: Date): string {
+  const year = date.getFullYear().toString().padStart(4, "0");
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const day = date.getDate().toString().padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addDaysToDateInput(value: string, days: number): string {
+  const date = dateInputToDate(value);
+  date.setDate(date.getDate() + days);
+  return formatDateInput(date);
+}
+
+function daysBetweenDateInputs(from: string, to: string): number {
+  const fromDate = dateInputToDate(from);
+  const toDate = dateInputToDate(to);
+  return Math.round((toDate.getTime() - fromDate.getTime()) / (24 * 60 * 60 * 1000));
+}
+
+function minutesToTime(minutes: number): string {
+  const h = Math.floor(minutes / 60) % 24;
+  const m = minutes % 60;
+  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+}
+
+function formatDurationLabel(
+  startMinutes: number,
+  endMinutes: number,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  const diff = endMinutes - startMinutes;
+  const hours = Math.floor(diff / 60);
+  const mins = diff % 60;
+
+  if (hours === 0) {
+    return `(+${t("reminder.minutes", { count: mins })})`;
+  }
+  if (mins === 0) {
+    return `(+${t("reminder.hours", { count: hours })})`;
+  }
+  return `(+${hours}h ${mins}min)`;
+}
+
+const TIME_OPTIONS = generateTimeOptions();
+
 function SchedulingSection({
   disabled,
   form,
@@ -713,7 +863,6 @@ function SchedulingSection({
   const extractTime = (input: string) => input.slice(11, 16);
   const combineDateTime = (date: string, time: string) => `${date}T${time}`;
 
-  // Close popup when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
@@ -729,6 +878,75 @@ function SchedulingSection({
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isExpanded]);
+
+  const startTime = extractTime(form.startInput) || "00:00";
+  const endTime = extractTime(form.endInput) || "00:30";
+  const startTimeMinutes = parseTimeToMinutes(startTime);
+  const endTimeMinutes = parseTimeToMinutes(endTime);
+  const minimumEndMinutes = startTimeMinutes + 15;
+  const endTimeOptions = useMemo(
+    () =>
+      TIME_OPTIONS.map((opt) => ({
+        ...opt,
+        minutes: parseTimeToMinutes(opt.value),
+      }))
+        .filter((opt) => opt.minutes >= minimumEndMinutes)
+        .map((opt) => ({
+          label: `${opt.label} ${formatDurationLabel(startTimeMinutes, opt.minutes, t)}`,
+          value: opt.value,
+        })),
+    [minimumEndMinutes, startTimeMinutes, t],
+  );
+
+  const startTimeOptions = useMemo(() => {
+    const exists = TIME_OPTIONS.some((opt) => opt.value === startTime);
+    if (exists) {
+      return TIME_OPTIONS;
+    }
+    return [{ label: startTime, value: startTime }, ...TIME_OPTIONS];
+  }, [startTime]);
+
+  const endTimeOptionsWithCurrent = useMemo(() => {
+    const exists = endTimeOptions.some((opt) => opt.value === endTime);
+    if (exists) {
+      return endTimeOptions;
+    }
+    const durationLabel = formatDurationLabel(startTimeMinutes, endTimeMinutes, t);
+    return [{ label: `${endTime} ${durationLabel}`, value: endTime }, ...endTimeOptions];
+  }, [endTime, endTimeOptions, startTimeMinutes, endTimeMinutes, t]);
+
+  const handleStartTimeChange = (newTime: string) => {
+    const currentDate = extractDate(form.startInput);
+    const newStartMinutes = parseTimeToMinutes(newTime);
+    const currentEndDayOffset = daysBetweenDateInputs(
+      extractDate(form.startInput),
+      extractDate(form.endInput),
+    );
+    const currentEndMinutes = endTimeMinutes + currentEndDayOffset * 24 * 60;
+    const duration = currentEndMinutes - startTimeMinutes;
+    const newEndMinutes = newStartMinutes + duration;
+    const daysToAdd = Math.floor(newEndMinutes / (24 * 60));
+    const adjustedEndDate = addDaysToDateInput(currentDate, daysToAdd);
+    const adjustedEndTime = minutesToTime(newEndMinutes % (24 * 60));
+    const newEndInput = combineDateTime(adjustedEndDate, adjustedEndTime);
+
+    onChange((current) =>
+      current
+        ? { ...current, startInput: combineDateTime(currentDate, newTime), endInput: newEndInput }
+        : current,
+    );
+  };
+
+  const handleEndTimeChange = (newTime: string) => {
+    const existingDayOffset = daysBetweenDateInputs(
+      extractDate(form.startInput),
+      extractDate(form.endInput),
+    );
+    const endDate = addDaysToDateInput(extractDate(form.startInput), existingDayOffset);
+    onChange((current) =>
+      current ? { ...current, endInput: combineDateTime(endDate, newTime) } : current,
+    );
+  };
 
   return (
     <div className="scheduling-section" ref={containerRef}>
@@ -755,10 +973,20 @@ function SchedulingSection({
               <input
                 disabled={disabled}
                 onChange={(e) => {
+                  const previousStartDate = extractDate(form.startInput);
+                  const previousEndDate = extractDate(form.endInput);
                   const currentTime = extractTime(form.startInput) || "00:00";
+                  const endTime = extractTime(form.endInput) || "00:30";
+                  const newStartDate = e.target.value;
+                  const dayDelta = daysBetweenDateInputs(previousStartDate, newStartDate);
+                  const newEndDate = addDaysToDateInput(previousEndDate, dayDelta);
                   onChange((current) =>
                     current
-                      ? { ...current, startInput: combineDateTime(e.target.value, currentTime) }
+                      ? {
+                          ...current,
+                          startInput: combineDateTime(newStartDate, currentTime),
+                          endInput: combineDateTime(newEndDate, endTime),
+                        }
                       : current,
                   );
                 }}
@@ -768,34 +996,22 @@ function SchedulingSection({
             </label>
             <label className="field scheduling-field scheduling-field--time">
               <span>{t("eventEditor.startTime")}</span>
-              <input
+              <TimeSelect
                 disabled={disabled || form.allDay}
-                onChange={(e) => {
-                  const currentDate = extractDate(form.startInput);
-                  onChange((current) =>
-                    current
-                      ? { ...current, startInput: combineDateTime(currentDate, e.target.value) }
-                      : current,
-                  );
-                }}
-                type="time"
-                value={extractTime(form.startInput)}
+                onChange={handleStartTimeChange}
+                options={startTimeOptions}
+                scrollToSelected
+                value={startTime}
               />
             </label>
-            <label className="field scheduling-field scheduling-field--time">
+            <label className="field scheduling-field scheduling-field--time scheduling-field--time-end">
               <span>{t("eventEditor.endTime")}</span>
-              <input
+              <TimeSelect
                 disabled={disabled || form.allDay}
-                onChange={(e) => {
-                  const currentDate = extractDate(form.endInput);
-                  onChange((current) =>
-                    current
-                      ? { ...current, endInput: combineDateTime(currentDate, e.target.value) }
-                      : current,
-                  );
-                }}
-                type="time"
-                value={extractTime(form.endInput)}
+                onChange={handleEndTimeChange}
+                options={endTimeOptionsWithCurrent}
+                scrollToSelected={false}
+                value={endTime}
               />
             </label>
           </div>

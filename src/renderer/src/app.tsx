@@ -3,7 +3,12 @@ import type { DateClickArg, EventResizeDoneArg } from "@fullcalendar/interaction
 import type FullCalendar from "@fullcalendar/react";
 import { endOfMonth, endOfWeek, startOfMonth, startOfWeek } from "date-fns";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { addMinutesToIso, buildEventDayKeys, isEventEditable } from "@shared/calendar";
+import {
+  addMinutesToIso,
+  buildEventDayKeys,
+  isEventEditable,
+  roundUpToNext15Minutes,
+} from "@shared/calendar";
 import { isAdminApprovalRequiredMessage } from "@shared/exchange-auth";
 import type { CalendarApi } from "@shared/ipc";
 import { calendarViewSchema } from "@shared/schema-values";
@@ -573,10 +578,12 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   }
 
   function openSelectedDateComposer(): void {
+    const now = new Date();
+    const roundedStart = roundUpToNext15Minutes(now);
     openCreateDialog({
       allDay: false,
-      end: addMinutesToIso(selectedDate, 60),
-      start: selectedDate,
+      end: addMinutesToIso(roundedStart.toISOString(), 30),
+      start: roundedStart.toISOString(),
     });
   }
 
