@@ -49,7 +49,7 @@ interface EditorFormState {
   body: string;
   bodyContentType: BodyContentType;
   calendarId: string;
-  categories: string;
+  categories: string[];
   endInput: string;
   isOnlineMeeting: boolean;
   isReminderOn: boolean;
@@ -425,7 +425,7 @@ function EventToolbar({
     return option?.label || form.sensitivity;
   };
 
-  const selectedCategories = useMemo(() => parseCategoryNames(form.categories), [form.categories]);
+  const selectedCategories = form.categories;
 
   const categoryOptions = useMemo(
     () => buildCategoryOptions(availableCategories, selectedCategories),
@@ -438,18 +438,21 @@ function EventToolbar({
   );
 
   const toggleCategory = (displayName: string) => {
-    const selected = new Set(selectedCategories.map((value) => value.toLocaleLowerCase()));
-    if (selected.has(displayName.toLocaleLowerCase())) {
+    const normalized = displayName.toLocaleLowerCase();
+    const isSelected = selectedCategories.some(
+      (value) => value.toLocaleLowerCase() === normalized,
+    );
+    if (isSelected) {
       updateForm(onChange, {
-        categories: selectedCategories
-          .filter((value) => value.toLocaleLowerCase() !== displayName.toLocaleLowerCase())
-          .join(", "),
+        categories: selectedCategories.filter(
+          (value) => value.toLocaleLowerCase() !== normalized,
+        ),
       });
       return;
     }
 
     updateForm(onChange, {
-      categories: [...selectedCategories, displayName].join(", "),
+      categories: [...selectedCategories, displayName],
     });
   };
 
@@ -1467,31 +1470,6 @@ function CheckIcon({ className = "" }: { className?: string }) {
   );
 }
 
-function parseCategoryNames(value: string): string[] {
-  if (!value.trim()) {
-    return [];
-  }
-
-  const seen = new Set<string>();
-  const items: string[] = [];
-  for (const part of value.split(",")) {
-    const normalized = part.trim();
-    if (!normalized) {
-      continue;
-    }
-
-    const key = normalized.toLocaleLowerCase();
-    if (seen.has(key)) {
-      continue;
-    }
-
-    seen.add(key);
-    items.push(normalized);
-  }
-
-  return items;
-}
-
 function buildCategoryOptions(
   availableCategories: OutlookCategory[],
   selectedCategories: string[],
@@ -1966,7 +1944,7 @@ function buildFormState(state: EventEditorDialogProps["state"]): EditorFormState
     body: event?.body ?? draft?.body ?? "",
     bodyContentType: event?.bodyContentType ?? draft?.bodyContentType ?? "text",
     calendarId: state.mode === "create" ? state.calendarId : event!.calendarId,
-    categories: (event?.categories ?? draft?.categories ?? []).join(", "),
+    categories: event?.categories ?? draft?.categories ?? [],
     endInput: buildEndInput(state),
     isOnlineMeeting: event?.isOnlineMeeting ?? draft?.isOnlineMeeting ?? false,
     isReminderOn: event?.isReminderOn ?? draft?.isReminderOn ?? true,
@@ -2031,10 +2009,7 @@ function buildDraft(form: EditorFormState, event: CalendarEvent | null): EventDr
     body: form.body.trim() || null,
     bodyContentType: form.bodyContentType,
     calendarId: form.calendarId,
-    categories: form.categories
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean),
+    categories: form.categories,
     end,
     etag: event?.etag ?? null,
     id: resolveEventId(event, form),
