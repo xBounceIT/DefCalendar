@@ -97,6 +97,7 @@ describe("database", () => {
             name: "Primary",
             owner_address: "user@example.com",
             owner_name: "Test User",
+            user_color: null,
             payload_json: JSON.stringify({
               canEdit: true,
               canShare: false,
@@ -128,6 +129,7 @@ describe("database", () => {
         name: "Primary",
         ownerAddress: "user@example.com",
         ownerName: "Test User",
+        userColor: null,
       },
     ]);
   });
@@ -158,12 +160,13 @@ describe("database", () => {
 
     (db as unknown as { migrate: () => void }).migrate();
 
-    expect(exec).toHaveBeenCalledTimes(3);
-    expect(exec.mock.calls[1]?.[0]).toContain("FROM notification_state");
-    expect(exec.mock.calls[1]?.[0]).toContain("FROM events");
-    expect(exec.mock.calls[1]?.[0]).toContain("strftime('%Y-%m-%dT%H:%M:%fZ', 'now')");
-    expect(exec.mock.calls[1]?.[0]).toContain("julianday('now', '-5 minutes')");
-    expect(exec.mock.calls[2]?.[0]).toContain(":pre");
+    expect(exec).toHaveBeenCalledTimes(4);
+    expect(exec.mock.calls[1]?.[0]).toContain("ALTER TABLE calendars ADD COLUMN user_color");
+    expect(exec.mock.calls[2]?.[0]).toContain("FROM notification_state");
+    expect(exec.mock.calls[2]?.[0]).toContain("FROM events");
+    expect(exec.mock.calls[2]?.[0]).toContain("strftime('%Y-%m-%dT%H:%M:%fZ', 'now')");
+    expect(exec.mock.calls[2]?.[0]).toContain("julianday('now', '-5 minutes')");
+    expect(exec.mock.calls[3]?.[0]).toContain(":pre");
   });
 
   it("skips reminder backfill after reminder_state already exists", () => {
@@ -177,7 +180,7 @@ describe("database", () => {
 
       if (sql === "PRAGMA table_info(calendars)") {
         return {
-          all: vi.fn().mockReturnValue([{ name: "home_account_id" }]),
+          all: vi.fn().mockReturnValue([{ name: "home_account_id" }, { name: "user_color" }]),
         };
       }
 

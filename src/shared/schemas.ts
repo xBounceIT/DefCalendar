@@ -50,6 +50,7 @@ const calendarSummarySchema = z.object({
   homeAccountId: z.string(),
   name: z.string(),
   color: z.string().nullable(),
+  userColor: z.string().nullable().optional(),
   canEdit: z.boolean(),
   canShare: z.boolean(),
   isDefaultCalendar: z.boolean(),
@@ -287,6 +288,11 @@ const setCalendarVisibilityArgsSchema = z.object({
   isVisible: z.boolean(),
 });
 
+const setCalendarColorArgsSchema = z.object({
+  calendarId: z.string(),
+  color: z.string(),
+});
+
 const listOutlookCategoriesArgsSchema = z.object({
   homeAccountId: z.string(),
 });
@@ -478,6 +484,7 @@ type CalendarEvent = z.infer<typeof calendarEventSchema>;
 type EventDraft = z.infer<typeof eventDraftSchema>;
 type EventListArgs = z.infer<typeof eventListArgsSchema>;
 type SetCalendarVisibilityArgs = z.infer<typeof setCalendarVisibilityArgsSchema>;
+type SetCalendarColorArgs = z.infer<typeof setCalendarColorArgsSchema>;
 type ListOutlookCategoriesArgs = z.infer<typeof listOutlookCategoriesArgsSchema>;
 type DeleteEventArgs = z.infer<typeof deleteEventArgsSchema>;
 type EventReferenceArgs = z.infer<typeof eventReferenceArgsSchema>;
@@ -553,6 +560,7 @@ export {
   respondToEventArgsSchema,
   listOutlookCategoriesArgsSchema,
   setCalendarVisibilityArgsSchema,
+  setCalendarColorArgsSchema,
   sensitivitySchema,
   appUpdateStateSchema,
   appUpdateStatusSchema,
@@ -597,6 +605,7 @@ export {
   type RecurrenceEditScope,
   type RespondToEventArgs,
   type SetCalendarVisibilityArgs,
+  type SetCalendarColorArgs,
   type Sensitivity,
   type SyncStatus,
   type AppUpdateState,
