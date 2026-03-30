@@ -970,7 +970,9 @@ function AttendeesSidebar({
   // Group attendees by response status
   const groupedAttendees = {
     accepted: attendees.filter((attendee) => getEffectiveAttendeeResponse(attendee) === "accepted"),
-    tentative: attendees.filter((attendee) => getEffectiveAttendeeResponse(attendee) === "tentative"),
+    tentative: attendees.filter(
+      (attendee) => getEffectiveAttendeeResponse(attendee) === "tentative",
+    ),
     declined: attendees.filter((attendee) => getEffectiveAttendeeResponse(attendee) === "declined"),
     pending: attendees.filter((attendee) => {
       const response = getEffectiveAttendeeResponse(attendee);
