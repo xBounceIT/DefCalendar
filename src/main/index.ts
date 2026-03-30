@@ -36,7 +36,7 @@ async function bootstrap(): Promise<void> {
   setMainLocale(resolveMainLocale(savedSettings.language, app.getLocale()));
 
   const reminderManager = new ReminderWindowManager();
-  const reminders = new ReminderService(db, reminderManager);
+  const reminders = new ReminderService(db, reminderManager, settings);
   const auth = new MsalAuthService(
     config,
     new SafeStorageTokenCache(join(app.getPath("userData"), "msal-token-cache.bin")),
@@ -57,6 +57,7 @@ async function bootstrap(): Promise<void> {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.setTitle(locale === "it" ? "DefCalendar" : "DefCalendar");
       }
+      void reminders.checkNow();
     }
   });
 
@@ -64,6 +65,7 @@ async function bootstrap(): Promise<void> {
     await auth.signOutAll();
     db.clearUserData();
     sync.reset();
+    await reminders.checkNow();
 
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(IPC_CHANNELS.authStateChanged, auth.getAuthState());
@@ -111,6 +113,7 @@ async function bootstrap(): Promise<void> {
     auth,
     db,
     graph,
+    reminders,
     reminderManager,
     settings,
     sync,
@@ -120,6 +123,48 @@ async function bootstrap(): Promise<void> {
 
   reminders.start();
   sync.start();
+
+  // Temporary: Show test reminder popup on startup for styling verification
+  if (process.env.ELECTRON_RENDERER_URL || !app.isPackaged) {
+    setTimeout(() => {
+      reminderManager.show(
+        {
+          items: [
+            {
+              dedupeKey: "test-1",
+              end: new Date(Date.now() + 3600000).toISOString(),
+              isAllDay: false,
+              location: "Conference Room A",
+              reminderMinutesBeforeStart: 15,
+              start: new Date(Date.now() + 3600000).toISOString(),
+              subject: "Team Standup Meeting",
+            },
+            {
+              dedupeKey: "test-2",
+              end: new Date(Date.now() + 7200000).toISOString(),
+              isAllDay: false,
+              location: null,
+              reminderMinutesBeforeStart: 5,
+              start: new Date(Date.now() + 7200000).toISOString(),
+              subject: "Review Pull Requests",
+            },
+            {
+              dedupeKey: "test-3",
+              end: new Date(Date.now() + 14400000).toISOString(),
+              isAllDay: false,
+              location: "Building 2 - Room 301",
+              reminderMinutesBeforeStart: 30,
+              start: new Date(Date.now() + 14400000).toISOString(),
+              subject: "Client Presentation",
+            },
+          ],
+          locale: "en",
+          timeFormat: "system",
+        },
+        true,
+      );
+    }, 2000);
+  }
 
   if (auth.hasSession()) {
     void sync.syncAll("startup");

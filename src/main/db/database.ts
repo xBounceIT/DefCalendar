@@ -35,6 +35,13 @@ interface SaveSyncStateArgs {
   rangeStart: string;
 }
 
+interface ReminderCandidate {
+  dedupeKey: string;
+  dismissedAt: null | string;
+  event: CalendarEvent;
+  snoozedUntil: null | string;
+}
+
 class AppDatabase {
   private readonly db: Database.Database;
 
@@ -188,6 +195,12 @@ class AppDatabase {
 
       for (const calendarId of existingIds) {
         if (!incomingIds.has(calendarId)) {
+          this.db
+            .prepare(String.raw`DELETE FROM reminder_state WHERE dedupe_key LIKE ? ESCAPE '\'`)
+            .run(`${escapeLikePattern(calendarId)}:%`);
+          this.db
+            .prepare(String.raw`DELETE FROM notification_state WHERE dedupe_key LIKE ? ESCAPE '\'`)
+            .run(`${escapeLikePattern(calendarId)}:%`);
           this.db.prepare("DELETE FROM calendars WHERE id = ?").run(calendarId);
           this.db.prepare("DELETE FROM events WHERE calendar_id = ?").run(calendarId);
           this.db.prepare("DELETE FROM sync_state WHERE calendar_id = ?").run(calendarId);
@@ -370,20 +383,34 @@ class AppDatabase {
       .map((row) => calendarEventSchema.parse(JSON.parse(readStringProperty(row, "payload_json"))));
   }
 
-  listReminderCandidates(windowStart: string, windowEnd: string): CalendarEvent[] {
+  listReminderCandidates(visibleCalendarIds: string[], windowEnd: string): ReminderCandidate[] {
+    if (visibleCalendarIds.length === 0) {
+      return [];
+    }
+
+    const placeholders = visibleCalendarIds.map(() => "?").join(", ");
     const statement = this.db.prepare(`
-      SELECT payload_json
+      SELECT
+        events.calendar_id || ':' || events.id || ':' || events.start_sort AS dedupe_key,
+        events.payload_json,
+        reminder_state.dismissed_at,
+        reminder_state.snoozed_until
       FROM events
-      WHERE is_reminder_on = 1
-        AND reminder_minutes_before_start IS NOT NULL
-        AND start_sort >= ?
-        AND start_sort <= ?
-      ORDER BY start_sort ASC
+      LEFT JOIN reminder_state
+        ON reminder_state.dedupe_key = events.calendar_id || ':' || events.id || ':' || events.start_sort
+      WHERE events.is_reminder_on = 1
+        AND events.reminder_minutes_before_start IS NOT NULL
+        AND events.start_sort <= ?
+        AND events.calendar_id IN (${placeholders})
+      ORDER BY events.start_sort ASC, events.subject COLLATE NOCASE ASC
     `);
 
-    return statement
-      .all(windowStart, windowEnd)
-      .map((row) => calendarEventSchema.parse(JSON.parse(readStringProperty(row, "payload_json"))));
+    return statement.all(windowEnd, ...visibleCalendarIds).map((row) => ({
+      dedupeKey: readStringProperty(row, "dedupe_key"),
+      dismissedAt: readNullableStringProperty(row, "dismissed_at"),
+      event: calendarEventSchema.parse(JSON.parse(readStringProperty(row, "payload_json"))),
+      snoozedUntil: readNullableStringProperty(row, "snoozed_until"),
+    }));
   }
 
   getSettings(): UserSettings {
@@ -514,8 +541,42 @@ class AppDatabase {
       .run(key, new Date().toISOString());
   }
 
+  dismissReminder(key: string): void {
+    this.db
+      .prepare(
+        `
+          INSERT INTO reminder_state (dedupe_key, snoozed_until, dismissed_at)
+          VALUES (?, NULL, ?)
+          ON CONFLICT(dedupe_key) DO UPDATE SET
+            snoozed_until = excluded.snoozed_until,
+            dismissed_at = excluded.dismissed_at
+        `,
+      )
+      .run(key, new Date().toISOString());
+  }
+
+  snoozeReminder(key: string, untilIso: string): void {
+    this.db
+      .prepare(
+        `
+          INSERT INTO reminder_state (dedupe_key, snoozed_until, dismissed_at)
+          VALUES (?, ?, NULL)
+          ON CONFLICT(dedupe_key) DO UPDATE SET
+            snoozed_until = excluded.snoozed_until,
+            dismissed_at = excluded.dismissed_at
+        `,
+      )
+      .run(key, untilIso);
+  }
+
   pruneNotificationState(beforeIso: string): void {
     this.db.prepare("DELETE FROM notification_state WHERE fired_at < ?").run(beforeIso);
+  }
+
+  pruneReminderState(beforeIso: string): void {
+    this.db
+      .prepare("DELETE FROM reminder_state WHERE dismissed_at IS NOT NULL AND dismissed_at < ?")
+      .run(beforeIso);
   }
 
   clearUserData(homeAccountId?: string): void {
@@ -527,6 +588,9 @@ class AppDatabase {
           .map((row) => readStringProperty(row, "id"));
 
         for (const calendarId of calendarIds) {
+          this.db
+            .prepare(String.raw`DELETE FROM reminder_state WHERE dedupe_key LIKE ? ESCAPE '\'`)
+            .run(`${escapeLikePattern(calendarId)}:%`);
           this.db
             .prepare(String.raw`DELETE FROM notification_state WHERE dedupe_key LIKE ? ESCAPE '\'`)
             .run(`${escapeLikePattern(calendarId)}:%`);
@@ -549,6 +613,7 @@ class AppDatabase {
       return;
     }
     this.db.exec(`
+      DELETE FROM reminder_state;
       DELETE FROM notification_state;
       DELETE FROM sync_state;
       DELETE FROM events;
@@ -668,6 +733,12 @@ class AppDatabase {
         fired_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS reminder_state (
+        dedupe_key TEXT PRIMARY KEY,
+        snoozed_until TEXT,
+        dismissed_at TEXT
+      );
+
       CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value_json TEXT NOT NULL,
@@ -685,6 +756,7 @@ class AppDatabase {
       );
     `);
     this.migrateCalendarsTable();
+    this.migrateReminderStateTable();
   }
 
   private migrateCalendarsTable(): void {
@@ -699,6 +771,14 @@ class AppDatabase {
     if (!hasHomeAccountId) {
       this.db.exec("ALTER TABLE calendars ADD COLUMN home_account_id TEXT NOT NULL DEFAULT ''");
     }
+  }
+
+  private migrateReminderStateTable(): void {
+    this.db.exec(`
+      INSERT OR IGNORE INTO reminder_state (dedupe_key, dismissed_at)
+      SELECT dedupe_key, fired_at
+      FROM notification_state
+    `);
   }
 }
 

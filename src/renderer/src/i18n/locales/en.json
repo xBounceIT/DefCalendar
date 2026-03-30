@@ -282,7 +282,9 @@
       "sync": {
         "label": "Sync",
         "title": "Sync Settings",
-        "description": "Configure synchronization behavior and schedule."
+        "description": "Configure synchronization behavior and schedule.",
+        "interval": "Auto sync every",
+        "intervalOption": "{{value}} min"
       },
       "about": {
         "label": "About",

@@ -10,6 +10,7 @@ import {
   eventListArgsSchema,
   eventReferenceArgsSchema,
   openExternalArgsSchema,
+  reminderDialogStateSchema,
   reminderDismissArgsSchema,
   reminderSnoozeArgsSchema,
   respondToEventArgsSchema,
@@ -20,6 +21,7 @@ import {
 import type AppDatabase from "@main/db/database";
 import type GraphCalendarService from "@main/graph/calendar-service";
 import type MsalAuthService from "@main/auth/msal-auth-service";
+import type ReminderService from "@main/reminders/reminder-service";
 import type ReminderWindowManager from "@main/reminders/reminder-window";
 import type SettingsService from "@main/settings/settings-service";
 import type { SyncService } from "@main/sync/sync-service";
@@ -31,6 +33,7 @@ interface RegisterIpcDependencies {
   auth: MsalAuthService;
   db: AppDatabase;
   graph: GraphCalendarService;
+  reminders: ReminderService;
   reminderManager: ReminderWindowManager;
   settings: SettingsService;
   sync: SyncService;
@@ -65,31 +68,43 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     }
   };
 
-  const validateSender = (event: IpcMainInvokeEvent) => {
+  const validateMainSender = (event: IpcMainInvokeEvent) => {
     const mainWindow = dependencies.getMainWindow();
     if (!mainWindow || event.sender !== mainWindow.webContents) {
       throw new Error("Rejected IPC request from an untrusted sender.");
     }
   };
 
+  const validateReminderSender = (event: IpcMainInvokeEvent) => {
+    const mainWindow = dependencies.getMainWindow();
+    if (
+      (mainWindow && event.sender === mainWindow.webContents) ||
+      dependencies.reminderManager.ownsWebContents(event.sender)
+    ) {
+      return;
+    }
+
+    throw new Error("Rejected IPC request from an untrusted sender.");
+  };
+
   ipcMain.handle(IPC_CHANNELS.appGetLocale, async (event) => {
-    validateSender(event);
+    validateMainSender(event);
     return app.getLocale();
   });
 
   ipcMain.handle(IPC_CHANNELS.appGetVersion, async (event) => {
-    validateSender(event);
+    validateMainSender(event);
     const version = app.getVersion();
     return `v${version}`;
   });
 
   ipcMain.handle(IPC_CHANNELS.authGetState, async (event) => {
-    validateSender(event);
+    validateMainSender(event);
     return dependencies.auth.getAuthState();
   });
 
   ipcMain.handle(IPC_CHANNELS.authSignIn, async (event, input) => {
-    validateSender(event);
+    validateMainSender(event);
     const args = authSignInRequestSchema.parse(input ?? {});
     const state = await dependencies.auth.signIn(args.mode);
     await dependencies.sync.syncAll("sign-in");
@@ -99,7 +114,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.authSignOut, async (event, homeAccountId?: string) => {
-    validateSender(event);
+    validateMainSender(event);
     const activeAccountId = homeAccountId ?? dependencies.auth.getActiveAccountId();
     await dependencies.auth.signOut(activeAccountId ?? undefined);
     if (activeAccountId) {
@@ -112,6 +127,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     } else {
       dependencies.sync.reset();
     }
+    await dependencies.reminders.checkNow();
     const state = dependencies.auth.getAuthState();
     broadcast(IPC_CHANNELS.authStateChanged, state);
     broadcast(IPC_CHANNELS.syncStatusChanged, dependencies.sync.getStatus());
@@ -119,7 +135,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.authSwitchAccount, async (event, homeAccountId: string) => {
-    validateSender(event);
+    validateMainSender(event);
     const state = await dependencies.auth.switchAccount(homeAccountId);
     await dependencies.sync.syncAll("switch-account", homeAccountId);
     broadcast(IPC_CHANNELS.authStateChanged, state);
@@ -128,35 +144,37 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.calendarsList, async (event) => {
-    validateSender(event);
+    validateMainSender(event);
     return enrichCalendars();
   });
 
   ipcMain.handle(IPC_CHANNELS.calendarsSetVisibility, async (event, input) => {
-    validateSender(event);
+    validateMainSender(event);
     const args = setCalendarVisibilityArgsSchema.parse(input);
     dependencies.settings.setCalendarVisibility(args.calendarId, args.isVisible);
+    void dependencies.reminders.checkNow();
     return enrichCalendars();
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsList, async (event, input) => {
-    validateSender(event);
+    validateMainSender(event);
     const args = eventListArgsSchema.parse(input);
     return dependencies.db.listEvents(args);
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsCreate, async (event, input) => {
-    validateSender(event);
+    validateMainSender(event);
     const draft = eventDraftSchema.parse(input);
     const homeAccountId = resolveCalendarHomeAccountId(draft.calendarId);
     const created = await dependencies.graph.createEvent(draft, homeAccountId);
     dependencies.db.upsertEvent(created);
+    await dependencies.reminders.checkNow();
     void dependencies.sync.syncAll("mutation", homeAccountId);
     return created;
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsUpdate, async (event, input) => {
-    validateSender(event);
+    validateMainSender(event);
     const draft = eventDraftSchema.parse(input);
     if (!draft.id) {
       throw new Error("Event id is required for updates.");
@@ -170,12 +188,13 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     const homeAccountId = resolveCalendarHomeAccountId(draft.calendarId);
     const updated = await dependencies.graph.updateEvent(draft, homeAccountId);
     dependencies.db.upsertEvent(updated);
+    await dependencies.reminders.checkNow();
     void dependencies.sync.syncAll("mutation", homeAccountId);
     return updated;
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsDelete, async (event, input) => {
-    validateSender(event);
+    validateMainSender(event);
     const args = deleteEventArgsSchema.parse(input);
     const current = dependencies.db.getEvent(args.calendarId, args.eventId);
     if (current?.unsupportedReason) {
@@ -185,11 +204,12 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
     await dependencies.graph.deleteEvent(args.calendarId, args.eventId, homeAccountId, args.etag);
     dependencies.db.deleteEvent(args.calendarId, args.eventId);
+    await dependencies.reminders.checkNow();
     void dependencies.sync.syncAll("mutation", homeAccountId);
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsRespond, async (event, input) => {
-    validateSender(event);
+    validateMainSender(event);
     const args = respondToEventArgsSchema.parse(input);
     const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
     await dependencies.graph.respondToEvent(args, homeAccountId);
@@ -197,7 +217,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsCancel, async (event, input) => {
-    validateSender(event);
+    validateMainSender(event);
     const args = cancelEventArgsSchema.parse(input);
     const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
     await dependencies.graph.cancelEvent(
@@ -207,11 +227,12 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
       args.comment,
     );
     dependencies.db.deleteEvent(args.calendarId, args.eventId);
+    await dependencies.reminders.checkNow();
     void dependencies.sync.syncAll("mutation", homeAccountId);
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsListAttachments, async (event, input) => {
-    validateSender(event);
+    validateMainSender(event);
     const args = eventReferenceArgsSchema.parse(input);
     const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
     const attachments = await dependencies.graph.listAttachments(
@@ -231,7 +252,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsAddAttachment, async (event, input) => {
-    validateSender(event);
+    validateMainSender(event);
     const args = attachmentUploadArgsSchema.parse(input);
     const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
     const attachments = await dependencies.graph.addAttachment(
@@ -255,7 +276,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsRemoveAttachment, async (event, input) => {
-    validateSender(event);
+    validateMainSender(event);
     const args = attachmentDeleteArgsSchema.parse(input);
     const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
     const attachments = await dependencies.graph.removeAttachment(
@@ -279,51 +300,51 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsOpenWebLink, async (event, input) => {
-    validateSender(event);
+    validateMainSender(event);
     const args = openExternalArgsSchema.parse({ url: input });
     await shell.openExternal(args.url);
   });
 
   ipcMain.handle(IPC_CHANNELS.syncRefresh, async (event) => {
-    validateSender(event);
+    validateMainSender(event);
     const status = await dependencies.sync.syncAll("manual");
     return syncStatusSchema.parse(status);
   });
 
   ipcMain.handle(IPC_CHANNELS.syncGetStatus, async (event) => {
-    validateSender(event);
+    validateMainSender(event);
     return syncStatusSchema.parse(dependencies.sync.getStatus());
   });
 
   ipcMain.handle(IPC_CHANNELS.updatesGetStatus, async (event) => {
-    validateSender(event);
+    validateMainSender(event);
     return appUpdateStatusSchema.parse(dependencies.updates.getStatus());
   });
 
   ipcMain.handle(IPC_CHANNELS.updatesCheck, async (event) => {
-    validateSender(event);
+    validateMainSender(event);
     const status = await dependencies.updates.checkForUpdates();
     return appUpdateStatusSchema.parse(status);
   });
 
   ipcMain.handle(IPC_CHANNELS.updatesDownload, async (event) => {
-    validateSender(event);
+    validateMainSender(event);
     const status = await dependencies.updates.downloadUpdate();
     return appUpdateStatusSchema.parse(status);
   });
 
   ipcMain.handle(IPC_CHANNELS.updatesInstall, async (event) => {
-    validateSender(event);
+    validateMainSender(event);
     dependencies.updates.installUpdate();
   });
 
   ipcMain.handle(IPC_CHANNELS.settingsGet, async (event) => {
-    validateSender(event);
+    validateMainSender(event);
     return dependencies.settings.getSettings();
   });
 
   ipcMain.handle(IPC_CHANNELS.settingsUpdate, async (event, input) => {
-    validateSender(event);
+    validateMainSender(event);
     const patch = userSettingsPatchSchema.parse(input);
     const previousSettings = dependencies.settings.getSettings();
     const updatedSettings = dependencies.settings.updateSettings(patch);
@@ -335,27 +356,37 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
       dependencies.updates.setAllowPrerelease(patch.updateChannel === "prerelease");
     }
 
+    if (
+      patch.syncIntervalMinutes !== undefined &&
+      patch.syncIntervalMinutes !== previousSettings.syncIntervalMinutes
+    ) {
+      dependencies.sync.refreshSchedule();
+    }
+
+    void dependencies.reminders.checkNow();
     return updatedSettings;
   });
 
+  ipcMain.handle(IPC_CHANNELS.reminderGetState, async (event) => {
+    validateReminderSender(event);
+    return reminderDialogStateSchema.parse(dependencies.reminders.getState());
+  });
+
   ipcMain.handle(IPC_CHANNELS.reminderSnooze, async (_event, input) => {
+    validateReminderSender(_event);
     const args = reminderSnoozeArgsSchema.parse(input);
-    const snoozedUntil = new Date(Date.now() + args.minutes * 60_000).toISOString();
-    dependencies.db.setSnooze(args.dedupeKey, snoozedUntil);
-    dependencies.reminderManager.close(args.dedupeKey);
+    dependencies.reminders.snooze(args.dedupeKey, args.minutes);
   });
 
   ipcMain.handle(IPC_CHANNELS.reminderDismiss, async (_event, input) => {
+    validateReminderSender(_event);
     const args = reminderDismissArgsSchema.parse(input);
-    dependencies.db.markNotificationFired(args.dedupeKey);
-    dependencies.reminderManager.close(args.dedupeKey);
+    dependencies.reminders.dismiss(args.dedupeKey);
   });
 
   ipcMain.handle(IPC_CHANNELS.reminderDismissAll, async (_event) => {
-    for (const key of dependencies.reminderManager.keys()) {
-      dependencies.db.markNotificationFired(key);
-    }
-    dependencies.reminderManager.closeAll();
+    validateReminderSender(_event);
+    dependencies.reminders.dismissAll();
   });
 
   dependencies.sync.onStatus((status) => {
@@ -367,7 +398,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.windowMinimize, async (event) => {
-    validateSender(event);
+    validateMainSender(event);
     const window = dependencies.getMainWindow();
     if (window) {
       window.minimize();
@@ -375,7 +406,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.windowMaximize, async (event) => {
-    validateSender(event);
+    validateMainSender(event);
     const window = dependencies.getMainWindow();
     if (window) {
       if (window.isMaximized()) {
@@ -387,7 +418,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.windowClose, async (event) => {
-    validateSender(event);
+    validateMainSender(event);
     const window = dependencies.getMainWindow();
     if (window) {
       window.close();
@@ -395,7 +426,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.windowIsMaximized, async (event) => {
-    validateSender(event);
+    validateMainSender(event);
     const window = dependencies.getMainWindow();
     return window?.isMaximized() ?? false;
   });

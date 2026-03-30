@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import i18n from "i18next";
 import { initReactI18next, useTranslation } from "react-i18next";
+import type { ReminderDialogItem, ReminderDialogState } from "@shared/ipc";
 import type { UserSettings } from "@shared/schemas";
 
 import en from "./i18n/locales/en.json";
@@ -9,24 +10,21 @@ import it from "./i18n/locales/it.json";
 
 type TimeFormatSetting = UserSettings["timeFormat"];
 
-function detectLocaleFromLanguageTag(languageTag: null | string | undefined): "en" | "it" {
-  if (typeof languageTag === "string" && languageTag.toLowerCase().startsWith("it")) {
-    return "it";
-  }
+const EMPTY_STATE: ReminderDialogState = {
+  items: [],
+  locale: "en",
+  timeFormat: "system",
+};
 
-  return "en";
-}
-
-function resolveLanguageSetting(
-  language: null | string | undefined,
-  systemLanguageTag: null | string | undefined,
-): "en" | "it" {
-  if (language === "en" || language === "it") {
-    return language;
-  }
-
-  return detectLocaleFromLanguageTag(systemLanguageTag);
-}
+void i18n.use(initReactI18next).init({
+  resources: {
+    en: { translation: en },
+    it: { translation: it },
+  },
+  lng: "en",
+  fallbackLng: "en",
+  interpolation: { escapeValue: false },
+});
 
 function applyTimeFormat(
   options: Intl.DateTimeFormatOptions,
@@ -42,150 +40,60 @@ function applyTimeFormat(
   };
 }
 
-void i18n.use(initReactI18next).init({
-  resources: {
-    en: { translation: en },
-    it: { translation: it },
-  },
-  lng: detectLocaleFromLanguageTag(navigator.language ?? navigator.languages?.[0]),
-  fallbackLng: "en",
-  interpolation: { escapeValue: false },
-});
-
-interface ParsedParams {
-  dedupeKey: string;
-  subject: string;
-  location: string;
-  start: string;
-  end: string;
-}
-
-function parseParams(): ParsedParams {
-  const search = new URLSearchParams(globalThis.location.search);
-  return {
-    dedupeKey: search.get("dedupeKey") ?? "",
-    subject: search.get("subject") ?? "",
-    location: search.get("location") ?? "",
-    start: search.get("start") ?? "",
-    end: search.get("end") ?? "",
-  };
-}
-
-function formatEventTime(start: string, end: string, timeFormat: TimeFormatSetting): string {
-  if (!start) {
-    return "";
-  }
-  const startDate = new Date(start);
+function formatEventTime(
+  item: ReminderDialogItem,
+  locale: ReminderDialogState["locale"],
+  timeFormat: TimeFormatSetting,
+): string {
+  const startDate = new Date(item.start);
   if (Number.isNaN(startDate.getTime())) {
-    return start;
+    return item.start;
   }
 
-  const endDate = end ? new Date(end) : null;
-  const timeFmt = applyTimeFormat(
+  if (item.isAllDay) {
+    return new Intl.DateTimeFormat(locale, {
+      day: "numeric",
+      month: "short",
+      weekday: "short",
+    }).format(startDate);
+  }
+
+  const endDate = new Date(item.end);
+  const timeOptions = applyTimeFormat(
     {
       hour: "numeric",
       minute: "2-digit",
     },
     timeFormat,
   );
-
-  const startStr = new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-    month: "short",
+  const startText = new Intl.DateTimeFormat(locale, {
     day: "numeric",
-    ...timeFmt,
+    month: "short",
+    weekday: "short",
+    ...timeOptions,
   }).format(startDate);
 
-  if (endDate && !Number.isNaN(endDate.getTime())) {
-    const endStr = new Intl.DateTimeFormat(undefined, timeFmt).format(endDate);
-    return `${startStr} \u2013 ${endStr}`;
+  if (Number.isNaN(endDate.getTime())) {
+    return startText;
   }
 
-  return startStr;
-}
-
-function BellIcon() {
-  return (
-    <svg
-      className="reminder-bell"
-      viewBox="0 0 20 20"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M10 2a5.002 5.002 0 0 0-4.583 7.036C5.156 10.088 5 11.233 5 12v1.586A1 1 0 0 0 5.293 14.5L6 15.207V16a2 2 0 0 0 4 0v-.793l.707-.707A1 1 0 0 0 11 13.586V12c0-.767-.156-1.912-.417-2.964A5.002 5.002 0 0 0 10 2z" />
-      <line x1="9" y1="18" x2="11" y2="18" />
-    </svg>
-  );
-}
-
-function ChevronIcon({ open }: { open: boolean }) {
-  return (
-    <svg
-      className={`snooze-chevron${open ? " open" : ""}`}
-      viewBox="0 0 10 6"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M1 1l4 4 4-4" />
-    </svg>
-  );
+  const endText = new Intl.DateTimeFormat(locale, timeOptions).format(endDate);
+  return `${startText} - ${endText}`;
 }
 
 function ReminderPopup() {
   const { t } = useTranslation();
-  const [params] = useState<ParsedParams>(parseParams);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [timeFormat, setTimeFormat] = useState<TimeFormatSetting>("system");
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [snoozeMinutes, setSnoozeMinutes] = useState(5);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [state, setState] = useState<ReminderDialogState>(EMPTY_STATE);
   const { calendarApi } = globalThis;
 
-  const snoozeOptions = [
-    { label: t("reminder.snooze5min"), minutes: 5 },
-    { label: t("reminder.snooze15min"), minutes: 15 },
-    { label: t("reminder.snooze1hour"), minutes: 60 },
-    { label: t("reminder.snoozeTomorrow"), minutes: 24 * 60 },
-  ];
-
-  const handleDismiss = useCallback(() => {
-    if (calendarApi) {
-      void calendarApi.reminder.dismiss(params.dedupeKey);
-    }
-  }, [calendarApi, params.dedupeKey]);
-
-  const handleDismissAll = useCallback(() => {
-    if (calendarApi) {
-      void calendarApi.reminder.dismissAll();
-    }
-  }, [calendarApi]);
-
-  const handleSnooze = useCallback(
-    (minutes: number) => {
-      setDropdownOpen(false);
-      if (calendarApi) {
-        void calendarApi.reminder.snooze(params.dedupeKey, minutes);
-      }
-    },
-    [calendarApi, params.dedupeKey],
-  );
+  const selectedReminder =
+    state.items.find((item) => item.dedupeKey === selectedKey) ?? state.items[0] ?? null;
 
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setDropdownOpen(false);
-      }
-    }
-
-    if (dropdownOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [dropdownOpen]);
+    void i18n.changeLanguage(state.locale);
+  }, [state.locale]);
 
   useEffect(() => {
     if (!calendarApi) {
@@ -193,86 +101,129 @@ function ReminderPopup() {
     }
 
     let cancelled = false;
+    const unsubscribe = calendarApi.reminder.onState((nextState) => {
+      if (!cancelled) {
+        setState(nextState);
+      }
+    });
 
-    async function applyPreferences(): Promise<void> {
+    async function loadState(): Promise<void> {
       try {
-        const settings = await calendarApi.settings.get();
-        let systemLanguageTag: string | undefined = undefined;
-        try {
-          systemLanguageTag = await calendarApi.app.getLocale();
-        } catch {
-          systemLanguageTag = undefined;
+        const nextState = await calendarApi.reminder.getState();
+        if (!cancelled) {
+          setState(nextState);
         }
-
-        if (cancelled) {
-          return;
-        }
-
-        setTimeFormat(settings.timeFormat);
-        void i18n.changeLanguage(resolveLanguageSetting(settings.language, systemLanguageTag));
       } catch {
         return;
       }
     }
 
-    void applyPreferences();
+    void loadState();
 
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, [calendarApi]);
 
-  const timeStr = formatEventTime(params.start, params.end, timeFormat);
-  const subject = params.subject || t("reminder.untitledEvent");
+  useEffect(() => {
+    if (state.items.some((item) => item.dedupeKey === selectedKey)) {
+      return;
+    }
+
+    setSelectedKey(state.items[0]?.dedupeKey ?? null);
+  }, [selectedKey, state.items]);
+
+  const handleSnooze = () => {
+    if (calendarApi && selectedReminder) {
+      void calendarApi.reminder.snooze(selectedReminder.dedupeKey, snoozeMinutes);
+    }
+  };
+
+  const handleDismiss = () => {
+    if (calendarApi && selectedReminder) {
+      void calendarApi.reminder.dismiss(selectedReminder.dedupeKey);
+    }
+  };
+
+  const handleDismissAll = () => {
+    if (calendarApi) {
+      void calendarApi.reminder.dismissAll();
+    }
+  };
 
   return (
-    <div className="reminder-popup">
-      <div className="reminder-header">
-        <div className="reminder-header-left">
-          <BellIcon />
-          <span className="reminder-title">{t("reminder.title")}</span>
-        </div>
-        <button className="dismiss-all-btn" onClick={handleDismissAll} type="button">
-          {t("reminder.dismissAll")}
-        </button>
-      </div>
-
-      <div className="reminder-body">
-        <div className="reminder-subject">{subject}</div>
-        <div className="reminder-meta">
-          {timeStr && <div className="reminder-meta-item">{timeStr}</div>}
-          {params.location && <div className="reminder-meta-item">{params.location}</div>}
-        </div>
-      </div>
-
-      <div className="reminder-footer">
-        <div className="snooze-container" ref={dropdownRef}>
+    <div className="reminder-shell">
+      <div className="reminder-popup">
+        <div className="reminder-header">
+          <div className="reminder-header-left">
+            <span className="reminder-title">{t("reminder.title")}</span>
+            <span className="reminder-count">{state.items.length}</span>
+          </div>
           <button
-            className="snooze-btn"
-            onClick={() => setDropdownOpen((prev) => !prev)}
+            className="reminder-close"
+            onClick={() => window.close()}
             type="button"
+            aria-label="Close"
           >
-            {t("reminder.snooze")}
-            <ChevronIcon open={dropdownOpen} />
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M2 2l8 8M10 2l-8 8" />
+            </svg>
           </button>
-          {dropdownOpen && (
-            <div className="snooze-dropdown">
-              {snoozeOptions.map((option) => (
-                <button
-                  key={option.minutes}
-                  className="snooze-option"
-                  onClick={() => handleSnooze(option.minutes)}
-                  type="button"
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
-        <button className="dismiss-btn" onClick={handleDismiss} type="button">
-          {t("reminder.dismiss")}
-        </button>
+
+        <div className="reminder-list" role="listbox">
+          {state.items.map((item) => {
+            const isSelected = selectedReminder?.dedupeKey === item.dedupeKey;
+
+            return (
+              <button
+                key={item.dedupeKey}
+                className={`reminder-item${isSelected ? " reminder-item--selected" : ""}`}
+                onClick={() => setSelectedKey(item.dedupeKey)}
+                type="button"
+              >
+                <div className="reminder-item-content">
+                  <span className="reminder-item-subject">
+                    {item.subject || t("reminder.untitledEvent")}
+                  </span>
+                  <span className="reminder-item-time">
+                    {formatEventTime(item, state.locale, state.timeFormat)}
+                  </span>
+                  {item.location && <span className="reminder-item-location">{item.location}</span>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="reminder-footer">
+          <div className="reminder-footer-left">
+            <select
+              className="snooze-select"
+              value={snoozeMinutes}
+              onChange={(e) => setSnoozeMinutes(Number(e.target.value))}
+            >
+              <option value={5}>{t("reminder.snooze5min")}</option>
+              <option value={10}>{t("reminder.snooze10min")}</option>
+              <option value={15}>{t("reminder.snooze15min")}</option>
+              <option value={30}>{t("reminder.snooze30min")}</option>
+              <option value={60}>{t("reminder.snooze1hour")}</option>
+              <option value={1440}>{t("reminder.snoozeTomorrow")}</option>
+            </select>
+          </div>
+          <div className="reminder-footer-right">
+            <button className="btn-snooze" onClick={handleSnooze} type="button">
+              {t("reminder.snooze")}
+            </button>
+            <button className="btn-dismiss" onClick={handleDismiss} type="button">
+              {t("reminder.dismiss")}
+            </button>
+            <button className="btn-dismiss-all" onClick={handleDismissAll} type="button">
+              {t("reminder.dismissAll")}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -369,8 +369,8 @@ class MsalAuthService {
     }
 
     const account = targetAccountId
-      ? msalAccounts.find((item) => item.homeAccountId === targetAccountId) ?? null
-      : msalAccounts[0] ?? null;
+      ? (msalAccounts.find((item) => item.homeAccountId === targetAccountId) ?? null)
+      : (msalAccounts[0] ?? null);
 
     if (!account) {
       throw new Error(

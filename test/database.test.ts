@@ -44,6 +44,7 @@ describe("database", () => {
     const preparedSql = prepare.mock.calls.map(([sql]) => sql);
     expect(preparedSql).toStrictEqual([
       "SELECT id FROM calendars WHERE home_account_id = ?",
+      String.raw`DELETE FROM reminder_state WHERE dedupe_key LIKE ? ESCAPE '\'`,
       String.raw`DELETE FROM notification_state WHERE dedupe_key LIKE ? ESCAPE '\'`,
       "DELETE FROM sync_state WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
       "DELETE FROM events WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
@@ -54,6 +55,9 @@ describe("database", () => {
     expect(alls.get("SELECT id FROM calendars WHERE home_account_id = ?")).toHaveBeenCalledWith(
       targetAccountId,
     );
+    expect(
+      runs.get(String.raw`DELETE FROM reminder_state WHERE dedupe_key LIKE ? ESCAPE '\'`),
+    ).toHaveBeenCalledWith(String.raw`calendar-\%\_1:%`);
     expect(
       runs.get(String.raw`DELETE FROM notification_state WHERE dedupe_key LIKE ? ESCAPE '\'`),
     ).toHaveBeenCalledWith(String.raw`calendar-\%\_1:%`);

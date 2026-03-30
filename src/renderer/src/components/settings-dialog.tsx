@@ -29,6 +29,7 @@ type SettingsSection =
   | "about";
 
 type LanguageSetting = UserSettings["language"];
+type SyncIntervalSetting = UserSettings["syncIntervalMinutes"];
 type TimeFormatSetting = UserSettings["timeFormat"];
 
 function CloseIcon() {
@@ -158,14 +159,32 @@ function NotificationsSection() {
   );
 }
 
-function SyncSection() {
+function SyncSection({ onSave, settings }: Pick<SettingsDialogProps, "onSave" | "settings">) {
   const { t } = useTranslation();
+  const syncIntervalOptions: SyncIntervalSetting[] = [5, 10, 15, 30, 60];
 
   return (
     <div className="settings-section">
       <h3>{t("settings.sections.sync.title")}</h3>
       <div className="settings-fields">
         <p className="settings-placeholder">{t("settings.sections.sync.description")}</p>
+        <div className="field">
+          <span>{t("settings.sections.sync.interval")}</span>
+          <select
+            value={settings.syncIntervalMinutes}
+            onChange={(e) => {
+              onSave({
+                syncIntervalMinutes: Number.parseInt(e.target.value, 10) as SyncIntervalSetting,
+              });
+            }}
+          >
+            {syncIntervalOptions.map((syncIntervalMinutes) => (
+              <option key={syncIntervalMinutes} value={syncIntervalMinutes}>
+                {t("settings.sections.sync.intervalOption", { value: syncIntervalMinutes })}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
     </div>
   );
@@ -382,7 +401,7 @@ function SettingsDialog({
         return <NotificationsSection />;
       }
       case "sync": {
-        return <SyncSection />;
+        return <SyncSection onSave={onSave} settings={settings} />;
       }
       case "about": {
         return <AboutSection onSave={onSave} settings={settings} />;

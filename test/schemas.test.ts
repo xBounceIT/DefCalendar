@@ -44,6 +44,7 @@ describe("shared schemas", () => {
     expect(defaults.activeView).toBe("timeGridWeek");
     expect(defaults.language).toBe("system");
     expect(defaults.timeFormat).toBe("system");
+    expect(defaults.syncIntervalMinutes).toBe(5);
     expect(defaults.visibleCalendarIds).toEqual([]);
   });
 

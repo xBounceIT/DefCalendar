@@ -333,6 +333,16 @@ const reminderDismissArgsSchema = z.object({
   dedupeKey: z.string().min(1),
 });
 
+const reminderDialogItemSchema = z.object({
+  dedupeKey: z.string().min(1),
+  end: dateTimeStringSchema,
+  isAllDay: z.boolean(),
+  location: z.string().nullable(),
+  reminderMinutesBeforeStart: z.number().int().min(0),
+  start: dateTimeStringSchema,
+  subject: z.string(),
+});
+
 const syncStatusCountsSchema = z.object({
   calendars: z.number().int().nonnegative(),
   events: z.number().int().nonnegative(),
@@ -370,6 +380,13 @@ const appUpdateStatusSchema = z.object({
 const updateChannelSchema = z.enum(["stable", "prerelease"]);
 const languageSettingSchema = z.enum(["system", "en", "it"]);
 const timeFormatSettingSchema = z.enum(["system", "12h", "24h"]);
+const syncIntervalMinutesSettingSchema = z.union([
+  z.literal(5),
+  z.literal(10),
+  z.literal(15),
+  z.literal(30),
+  z.literal(60),
+]);
 
 const languagePreferenceSchema = z.preprocess(
   (value) => (value === null ? undefined : value),
@@ -381,6 +398,17 @@ const timeFormatPreferenceSchema = z.preprocess(
   timeFormatSettingSchema.default("system"),
 );
 
+const syncIntervalMinutesPreferenceSchema = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  syncIntervalMinutesSettingSchema.default(5),
+);
+
+const reminderDialogStateSchema = z.object({
+  items: z.array(reminderDialogItemSchema),
+  locale: z.enum(["en", "it"]),
+  timeFormat: timeFormatSettingSchema,
+});
+
 const userSettingsSchema = z.object({
   activeAccountId: z.string().nullable().optional(),
   visibleCalendarIds: z.array(z.string()),
@@ -388,6 +416,7 @@ const userSettingsSchema = z.object({
   selectedDate: dateTimeStringSchema,
   language: languagePreferenceSchema,
   timeFormat: timeFormatPreferenceSchema,
+  syncIntervalMinutes: syncIntervalMinutesPreferenceSchema,
   updateChannel: updateChannelSchema.default("stable"),
 });
 
@@ -424,6 +453,8 @@ type AttachmentUploadArgs = z.infer<typeof attachmentUploadArgsSchema>;
 type AttachmentDeleteArgs = z.infer<typeof attachmentDeleteArgsSchema>;
 type ReminderSnoozeArgs = z.infer<typeof reminderSnoozeArgsSchema>;
 type ReminderDismissArgs = z.infer<typeof reminderDismissArgsSchema>;
+type ReminderDialogItem = z.infer<typeof reminderDialogItemSchema>;
+type ReminderDialogState = z.infer<typeof reminderDialogStateSchema>;
 type SyncStatus = z.infer<typeof syncStatusSchema>;
 type AppUpdateState = z.infer<typeof appUpdateStateSchema>;
 type AppUpdateStatus = z.infer<typeof appUpdateStatusSchema>;
@@ -439,6 +470,7 @@ function createDefaultSettings(): UserSettings {
     selectedDate: new Date().toISOString(),
     language: "system",
     timeFormat: "system",
+    syncIntervalMinutes: 5,
     updateChannel: "stable",
   };
 }
@@ -471,6 +503,8 @@ export {
   openExternalArgsSchema,
   onlineMeetingInfoSchema,
   participantResponseStatusSchema,
+  reminderDialogItemSchema,
+  reminderDialogStateSchema,
   reminderDismissArgsSchema,
   reminderSnoozeArgsSchema,
   recurrenceEditScopeSchema,
@@ -503,6 +537,8 @@ export {
   type DeleteEventArgs,
   type EventAttachment,
   type ReminderDismissArgs,
+  type ReminderDialogItem,
+  type ReminderDialogState,
   type ReminderSnoozeArgs,
   type EventDraft,
   type EventListArgs,

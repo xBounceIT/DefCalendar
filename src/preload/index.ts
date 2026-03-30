@@ -1,6 +1,6 @@
 import type { AppUpdateStatus, AuthSignInMode, AuthState, SyncStatus } from "@shared/schemas";
 import { contextBridge, ipcRenderer } from "electron";
-import type { CalendarApi } from "@shared/ipc";
+import type { CalendarApi, ReminderDialogState } from "@shared/ipc";
 import IPC_CHANNELS from "@shared/ipc-values";
 
 const calendarApi: CalendarApi = {
@@ -71,6 +71,15 @@ const calendarApi: CalendarApi = {
     update: (patch) => ipcRenderer.invoke(IPC_CHANNELS.settingsUpdate, patch),
   },
   reminder: {
+    getState: () => ipcRenderer.invoke(IPC_CHANNELS.reminderGetState),
+    onState: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, state: ReminderDialogState) =>
+        listener(state);
+      ipcRenderer.on(IPC_CHANNELS.reminderStateChanged, wrapped);
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.reminderStateChanged, wrapped);
+      };
+    },
     snooze: (dedupeKey: string, minutes: number) =>
       ipcRenderer.invoke(IPC_CHANNELS.reminderSnooze, { dedupeKey, minutes }),
     dismiss: (dedupeKey: string) => ipcRenderer.invoke(IPC_CHANNELS.reminderDismiss, { dedupeKey }),

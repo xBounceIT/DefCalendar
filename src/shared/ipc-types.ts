@@ -1,11 +1,13 @@
-import type { EventAttachment, EventResponseAction } from "./schemas";
+import type {
+  EventAttachment,
+  EventResponseAction,
+  ReminderDialogItem,
+  ReminderDialogState,
+} from "./schemas";
 
-interface ReminderPopupData {
-  dedupeKey: string;
-  subject: string;
-  location: null | string;
-  start: string;
-  end: string;
-}
-
-export { type EventAttachment, type EventResponseAction, type ReminderPopupData };
+export {
+  type EventAttachment,
+  type EventResponseAction,
+  type ReminderDialogItem,
+  type ReminderDialogState,
+};

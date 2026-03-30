@@ -87,4 +87,12 @@ describe("settings service", () => {
 
     expect(fixture.readSettings().visibleCalendarIds).toEqual(["calendar-a", "calendar-b"]);
   });
+
+  it("persists the auto sync interval", () => {
+    const fixture = createSettingsFixture([]);
+
+    fixture.service.updateSettings({ syncIntervalMinutes: 30 });
+
+    expect(fixture.readSettings().syncIntervalMinutes).toBe(30);
+  });
 });

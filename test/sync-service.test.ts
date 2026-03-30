@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { SyncService } from "../src/main/sync/sync-service";
-import type { CalendarSummary } from "../src/shared/schemas";
+import type { CalendarSummary, UserSettings } from "../src/shared/schemas";
 
 interface SyncFixture {
   db: {
@@ -19,6 +19,7 @@ interface SyncFixture {
   };
   service: SyncService;
   settings: {
+    getSettings: ReturnType<typeof vi.fn>;
     syncVisibleCalendars: ReturnType<typeof vi.fn>;
   };
 }
@@ -42,10 +43,12 @@ function createFixture(args?: {
   accountIds?: string[];
   calendars?: CalendarSummary[];
   knownCalendarIds?: string[];
+  syncIntervalMinutes?: UserSettings["syncIntervalMinutes"];
   visibleCalendarIds?: string[];
 }): SyncFixture {
   const calendars = args?.calendars ?? [createCalendar("calendar-a")];
   const visibleCalendarIds = args?.visibleCalendarIds ?? calendars.map((calendar) => calendar.id);
+  const syncIntervalMinutes = args?.syncIntervalMinutes ?? 15;
 
   const db = {
     getLatestSyncStatus: vi.fn().mockReturnValue({
@@ -72,9 +75,11 @@ function createFixture(args?: {
 
   const settings = {
     getSettings: vi.fn().mockReturnValue({
+      syncIntervalMinutes,
       visibleCalendarIds,
     }),
     syncVisibleCalendars: vi.fn().mockReturnValue({
+      syncIntervalMinutes,
       visibleCalendarIds,
     }),
   };
@@ -104,6 +109,21 @@ function createFixture(args?: {
     reminders,
     service,
     settings,
+  };
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return {
+    promise,
+    reject,
+    resolve,
   };
 }
 
@@ -207,5 +227,150 @@ describe("sync service", () => {
     expect(fixture.graph.listCalendarView).toHaveBeenCalledTimes(0);
     expect(fixture.db.replaceEventsForCalendarRange).toHaveBeenCalledTimes(0);
     expect(fixture.reminders.checkNow).toHaveBeenCalledTimes(0);
+  });
+
+  it("uses the saved interval for automatic sync", async () => {
+    vi.useFakeTimers();
+
+    try {
+      const fixture = createFixture({ syncIntervalMinutes: 10 });
+
+      fixture.service.start();
+
+      await vi.advanceTimersByTimeAsync(9 * 60_000);
+      expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(0);
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(1);
+
+      fixture.service.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("refreshes the timer when the saved interval changes", async () => {
+    vi.useFakeTimers();
+
+    try {
+      const fixture = createFixture({ syncIntervalMinutes: 5 });
+
+      fixture.service.start();
+      fixture.settings.getSettings.mockReturnValue({
+        syncIntervalMinutes: 10,
+        visibleCalendarIds: ["calendar-a"],
+      });
+
+      fixture.service.refreshSchedule();
+
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(0);
+
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(1);
+
+      fixture.service.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("runs one follow-up sync when a mutation arrives during an in-flight sync", async () => {
+    const fixture = createFixture();
+    const firstCalendars = createDeferred<CalendarSummary[]>();
+
+    fixture.graph.listCalendars
+      .mockImplementationOnce(() => firstCalendars.promise)
+      .mockResolvedValue([createCalendar("calendar-a")]);
+
+    const firstSync = fixture.service.syncAll("manual");
+    const overlappingMutation = fixture.service.syncAll("mutation", "account-1");
+
+    expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(1);
+
+    firstCalendars.resolve([createCalendar("calendar-a")]);
+
+    await Promise.all([firstSync, overlappingMutation]);
+    await Promise.resolve();
+
+    expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(2);
+    expect(fixture.graph.listCalendars.mock.calls.map(([accountId]) => accountId)).toStrictEqual([
+      "account-1",
+      "account-1",
+    ]);
+  });
+
+  it("coalesces multiple same-account mutations into one follow-up sync", async () => {
+    const fixture = createFixture();
+    const firstCalendars = createDeferred<CalendarSummary[]>();
+
+    fixture.graph.listCalendars
+      .mockImplementationOnce(() => firstCalendars.promise)
+      .mockResolvedValue([createCalendar("calendar-a")]);
+
+    const firstSync = fixture.service.syncAll("manual");
+    const firstMutation = fixture.service.syncAll("mutation", "account-1");
+    const secondMutation = fixture.service.syncAll("mutation", "account-1");
+
+    firstCalendars.resolve([createCalendar("calendar-a")]);
+
+    await Promise.all([firstSync, firstMutation, secondMutation]);
+    await Promise.resolve();
+
+    expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls back to one all-account follow-up sync for queued mutations across accounts", async () => {
+    const fixture = createFixture({
+      accountIds: ["account-1", "account-2"],
+      calendars: [],
+      visibleCalendarIds: ["calendar-a", "calendar-b"],
+    });
+    const firstCalendars = createDeferred<CalendarSummary[]>();
+
+    fixture.graph.listCalendars = vi
+      .fn()
+      .mockImplementationOnce(() => firstCalendars.promise)
+      .mockImplementation(async (homeAccountId: string) =>
+        homeAccountId === "account-1"
+          ? [createCalendar("calendar-a", "account-1")]
+          : [createCalendar("calendar-b", "account-2")],
+      );
+
+    const firstSync = fixture.service.syncAll("manual");
+    const firstMutation = fixture.service.syncAll("mutation", "account-1");
+    const secondMutation = fixture.service.syncAll("mutation", "account-2");
+
+    firstCalendars.resolve([createCalendar("calendar-a", "account-1")]);
+
+    await Promise.all([firstSync, firstMutation, secondMutation]);
+    await Promise.resolve();
+
+    expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(4);
+    expect(fixture.graph.listCalendars.mock.calls.map(([accountId]) => accountId)).toStrictEqual([
+      "account-1",
+      "account-2",
+      "account-1",
+      "account-2",
+    ]);
+  });
+
+  it("keeps non-mutation overlap coalesced into the active sync only", async () => {
+    const fixture = createFixture();
+    const firstCalendars = createDeferred<CalendarSummary[]>();
+
+    fixture.graph.listCalendars
+      .mockImplementationOnce(() => firstCalendars.promise)
+      .mockResolvedValue([createCalendar("calendar-a")]);
+
+    const firstSync = fixture.service.syncAll("manual");
+    const overlappingManual = fixture.service.syncAll("manual");
+
+    firstCalendars.resolve([createCalendar("calendar-a")]);
+
+    await Promise.all([firstSync, overlappingManual]);
+    await Promise.resolve();
+
+    expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(1);
   });
 });

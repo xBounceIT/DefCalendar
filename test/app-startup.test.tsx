@@ -206,6 +206,12 @@ function createCalendarApiMock(): CalendarApi {
       onStatus: vi.fn().mockReturnValue(() => undefined),
     },
     reminder: {
+      getState: vi.fn().mockResolvedValue({
+        items: [],
+        locale: "en",
+        timeFormat: "system",
+      }),
+      onState: vi.fn().mockReturnValue(() => undefined),
       snooze: vi.fn(),
       dismiss: vi.fn(),
       dismissAll: vi.fn(),
@@ -330,6 +336,12 @@ function createSignedInCalendarApiMock(): CalendarApi {
       onStatus: vi.fn().mockReturnValue(() => undefined),
     },
     reminder: {
+      getState: vi.fn().mockResolvedValue({
+        items: [],
+        locale: "en",
+        timeFormat: "system",
+      }),
+      onState: vi.fn().mockReturnValue(() => undefined),
       snooze: vi.fn(),
       dismiss: vi.fn(),
       dismissAll: vi.fn(),
@@ -483,6 +495,12 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
       onStatus: vi.fn().mockReturnValue(() => undefined),
     },
     reminder: {
+      getState: vi.fn().mockResolvedValue({
+        items: [],
+        locale: "en",
+        timeFormat: "system",
+      }),
+      onState: vi.fn().mockReturnValue(() => undefined),
       snooze: vi.fn(),
       dismiss: vi.fn(),
       dismissAll: vi.fn(),
