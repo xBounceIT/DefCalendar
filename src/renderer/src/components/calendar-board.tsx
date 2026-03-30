@@ -82,6 +82,8 @@ function CalendarSurface({
       datesSet={onDatesSet}
       dayMaxEvents={3}
       dayMaxEventRows={3}
+      eventMaxStack={3}
+      slotEventOverlap={false}
       editable
       eventClick={onEventClick}
       eventDidMount={handleEventDidMount}
