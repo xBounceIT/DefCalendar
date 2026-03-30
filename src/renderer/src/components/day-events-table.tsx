@@ -21,13 +21,7 @@ interface DayEventsTableProps {
 
 function CloseIcon() {
   return (
-    <svg
-      fill="none"
-      height="16"
-      viewBox="0 0 24 24"
-      width="16"
-      xmlns="http://www.w3.org/2000/svg"
-    >
+    <svg fill="none" height="16" viewBox="0 0 24 24" width="16" xmlns="http://www.w3.org/2000/svg">
       <path
         d="M18 6L6 18M6 6l12 12"
         stroke="currentColor"
@@ -60,12 +54,12 @@ function SortArrow({ direction }: { direction: SortDirection }) {
   );
 }
 
-function isSameDay(date1: Date, date2: Date): boolean {
-  return (
-    date1.getFullYear() === date2.getFullYear() &&
-    date1.getMonth() === date2.getMonth() &&
-    date1.getDate() === date2.getDate()
-  );
+function getStartOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function getEndOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
 }
 
 function formatEventTime(isoString: string, timeFormat: UserSettings["timeFormat"]): string {
@@ -149,32 +143,24 @@ function DayEventsTable({
       return [];
     }
 
+    const targetDayStart = getStartOfDay(targetDate);
+    const targetDayEnd = getEndOfDay(targetDate);
+
     return events.filter((event) => {
       const eventStart = new Date(event.start);
       const eventEnd = new Date(event.end);
+      if (Number.isNaN(eventStart.getTime()) || Number.isNaN(eventEnd.getTime())) {
+        return false;
+      }
 
       if (event.isAllDay) {
-        const eventStartDay = new Date(
-          eventStart.getFullYear(),
-          eventStart.getMonth(),
-          eventStart.getDate(),
-        );
-        const eventEndDay = new Date(
-          eventEnd.getFullYear(),
-          eventEnd.getMonth(),
-          eventEnd.getDate(),
-        );
-
-        const targetDayStart = new Date(
-          targetDate.getFullYear(),
-          targetDate.getMonth(),
-          targetDate.getDate(),
-        );
+        const eventStartDay = getStartOfDay(eventStart);
+        const eventEndDay = getStartOfDay(eventEnd);
 
         return eventStartDay <= targetDayStart && eventEndDay > targetDayStart;
       }
 
-      return isSameDay(eventStart, targetDate) || isSameDay(eventEnd, targetDate);
+      return eventStart < targetDayEnd && eventEnd > targetDayStart;
     });
   }, [events, selectedDay]);
 
@@ -268,12 +254,18 @@ function DayEventsTable({
                 key={`${event.calendarId}:${event.id}`}
                 onClick={() => handleRowClick(event)}
               >
-                <td className="day-events-table__td">{event.subject || "(Untitled)"}</td>
                 <td className="day-events-table__td">
-                  {event.isAllDay ? t("eventEditor.allDay") : formatEventTime(event.start, timeFormat)}
+                  {event.subject || t("reminder.untitledEvent")}
                 </td>
                 <td className="day-events-table__td">
-                  {event.isAllDay ? t("eventEditor.allDay") : formatEventTime(event.end, timeFormat)}
+                  {event.isAllDay
+                    ? t("eventEditor.allDay")
+                    : formatEventTime(event.start, timeFormat)}
+                </td>
+                <td className="day-events-table__td">
+                  {event.isAllDay
+                    ? t("eventEditor.allDay")
+                    : formatEventTime(event.end, timeFormat)}
                 </td>
                 <td className="day-events-table__td">
                   {event.categories.length > 0 ? (

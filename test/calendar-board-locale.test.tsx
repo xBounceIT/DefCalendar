@@ -7,7 +7,7 @@ import i18n from "i18next";
 import itTranslations from "../src/renderer/src/i18n/locales/it.json";
 import CalendarBoard from "../src/renderer/src/components/calendar-board";
 import type { CalendarView } from "../src/shared/schemas";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 
 let capturedCalendarProps: Record<string, unknown> | null = null;
 
@@ -69,7 +69,7 @@ describe("calendar board locale", () => {
 
     expect(capturedCalendarProps?.locale).toBe("it");
     expect(capturedCalendarProps?.allDayText).toBe("Giornata intera");
-    expect(typeof capturedCalendarProps?.dateClick).toBe("function");
+    expectTypeOf(capturedCalendarProps?.dateClick).toBeFunction();
     expect(capturedCalendarProps?.selectable).toBeUndefined();
     expect(capturedCalendarProps?.select).toBeUndefined();
     expect(capturedCalendarProps?.selectMirror).toBeUndefined();

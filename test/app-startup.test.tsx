@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import React from "react";
 import App from "../src/renderer/src/app";
+import useUiStore from "../src/renderer/src/store";
+import { createDefaultSettings } from "../src/shared/schema-values";
 import type { CalendarApi } from "../src/shared/ipc";
 
 interface MockedCalendarModule {
@@ -25,6 +27,7 @@ const signedInSelectedDate = "2026-03-27T09:00:00.000Z";
 const mockCalendarSurfaceDate = {
   current: new Date(signedInSelectedDate),
 };
+let capturedCalendarProps: null | Record<string, unknown> = null;
 
 const mockCalendarSurfaceApi = {
   changeView: vi.fn(),
@@ -60,7 +63,9 @@ vi.mock<MockedCalendarModule>(import("@fullcalendar/react"), async () => {
   const ReactModule = await import("react");
 
   return {
-    default: ReactModule.forwardRef(function MockCalendar(_props, ref) {
+    default: ReactModule.forwardRef(function MockCalendar(props, ref) {
+      capturedCalendarProps = props as Record<string, unknown>;
+
       ReactModule.useImperativeHandle(ref, () => ({
         getApi: () => mockCalendarSurfaceApi,
       }));
@@ -75,6 +80,24 @@ const originalResizeObserverDescriptor = Object.getOwnPropertyDescriptor(
   globalThis,
   "ResizeObserver",
 );
+
+function createRange(selectedDate: string): { rangeEnd: string; rangeStart: string } {
+  const seed = new Date(selectedDate);
+  const rangeStart = new Date(seed.getFullYear(), seed.getMonth() - 1, 1).toISOString();
+  const rangeEnd = new Date(seed.getFullYear(), seed.getMonth() + 2, 1).toISOString();
+  return { rangeEnd, rangeStart };
+}
+
+function resetUiStoreState(): void {
+  const defaults = createDefaultSettings();
+  useUiStore.setState({
+    activeView: defaults.activeView,
+    hydrated: false,
+    selectedDate: defaults.selectedDate,
+    selectedDayForTable: null,
+    ...createRange(defaults.selectedDate),
+  });
+}
 
 function restoreResizeObserver(): void {
   if (originalResizeObserverDescriptor) {
@@ -106,6 +129,8 @@ function restoreCalendarApi(): void {
   vi.clearAllMocks();
   mockCalendarSurfaceDate.current = new Date(signedInSelectedDate);
   mockCalendarSurfaceApi.view.type = "timeGridWeek";
+  capturedCalendarProps = null;
+  resetUiStoreState();
 
   if (originalCalendarApiDescriptor) {
     Object.defineProperty(globalThis, "calendarApi", originalCalendarApiDescriptor);
@@ -577,6 +602,60 @@ describe("app startup", () => {
           observed: true,
           updated: true,
         });
+      });
+    } finally {
+      restoreCalendarApi();
+      restoreResizeObserver();
+    }
+  });
+
+  it("dismisses the day events table when navigating to a new range", async () => {
+    try {
+      installResizeObserverMock();
+      installCalendarApi(createSignedInCalendarApiMock());
+
+      renderApp();
+
+      await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
+
+      const dateClick = capturedCalendarProps?.dateClick as
+        | ((arg: { date: Date }) => void)
+        | undefined;
+
+      expectTypeOf(dateClick).toBeFunction();
+
+      act(() => {
+        dateClick?.({
+          date: new Date("2026-03-30T12:00:00.000Z"),
+        });
+      });
+
+      await expect(screen.findByText("No events on this day")).resolves.not.toBeNull();
+
+      const datesSet = capturedCalendarProps?.datesSet as
+        | ((arg: {
+            end: Date;
+            start: Date;
+            view: { calendar: { getDate: () => Date }; type: string };
+          }) => void)
+        | undefined;
+      expectTypeOf(datesSet).toBeFunction();
+
+      act(() => {
+        datesSet?.({
+          end: new Date("2030-02-01T00:00:00.000Z"),
+          start: new Date("2030-01-01T00:00:00.000Z"),
+          view: {
+            calendar: {
+              getDate: () => mockCalendarSurfaceDate.current,
+            },
+            type: "timeGridWeek",
+          },
+        });
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByText("No events on this day")).toBeNull();
       });
     } finally {
       restoreCalendarApi();

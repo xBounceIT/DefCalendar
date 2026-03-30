@@ -498,6 +498,9 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     const nextRangeEnd = dates.end.toISOString();
     if (rangeStart !== nextRangeStart || rangeEnd !== nextRangeEnd) {
       setRange(nextRangeStart, nextRangeEnd);
+      if (selectedDayForTable) {
+        clearSelectedDayForTable();
+      }
     }
 
     const nextSelectedDate = dates.view.calendar.getDate().toISOString();
