@@ -167,10 +167,15 @@ class ReminderService {
         continue;
       }
 
-      const reminderAt = new Date(candidate.event.start).getTime() - reminderMinutes * 60_000;
-      if (Number.isNaN(reminderAt)) {
+      const eventStart = new Date(candidate.event.start).getTime();
+      if (Number.isNaN(eventStart)) {
         continue;
       }
+
+      const reminderAt =
+        candidate.reminderType === "start"
+          ? eventStart
+          : eventStart - reminderMinutes * 60_000;
 
       const snoozedUntil = candidate.snoozedUntil
         ? new Date(candidate.snoozedUntil).getTime()
@@ -186,6 +191,7 @@ class ReminderService {
             location: candidate.event.location,
             onlineMeeting: candidate.event.onlineMeeting ?? null,
             reminderMinutesBeforeStart: reminderMinutes,
+            reminderType: candidate.reminderType,
             start: candidate.event.start,
             subject: candidate.event.subject,
           },
