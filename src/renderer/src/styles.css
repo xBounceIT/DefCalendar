@@ -1495,6 +1495,8 @@ button {
   align-items: baseline;
   line-height: 1.25;
   min-width: 0;
+  flex: 1 1 auto;
+  justify-content: space-between;
 }
 
 .calendar-event-content > .fc-event-time {
@@ -1504,7 +1506,7 @@ button {
 
 .calendar-event-content__icon {
   flex: 0 0 auto;
-  margin-left: 4px;
+  margin-left: 0;
   margin-top: 2px;
   opacity: 0.8;
 }
