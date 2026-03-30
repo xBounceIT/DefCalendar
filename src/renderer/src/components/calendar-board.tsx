@@ -104,9 +104,9 @@ function CalendarSurface({
       selectable
       select={onSelection}
       selectMirror
-      slotMaxTime="23:00:00"
+      slotMaxTime="24:00:00"
       slotLabelFormat={eventTimeFormat}
-      slotMinTime="07:00:00"
+      slotMinTime="00:00:00"
       weekNumbers
       weekNumberFormat={{ week: "numeric" }}
       weekends

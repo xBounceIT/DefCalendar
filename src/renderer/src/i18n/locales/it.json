@@ -89,6 +89,15 @@
     "noCalendarsHint": "Abilita almeno un calendario Exchange dalla barra laterale sinistra per popolare la vista.",
     "moreEvents": "+{{count}}"
   },
+  "dayEventsTable": {
+    "title": "Titolo",
+    "start": "Inizio",
+    "end": "Fine",
+    "category": "Categoria",
+    "noEvents": "Nessun evento in questo giorno",
+    "eventsCount_one": "{{count}} evento",
+    "eventsCount_other": "{{count}} eventi"
+  },
   "eventEditor": {
     "newEventEyebrow": "Nuovo evento Exchange",
     "newEventTitle": "Crea evento",

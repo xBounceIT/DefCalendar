@@ -1,5 +1,6 @@
 import { CALENDAR_VIEW_ORDER } from "@shared/calendar";
 import type {
+  CalendarEvent,
   DateSelectArg,
   DatesSetArg,
   EventClickArg,
@@ -7,10 +8,11 @@ import type {
   EventInput,
 } from "@fullcalendar/core";
 import type { CalendarView, UserSettings } from "@shared/schemas";
-
-import CalendarBoard from "./calendar-board";
 import type { EventResizeDoneArg } from "@fullcalendar/interaction";
 import type FullCalendar from "@fullcalendar/react";
+
+import CalendarBoard from "./calendar-board";
+import DayEventsTable from "./day-events-table";
 import React from "react";
 import { formatHeaderDate } from "../date-formatting";
 import { useTranslation } from "react-i18next";
@@ -21,7 +23,9 @@ interface WorkspacePanelProps {
   calendarEvents: EventInput[];
   calendarRef: React.RefObject<FullCalendar | null>;
   canCreateEvent: boolean;
+  events: CalendarEvent[];
   hasVisibleCalendars: boolean;
+  onClearDaySelection: () => void;
   onCreateEvent: () => void;
   onDatesSet: (dates: DatesSetArg) => void;
   onEventClick: (clickInfo: EventClickArg) => void;
@@ -33,6 +37,7 @@ interface WorkspacePanelProps {
   onToday: () => void;
   onViewSelect: (view: CalendarView) => void;
   selectedDate: string;
+  selectedDayForTable: null | string;
   timeFormat: UserSettings["timeFormat"];
 }
 
@@ -225,6 +230,17 @@ function Banner({ message }: { message: null | string }) {
 }
 
 function WorkspacePanel(props: WorkspacePanelProps) {
+  const handleTableEventClick = (event: CalendarEvent) => {
+    props.onEventClick({
+      event: {
+        extendedProps: {
+          calendarId: event.calendarId,
+          eventId: event.id,
+        },
+      },
+    } as EventClickArg);
+  };
+
   return (
     <main className="workspace">
       <WorkspaceHeader
@@ -238,6 +254,13 @@ function WorkspacePanel(props: WorkspacePanelProps) {
         selectedDate={props.selectedDate}
       />
       <Banner message={props.bannerMessage} />
+      <DayEventsTable
+        events={props.events}
+        onClear={props.onClearDaySelection}
+        onEventClick={handleTableEventClick}
+        selectedDay={props.selectedDayForTable}
+        timeFormat={props.timeFormat}
+      />
       <CalendarBoard
         activeView={props.activeView}
         calendarEvents={props.calendarEvents}

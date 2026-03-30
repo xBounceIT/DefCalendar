@@ -97,14 +97,17 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   const localizedSyncStatus = useMemo(() => localizeSyncStatus(syncStatus, t), [syncStatus, t]);
   const {
     activeView,
+    clearSelectedDayForTable,
     hydrate,
     hydrated,
     rangeEnd,
     rangeStart,
     selectedDate,
+    selectedDayForTable,
     setActiveView,
     setRange,
     setSelectedDate,
+    setSelectedDayForTable,
   } = useUiStore();
 
   const authQuery = useQuery({
@@ -425,11 +428,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   }
 
   function handleSelection(selection: DateSelectArg): void {
-    openCreateDialog({
-      allDay: selection.allDay,
-      end: selection.end.toISOString(),
-      start: selection.start.toISOString(),
-    });
+    setSelectedDayForTable(selection.start.toISOString());
     calendarRef.current?.getApi().unselect();
   }
 
@@ -732,7 +731,9 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         calendarEvents={calendarEvents}
         calendarRef={calendarRef}
         canCreateEvent={Boolean(editableCalendar)}
+        events={events}
         hasVisibleCalendars={visibleCalendarIds.length > 0}
+        onClearDaySelection={clearSelectedDayForTable}
         onCreateEvent={openSelectedDateComposer}
         onDatesSet={handleDatesSet}
         onEventClick={handleEventClick}
@@ -748,6 +749,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         onToday={handleToday}
         onViewSelect={handleViewSelect}
         selectedDate={selectedDate}
+        selectedDayForTable={selectedDayForTable}
         timeFormat={appSettings.timeFormat}
       />
       <SettingsDialog
