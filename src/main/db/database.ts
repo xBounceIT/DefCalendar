@@ -685,6 +685,8 @@ class AppDatabase {
   }
 
   private migrate(): void {
+    const hadReminderStateTable = this.hasTable("reminder_state");
+
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS calendars (
         id TEXT PRIMARY KEY,
@@ -756,7 +758,7 @@ class AppDatabase {
       );
     `);
     this.migrateCalendarsTable();
-    this.migrateReminderStateTable();
+    this.migrateReminderStateTable(hadReminderStateTable);
   }
 
   private migrateCalendarsTable(): void {
@@ -773,12 +775,32 @@ class AppDatabase {
     }
   }
 
-  private migrateReminderStateTable(): void {
+  private migrateReminderStateTable(hadReminderStateTable: boolean): void {
+    if (hadReminderStateTable) {
+      return;
+    }
+
     this.db.exec(`
       INSERT OR IGNORE INTO reminder_state (dedupe_key, dismissed_at)
       SELECT dedupe_key, fired_at
-      FROM notification_state
+      FROM notification_state;
+
+      INSERT OR IGNORE INTO reminder_state (dedupe_key, dismissed_at)
+      SELECT
+        events.calendar_id || ':' || events.id || ':' || events.start_sort,
+        strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      FROM events
+      WHERE events.is_reminder_on = 1
+        AND events.reminder_minutes_before_start IS NOT NULL
+        AND julianday(events.start_sort) - (events.reminder_minutes_before_start / 1440.0) <
+          julianday('now', '-5 minutes')
     `);
+  }
+
+  private hasTable(name: string): boolean {
+    return Boolean(
+      this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name),
+    );
   }
 }
 
