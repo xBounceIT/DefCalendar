@@ -33,13 +33,17 @@ class SettingsService {
 
   syncVisibleCalendars({ calendarIds, knownCalendarIds }: SyncVisibleCalendarsArgs): UserSettings {
     const current = this.safeCurrentSettings();
-    const nextCalendarIds = new Set(calendarIds);
+    const nextCalendarIdSet = new Set(calendarIds);
     const knownCalendarIdSet = new Set(knownCalendarIds);
     const nextVisibleCalendarIds: string[] = [];
     const visibleCalendarIdSet = new Set<string>();
 
     for (const calendarId of current.visibleCalendarIds) {
-      if (nextCalendarIds.has(calendarId) && !visibleCalendarIdSet.has(calendarId)) {
+      const isCurrentAccountCalendar = knownCalendarIdSet.has(calendarId);
+      if (
+        (nextCalendarIdSet.has(calendarId) || !isCurrentAccountCalendar) &&
+        !visibleCalendarIdSet.has(calendarId)
+      ) {
         nextVisibleCalendarIds.push(calendarId);
         visibleCalendarIdSet.add(calendarId);
       }

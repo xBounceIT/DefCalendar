@@ -27,6 +27,7 @@ export const IPC_CHANNELS = {
   authGetState: "auth:get-state",
   authSignIn: "auth:sign-in",
   authSignOut: "auth:sign-out",
+  authSwitchAccount: "auth:switch-account",
   authStateChanged: "auth:state-changed",
   calendarsList: "calendars:list",
   calendarsSetVisibility: "calendars:set-visibility",
@@ -68,7 +69,8 @@ interface CalendarApi {
   auth: {
     getState: () => Promise<AuthState>;
     signInWithExchange365: (mode?: AuthSignInMode) => Promise<AuthState>;
-    signOut: () => Promise<AuthState>;
+    signOut: (homeAccountId?: string) => Promise<AuthState>;
+    switchAccount: (homeAccountId: string) => Promise<AuthState>;
     onState: (listener: (state: AuthState) => void) => () => void;
   };
   calendars: {

@@ -6,9 +6,9 @@ import type {
   EventDropArg,
   EventInput,
 } from "@fullcalendar/core";
+import type { CalendarView, UserSettings } from "@shared/schemas";
 
 import CalendarBoard from "./calendar-board";
-import type { CalendarView } from "@shared/schemas";
 import type { EventResizeDoneArg } from "@fullcalendar/interaction";
 import type FullCalendar from "@fullcalendar/react";
 import React from "react";
@@ -33,6 +33,7 @@ interface WorkspacePanelProps {
   onToday: () => void;
   onViewSelect: (view: CalendarView) => void;
   selectedDate: string;
+  timeFormat: UserSettings["timeFormat"];
 }
 
 function ChevronLeftIcon() {
@@ -248,6 +249,7 @@ function WorkspacePanel(props: WorkspacePanelProps) {
         onEventResize={props.onEventResize}
         onSelection={props.onSelection}
         selectedDate={props.selectedDate}
+        timeFormat={props.timeFormat}
       />
     </main>
   );

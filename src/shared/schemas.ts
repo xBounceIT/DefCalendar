@@ -14,15 +14,28 @@ const accountSummarySchema = z.object({
   username: z.string(),
   name: z.string().nullable(),
   tenantId: z.string().nullable(),
+  color: z.string(),
+});
+
+const storedAccountSchema = z.object({
+  homeAccountId: z.string(),
+  username: z.string(),
+  name: z.string().nullable(),
+  tenantId: z.string().nullable(),
+  color: z.string(),
+  lastSignedInAt: dateTimeStringSchema,
 });
 
 const authStateSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("signed_out"),
+    accounts: z.array(storedAccountSchema),
   }),
   z.object({
     status: z.literal("signed_in"),
     account: accountSummarySchema,
+    accounts: z.array(storedAccountSchema),
+    activeAccountId: z.string(),
   }),
 ]);
 
@@ -34,6 +47,7 @@ const authSignInRequestSchema = z.object({
 
 const calendarSummarySchema = z.object({
   id: z.string(),
+  homeAccountId: z.string(),
   name: z.string(),
   color: z.string().nullable(),
   canEdit: z.boolean(),
@@ -319,10 +333,17 @@ const reminderDismissArgsSchema = z.object({
   dedupeKey: z.string().min(1),
 });
 
+const syncStatusCountsSchema = z.object({
+  calendars: z.number().int().nonnegative(),
+  events: z.number().int().nonnegative(),
+});
+
 const syncStatusSchema = z.object({
   state: z.enum(["idle", "syncing", "error"]),
   lastSyncedAt: z.string().nullable(),
   message: z.string().nullable(),
+  messageKey: z.string().nullable().optional(),
+  counts: syncStatusCountsSchema.nullable().optional(),
 });
 
 const appUpdateStateSchema = z.enum([
@@ -347,12 +368,26 @@ const appUpdateStatusSchema = z.object({
 });
 
 const updateChannelSchema = z.enum(["stable", "prerelease"]);
+const languageSettingSchema = z.enum(["system", "en", "it"]);
+const timeFormatSettingSchema = z.enum(["system", "12h", "24h"]);
+
+const languagePreferenceSchema = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  languageSettingSchema.default("system"),
+);
+
+const timeFormatPreferenceSchema = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  timeFormatSettingSchema.default("system"),
+);
 
 const userSettingsSchema = z.object({
+  activeAccountId: z.string().nullable().optional(),
   visibleCalendarIds: z.array(z.string()),
   activeView: calendarViewSchema,
   selectedDate: dateTimeStringSchema,
-  language: z.enum(["en", "it"]).nullable().optional(),
+  language: languagePreferenceSchema,
+  timeFormat: timeFormatPreferenceSchema,
   updateChannel: updateChannelSchema.default("stable"),
 });
 
@@ -361,6 +396,7 @@ const userSettingsPatchSchema = userSettingsSchema.partial();
 type CalendarView = z.infer<typeof calendarViewSchema>;
 type AccountSummary = z.infer<typeof accountSummarySchema>;
 type AuthState = z.infer<typeof authStateSchema>;
+type StoredAccount = z.infer<typeof storedAccountSchema>;
 type AuthSignInMode = z.infer<typeof authSignInModeSchema>;
 type AuthSignInRequest = z.infer<typeof authSignInRequestSchema>;
 type CalendarSummary = z.infer<typeof calendarSummarySchema>;
@@ -397,10 +433,12 @@ type UpdateChannel = z.infer<typeof updateChannelSchema>;
 
 function createDefaultSettings(): UserSettings {
   return {
+    activeAccountId: null,
     visibleCalendarIds: [],
     activeView: "timeGridWeek",
     selectedDate: new Date().toISOString(),
-    language: null,
+    language: "system",
+    timeFormat: "system",
     updateChannel: "stable",
   };
 }
@@ -410,6 +448,7 @@ export {
   authStateSchema,
   authSignInModeSchema,
   authSignInRequestSchema,
+  storedAccountSchema,
   calendarEventSchema,
   calendarSummarySchema,
   calendarViewSchema,
@@ -480,6 +519,7 @@ export {
   type SyncStatus,
   type AppUpdateState,
   type AppUpdateStatus,
+  type StoredAccount,
   type UpdateChannel,
   type UserSettings,
   type UserSettingsPatch,

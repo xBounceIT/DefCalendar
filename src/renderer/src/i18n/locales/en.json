@@ -24,7 +24,25 @@
     "signIn": "Sync Microsoft 365",
     "connecting": "Connecting…",
     "adminApproval": "Retry with Admin Approval",
-    "requestingApproval": "Requesting Approval…"
+    "requestingApproval": "Requesting Approval…",
+    "signInGoogleWorkspace": "Sync Google Workspace",
+    "signInGooglePersonal": "Sync Google Personal",
+    "signInMicrosoftPersonal": "Sync Microsoft Personal",
+    "comingSoon": "Coming soon",
+    "addAccountTitle": "Add Account",
+    "addAccountSubtitle": "Connect another calendar account.",
+    "back": "Back"
+  },
+  "calendarSelection": {
+    "title": "Choose calendars to sync",
+    "subtitle": "Select the calendars DefCalendar should actively sync for this account.",
+    "account": "Signed in as {{email}}",
+    "empty": "No calendars were found for this account.",
+    "selectAtLeastOne": "Select at least one calendar to continue.",
+    "selectedCount_one": "{{count}} of {{total}} calendar selected",
+    "selectedCount_other": "{{count}} of {{total}} calendars selected",
+    "continue": "Start syncing",
+    "continuePending": "Starting sync…"
   },
   "titleBar": {
     "minimize": "Minimize",
@@ -99,7 +117,6 @@
     "sensitivityPersonal": "Personal",
     "sensitivityPrivate": "Private",
     "sensitivityConfidential": "Confidential",
-    "showAs": "Show as",
     "showAsBusy": "Busy",
     "showAsFree": "Free",
     "showAsTentative": "Tentative",
@@ -133,7 +150,9 @@
     "yourResponse": "Your response: {{response}}",
     "comment": "Comment",
     "cancelMeeting": "Cancel meeting",
+    "duplicate": "Duplicate event",
     "recurringEvent": "Recurring event",
+    "recurring": "Recurring",
     "recurrencePattern": "Pattern",
     "recurrenceDaily": "Daily",
     "recurrenceWeekly": "Weekly",
@@ -187,9 +206,15 @@
     "dismiss": "Dismiss",
     "untitledEvent": "Untitled event",
     "snooze5min": "5 minutes",
+    "snooze10min": "10 minutes",
     "snooze15min": "15 minutes",
+    "snooze30min": "30 minutes",
     "snooze1hour": "1 hour",
-    "snoozeTomorrow": "Tomorrow"
+    "snooze2hours": "2 hours",
+    "snoozeTomorrow": "Tomorrow",
+    "minutes": "{{count}} min",
+    "hours": "{{count}} h",
+    "zeroMinutes": "0 min"
   },
   "dateFormatting": {
     "fallbackCalendar": "Calendar",
@@ -200,6 +225,15 @@
     "signInToSync": "Sign in to sync Exchange 365.",
     "syncing": "Syncing Exchange 365…",
     "connecting": "Connecting to Exchange 365…",
+    "chooseCalendars": "Choose calendars to sync.",
+    "selectCalendars": "Select at least one calendar to sync.",
+    "cacheUpToDate": "Calendar cache is up to date.",
+    "synced": {
+      "oneCalendarOneEvent": "Synced {{calendars}} calendar, {{events}} event.",
+      "oneCalendarOtherEvents": "Synced {{calendars}} calendar, {{events}} events.",
+      "otherCalendarsOneEvent": "Synced {{calendars}} calendars, {{events}} event.",
+      "otherCalendarsOtherEvents": "Synced {{calendars}} calendars, {{events}} events."
+    },
     "synced_one": "Synced {{calendars}} calendar, {{events}} event.",
     "synced_other": "Synced {{calendars}} calendars, {{events}} events.",
     "syncFailed": "Exchange 365 sync failed."
@@ -216,7 +250,13 @@
       "appearance": {
         "label": "Appearance",
         "title": "Appearance Settings",
-        "description": "Customize the look and feel of the calendar application."
+        "description": "Customize the look and feel of the calendar application.",
+        "timeFormat": "Time format",
+        "timeFormatOptions": {
+          "system": "System",
+          "12h": "12-hour",
+          "24h": "24-hour"
+        }
       },
       "calendarDefaults": {
         "label": "Calendar Defaults",
@@ -227,7 +267,12 @@
       "language": {
         "label": "Language",
         "title": "Language Settings",
-        "selectLanguage": "Select Language"
+        "selectLanguage": "Select Language",
+        "options": {
+          "system": "System",
+          "en": "English",
+          "it": "Italiano"
+        }
       },
       "notifications": {
         "label": "Notifications",

@@ -24,7 +24,25 @@
     "signIn": "Sincronizza Microsoft 365",
     "connecting": "Connessione…",
     "adminApproval": "Riprova con approvazione amministratore",
-    "requestingApproval": "Richiesta approvazione…"
+    "requestingApproval": "Richiesta approvazione…",
+    "signInGoogleWorkspace": "Sincronizza Google Workspace",
+    "signInGooglePersonal": "Sincronizza Google Personale",
+    "signInMicrosoftPersonal": "Sincronizza Microsoft Personale",
+    "comingSoon": "Presto disponibile",
+    "addAccountTitle": "Aggiungi Account",
+    "addAccountSubtitle": "Connetti un altro account calendario.",
+    "back": "Indietro"
+  },
+  "calendarSelection": {
+    "title": "Scegli i calendari da sincronizzare",
+    "subtitle": "Seleziona i calendari che DefCalendar deve sincronizzare attivamente per questo account.",
+    "account": "Accesso effettuato come {{email}}",
+    "empty": "Nessun calendario trovato per questo account.",
+    "selectAtLeastOne": "Seleziona almeno un calendario per continuare.",
+    "selectedCount_one": "{{count}} calendario selezionato su {{total}}",
+    "selectedCount_other": "{{count}} calendari selezionati su {{total}}",
+    "continue": "Avvia sincronizzazione",
+    "continuePending": "Avvio sincronizzazione…"
   },
   "titleBar": {
     "minimize": "Riduci a icona",
@@ -99,7 +117,6 @@
     "sensitivityPersonal": "Personale",
     "sensitivityPrivate": "Privato",
     "sensitivityConfidential": "Confidenziale",
-    "showAs": "Mostra come",
     "showAsBusy": "Occupato",
     "showAsFree": "Libero",
     "showAsTentative": "Provvisorio",
@@ -133,7 +150,9 @@
     "yourResponse": "La tua risposta: {{response}}",
     "comment": "Commento",
     "cancelMeeting": "Annulla riunione",
+    "duplicate": "Duplica evento",
     "recurringEvent": "Evento ricorrente",
+    "recurring": "Ricorrente",
     "recurrencePattern": "Schema",
     "recurrenceDaily": "Giornaliero",
     "recurrenceWeekly": "Settimanale",
@@ -187,9 +206,15 @@
     "dismiss": "Ignora",
     "untitledEvent": "Evento senza titolo",
     "snooze5min": "5 minuti",
+    "snooze10min": "10 minuti",
     "snooze15min": "15 minuti",
+    "snooze30min": "30 minuti",
     "snooze1hour": "1 ora",
-    "snoozeTomorrow": "Domani"
+    "snooze2hours": "2 ore",
+    "snoozeTomorrow": "Domani",
+    "minutes": "{{count}} min",
+    "hours": "{{count}} h",
+    "zeroMinutes": "0 min"
   },
   "dateFormatting": {
     "fallbackCalendar": "Calendario",
@@ -200,6 +225,15 @@
     "signInToSync": "Accedi per sincronizzare Exchange 365.",
     "syncing": "Sincronizzazione Exchange 365…",
     "connecting": "Connessione a Exchange 365…",
+    "chooseCalendars": "Scegli i calendari da sincronizzare.",
+    "selectCalendars": "Seleziona almeno un calendario da sincronizzare.",
+    "cacheUpToDate": "La cache del calendario è aggiornata.",
+    "synced": {
+      "oneCalendarOneEvent": "Sincronizzato {{calendars}} calendario, {{events}} evento.",
+      "oneCalendarOtherEvents": "Sincronizzato {{calendars}} calendario, {{events}} eventi.",
+      "otherCalendarsOneEvent": "Sincronizzati {{calendars}} calendari, {{events}} evento.",
+      "otherCalendarsOtherEvents": "Sincronizzati {{calendars}} calendari, {{events}} eventi."
+    },
     "synced_one": "Sincronizzato {{calendars}} calendario, {{events}} evento.",
     "synced_other": "Sincronizzati {{calendars}} calendari, {{events}} eventi.",
     "syncFailed": "Sincronizzazione Exchange 365 fallita."
@@ -216,7 +250,13 @@
       "appearance": {
         "label": "Aspetto",
         "title": "Impostazioni Aspetto",
-        "description": "Personalizza l'aspetto dell'applicazione calendario."
+        "description": "Personalizza l'aspetto dell'applicazione calendario.",
+        "timeFormat": "Formato orario",
+        "timeFormatOptions": {
+          "system": "Sistema",
+          "12h": "12 ore",
+          "24h": "24 ore"
+        }
       },
       "calendarDefaults": {
         "label": "Predefiniti Calendario",
@@ -227,7 +267,12 @@
       "language": {
         "label": "Lingua",
         "title": "Impostazioni Lingua",
-        "selectLanguage": "Seleziona Lingua"
+        "selectLanguage": "Seleziona Lingua",
+        "options": {
+          "system": "Sistema",
+          "en": "English",
+          "it": "Italiano"
+        }
       },
       "notifications": {
         "label": "Notifiche",

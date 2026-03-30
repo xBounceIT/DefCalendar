@@ -2,6 +2,7 @@ import type {
   CalendarEvent,
   CalendarSummary,
   EventListArgs,
+  StoredAccount,
   SyncStatus,
   UserSettings,
 } from "@shared/schemas";
@@ -9,6 +10,7 @@ import {
   calendarEventSchema,
   calendarSummarySchema,
   createDefaultSettings,
+  storedAccountSchema,
   userSettingsSchema,
 } from "@shared/schema-values";
 import { dirname, join } from "pathe";
@@ -46,31 +48,79 @@ class AppDatabase {
     this.migrate();
   }
 
-  listCalendars(): CalendarSummary[] {
-    const statement = this.db.prepare(`
-      SELECT payload_json
+  listCalendars(homeAccountId?: string): CalendarSummary[] {
+    if (homeAccountId) {
+      return this.db
+        .prepare(`
+        SELECT
+          id,
+          home_account_id,
+          name,
+          color,
+          can_edit,
+          can_share,
+          is_default_calendar,
+          owner_name,
+          owner_address,
+          payload_json
+        FROM calendars
+        WHERE home_account_id = ?
+        ORDER BY is_default_calendar DESC, name COLLATE NOCASE ASC
+      `)
+        .all(homeAccountId)
+        .map((row) => readCalendarSummary(row));
+    }
+
+    return this.db
+      .prepare(`
+      SELECT
+        id,
+        home_account_id,
+        name,
+        color,
+        can_edit,
+        can_share,
+        is_default_calendar,
+        owner_name,
+        owner_address,
+        payload_json
       FROM calendars
       ORDER BY is_default_calendar DESC, name COLLATE NOCASE ASC
-    `);
-
-    return statement
+    `)
       .all()
-      .map((row) =>
-        calendarSummarySchema.parse(JSON.parse(readStringProperty(row, "payload_json"))),
-      );
+      .map((row) => readCalendarSummary(row));
   }
 
-  listCalendarIds(): string[] {
+  listCalendarIds(homeAccountId?: string): string[] {
+    if (homeAccountId) {
+      return this.db
+        .prepare("SELECT id FROM calendars WHERE home_account_id = ?")
+        .all(homeAccountId)
+        .map((row) => readStringProperty(row, "id"));
+    }
     return this.db
       .prepare("SELECT id FROM calendars")
       .all()
       .map((row) => readStringProperty(row, "id"));
   }
 
-  upsertCalendars(calendars: CalendarSummary[]): void {
+  getCalendarHomeAccountId(calendarId: string): null | string {
+    const row = this.db
+      .prepare("SELECT home_account_id FROM calendars WHERE id = ?")
+      .get(calendarId);
+
+    if (!row) {
+      return null;
+    }
+
+    return readStringProperty(row, "home_account_id");
+  }
+
+  upsertCalendars(calendars: CalendarSummary[], homeAccountId: string): void {
     const upsert = this.db.prepare(`
       INSERT INTO calendars (
         id,
+        home_account_id,
         name,
         color,
         can_edit,
@@ -82,6 +132,7 @@ class AppDatabase {
         updated_at
       ) VALUES (
         @id,
+        @home_account_id,
         @name,
         @color,
         @can_edit,
@@ -93,6 +144,7 @@ class AppDatabase {
         @updated_at
       )
       ON CONFLICT(id) DO UPDATE SET
+        home_account_id = excluded.home_account_id,
         name = excluded.name,
         color = excluded.color,
         can_edit = excluded.can_edit,
@@ -106,24 +158,30 @@ class AppDatabase {
 
     const existingIds = new Set(
       this.db
-        .prepare("SELECT id FROM calendars")
-        .all()
+        .prepare("SELECT id FROM calendars WHERE home_account_id = ?")
+        .all(homeAccountId)
         .map((row) => readStringProperty(row, "id")),
     );
     const incomingIds = new Set(calendars.map((calendar) => calendar.id));
 
     const transaction = this.db.transaction((items: CalendarSummary[]) => {
       for (const calendar of items) {
+        const persistedCalendar = {
+          ...calendar,
+          homeAccountId,
+        };
+
         upsert.run({
-          can_edit: toSqliteBoolean(calendar.canEdit),
-          can_share: toSqliteBoolean(calendar.canShare),
-          color: calendar.color,
-          id: calendar.id,
-          is_default_calendar: toSqliteBoolean(calendar.isDefaultCalendar),
-          name: calendar.name,
-          owner_address: calendar.ownerAddress,
-          owner_name: calendar.ownerName,
-          payload_json: JSON.stringify(calendar),
+          can_edit: toSqliteBoolean(persistedCalendar.canEdit),
+          can_share: toSqliteBoolean(persistedCalendar.canShare),
+          color: persistedCalendar.color,
+          home_account_id: homeAccountId,
+          id: persistedCalendar.id,
+          is_default_calendar: toSqliteBoolean(persistedCalendar.isDefaultCalendar),
+          name: persistedCalendar.name,
+          owner_address: persistedCalendar.ownerAddress,
+          owner_name: persistedCalendar.ownerName,
+          payload_json: JSON.stringify(persistedCalendar),
           updated_at: new Date().toISOString(),
         });
       }
@@ -375,29 +433,66 @@ class AppDatabase {
   getLatestSyncStatus(): SyncStatus {
     const row = this.db
       .prepare(
-        "SELECT MAX(last_synced_at) AS lastSyncedAt, MAX(error_message) AS errorMessage FROM sync_state",
+        `
+          SELECT
+            MAX(last_synced_at) AS lastSyncedAt,
+            MAX(error_message) AS errorMessage,
+            COALESCE(SUM(CASE WHEN last_synced_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS calendarsSynced,
+            (SELECT COUNT(*) FROM events) AS eventsSynced
+          FROM sync_state
+        `,
       )
       .get();
 
     const lastSyncedAt = readNullableStringProperty(row, "lastSyncedAt");
     const errorMessage = readNullableStringProperty(row, "errorMessage");
+    const calendarsSynced = readNumberProperty(row, "calendarsSynced");
+    const eventsSynced = readNumberProperty(row, "eventsSynced");
 
     if (errorMessage) {
       return {
         lastSyncedAt,
         message: errorMessage,
+        messageKey: errorMessage === "Exchange 365 sync failed." ? "sync.syncFailed" : null,
+        counts: null,
         state: "error",
       };
     }
 
+    if (lastSyncedAt && calendarsSynced > 0) {
+      let calendarSuffix = "s";
+      if (calendarsSynced === 1) {
+        calendarSuffix = "";
+      }
+      let eventSuffix = "s";
+      if (eventsSynced === 1) {
+        eventSuffix = "";
+      }
+
+      return {
+        lastSyncedAt,
+        message: `Synced ${calendarsSynced} calendar${calendarSuffix}, ${eventsSynced} event${eventSuffix}.`,
+        messageKey: "sync.synced",
+        counts: {
+          calendars: calendarsSynced,
+          events: eventsSynced,
+        },
+        state: "idle",
+      };
+    }
+
     let message = "Sign in to sync Exchange 365.";
+    let messageKey = "sync.signInToSync";
     if (lastSyncedAt) {
       message = "Calendar cache is up to date.";
+      messageKey = "sync.cacheUpToDate";
     }
 
     return {
       lastSyncedAt,
       message,
+      messageKey,
+      counts: null,
       state: "idle",
     };
   }
@@ -423,20 +518,112 @@ class AppDatabase {
     this.db.prepare("DELETE FROM notification_state WHERE fired_at < ?").run(beforeIso);
   }
 
-  clearUserData(): void {
+  clearUserData(homeAccountId?: string): void {
+    if (homeAccountId) {
+      const deleteUserData = this.db.transaction((accountId: string) => {
+        const calendarIds = this.db
+          .prepare("SELECT id FROM calendars WHERE home_account_id = ?")
+          .all(accountId)
+          .map((row) => readStringProperty(row, "id"));
+
+        for (const calendarId of calendarIds) {
+          this.db
+            .prepare(String.raw`DELETE FROM notification_state WHERE dedupe_key LIKE ? ESCAPE '\'`)
+            .run(`${escapeLikePattern(calendarId)}:%`);
+        }
+        this.db
+          .prepare(
+            "DELETE FROM sync_state WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
+          )
+          .run(accountId);
+        this.db
+          .prepare(
+            "DELETE FROM events WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
+          )
+          .run(accountId);
+        this.db.prepare("DELETE FROM calendars WHERE home_account_id = ?").run(accountId);
+        this.db.prepare("DELETE FROM accounts WHERE home_account_id = ?").run(accountId);
+      });
+
+      deleteUserData(homeAccountId);
+      return;
+    }
     this.db.exec(`
       DELETE FROM notification_state;
       DELETE FROM sync_state;
       DELETE FROM events;
       DELETE FROM calendars;
       DELETE FROM settings;
+      DELETE FROM accounts;
     `);
+  }
+
+  saveAccounts(accounts: StoredAccount[]): void {
+    const upsert = this.db.prepare(`
+      INSERT INTO accounts (
+        home_account_id,
+        username,
+        name,
+        tenant_id,
+        color,
+        last_signed_in_at,
+        payload_json
+      ) VALUES (
+        @home_account_id,
+        @username,
+        @name,
+        @tenant_id,
+        @color,
+        @last_signed_in_at,
+        @payload_json
+      )
+      ON CONFLICT(home_account_id) DO UPDATE SET
+        username = excluded.username,
+        name = excluded.name,
+        tenant_id = excluded.tenant_id,
+        color = excluded.color,
+        last_signed_in_at = excluded.last_signed_in_at,
+        payload_json = excluded.payload_json
+    `);
+
+    const transaction = this.db.transaction((items: StoredAccount[]) => {
+      for (const account of items) {
+        upsert.run({
+          color: account.color,
+          home_account_id: account.homeAccountId,
+          last_signed_in_at: account.lastSignedInAt,
+          name: account.name,
+          payload_json: JSON.stringify(account),
+          tenant_id: account.tenantId,
+          username: account.username,
+        });
+      }
+    });
+
+    transaction(accounts);
+  }
+
+  getAccounts(): StoredAccount[] {
+    const statement = this.db.prepare(`
+      SELECT payload_json
+      FROM accounts
+      ORDER BY last_signed_in_at DESC
+    `);
+
+    return statement
+      .all()
+      .map((row) => storedAccountSchema.parse(JSON.parse(readStringProperty(row, "payload_json"))));
+  }
+
+  removeAccount(homeAccountId: string): void {
+    this.db.prepare("DELETE FROM accounts WHERE home_account_id = ?").run(homeAccountId);
   }
 
   private migrate(): void {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS calendars (
         id TEXT PRIMARY KEY,
+        home_account_id TEXT NOT NULL,
         name TEXT NOT NULL,
         color TEXT,
         can_edit INTEGER NOT NULL,
@@ -486,7 +673,32 @@ class AppDatabase {
         value_json TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS accounts (
+        home_account_id TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        name TEXT,
+        tenant_id TEXT,
+        color TEXT NOT NULL,
+        last_signed_in_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+      );
     `);
+    this.migrateCalendarsTable();
+  }
+
+  private migrateCalendarsTable(): void {
+    const tableInfo = this.db.prepare("PRAGMA table_info(calendars)").all();
+    const hasHomeAccountId = tableInfo.some(
+      (col: unknown) =>
+        typeof col === "object" &&
+        col !== null &&
+        "name" in col &&
+        (col as Record<string, unknown>).name === "home_account_id",
+    );
+    if (!hasHomeAccountId) {
+      this.db.exec("ALTER TABLE calendars ADD COLUMN home_account_id TEXT NOT NULL DEFAULT ''");
+    }
   }
 }
 
@@ -522,6 +734,42 @@ function readStringProperty(row: unknown, key: string): string {
   }
 
   throw new Error(`Expected "${key}" to be a string.`);
+}
+
+function readNumberProperty(row: unknown, key: string): number {
+  const value = readProperty(row, key);
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value === "bigint") {
+    return Number(value);
+  }
+
+  throw new Error(`Expected "${key}" to be a number.`);
+}
+
+function readCalendarSummary(row: unknown): CalendarSummary {
+  const stored = JSON.parse(readStringProperty(row, "payload_json")) as Record<string, unknown>;
+
+  return calendarSummarySchema.parse({
+    ...stored,
+    canEdit: Boolean(readNumberProperty(row, "can_edit")),
+    canShare: Boolean(readNumberProperty(row, "can_share")),
+    color: readNullableStringProperty(row, "color"),
+    homeAccountId: readStringProperty(row, "home_account_id"),
+    id: readStringProperty(row, "id"),
+    isDefaultCalendar: Boolean(readNumberProperty(row, "is_default_calendar")),
+    name: readStringProperty(row, "name"),
+    ownerAddress: readNullableStringProperty(row, "owner_address"),
+    ownerName: readNullableStringProperty(row, "owner_name"),
+  });
+}
+
+function escapeLikePattern(value: string): string {
+  return value
+    .replaceAll("\\", String.raw`\\`)
+    .replaceAll("%", String.raw`\%`)
+    .replaceAll("_", String.raw`\_`);
 }
 
 function toSqliteBoolean(value: boolean): 0 | 1 {

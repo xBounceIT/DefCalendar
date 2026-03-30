@@ -9,7 +9,6 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { faBell, faCalendar } from "@fortawesome/free-regular-svg-icons";
 import type { CalendarSummary, UpdateChannel, UserSettings } from "@shared/schemas";
-import type { AppLocale } from "../i18n";
 import { useUpdater } from "../hooks/use-updater";
 import { useVersion } from "../hooks/use-version";
 
@@ -29,6 +28,9 @@ type SettingsSection =
   | "sync"
   | "about";
 
+type LanguageSetting = UserSettings["language"];
+type TimeFormatSetting = UserSettings["timeFormat"];
+
 function CloseIcon() {
   return (
     <svg
@@ -47,14 +49,36 @@ function CloseIcon() {
   );
 }
 
-function AppearanceSection() {
+function AppearanceSection({ onSave, settings }: Pick<SettingsDialogProps, "onSave" | "settings">) {
   const { t } = useTranslation();
+
+  const timeFormatOptions: TimeFormatSetting[] = ["system", "12h", "24h"];
+  const timeFormatLabels: Record<TimeFormatSetting, string> = {
+    system: t("settings.sections.appearance.timeFormatOptions.system"),
+    "12h": t("settings.sections.appearance.timeFormatOptions.12h"),
+    "24h": t("settings.sections.appearance.timeFormatOptions.24h"),
+  };
 
   return (
     <div className="settings-section">
       <h3>{t("settings.sections.appearance.title")}</h3>
       <div className="settings-fields">
         <p className="settings-placeholder">{t("settings.sections.appearance.description")}</p>
+        <div className="field">
+          <span>{t("settings.sections.appearance.timeFormat")}</span>
+          <select
+            value={settings.timeFormat}
+            onChange={(e) => {
+              onSave({ timeFormat: e.target.value as TimeFormatSetting });
+            }}
+          >
+            {timeFormatOptions.map((timeFormat) => (
+              <option key={timeFormat} value={timeFormat}>
+                {timeFormatLabels[timeFormat]}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
     </div>
   );
@@ -87,14 +111,14 @@ function CalendarDefaultsSection({ calendars }: { calendars: CalendarSummary[] }
   );
 }
 
-function LanguageSection() {
-  const { t, i18n } = useTranslation();
-  const currentLocale = i18n.language as AppLocale;
+function LanguageSection({ onSave, settings }: Pick<SettingsDialogProps, "onSave" | "settings">) {
+  const { t } = useTranslation();
 
-  const supportedLocales: AppLocale[] = ["en", "it"];
-  const localeLabels: Record<AppLocale, string> = {
-    en: "English",
-    it: "Italiano",
+  const languageOptions: LanguageSetting[] = ["system", "en", "it"];
+  const languageLabels: Record<LanguageSetting, string> = {
+    system: t("settings.sections.language.options.system"),
+    en: t("settings.sections.language.options.en"),
+    it: t("settings.sections.language.options.it"),
   };
 
   return (
@@ -104,15 +128,14 @@ function LanguageSection() {
         <div className="field">
           <span>{t("settings.sections.language.selectLanguage")}</span>
           <select
-            value={currentLocale}
+            value={settings.language}
             onChange={(e) => {
-              const newLocale = e.target.value as AppLocale;
-              void i18n.changeLanguage(newLocale);
+              onSave({ language: e.target.value as LanguageSetting });
             }}
           >
-            {supportedLocales.map((locale) => (
-              <option key={locale} value={locale}>
-                {localeLabels[locale]}
+            {languageOptions.map((language) => (
+              <option key={language} value={language}>
+                {languageLabels[language]}
               </option>
             ))}
           </select>
@@ -274,7 +297,7 @@ function AboutSection({ onSave, settings }: AboutSectionProps) {
             </details>
           )}
           {(status?.error || statusError instanceof Error) && (
-            <p className="settings-updates__error">{status?.error ?? statusError.message}</p>
+            <p className="settings-updates__error">{status?.error ?? statusError?.message ?? ""}</p>
           )}
           <p className="settings-updates__timestamp">
             {statusLoading ? t("settings.updates.loading") : lastChecked}
@@ -323,7 +346,7 @@ function SettingsDialog({
   calendars,
   settings,
   onSave,
-}: SettingsDialogProps): JSX.Element | null {
+}: SettingsDialogProps): React.JSX.Element | null {
   const { t } = useTranslation();
   const [activeSection, setActiveSection] = useState<SettingsSection>("appearance");
 
@@ -347,13 +370,13 @@ function SettingsDialog({
   function renderSectionContent() {
     switch (activeSection) {
       case "appearance": {
-        return <AppearanceSection />;
+        return <AppearanceSection onSave={onSave} settings={settings} />;
       }
       case "calendarDefaults": {
         return <CalendarDefaultsSection calendars={calendars} />;
       }
       case "language": {
-        return <LanguageSection />;
+        return <LanguageSection onSave={onSave} settings={settings} />;
       }
       case "notifications": {
         return <NotificationsSection />;
@@ -365,7 +388,7 @@ function SettingsDialog({
         return <AboutSection onSave={onSave} settings={settings} />;
       }
       default: {
-        return <AppearanceSection />;
+        return <AppearanceSection onSave={onSave} settings={settings} />;
       }
     }
   }

@@ -5,11 +5,13 @@ import type {
   EventDropArg,
   EventInput,
 } from "@fullcalendar/core";
-import type { CalendarView } from "@shared/schemas";
+import itLocale from "@fullcalendar/core/locales/it";
+import type { CalendarView, UserSettings } from "@shared/schemas";
 import type { EventResizeDoneArg } from "@fullcalendar/interaction";
 import FullCalendar from "@fullcalendar/react";
 import React from "react";
 import dayGridPlugin from "@fullcalendar/daygrid";
+import { buildEventTimeFormat } from "../date-formatting";
 import interactionPlugin from "../interaction-plugin";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import { useTranslation } from "react-i18next";
@@ -25,10 +27,10 @@ interface CalendarBoardProps {
   onEventResize: (changeInfo: EventResizeDoneArg) => void;
   onSelection: (selection: DateSelectArg) => void;
   selectedDate: string;
+  timeFormat: UserSettings["timeFormat"];
 }
 
 const CALENDAR_PLUGINS = [dayGridPlugin, timeGridPlugin, interactionPlugin];
-const EVENT_TIME_FORMAT = { hour: "numeric", meridiem: false, minute: "2-digit" } as const;
 
 interface EventMountInfo {
   event: {
@@ -47,7 +49,7 @@ function handleEventDidMount(info: EventMountInfo): void {
 }
 
 function EmptyState() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   return (
     <div className="empty-state">
@@ -67,12 +69,16 @@ function CalendarSurface({
   onEventResize,
   onSelection,
   selectedDate,
+  timeFormat,
 }: Omit<CalendarBoardProps, "hasVisibleCalendars">) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const locale = React.useMemo(() => (i18n.language === "it" ? "it" : "en"), [i18n.language]);
+  const eventTimeFormat = React.useMemo(() => buildEventTimeFormat(timeFormat), [timeFormat]);
 
   return (
     <FullCalendar
       allDayMaintainDuration
+      allDayText={t("eventEditor.allDay")}
       datesSet={onDatesSet}
       dayMaxEvents={3}
       dayMaxEventRows={3}
@@ -82,11 +88,13 @@ function CalendarSurface({
       eventDisplay="block"
       eventDrop={onEventDrop}
       eventResize={onEventResize}
-      eventTimeFormat={EVENT_TIME_FORMAT}
+      eventTimeFormat={eventTimeFormat}
       events={calendarEvents}
       firstDay={1}
       headerToolbar={false}
       height="100%"
+      locale={locale}
+      locales={[itLocale]}
       initialDate={selectedDate}
       initialView={activeView}
       moreLinkText={(count) => t("calendarBoard.moreEvents", { count })}
@@ -97,6 +105,7 @@ function CalendarSurface({
       select={onSelection}
       selectMirror
       slotMaxTime="23:00:00"
+      slotLabelFormat={eventTimeFormat}
       slotMinTime="07:00:00"
       weekNumbers
       weekNumberFormat={{ week: "numeric" }}
@@ -160,6 +169,7 @@ function CalendarBoard(props: CalendarBoardProps) {
         onEventResize={props.onEventResize}
         onSelection={props.onSelection}
         selectedDate={props.selectedDate}
+        timeFormat={props.timeFormat}
       />
     </div>
   );

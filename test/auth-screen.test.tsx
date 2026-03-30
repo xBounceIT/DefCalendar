@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import AuthScreen from "../src/renderer/src/components/auth-screen";
@@ -40,6 +41,32 @@ describe("auth screen", () => {
     expect(screen.getByText(/Welcome to DefCalendar/i)).not.toBeNull();
     expect(screen.getByText(/Your personal calendar companion\./i)).not.toBeNull();
     expect(screen.queryByRole("button", { name: /admin approval/i })).toBeNull();
+  });
+
+  it("renders the disabled sync buttons with 'Coming soon' labels", () => {
+    renderAuthScreen({
+      errorMessage: null,
+      isPending: false,
+      onAdminApproval: vi.fn(),
+      onSignIn: vi.fn(),
+      pendingMode: "user",
+      showAdminApprovalAction: false,
+    });
+
+    const googleWorkspaceBtns = screen.getAllByRole("button", { name: /Sync Google Workspace/ });
+    const googlePersonalBtns = screen.getAllByRole("button", { name: /Sync Google Personal/ });
+    const microsoftPersonalBtns = screen.getAllByRole("button", {
+      name: /Sync Microsoft Personal/,
+    });
+
+    expect(googleWorkspaceBtns[0]).toBeInTheDocument();
+    expect(googleWorkspaceBtns[0]).toBeDisabled();
+    expect(googlePersonalBtns[0]).toBeInTheDocument();
+    expect(googlePersonalBtns[0]).toBeDisabled();
+    expect(microsoftPersonalBtns[0]).toBeInTheDocument();
+    expect(microsoftPersonalBtns[0]).toBeDisabled();
+
+    expect(screen.getAllByText("Coming soon").length).toBeGreaterThanOrEqual(3);
   });
 
   it("renders the admin approval retry when the tenant requires approval", () => {

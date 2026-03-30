@@ -22,17 +22,17 @@ import type {
   CalendarSummary,
   CancelEventArgs,
   EventDraft,
-  EventParticipant,
   EventResponseAction,
   RespondToEventArgs,
   SyncStatus,
 } from "@shared/schemas";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { setAppLocale } from "./i18n";
+import { resolveLocaleSettingAsync, setAppLocale } from "./i18n";
 
 import AuthScreen from "./components/auth-screen";
 import CalendarSidebar from "./components/calendar-sidebar";
+import CalendarSelectionScreen from "./components/calendar-selection-screen";
 import SettingsDialog from "./components/settings-dialog";
 import type { EditorState } from "./event-editor-state";
 import EventEditorDialog from "./components/event-editor-dialog";
@@ -74,19 +74,26 @@ function StartupFailureScreen() {
 }
 
 function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const calendarRef = useRef<FullCalendar | null>(null);
   const queryClient = useQueryClient();
+  const fallbackSettings = useMemo(() => createDefaultSettings(), []);
   const [bannerError, setBannerError] = useState<string | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [editorState, setEditorState] = useState<EditorState | null>(null);
   const [pendingSignInMode, setPendingSignInMode] = useState<AuthSignInMode>("user");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [showAuthScreen, setShowAuthScreen] = useState(false);
+  const [showCalendarSelection, setShowCalendarSelection] = useState(false);
+  const [isApplyingCalendarSelection, setIsApplyingCalendarSelection] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
     lastSyncedAt: null,
-    message: t("sync.signInToSync"),
+    message: "Sign in to sync Exchange 365.",
+    messageKey: "sync.signInToSync",
+    counts: null,
     state: "idle",
   });
+  const localizedSyncStatus = useMemo(() => localizeSyncStatus(syncStatus, t), [syncStatus, t]);
   const {
     activeView,
     hydrate,
@@ -104,12 +111,17 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     queryKey: ["auth"],
   });
   const signedIn = authQuery.data?.status === "signed_in";
+  const accounts: AccountSummary[] = authQuery.data?.accounts ?? [];
+  const activeAccountId =
+    authQuery.data?.status === "signed_in" ? authQuery.data.activeAccountId : null;
+  const activeAccount = accounts.find((a) => a.homeAccountId === activeAccountId) ?? null;
 
   const settingsQuery = useQuery({
-    enabled: signedIn,
     queryFn: () => calendarApi.settings.get(),
     queryKey: ["settings"],
   });
+
+  const appSettings = settingsQuery.data ?? fallbackSettings;
 
   const calendarsQuery = useQuery({
     enabled: signedIn,
@@ -152,16 +164,21 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     },
     onSuccess: async () => {
       setBannerError(null);
+      setShowAuthScreen(false);
+      setShowCalendarSelection(true);
+      queryClient.setQueryData(["calendars"], EMPTY_CALENDARS);
+      queryClient.setQueryData(["events"], EMPTY_EVENTS);
       await invalidateCalendarData(queryClient);
     },
   });
 
   const signOutMutation = useMutation({
-    mutationFn: () => calendarApi.auth.signOut(),
+    mutationFn: (homeAccountId?: string) => calendarApi.auth.signOut(homeAccountId),
     onError: (error) => {
       setBannerError(toErrorMessage(error));
     },
     onSuccess: async () => {
+      setShowCalendarSelection(false);
       setEditorState(null);
       await invalidateCalendarData(queryClient);
     },
@@ -244,19 +261,13 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   useEffect(() => {
     async function loadSyncStatus(): Promise<void> {
       const status = await calendarApi.sync.getStatus();
-      setSyncStatus({
-        ...status,
-        message: translateSyncMessage(status.message, t),
-      });
+      setSyncStatus(status);
     }
 
     void loadSyncStatus();
 
     const unsubscribeSync = calendarApi.sync.onStatus((status) => {
-      setSyncStatus({
-        ...status,
-        message: translateSyncMessage(status.message, t),
-      });
+      setSyncStatus(status);
       if (status.state !== "syncing") {
         void Promise.all([
           queryClient.invalidateQueries({ queryKey: ["calendars"] }),
@@ -273,23 +284,30 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
       unsubscribeSync();
       unsubscribeAuth();
     };
-  }, [queryClient, t, calendarApi]);
+  }, [queryClient, calendarApi]);
 
   useEffect(() => {
     if (settingsQuery.data && !hydrated) {
       hydrate(settingsQuery.data);
-      if (settingsQuery.data.language) {
-        setAppLocale(settingsQuery.data.language);
-      }
     }
   }, [hydrate, hydrated, settingsQuery.data]);
 
   useEffect(() => {
-    setSyncStatus((prev) => ({
-      ...prev,
-      message: translateSyncMessage(prev.message, t),
-    }));
-  }, [i18n.language, t]);
+    let cancelled = false;
+
+    async function applyLocalePreference(): Promise<void> {
+      const locale = await resolveLocaleSettingAsync(appSettings.language);
+      if (!cancelled) {
+        setAppLocale(locale);
+      }
+    }
+
+    void applyLocalePreference();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [appSettings.language]);
 
   useEffect(() => {
     if (!signedIn || !hydrated) {
@@ -315,18 +333,17 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     }
 
     const targetDate = new Date(selectedDate);
-    if (!Number.isNaN(targetDate.getTime())) {
+    const currentDateIso = api.getDate().toISOString();
+    if (!Number.isNaN(targetDate.getTime()) && currentDateIso !== selectedDate) {
       api.gotoDate(targetDate);
     }
   }, [activeView, hydrated, selectedDate]);
 
-  let account: AccountSummary | null = null;
-  if (signedIn && authQuery.data?.status === "signed_in") {
-    const { account: signedInAccount } = authQuery.data;
-    account = signedInAccount;
-  }
-
   const calendars = calendarsQuery.data ?? EMPTY_CALENDARS;
+  const activeAccountCalendars = useMemo(
+    () => calendars.filter((calendar) => calendar.homeAccountId === activeAccountId),
+    [activeAccountId, calendars],
+  );
   let events = EMPTY_EVENTS;
   if (visibleCalendarIds.length > 0 && eventsQuery.data) {
     events = eventsQuery.data;
@@ -337,11 +354,10 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     [calendars],
   );
 
-  let editableCalendar =
-    calendars.find((calendar) => calendar.isVisible && calendar.canEdit) ?? null;
-  if (!editableCalendar) {
-    editableCalendar = calendars.find((calendar) => calendar.canEdit) ?? null;
-  }
+  const editableCalendar = useMemo(
+    () => getPreferredEditableCalendar(calendars, activeAccountId),
+    [activeAccountId, calendars],
+  );
 
   const eventLookup = useMemo(
     () => new Map(events.map((event) => [`${event.calendarId}:${event.id}`, event])),
@@ -387,6 +403,23 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     });
   }
 
+  function handleDuplicate(draft: EventDraft): void {
+    if (!editableCalendar) {
+      setBannerError(t("app.noWritableCalendar"));
+      return;
+    }
+
+    setDialogError(null);
+    setEditorState({
+      allDay: draft.isAllDay,
+      calendarId: draft.calendarId,
+      draft,
+      end: draft.end,
+      mode: "create",
+      start: draft.start,
+    });
+  }
+
   function handleSelection(selection: DateSelectArg): void {
     openCreateDialog({
       allDay: selection.allDay,
@@ -424,15 +457,27 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     }
 
     const nextDraft: EventDraft = {
+      allowNewTimeProposals: source.allowNewTimeProposals ?? true,
+      attachmentIdsToRemove: [],
+      attachmentsToAdd: [],
+      attendees: source.attendees,
       body: source.body,
+      bodyContentType: source.bodyContentType,
       calendarId: source.calendarId,
+      categories: source.categories,
       end: getEventBoundary(changeInfo.event.end, source.end),
       etag: source.etag,
       id: source.id,
       isAllDay: source.isAllDay,
+      isOnlineMeeting: source.isOnlineMeeting,
       isReminderOn: source.isReminderOn,
       location: source.location,
+      recurrence: source.recurrence,
+      recurrenceEditScope: "single",
       reminderMinutesBeforeStart: source.reminderMinutesBeforeStart,
+      responseRequested: source.responseRequested ?? true,
+      sensitivity: source.sensitivity ?? "normal",
+      showAs: source.showAs ?? "busy",
       start: getEventBoundary(changeInfo.event.start, source.start),
       subject: source.subject,
       timeZone: source.timeZone,
@@ -447,11 +492,19 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   }
 
   function handleDatesSet(dates: DatesSetArg): void {
-    setRange(dates.start.toISOString(), dates.end.toISOString());
-    setSelectedDate(dates.view.calendar.getDate().toISOString());
+    const nextRangeStart = dates.start.toISOString();
+    const nextRangeEnd = dates.end.toISOString();
+    if (rangeStart !== nextRangeStart || rangeEnd !== nextRangeEnd) {
+      setRange(nextRangeStart, nextRangeEnd);
+    }
+
+    const nextSelectedDate = dates.view.calendar.getDate().toISOString();
+    if (selectedDate !== nextSelectedDate) {
+      setSelectedDate(nextSelectedDate);
+    }
 
     const nextView = calendarViewSchema.safeParse(dates.view.type);
-    if (nextView.success) {
+    if (nextView.success && activeView !== nextView.data) {
       setActiveView(nextView.data);
     }
   }
@@ -542,11 +595,51 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     signInMutation.mutate(mode);
   }
 
+  async function handleCalendarSelectionContinue(selectedCalendarIds: string[]): Promise<void> {
+    const selectionCalendars = activeAccountCalendars;
+    if (selectionCalendars.length > 0 && selectedCalendarIds.length === 0) {
+      setBannerError(t("calendarSelection.selectAtLeastOne"));
+      return;
+    }
+
+    setBannerError(null);
+    setIsApplyingCalendarSelection(true);
+
+    try {
+      const selectedIds = new Set(selectedCalendarIds);
+
+      for (const calendar of selectionCalendars) {
+        const shouldBeVisible = selectedIds.has(calendar.id);
+        if (calendar.isVisible !== shouldBeVisible) {
+          await calendarApi.calendars.setVisibility({
+            calendarId: calendar.id,
+            isVisible: shouldBeVisible,
+          });
+        }
+      }
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["calendars"] }),
+        queryClient.invalidateQueries({ queryKey: ["events"] }),
+      ]);
+
+      if (selectedCalendarIds.length > 0) {
+        await refreshMutation.mutateAsync();
+      }
+
+      setShowCalendarSelection(false);
+    } catch (error) {
+      setBannerError(toErrorMessage(error));
+    } finally {
+      setIsApplyingCalendarSelection(false);
+    }
+  }
+
   if (authQuery.isLoading) {
     return <div className="loading-shell">{t("app.loading")}</div>;
   }
 
-  if (!signedIn) {
+  if (!signedIn || showAuthScreen) {
     let signInError = bannerError;
     if (!signInError) {
       signInError = toErrorMessage(signInMutation.error);
@@ -555,10 +648,12 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     return (
       <AuthScreen
         errorMessage={signInError}
+        isAddAccountMode={signedIn && showAuthScreen}
         isPending={signInMutation.isPending}
         onAdminApproval={() => {
           startSignIn("admin_consent");
         }}
+        onCancel={signedIn ? () => setShowAuthScreen(false) : undefined}
         onSignIn={() => {
           startSignIn("user");
         }}
@@ -568,9 +663,23 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     );
   }
 
-  let accountName: string | null = null;
-  if (account?.name) {
-    accountName = account.name;
+  if (showCalendarSelection) {
+    let calendarSelectionError = bannerError;
+    if (!calendarSelectionError) {
+      calendarSelectionError = toErrorMessage(calendarsQuery.error);
+    }
+
+    return (
+      <CalendarSelectionScreen
+        accountEmail={activeAccount?.username ?? null}
+        calendars={activeAccountCalendars}
+        errorMessage={calendarSelectionError}
+        isPending={isApplyingCalendarSelection || refreshMutation.isPending}
+        onContinue={(selectedCalendarIds) => {
+          void handleCalendarSelectionContinue(selectedCalendarIds);
+        }}
+      />
+    );
   }
 
   const bannerMessage = buildBannerMessage({
@@ -592,11 +701,11 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     <div className="app-shell">
       <TitleBar />
       <CalendarSidebar
-        accountEmail={account?.username ?? ""}
-        accountName={accountName}
+        accounts={accounts}
         calendars={calendars}
         canCreateEvent={Boolean(editableCalendar)}
         isRefreshing={refreshMutation.isPending}
+        onAccountAdd={() => setShowAuthScreen(true)}
         onCalendarToggle={(calendar) => {
           void handleCalendarToggle(calendar);
         }}
@@ -607,10 +716,11 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         }}
         onSettingsClick={() => setIsSettingsOpen(true)}
         onSignOut={() => {
-          signOutMutation.mutate();
+          signOutMutation.mutate(undefined);
         }}
         selectedDate={selectedDate}
-        syncStatus={syncStatus}
+        syncStatus={localizedSyncStatus}
+        timeFormat={appSettings.timeFormat}
       />
       <WorkspacePanel
         activeView={activeView}
@@ -634,41 +744,45 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         onToday={handleToday}
         onViewSelect={handleViewSelect}
         selectedDate={selectedDate}
+        timeFormat={appSettings.timeFormat}
       />
       <SettingsDialog
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
-        settings={settingsQuery.data ?? createDefaultSettings()}
+        settings={appSettings}
         calendars={calendars}
         onSave={(newSettings) => {
-          void calendarApi.settings.update(newSettings);
+          const previousSettings = appSettings;
+          const nextSettings = { ...previousSettings, ...newSettings };
+          queryClient.setQueryData(["settings"], nextSettings);
+
+          void calendarApi.settings
+            .update(newSettings)
+            .then((savedSettings) => {
+              queryClient.setQueryData(["settings"], savedSettings);
+            })
+            .catch(() => {
+              queryClient.setQueryData(["settings"], previousSettings);
+            });
         }}
       />
       <EventEditorDialog
+        accounts={accounts}
         onAddAttachment={addEventAttachment}
         onCancelMeeting={cancelMeeting}
         busy={busy}
         calendars={calendars}
-        currentUser={
-          account
-            ? {
-                email: account.username,
-                name: account.name,
-                response: null,
-                status: null,
-                type: "required",
-              }
-            : null
-        }
         errorMessage={dialogError}
         onListAttachments={listEventAttachments}
         onDelete={deleteDraft}
         onDismiss={dismissEditor}
+        onDuplicate={handleDuplicate}
         onOpenInOutlook={openExternalEvent}
         onRemoveAttachment={removeEventAttachment}
         onRespond={respondToMeeting}
         onSave={saveDraft}
         state={editorState}
+        timeFormat={appSettings.timeFormat}
       />
     </div>
   );
@@ -736,6 +850,23 @@ function buildCalendarEvents(
   });
 }
 
+function getPreferredEditableCalendar(
+  calendars: CalendarSummary[],
+  activeAccountId: null | string,
+): CalendarSummary | null {
+  const activeCalendars = calendars.filter(
+    (calendar) => calendar.homeAccountId === activeAccountId,
+  );
+
+  return (
+    activeCalendars.find((calendar) => calendar.isVisible && calendar.canEdit) ??
+    activeCalendars.find((calendar) => calendar.canEdit) ??
+    calendars.find((calendar) => calendar.isVisible && calendar.canEdit) ??
+    calendars.find((calendar) => calendar.canEdit) ??
+    null
+  );
+}
+
 function getEventBoundary(value: Date | null | undefined, fallback: string): string {
   if (value) {
     return value.toISOString();
@@ -787,22 +918,46 @@ const SYNC_MESSAGE_MAP: Record<string, string> = {
   "Sign in to sync Exchange 365.": "sync.signInToSync",
   "Syncing Exchange 365\u2026": "sync.syncing",
   "Connecting to Exchange 365\u2026": "sync.connecting",
+  "Choose calendars to sync.": "sync.chooseCalendars",
+  "Select at least one calendar to sync.": "sync.selectCalendars",
+  "Calendar cache is up to date.": "sync.cacheUpToDate",
   "Exchange 365 sync failed.": "sync.syncFailed",
 };
 
-function translateSyncMessage(
-  message: null | string,
+function translateSyncedCounts(
+  counts: NonNullable<SyncStatus["counts"]>,
   t: (key: string, opts?: Record<string, unknown>) => string,
-): null | string {
-  if (!message) {
-    return null;
+): string {
+  const { calendars, events } = counts;
+
+  if (calendars === 1 && events === 1) {
+    return t("sync.synced.oneCalendarOneEvent", { calendars, events });
+  }
+  if (calendars === 1) {
+    return t("sync.synced.oneCalendarOtherEvents", { calendars, events });
+  }
+  if (events === 1) {
+    return t("sync.synced.otherCalendarsOneEvent", { calendars, events });
   }
 
-  const syncMatch = message.match(/^Synced (\d+) calendar\(s?\), (\d+) event\(s?\)\.$/);
-  if (syncMatch) {
-    const calendars = Number.parseInt(syncMatch[1], 10);
-    const events = Number.parseInt(syncMatch[3], 10);
-    return t("sync.synced", { count: events, calendars, events });
+  return t("sync.synced.otherCalendarsOtherEvents", { calendars, events });
+}
+
+function translateSyncMessage(
+  status: SyncStatus,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): null | string {
+  if (status.counts) {
+    return translateSyncedCounts(status.counts, t);
+  }
+
+  if (status.messageKey) {
+    return t(status.messageKey);
+  }
+
+  const { message } = status;
+  if (!message) {
+    return null;
   }
 
   const key = SYNC_MESSAGE_MAP[message];
@@ -811,6 +966,16 @@ function translateSyncMessage(
   }
 
   return message;
+}
+
+function localizeSyncStatus(
+  status: SyncStatus,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): SyncStatus {
+  return {
+    ...status,
+    message: translateSyncMessage(status, t),
+  };
 }
 
 export default App;

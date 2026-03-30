@@ -40,6 +40,21 @@ describe("settings service", () => {
     expect(fixture.readSettings().visibleCalendarIds).toEqual(["calendar-a"]);
   });
 
+  it("preserves visible calendars from other accounts", () => {
+    const fixture = createSettingsFixture(["calendar-a", "calendar-b"]);
+
+    fixture.service.syncVisibleCalendars({
+      calendarIds: ["calendar-a", "calendar-c"],
+      knownCalendarIds: ["calendar-a"],
+    });
+
+    expect(fixture.readSettings().visibleCalendarIds).toEqual([
+      "calendar-a",
+      "calendar-b",
+      "calendar-c",
+    ]);
+  });
+
   it("shows newly discovered calendars by default", () => {
     const fixture = createSettingsFixture(["calendar-a"]);
 

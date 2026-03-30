@@ -49,6 +49,15 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     }));
   };
 
+  const resolveCalendarHomeAccountId = (calendarId: string) => {
+    const homeAccountId = dependencies.db.getCalendarHomeAccountId(calendarId);
+    if (!homeAccountId) {
+      throw new Error("Calendar not found.");
+    }
+
+    return homeAccountId;
+  };
+
   const broadcast = (channel: string, payload: unknown) => {
     const window = dependencies.getMainWindow();
     if (window && !window.isDestroyed()) {
@@ -89,12 +98,30 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     return state;
   });
 
-  ipcMain.handle(IPC_CHANNELS.authSignOut, async (event) => {
+  ipcMain.handle(IPC_CHANNELS.authSignOut, async (event, homeAccountId?: string) => {
     validateSender(event);
-    await dependencies.auth.signOut();
-    dependencies.db.clearUserData();
-    dependencies.sync.reset();
+    const activeAccountId = homeAccountId ?? dependencies.auth.getActiveAccountId();
+    await dependencies.auth.signOut(activeAccountId ?? undefined);
+    if (activeAccountId) {
+      dependencies.db.clearUserData(activeAccountId);
+    } else {
+      dependencies.db.clearUserData();
+    }
+    if (dependencies.auth.hasSession()) {
+      await dependencies.sync.syncAll("manual");
+    } else {
+      dependencies.sync.reset();
+    }
     const state = dependencies.auth.getAuthState();
+    broadcast(IPC_CHANNELS.authStateChanged, state);
+    broadcast(IPC_CHANNELS.syncStatusChanged, dependencies.sync.getStatus());
+    return state;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.authSwitchAccount, async (event, homeAccountId: string) => {
+    validateSender(event);
+    const state = await dependencies.auth.switchAccount(homeAccountId);
+    await dependencies.sync.syncAll("switch-account", homeAccountId);
     broadcast(IPC_CHANNELS.authStateChanged, state);
     broadcast(IPC_CHANNELS.syncStatusChanged, dependencies.sync.getStatus());
     return state;
@@ -121,9 +148,10 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   ipcMain.handle(IPC_CHANNELS.eventsCreate, async (event, input) => {
     validateSender(event);
     const draft = eventDraftSchema.parse(input);
-    const created = await dependencies.graph.createEvent(draft);
+    const homeAccountId = resolveCalendarHomeAccountId(draft.calendarId);
+    const created = await dependencies.graph.createEvent(draft, homeAccountId);
     dependencies.db.upsertEvent(created);
-    void dependencies.sync.syncAll("mutation");
+    void dependencies.sync.syncAll("mutation", homeAccountId);
     return created;
   });
 
@@ -139,9 +167,10 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
       throw new Error(current.unsupportedReason);
     }
 
-    const updated = await dependencies.graph.updateEvent(draft);
+    const homeAccountId = resolveCalendarHomeAccountId(draft.calendarId);
+    const updated = await dependencies.graph.updateEvent(draft, homeAccountId);
     dependencies.db.upsertEvent(updated);
-    void dependencies.sync.syncAll("mutation");
+    void dependencies.sync.syncAll("mutation", homeAccountId);
     return updated;
   });
 
@@ -153,30 +182,43 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
       throw new Error(current.unsupportedReason);
     }
 
-    await dependencies.graph.deleteEvent(args.calendarId, args.eventId, args.etag);
+    const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
+    await dependencies.graph.deleteEvent(args.calendarId, args.eventId, homeAccountId, args.etag);
     dependencies.db.deleteEvent(args.calendarId, args.eventId);
-    void dependencies.sync.syncAll("mutation");
+    void dependencies.sync.syncAll("mutation", homeAccountId);
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsRespond, async (event, input) => {
     validateSender(event);
     const args = respondToEventArgsSchema.parse(input);
-    await dependencies.graph.respondToEvent(args);
-    void dependencies.sync.syncAll("mutation");
+    const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
+    await dependencies.graph.respondToEvent(args, homeAccountId);
+    void dependencies.sync.syncAll("mutation", homeAccountId);
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsCancel, async (event, input) => {
     validateSender(event);
     const args = cancelEventArgsSchema.parse(input);
-    await dependencies.graph.cancelEvent(args.calendarId, args.eventId, args.comment);
+    const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
+    await dependencies.graph.cancelEvent(
+      args.calendarId,
+      args.eventId,
+      homeAccountId,
+      args.comment,
+    );
     dependencies.db.deleteEvent(args.calendarId, args.eventId);
-    void dependencies.sync.syncAll("mutation");
+    void dependencies.sync.syncAll("mutation", homeAccountId);
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsListAttachments, async (event, input) => {
     validateSender(event);
     const args = eventReferenceArgsSchema.parse(input);
-    const attachments = await dependencies.graph.listAttachments(args.calendarId, args.eventId);
+    const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
+    const attachments = await dependencies.graph.listAttachments(
+      args.calendarId,
+      args.eventId,
+      homeAccountId,
+    );
     const current = dependencies.db.getEvent(args.calendarId, args.eventId);
     if (current) {
       dependencies.db.upsertEvent({
@@ -191,36 +233,48 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   ipcMain.handle(IPC_CHANNELS.eventsAddAttachment, async (event, input) => {
     validateSender(event);
     const args = attachmentUploadArgsSchema.parse(input);
+    const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
     const attachments = await dependencies.graph.addAttachment(
       args.calendarId,
       args.eventId,
       args.attachment,
+      homeAccountId,
     );
-    const refreshed = await dependencies.graph.getEvent(args.calendarId, args.eventId);
+    const refreshed = await dependencies.graph.getEvent(
+      args.calendarId,
+      args.eventId,
+      homeAccountId,
+    );
     dependencies.db.upsertEvent({
       ...refreshed,
       attachments,
       hasAttachments: attachments.length > 0,
     });
-    void dependencies.sync.syncAll("mutation");
+    void dependencies.sync.syncAll("mutation", homeAccountId);
     return attachments;
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsRemoveAttachment, async (event, input) => {
     validateSender(event);
     const args = attachmentDeleteArgsSchema.parse(input);
+    const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
     const attachments = await dependencies.graph.removeAttachment(
       args.calendarId,
       args.eventId,
       args.attachmentId,
+      homeAccountId,
     );
-    const refreshed = await dependencies.graph.getEvent(args.calendarId, args.eventId);
+    const refreshed = await dependencies.graph.getEvent(
+      args.calendarId,
+      args.eventId,
+      homeAccountId,
+    );
     dependencies.db.upsertEvent({
       ...refreshed,
       attachments,
       hasAttachments: attachments.length > 0,
     });
-    void dependencies.sync.syncAll("mutation");
+    void dependencies.sync.syncAll("mutation", homeAccountId);
     return attachments;
   });
 

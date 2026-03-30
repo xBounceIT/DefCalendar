@@ -37,13 +37,31 @@ const useUiStore = create<UiState>((set) => ({
     }));
   },
   setActiveView: (activeView) => {
-    set(() => ({ activeView }));
+    set((state) => {
+      if (state.activeView === activeView) {
+        return state;
+      }
+
+      return { activeView };
+    });
   },
   setSelectedDate: (selectedDate) => {
-    set(() => ({ selectedDate }));
+    set((state) => {
+      if (state.selectedDate === selectedDate) {
+        return state;
+      }
+
+      return { selectedDate };
+    });
   },
   setRange: (rangeStart, rangeEnd) => {
-    set(() => ({ rangeStart, rangeEnd }));
+    set((state) => {
+      if (state.rangeStart === rangeStart && state.rangeEnd === rangeEnd) {
+        return state;
+      }
+
+      return { rangeStart, rangeEnd };
+    });
   },
 }));
 

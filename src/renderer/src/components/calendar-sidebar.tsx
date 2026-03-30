@@ -1,4 +1,4 @@
-import type { CalendarSummary, SyncStatus } from "@shared/schemas";
+import type { AccountSummary, CalendarSummary, SyncStatus, UserSettings } from "@shared/schemas";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCircleUser, faPlus } from "@fortawesome/free-solid-svg-icons";
 import { getCalendarAccent } from "@shared/calendar";
@@ -9,11 +9,11 @@ import { useTranslation } from "react-i18next";
 
 interface CalendarSidebarProps {
   onSettingsClick: () => void;
-  accountEmail: string;
-  accountName: null | string;
+  accounts: AccountSummary[];
   calendars: CalendarSummary[];
   canCreateEvent: boolean;
   isRefreshing: boolean;
+  onAccountAdd: () => void;
   onCalendarToggle: (calendar: CalendarSummary) => void;
   onCreateEvent: () => void;
   onDateSelect: (date: Date) => void;
@@ -21,6 +21,7 @@ interface CalendarSidebarProps {
   onSignOut: () => void;
   selectedDate: string;
   syncStatus: SyncStatus;
+  timeFormat: UserSettings["timeFormat"];
 }
 
 function ChevronIcon({ expanded }: { expanded: boolean }) {
@@ -44,13 +45,18 @@ function ChevronIcon({ expanded }: { expanded: boolean }) {
   );
 }
 
-function CalendarListHeader() {
+function CalendarListHeader({ onAdd }: { onAdd: () => void }) {
   const { t } = useTranslation();
 
   return (
     <div className="calendar-list-header">
       <h2>{t("sidebar.accounts")}</h2>
-      <button className="add-account-btn" title={t("sidebar.addAccount")} type="button">
+      <button
+        className="add-account-btn"
+        onClick={onAdd}
+        title={t("sidebar.addAccount")}
+        type="button"
+      >
         <FontAwesomeIcon icon={faPlus} />
       </button>
     </div>
@@ -88,13 +94,13 @@ function CalendarRow({
 }
 
 function CalendarListGroup({
-  email,
+  account,
   calendars,
   onCalendarToggle,
   isExpanded,
   onToggle,
 }: {
-  email: string;
+  account: AccountSummary;
   calendars: CalendarSummary[];
   onCalendarToggle: (calendar: CalendarSummary) => void;
   isExpanded: boolean;
@@ -104,9 +110,10 @@ function CalendarListGroup({
     <div className="calendar-list-group">
       <div className="account-card">
         <button className="account-header" onClick={onToggle} type="button">
+          <span className="account-color-dot" style={{ backgroundColor: account.color }} />
           <FontAwesomeIcon className="account-icon" icon={faCircleUser} />
           <ChevronIcon expanded={isExpanded} />
-          <span className="account-email">{email}</span>
+          <span className="account-email">{account.username}</span>
         </button>
         <div className={`account-calendars-wrapper ${isExpanded ? "expanded" : ""}`}>
           <div className="account-calendars">
@@ -125,9 +132,11 @@ function CalendarListGroup({
 }
 
 function CalendarList({
+  accounts,
   calendars,
   onCalendarToggle,
 }: {
+  accounts: AccountSummary[];
   calendars: CalendarSummary[];
   onCalendarToggle: (calendar: CalendarSummary) => void;
 }) {
@@ -136,26 +145,28 @@ function CalendarList({
   const groups = React.useMemo(() => {
     const grouped = new Map<string, CalendarSummary[]>();
     for (const calendar of calendars) {
-      const email = calendar.ownerAddress ?? "Unknown";
-      const existing = grouped.get(email);
+      const existing = grouped.get(calendar.homeAccountId);
       if (existing) {
         existing.push(calendar);
       } else {
-        grouped.set(email, [calendar]);
+        grouped.set(calendar.homeAccountId, [calendar]);
       }
     }
     return grouped;
   }, [calendars]);
 
-  const entries = React.useMemo(() => [...groups], [groups]);
+  const entries = React.useMemo(
+    () => accounts.map((account) => [account.homeAccountId, account] as const),
+    [accounts],
+  );
 
-  const handleToggleGroup = React.useCallback((email: string) => {
+  const handleToggleGroup = React.useCallback((homeAccountId: string) => {
     setExpandedGroups((prev) => {
       const next = new Set(prev);
-      if (next.has(email)) {
-        next.delete(email);
+      if (next.has(homeAccountId)) {
+        next.delete(homeAccountId);
       } else {
-        next.add(email);
+        next.add(homeAccountId);
       }
       return next;
     });
@@ -163,14 +174,14 @@ function CalendarList({
 
   return (
     <div className="calendar-list-container">
-      {entries.map(([email, groupCalendars]) => (
+      {entries.map(([homeAccountId, account]) => (
         <CalendarListGroup
-          email={email}
-          calendars={groupCalendars}
-          isExpanded={expandedGroups.has(email)}
-          key={email}
+          account={account}
+          calendars={groups.get(homeAccountId) ?? []}
+          isExpanded={expandedGroups.has(homeAccountId)}
+          key={account.homeAccountId}
           onCalendarToggle={onCalendarToggle}
-          onToggle={() => handleToggleGroup(email)}
+          onToggle={() => handleToggleGroup(homeAccountId)}
         />
       ))}
     </div>
@@ -181,10 +192,12 @@ function SyncCard({
   isRefreshing,
   onRefresh,
   syncStatus,
+  timeFormat,
 }: {
   isRefreshing: boolean;
   onRefresh: () => void;
   syncStatus: SyncStatus;
+  timeFormat: UserSettings["timeFormat"];
 }) {
   const { t } = useTranslation();
   const { lastSyncedAt, message: syncMessage } = syncStatus;
@@ -195,7 +208,7 @@ function SyncCard({
 
   const iconClassName = isRefreshing ? "refresh-icon--spinning" : "";
 
-  const syncTimestamp = formatSyncTimestamp(lastSyncedAt);
+  const syncTimestamp = formatSyncTimestamp(lastSyncedAt, timeFormat);
 
   return (
     <div className={`sync-card sync-card--${syncStatus.state}`}>
@@ -320,8 +333,12 @@ function CalendarSidebar(props: CalendarSidebarProps) {
       <MiniCalendar selectedDate={selectedDate} onDateSelect={props.onDateSelect} />
 
       <div className="sidebar-section">
-        <CalendarListHeader />
-        <CalendarList calendars={props.calendars} onCalendarToggle={props.onCalendarToggle} />
+        <CalendarListHeader onAdd={props.onAccountAdd} />
+        <CalendarList
+          accounts={props.accounts}
+          calendars={props.calendars}
+          onCalendarToggle={props.onCalendarToggle}
+        />
       </div>
 
       <div className="sync-section">
@@ -329,6 +346,7 @@ function CalendarSidebar(props: CalendarSidebarProps) {
           isRefreshing={props.isRefreshing}
           onRefresh={props.onRefresh}
           syncStatus={props.syncStatus}
+          timeFormat={props.timeFormat}
         />
         <SettingsButton onClick={props.onSettingsClick} />
         <hr className="sidebar-divider" />

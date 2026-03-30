@@ -45,6 +45,21 @@ const translations: Record<AppLocale, MainTranslations> = {
 
 let currentLocale: AppLocale = "en";
 
+function resolveMainLocale(
+  language: null | string | undefined,
+  systemLanguageTag: string,
+): AppLocale {
+  if (language === "it" || language === "en") {
+    return language;
+  }
+
+  if (systemLanguageTag.toLowerCase().startsWith("it")) {
+    return "it";
+  }
+
+  return "en";
+}
+
 function setMainLocale(locale: string): void {
   if (locale === "it" || locale === "en") {
     currentLocale = locale;
@@ -59,4 +74,11 @@ function t(key: keyof MainTranslations): string {
   return translations[currentLocale][key];
 }
 
-export { setMainLocale, getMainLocale, t, type MainTranslations, type AppLocale };
+export {
+  resolveMainLocale,
+  setMainLocale,
+  getMainLocale,
+  t,
+  type MainTranslations,
+  type AppLocale,
+};

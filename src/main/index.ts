@@ -15,7 +15,7 @@ import createMainWindow from "@main/window";
 import { join } from "pathe";
 import { loadAppConfig } from "@main/config";
 import registerIpc from "@main/ipc/register-ipc";
-import { setMainLocale } from "@main/i18n";
+import { resolveMainLocale, setMainLocale } from "@main/i18n";
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
@@ -33,9 +33,7 @@ async function bootstrap(): Promise<void> {
   const settings = new SettingsService(db);
 
   const savedSettings = settings.getSettings();
-  if (savedSettings.language) {
-    setMainLocale(savedSettings.language);
-  }
+  setMainLocale(resolveMainLocale(savedSettings.language, app.getLocale()));
 
   const reminderManager = new ReminderWindowManager();
   const reminders = new ReminderService(db, reminderManager);
@@ -43,6 +41,8 @@ async function bootstrap(): Promise<void> {
     config,
     new SafeStorageTokenCache(join(app.getPath("userData"), "msal-token-cache.bin")),
   );
+  auth.setDatabase(db);
+  auth.setSettings(settings);
 
   await auth.initialize();
 
@@ -61,7 +61,7 @@ async function bootstrap(): Promise<void> {
   });
 
   const signOutEverywhere = async () => {
-    await auth.signOut();
+    await auth.signOutAll();
     db.clearUserData();
     sync.reset();
 

@@ -4,9 +4,9 @@ import type GraphCalendarService from "@main/graph/calendar-service";
 import type MsalAuthService from "@main/auth/msal-auth-service";
 import type ReminderService from "@main/reminders/reminder-service";
 import type SettingsService from "@main/settings/settings-service";
-import type { SyncStatus } from "@shared/schemas";
+import type { CalendarSummary, SyncStatus } from "@shared/schemas";
 
-type SyncReason = "startup" | "sign-in" | "manual" | "interval" | "mutation";
+type SyncReason = "startup" | "sign-in" | "switch-account" | "manual" | "interval" | "mutation";
 
 interface SyncServiceDependencies {
   auth: MsalAuthService;
@@ -52,6 +52,8 @@ class SyncService {
     this.setStatus({
       lastSyncedAt: null,
       message: "Sign in to sync Exchange 365.",
+      messageKey: "sync.signInToSync",
+      counts: null,
       state: "idle",
     });
   }
@@ -68,12 +70,12 @@ class SyncService {
     };
   }
 
-  async syncAll(reason: SyncReason): Promise<SyncStatus> {
+  async syncAll(reason: SyncReason, homeAccountId?: string): Promise<SyncStatus> {
     if (this.inFlight) {
       return this.inFlight;
     }
 
-    const nextSync = this.runSync(reason);
+    const nextSync = this.runSync(reason, homeAccountId);
     this.inFlight = nextSync;
 
     try {
@@ -85,11 +87,26 @@ class SyncService {
     }
   }
 
-  private async runSync(reason: SyncReason): Promise<SyncStatus> {
+  private async runSync(reason: SyncReason, homeAccountId?: string): Promise<SyncStatus> {
     if (!this.dependencies.auth.hasSession()) {
       const idleStatus = {
         lastSyncedAt: this.status.lastSyncedAt,
         message: "Sign in to sync Exchange 365.",
+        messageKey: "sync.signInToSync",
+        counts: null,
+        state: "idle" as const,
+      };
+      this.setStatus(idleStatus);
+      return idleStatus;
+    }
+
+    const accountIds = this.resolveAccountIds(reason, homeAccountId);
+    if (accountIds.length === 0) {
+      const idleStatus = {
+        lastSyncedAt: this.status.lastSyncedAt,
+        message: "Sign in to sync Exchange 365.",
+        messageKey: "sync.signInToSync",
+        counts: null,
         state: "idle" as const,
       };
       this.setStatus(idleStatus);
@@ -97,24 +114,60 @@ class SyncService {
     }
 
     let syncMessage = "Syncing Exchange 365…";
-    if (reason === "sign-in") {
+    let syncMessageKey = "sync.syncing";
+    if (reason === "sign-in" || reason === "switch-account") {
       syncMessage = "Connecting to Exchange 365…";
+      syncMessageKey = "sync.connecting";
     }
 
     this.setStatus({
       lastSyncedAt: this.status.lastSyncedAt,
       message: syncMessage,
+      messageKey: syncMessageKey,
+      counts: null,
       state: "syncing",
     });
 
     try {
-      const knownCalendarIds = this.dependencies.db.listCalendarIds();
-      const calendars = await this.dependencies.graph.listCalendars();
-      this.dependencies.db.upsertCalendars(calendars);
-      this.dependencies.settings.syncVisibleCalendars({
-        calendarIds: calendars.map((calendar) => calendar.id),
-        knownCalendarIds,
-      });
+      let settings = this.dependencies.settings.getSettings();
+      const calendars: CalendarSummary[] = [];
+
+      for (const accountId of accountIds) {
+        const knownCalendarIds = this.dependencies.db.listCalendarIds(accountId);
+        const accountCalendars = await this.dependencies.graph.listCalendars(accountId);
+        this.dependencies.db.upsertCalendars(accountCalendars, accountId);
+        settings = this.dependencies.settings.syncVisibleCalendars({
+          calendarIds: accountCalendars.map((calendar) => calendar.id),
+          knownCalendarIds,
+        });
+        calendars.push(...accountCalendars);
+      }
+
+      if (reason === "sign-in") {
+        const nextStatus: SyncStatus = {
+          lastSyncedAt: this.status.lastSyncedAt,
+          message: "Choose calendars to sync.",
+          messageKey: "sync.chooseCalendars",
+          counts: null,
+          state: "idle",
+        };
+        this.setStatus(nextStatus);
+        return nextStatus;
+      }
+
+      const visibleCalendarIdSet = new Set(settings.visibleCalendarIds);
+      const calendarsToSync = calendars.filter((calendar) => visibleCalendarIdSet.has(calendar.id));
+      if (calendarsToSync.length === 0) {
+        const nextStatus: SyncStatus = {
+          lastSyncedAt: this.status.lastSyncedAt,
+          message: "Select at least one calendar to sync.",
+          messageKey: "sync.selectCalendars",
+          counts: null,
+          state: "idle",
+        };
+        this.setStatus(nextStatus);
+        return nextStatus;
+      }
 
       const rangeStart = new Date(
         Date.now() - this.dependencies.config.syncLookBehindDays * 24 * 60 * 60 * 1000,
@@ -125,9 +178,14 @@ class SyncService {
       const finishedAt = new Date().toISOString();
 
       const syncedCalendars = await Promise.all(
-        calendars.map(async (calendar) => ({
+        calendarsToSync.map(async (calendar) => ({
           calendarId: calendar.id,
-          events: await this.dependencies.graph.listCalendarView(calendar.id, rangeStart, rangeEnd),
+          events: await this.dependencies.graph.listCalendarView(
+            calendar.id,
+            rangeStart,
+            rangeEnd,
+            calendar.homeAccountId,
+          ),
         })),
       );
 
@@ -152,7 +210,7 @@ class SyncService {
       const totalEvents = syncedCalendars.reduce((sum, sc) => sum + sc.events.length, 0);
 
       let calendarSuffix = "s";
-      if (calendars.length === 1) {
+      if (calendarsToSync.length === 1) {
         calendarSuffix = "";
       }
       let eventSuffix = "s";
@@ -161,26 +219,50 @@ class SyncService {
       }
       const nextStatus: SyncStatus = {
         lastSyncedAt: finishedAt,
-        message: `Synced ${calendars.length} calendar${calendarSuffix}, ${totalEvents} event${eventSuffix}.`,
+        message: `Synced ${calendarsToSync.length} calendar${calendarSuffix}, ${totalEvents} event${eventSuffix}.`,
+        messageKey: "sync.synced",
+        counts: {
+          calendars: calendarsToSync.length,
+          events: totalEvents,
+        },
         state: "idle",
       };
       this.setStatus(nextStatus);
       return nextStatus;
     } catch (error) {
       let errorMessage = "Exchange 365 sync failed.";
+      let messageKey: null | string = "sync.syncFailed";
       if (error instanceof Error) {
         const { message } = error;
         errorMessage = message;
+        if (message !== "Exchange 365 sync failed.") {
+          messageKey = null;
+        }
       }
 
       const nextStatus: SyncStatus = {
         lastSyncedAt: this.status.lastSyncedAt,
         message: errorMessage,
+        messageKey,
+        counts: null,
         state: "error",
       };
       this.setStatus(nextStatus);
       return nextStatus;
     }
+  }
+
+  private resolveAccountIds(reason: SyncReason, homeAccountId?: string): string[] {
+    if (homeAccountId) {
+      return [homeAccountId];
+    }
+
+    if (reason === "sign-in" || reason === "switch-account") {
+      const activeAccountId = this.dependencies.auth.getActiveAccountId();
+      return activeAccountId ? [activeAccountId] : [];
+    }
+
+    return this.dependencies.auth.getAccountIds();
   }
 
   private setStatus(status: SyncStatus): void {
