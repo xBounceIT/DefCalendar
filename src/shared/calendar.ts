@@ -43,6 +43,15 @@ function addMinutesToIso(value: string, minutes: number): string {
   return new Date(new Date(value).getTime() + minutes * 60_000).toISOString();
 }
 
+function roundUpToNext30Minutes(date: Date): Date {
+  const result = new Date(date);
+  const minutes = result.getMinutes();
+  const remainder = minutes % 30;
+  const minutesToAdd = 30 - remainder;
+  result.setMinutes(minutes + minutesToAdd, 0, 0);
+  return result;
+}
+
 function getCalendarAccent(color: string | null | undefined): string {
   if (color && color.trim().length > 0) {
     return color;
@@ -91,6 +100,7 @@ export {
   fromDateTimeInputValue,
   getCalendarAccent,
   isEventEditable,
+  roundUpToNext30Minutes,
   toLocalDateKey,
   toDateTimeInputValue,
 };

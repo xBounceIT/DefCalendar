@@ -809,9 +809,7 @@ function SchedulingSection({
   const handleEndTimeChange = (newTime: string) => {
     const currentDate = extractDate(form.endInput);
     onChange((current) =>
-      current
-        ? { ...current, endInput: combineDateTime(currentDate, newTime) }
-        : current,
+      current ? { ...current, endInput: combineDateTime(currentDate, newTime) } : current,
     );
   };
 
