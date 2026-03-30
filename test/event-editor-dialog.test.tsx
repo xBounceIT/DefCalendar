@@ -180,7 +180,7 @@ describe("event editor dialog", () => {
     );
   });
 
-it("selects categories from the tag dropdown", async () => {
+  it("selects categories from the tag dropdown", async () => {
     const { onSave } = renderDialog();
 
     fireEvent.click(screen.getAllByRole("button", { name: /Categories/i })[0]!);
@@ -239,7 +239,7 @@ it("selects categories from the tag dropdown", async () => {
     );
   });
 
-it("preserves selected categories missing from account master list", async () => {
+  it("preserves selected categories missing from account master list", async () => {
     const { onSave } = renderDialog({
       availableCategoriesByAccount: {
         "account-1": [{ color: "preset7", displayName: "Blue category" }],

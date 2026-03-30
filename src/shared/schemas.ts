@@ -390,6 +390,11 @@ const appUpdateStatusSchema = z.object({
 const updateChannelSchema = z.enum(["stable", "prerelease"]);
 const languageSettingSchema = z.enum(["system", "en", "it"]);
 const timeFormatSettingSchema = z.enum(["system", "12h", "24h"]);
+const localReminderWhenSchema = z.enum(["before", "after"]);
+const localReminderRuleSchema = z.object({
+  minutes: z.number().int().min(0).max(20_160),
+  when: localReminderWhenSchema,
+});
 const syncIntervalMinutesSettingSchema = z.union([
   z.literal(5),
   z.literal(10),
@@ -413,6 +418,20 @@ const syncIntervalMinutesPreferenceSchema = z.preprocess(
   syncIntervalMinutesSettingSchema.default(5),
 );
 
+const localReminderOverrideEnabledPreferenceSchema = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  z.boolean().default(false),
+);
+
+const localReminderRulesPreferenceSchema = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  z
+    .array(localReminderRuleSchema)
+    .min(1)
+    .max(10)
+    .default([{ minutes: 15, when: "before" }]),
+);
+
 const reminderDialogStateSchema = z.object({
   items: z.array(reminderDialogItemSchema),
   locale: z.enum(["en", "it"]),
@@ -427,6 +446,8 @@ const userSettingsSchema = z.object({
   language: languagePreferenceSchema,
   timeFormat: timeFormatPreferenceSchema,
   syncIntervalMinutes: syncIntervalMinutesPreferenceSchema,
+  localReminderOverrideEnabled: localReminderOverrideEnabledPreferenceSchema,
+  localReminderRules: localReminderRulesPreferenceSchema,
   updateChannel: updateChannelSchema.default("stable"),
 });
 
@@ -470,6 +491,8 @@ type ReminderDialogState = z.infer<typeof reminderDialogStateSchema>;
 type SyncStatus = z.infer<typeof syncStatusSchema>;
 type AppUpdateState = z.infer<typeof appUpdateStateSchema>;
 type AppUpdateStatus = z.infer<typeof appUpdateStatusSchema>;
+type LocalReminderWhen = z.infer<typeof localReminderWhenSchema>;
+type LocalReminderRule = z.infer<typeof localReminderRuleSchema>;
 type UserSettings = z.infer<typeof userSettingsSchema>;
 type UserSettingsPatch = z.infer<typeof userSettingsPatchSchema>;
 type UpdateChannel = z.infer<typeof updateChannelSchema>;
@@ -483,6 +506,8 @@ function createDefaultSettings(): UserSettings {
     language: "system",
     timeFormat: "system",
     syncIntervalMinutes: 5,
+    localReminderOverrideEnabled: false,
+    localReminderRules: [{ minutes: 15, when: "before" }],
     updateChannel: "stable",
   };
 }
@@ -530,6 +555,8 @@ export {
   sensitivitySchema,
   appUpdateStateSchema,
   appUpdateStatusSchema,
+  localReminderRuleSchema,
+  localReminderWhenSchema,
   syncStatusSchema,
   updateChannelSchema,
   userSettingsPatchSchema,
@@ -551,6 +578,8 @@ export {
   type DeleteEventArgs,
   type EventAttachment,
   type ListOutlookCategoriesArgs,
+  type LocalReminderRule,
+  type LocalReminderWhen,
   type ReminderDismissArgs,
   type ReminderDialogItem,
   type ReminderDialogState,

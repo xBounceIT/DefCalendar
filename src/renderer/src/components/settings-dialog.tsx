@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -29,8 +29,25 @@ type SettingsSection =
   | "about";
 
 type LanguageSetting = UserSettings["language"];
+type LocalReminderRuleSetting = UserSettings["localReminderRules"][number];
+type LocalReminderWhenSetting = LocalReminderRuleSetting["when"];
 type SyncIntervalSetting = UserSettings["syncIntervalMinutes"];
 type TimeFormatSetting = UserSettings["timeFormat"];
+
+const MAX_LOCAL_REMINDER_MINUTES = 20_160;
+const MAX_LOCAL_REMINDER_RULES = 10;
+const DEFAULT_LOCAL_REMINDER_RULE: LocalReminderRuleSetting = {
+  minutes: 15,
+  when: "before",
+};
+
+function clampLocalReminderMinutes(value: number): number {
+  if (Number.isNaN(value)) {
+    return DEFAULT_LOCAL_REMINDER_RULE.minutes;
+  }
+
+  return Math.max(0, Math.min(MAX_LOCAL_REMINDER_MINUTES, value));
+}
 
 function CloseIcon() {
   return (
@@ -46,6 +63,46 @@ function CloseIcon() {
     >
       <line x1="18" y1="6" x2="6" y2="18" />
       <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
+function ChevronDownIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      height="16"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="16"
+    >
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="16"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="16"
+    >
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <line x1="10" x2="10" y1="11" y2="17" />
+      <line x1="14" x2="14" y1="11" y2="17" />
     </svg>
   );
 }
@@ -146,14 +203,254 @@ function LanguageSection({ onSave, settings }: Pick<SettingsDialogProps, "onSave
   );
 }
 
-function NotificationsSection() {
+const TIME_OPTIONS = [
+  { minutes: 5, label: "reminder.snooze5min" },
+  { minutes: 10, label: "reminder.snooze10min" },
+  { minutes: 15, label: "reminder.snooze15min" },
+  { minutes: 30, label: "reminder.snooze30min" },
+  { minutes: 60, label: "reminder.snooze1hour" },
+  { minutes: 120, label: "reminder.snooze2hours" },
+  { minutes: 360, label: "settings.sections.notifications.time6hours" },
+  { minutes: 720, label: "settings.sections.notifications.time12hours" },
+  { minutes: 1440, label: "settings.sections.notifications.time1day" },
+];
+
+function NotificationsSection({
+  onSave,
+  settings,
+}: Pick<SettingsDialogProps, "onSave" | "settings">) {
   const { t } = useTranslation();
+  const whenOptions: LocalReminderWhenSetting[] = ["before", "after"];
+  const whenLabels: Record<LocalReminderWhenSetting, string> = {
+    before: t("settings.sections.notifications.whenOptions.before"),
+    after: t("settings.sections.notifications.whenOptions.after"),
+  };
+  const localReminderOverrideEnabled = settings.localReminderOverrideEnabled ?? false;
+  const localReminderRules =
+    settings.localReminderRules?.length > 0
+      ? settings.localReminderRules
+      : [{ ...DEFAULT_LOCAL_REMINDER_RULE }];
+
+  const [openDropdown, setOpenDropdown] = useState<number | null>(null);
+  const [customInput, setCustomInput] = useState<string>("");
+  const dropdownRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+
+  const handleClickOutside = useCallback(
+    (event: MouseEvent) => {
+      if (openDropdown === null) {
+        return;
+      }
+
+      const dropdown = dropdownRefs.current.get(openDropdown);
+      if (dropdown && !dropdown.contains(event.target as Node)) {
+        setOpenDropdown(null);
+      }
+    },
+    [openDropdown],
+  );
+
+  useEffect(() => {
+    if (openDropdown !== null) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [handleClickOutside, openDropdown]);
+
+  const updateRule = (index: number, patch: Partial<LocalReminderRuleSetting>) => {
+    const nextRules = localReminderRules.map((rule, ruleIndex) => {
+      if (ruleIndex !== index) {
+        return rule;
+      }
+
+      return {
+        ...rule,
+        ...patch,
+      };
+    });
+
+    onSave({ localReminderRules: nextRules });
+  };
+
+  const getTimeLabel = (minutes: number): string => {
+    if (minutes < 60) {
+      return t("reminder.minutes", { count: minutes });
+    }
+
+    if (minutes < 1440) {
+      return t("reminder.hours", { count: Math.floor(minutes / 60) });
+    }
+
+    const days = Math.floor(minutes / 1440);
+    if (days === 1) {
+      return t("settings.sections.notifications.time1day");
+    }
+
+    return t("reminder.hours", { count: Math.floor(minutes / 60) });
+  };
+
+  const canAddRule = localReminderRules.length < MAX_LOCAL_REMINDER_RULES;
 
   return (
     <div className="settings-section">
       <h3>{t("settings.sections.notifications.title")}</h3>
       <div className="settings-fields">
         <p className="settings-placeholder">{t("settings.sections.notifications.description")}</p>
+        <label className="toggle-field settings-notifications__toggle">
+          <input
+            checked={localReminderOverrideEnabled}
+            onChange={(e) => {
+              onSave({ localReminderOverrideEnabled: e.target.checked });
+            }}
+            type="checkbox"
+          />
+          <span className="toggle-slider" />
+          <span>{t("settings.sections.notifications.overrideSynced")}</span>
+        </label>
+        {localReminderOverrideEnabled && (
+          <div className="settings-notifications__rules">
+            <div className="settings-notifications__header">
+              <span>{t("settings.sections.notifications.ruleTime")}</span>
+              <span>{t("settings.sections.notifications.ruleWhen")}</span>
+            </div>
+            {localReminderRules.map((rule, index) => (
+              <div className="settings-notifications__rule" key={`local-reminder-rule-${index}`}>
+                <div
+                  className="settings-notifications__time-dropdown-container"
+                  ref={(el) => {
+                    if (el) {
+                      dropdownRefs.current.set(index, el);
+                    } else {
+                      dropdownRefs.current.delete(index);
+                    }
+                  }}
+                >
+                  <button
+                    className={`settings-notifications__time-trigger ${openDropdown === index ? "settings-notifications__time-trigger--open" : ""}`}
+                    onClick={() => {
+                      setOpenDropdown(openDropdown === index ? null : index);
+                    }}
+                    type="button"
+                  >
+                    <span>{getTimeLabel(rule.minutes)}</span>
+                    <ChevronDownIcon
+                      className={`settings-notifications__time-chevron ${openDropdown === index ? "expanded" : ""}`}
+                    />
+                  </button>
+                  {openDropdown === index && (
+                    <div className="settings-notifications__time-dropdown">
+                      {TIME_OPTIONS.map((option) => (
+                        <button
+                          className={`settings-notifications__time-dropdown-item ${rule.minutes === option.minutes ? "settings-notifications__time-dropdown-item--selected" : ""}`}
+                          key={option.minutes}
+                          onClick={() => {
+                            updateRule(index, { minutes: option.minutes });
+                            setOpenDropdown(null);
+                          }}
+                          type="button"
+                        >
+                          {t(option.label)}
+                        </button>
+                      ))}
+                      <div className="settings-notifications__time-dropdown-divider" />
+                      <div className="settings-notifications__time-custom">
+                        <input
+                          className="settings-notifications__time-custom-input"
+                          max={MAX_LOCAL_REMINDER_MINUTES}
+                          min={1}
+                          onChange={(e) => {
+                            setCustomInput(e.target.value);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              const minutes = Number.parseInt(customInput, 10);
+                              if (!Number.isNaN(minutes) && minutes > 0) {
+                                updateRule(index, {
+                                  minutes: clampLocalReminderMinutes(minutes),
+                                });
+                                setOpenDropdown(null);
+                                setCustomInput("");
+                              }
+                            }
+                          }}
+                          placeholder={t("settings.sections.notifications.customPlaceholder")}
+                          type="number"
+                          value={customInput}
+                        />
+                        <button
+                          className="settings-notifications__time-custom-confirm"
+                          onClick={() => {
+                            const minutes = Number.parseInt(customInput, 10);
+                            if (!Number.isNaN(minutes) && minutes > 0) {
+                              updateRule(index, {
+                                minutes: clampLocalReminderMinutes(minutes),
+                              });
+                              setOpenDropdown(null);
+                              setCustomInput("");
+                            }
+                          }}
+                          type="button"
+                        >
+                          OK
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <select
+                  className="settings-notifications__when"
+                  onChange={(e) => {
+                    updateRule(index, { when: e.target.value as LocalReminderWhenSetting });
+                  }}
+                  value={rule.when}
+                >
+                  {whenOptions.map((when) => (
+                    <option key={when} value={when}>
+                      {whenLabels[when]}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  aria-label={t("settings.sections.notifications.removeRule")}
+                  className="settings-notifications__remove"
+                  disabled={localReminderRules.length <= 1}
+                  onClick={() => {
+                    if (localReminderRules.length <= 1) {
+                      return;
+                    }
+
+                    onSave({
+                      localReminderRules: localReminderRules.filter(
+                        (_rule, ruleIndex) => ruleIndex !== index,
+                      ),
+                    });
+                  }}
+                  type="button"
+                >
+                  <TrashIcon />
+                </button>
+              </div>
+            ))}
+            <button
+              className="settings-notifications__add"
+              disabled={!canAddRule}
+              onClick={() => {
+                if (!canAddRule) {
+                  return;
+                }
+
+                onSave({
+                  localReminderRules: [...localReminderRules, { ...DEFAULT_LOCAL_REMINDER_RULE }],
+                });
+              }}
+              type="button"
+            >
+              {t("settings.sections.notifications.addRule")}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -398,7 +695,7 @@ function SettingsDialog({
         return <LanguageSection onSave={onSave} settings={settings} />;
       }
       case "notifications": {
-        return <NotificationsSection />;
+        return <NotificationsSection onSave={onSave} settings={settings} />;
       }
       case "sync": {
         return <SyncSection onSave={onSave} settings={settings} />;
