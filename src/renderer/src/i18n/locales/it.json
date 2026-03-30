@@ -4,7 +4,8 @@
     "close": "Chiudi",
     "cancel": "Annulla",
     "delete": "Elimina",
-    "saving": "Salvataggio…",
+    "loading": "Caricamento...",
+    "saving": "Salvataggio...",
     "calendar": "Calendario",
     "sync": "Sincronizza",
     "idle": "Inattivo"
@@ -112,6 +113,8 @@
     "saveChanges": "Salva modifiche",
     "categories": "Categorie",
     "categoriesPlaceholder": "Separate da virgole",
+"categoriesSelected": "{{count}} categorie",
+    "categoriesEmpty": "Nessuna categoria disponibile",
     "sensitivity": "Riservatezza",
     "sensitivityNormal": "Normale",
     "sensitivityPersonal": "Personale",

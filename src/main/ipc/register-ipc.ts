@@ -9,6 +9,8 @@ import {
   eventDraftSchema,
   eventListArgsSchema,
   eventReferenceArgsSchema,
+  listOutlookCategoriesArgsSchema,
+  outlookCategorySchema,
   openExternalArgsSchema,
   reminderDialogStateSchema,
   reminderDismissArgsSchema,
@@ -154,6 +156,13 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     dependencies.settings.setCalendarVisibility(args.calendarId, args.isVisible);
     void dependencies.reminders.checkNow();
     return enrichCalendars();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.categoriesList, async (event, input) => {
+    validateMainSender(event);
+    const args = listOutlookCategoriesArgsSchema.parse(input);
+    const categories = await dependencies.graph.listOutlookCategories(args.homeAccountId);
+    return categories.map((category) => outlookCategorySchema.parse(category));
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsList, async (event, input) => {

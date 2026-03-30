@@ -1,16 +1,20 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createInstance } from "i18next";
 import React from "react";
 import { I18nextProvider, initReactI18next } from "react-i18next";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import EventEditorDialog from "../src/renderer/src/components/event-editor-dialog";
 import enTranslations from "../src/renderer/src/i18n/locales/en.json";
 import type { EditorState } from "../src/renderer/src/event-editor-state";
 import type { CalendarEvent, CalendarSummary, EventParticipant } from "../src/shared/schemas";
+
+afterEach(() => {
+  cleanup();
+});
 
 function createCalendar(): CalendarSummary {
   return {
@@ -37,7 +41,7 @@ function createParticipant(): EventParticipant {
   };
 }
 
-function createEvent(): CalendarEvent {
+function createEvent(overrides?: Partial<CalendarEvent>): CalendarEvent {
   return {
     allowNewTimeProposals: true,
     attachments: [],
@@ -77,6 +81,7 @@ function createEvent(): CalendarEvent {
     type: null,
     unsupportedReason: null,
     webLink: "https://outlook.office.com/calendar/item/1",
+    ...overrides,
   };
 }
 
@@ -107,8 +112,16 @@ function renderDialog(props?: Partial<React.ComponentProps<typeof EventEditorDia
             username: "user@example.com",
           },
         ]}
+        availableCategoriesByAccount={{
+          "account-1": [
+            { color: "preset7", displayName: "Blue category" },
+            { color: "preset4", displayName: "Green category" },
+            { color: "preset0", displayName: "Red category" },
+          ],
+        }}
         busy={false}
         calendars={[createCalendar()]}
+        categoriesLoading={false}
         errorMessage={null}
         onAddAttachment={vi.fn().mockResolvedValue([])}
         onCancelMeeting={vi.fn().mockResolvedValue(undefined)}
@@ -142,6 +155,42 @@ describe("event editor dialog", () => {
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
         reminderMinutesBeforeStart: 0,
+      }),
+    );
+  });
+
+  it("selects categories from the tag dropdown", async () => {
+    const { onSave } = renderDialog();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Categories/i })[0]!);
+    fireEvent.click(screen.getByRole("button", { name: /Blue category/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Red category/i }));
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Save Changes" })[0]!);
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        categories: ["Blue category", "Red category"],
+      }),
+    );
+  });
+
+  it("preserves selected categories missing from account master list", async () => {
+    const { onSave } = renderDialog({
+      availableCategoriesByAccount: {
+        "account-1": [{ color: "preset7", displayName: "Blue category" }],
+      },
+      state: {
+        event: createEvent({ categories: ["Legacy category"] }),
+        mode: "edit",
+      },
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Save Changes" })[0]!);
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        categories: ["Legacy category"],
       }),
     );
   });

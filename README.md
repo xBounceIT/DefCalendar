@@ -31,6 +31,7 @@ Electron desktop calendar app for Microsoft 365 Exchange Online with:
    - `offline_access`
    - `User.Read`
    - `Calendars.ReadWrite`
+   - `MailboxSettings.Read`
 7. Use `.env.example` only for optional development overrides; packaged end users should use the bundled app registration instead of tenant/client env setup.
 8. If you need tenant-specific development behavior, override `MSAL_AUTHORITY`; do not rely on a separate tenant ID or redirect URI setting.
 

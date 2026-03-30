@@ -6,6 +6,7 @@ import type {
   EventDraft,
   EventParticipant,
   OnlineMeetingInfo,
+  OutlookCategory,
   ParticipantResponseStatus,
   Recurrence,
   RespondToEventArgs,
@@ -175,6 +176,16 @@ class GraphCalendarService {
         ownerName: calendar.owner?.name ?? null,
       };
     });
+  }
+
+  async listOutlookCategories(homeAccountId: string): Promise<OutlookCategory[]> {
+    const categories = await this.paginate(
+      "/me/outlook/masterCategories?$select=displayName,color",
+      parseGraphOutlookCategory,
+      homeAccountId,
+    );
+
+    return categories.toSorted((left, right) => left.displayName.localeCompare(right.displayName));
   }
 
   async listCalendarView(
@@ -791,6 +802,22 @@ function parseGraphCalendar(value: unknown): GraphCalendar {
     isDefaultCalendar: readOptionalBoolean(value, "isDefaultCalendar"),
     name: readOptionalString(value, "name"),
     owner: parsedOwner,
+  };
+}
+
+function parseGraphOutlookCategory(value: unknown): OutlookCategory {
+  if (!isRecord(value)) {
+    throw new Error("Unexpected Microsoft Graph category payload.");
+  }
+
+  const displayName = trimOrNull(readOptionalString(value, "displayName"));
+  if (!displayName) {
+    throw new Error('Expected "displayName" to be a non-empty string.');
+  }
+
+  return {
+    color: readOptionalString(value, "color") ?? "none",
+    displayName,
   };
 }
 

@@ -9,10 +9,11 @@ import type {
   EventDraft,
   EventParticipant,
   EventResponseAction,
+  OutlookCategory,
   Recurrence,
   UserSettings,
 } from "@shared/schemas";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { fromDateTimeInputValue, toDateTimeInputValue } from "@shared/calendar";
 import { useTranslation } from "react-i18next";
 
@@ -22,8 +23,10 @@ import { MeetingIcon, TeamsIcon } from "./meeting-icon";
 
 interface EventEditorDialogProps {
   accounts: AccountSummary[];
+  availableCategoriesByAccount: Record<string, OutlookCategory[]>;
   busy: boolean;
   calendars: CalendarSummary[];
+  categoriesLoading: boolean;
   errorMessage: null | string;
   onAddAttachment: (args: AttachmentUploadArgs) => Promise<EventAttachment[]>;
   onCancelMeeting: (event: CalendarEvent, comment: string) => Promise<void>;
@@ -66,6 +69,11 @@ interface EditorFormState {
   showAs: NonNullable<CalendarEvent["showAs"]>;
   startInput: string;
   subject: string;
+}
+
+interface CategoryOption {
+  color: string;
+  displayName: string;
 }
 
 function buildAccountParticipant(account: AccountSummary | null): EventParticipant | null {
@@ -137,6 +145,9 @@ function EventEditorDialog(props: EventEditorDialogProps) {
   const readOnlyForAttendee = Boolean(editedEvent && !editedEvent.isOrganizer);
   const selectedCalendar =
     props.calendars.find((calendar) => calendar.id === form.calendarId) ?? null;
+  const availableCategories = selectedCalendar
+    ? (props.availableCategoriesByAccount[selectedCalendar.homeAccountId] ?? [])
+    : [];
   const organizer = selectedCalendar
     ? buildAccountParticipant(
         props.accounts.find(
@@ -183,6 +194,8 @@ function EventEditorDialog(props: EventEditorDialogProps) {
         </header>
 
         <EventToolbar
+          availableCategories={availableCategories}
+          categoriesLoading={props.categoriesLoading}
           editedEvent={editedEvent}
           form={form}
           onChange={setForm}
@@ -326,12 +339,16 @@ function EventEditorDialog(props: EventEditorDialogProps) {
 }
 
 function EventToolbar({
+  availableCategories,
+  categoriesLoading,
   editedEvent,
   form,
   onChange,
   onDelete,
   onDuplicate,
 }: {
+  availableCategories: OutlookCategory[];
+  categoriesLoading: boolean;
   editedEvent: CalendarEvent | null;
   form: EditorFormState;
   onChange: React.Dispatch<React.SetStateAction<EditorFormState | null>>;
@@ -408,6 +425,34 @@ function EventToolbar({
     return option?.label || form.sensitivity;
   };
 
+  const selectedCategories = useMemo(() => parseCategoryNames(form.categories), [form.categories]);
+
+  const categoryOptions = useMemo(
+    () => buildCategoryOptions(availableCategories, selectedCategories),
+    [availableCategories, selectedCategories],
+  );
+
+  const categoryTriggerLabel = useMemo(
+    () => getCategoryTriggerLabel(selectedCategories, t),
+    [selectedCategories, t],
+  );
+
+  const toggleCategory = (displayName: string) => {
+    const selected = new Set(selectedCategories.map((value) => value.toLocaleLowerCase()));
+    if (selected.has(displayName.toLocaleLowerCase())) {
+      updateForm(onChange, {
+        categories: selectedCategories
+          .filter((value) => value.toLocaleLowerCase() !== displayName.toLocaleLowerCase())
+          .join(", "),
+      });
+      return;
+    }
+
+    updateForm(onChange, {
+      categories: [...selectedCategories, displayName].join(", "),
+    });
+  };
+
   return (
     <div className="event-toolbar" ref={containerRef}>
       <div className="event-toolbar__group">
@@ -457,10 +502,11 @@ function EventToolbar({
       <div className="event-toolbar__dropdown-container">
         <button
           type="button"
-          className={`event-toolbar__dropdown-trigger ${openDropdown === "showAs" ? "event-toolbar__dropdown-trigger--open" : ""}`}
+          className={`event-toolbar__dropdown-trigger event-toolbar__dropdown-trigger--icon-only ${openDropdown === "showAs" ? "event-toolbar__dropdown-trigger--open" : ""}`}
           onClick={() => setOpenDropdown(openDropdown === "showAs" ? null : "showAs")}
+          title={getShowAsLabel()}
         >
-          <span className="event-toolbar__dropdown-label">{getShowAsLabel()}</span>
+          <ShowAsIcon />
           <ChevronDownIcon
             className={`event-toolbar__dropdown-arrow ${openDropdown === "showAs" ? "expanded" : ""}`}
           />
@@ -487,11 +533,11 @@ function EventToolbar({
       <div className="event-toolbar__dropdown-container">
         <button
           type="button"
-          className={`event-toolbar__dropdown-trigger ${openDropdown === "reminder" ? "event-toolbar__dropdown-trigger--open" : ""}`}
+          className={`event-toolbar__dropdown-trigger event-toolbar__dropdown-trigger--icon-only ${openDropdown === "reminder" ? "event-toolbar__dropdown-trigger--open" : ""}`}
           onClick={() => setOpenDropdown(openDropdown === "reminder" ? null : "reminder")}
+          title={getReminderLabel()}
         >
           <BellIcon />
-          <span className="event-toolbar__dropdown-label">{getReminderLabel()}</span>
           <ChevronDownIcon
             className={`event-toolbar__dropdown-arrow ${openDropdown === "reminder" ? "expanded" : ""}`}
           />
@@ -525,29 +571,48 @@ function EventToolbar({
         )}
       </div>
 
-      <div className="event-toolbar__dropdown-container">
+<div className="event-toolbar__dropdown-container">
         <button
           type="button"
-          className={`event-toolbar__dropdown-trigger ${openDropdown === "categories" ? "event-toolbar__dropdown-trigger--open" : ""}`}
+          className={`event-toolbar__dropdown-trigger event-toolbar__dropdown-trigger--icon-only ${openDropdown === "categories" ? "event-toolbar__dropdown-trigger--open" : ""}`}
           onClick={() => setOpenDropdown(openDropdown === "categories" ? null : "categories")}
+          title={t("eventEditor.categories")}
         >
-          <TagIcon />
-          <span className="event-toolbar__dropdown-label">
-            {form.categories ? form.categories.split(",")[0].trim() : t("eventEditor.categories")}
-          </span>
+          <TagIconWithDot
+            selectedCategories={selectedCategories}
+            categoryOptions={categoryOptions}
+          />
           <ChevronDownIcon
             className={`event-toolbar__dropdown-arrow ${openDropdown === "categories" ? "expanded" : ""}`}
           />
         </button>
         {openDropdown === "categories" && (
           <div className="event-toolbar__dropdown event-toolbar__dropdown--categories">
-            <input
-              type="text"
-              className="event-toolbar__categories-input"
-              placeholder={t("eventEditor.categoriesPlaceholder")}
-              value={form.categories}
-              onChange={(e) => updateForm(onChange, { categories: e.target.value })}
-            />
+            <div className="event-toolbar__dropdown-heading">{categoryTriggerLabel}</div>
+            {categoriesLoading && (
+              <div className="event-toolbar__dropdown-note">{t("common.loading")}</div>
+            )}
+            {!categoriesLoading && categoryOptions.length === 0 && (
+              <div className="event-toolbar__dropdown-note">{t("eventEditor.categoriesEmpty")}</div>
+            )}
+            {!categoriesLoading &&
+              categoryOptions.map((category) => {
+                const selected = selectedCategories.some(
+                  (value) => value.toLocaleLowerCase() === category.displayName.toLocaleLowerCase(),
+                );
+                return (
+                  <button
+                    key={category.displayName}
+                    type="button"
+                    className={`event-toolbar__dropdown-item event-toolbar__dropdown-item--category ${selected ? "event-toolbar__dropdown-item--selected" : ""}`}
+                    onClick={() => toggleCategory(category.displayName)}
+                  >
+                    <TagSwatchIcon color={category.color} />
+                    <span className="event-toolbar__category-name">{category.displayName}</span>
+                    {selected && <CheckIcon className="event-toolbar__category-check" />}
+                  </button>
+                );
+              })}
           </div>
         )}
       </div>
@@ -555,11 +620,11 @@ function EventToolbar({
       <div className="event-toolbar__dropdown-container">
         <button
           type="button"
-          className={`event-toolbar__dropdown-trigger ${openDropdown === "sensitivity" ? "event-toolbar__dropdown-trigger--open" : ""}`}
+          className={`event-toolbar__dropdown-trigger event-toolbar__dropdown-trigger--icon-only ${openDropdown === "sensitivity" ? "event-toolbar__dropdown-trigger--open" : ""}`}
           onClick={() => setOpenDropdown(openDropdown === "sensitivity" ? null : "sensitivity")}
+          title={getSensitivityLabel()}
         >
           <LockIcon />
-          <span className="event-toolbar__dropdown-label">{getSensitivityLabel()}</span>
           <ChevronDownIcon
             className={`event-toolbar__dropdown-arrow ${openDropdown === "sensitivity" ? "expanded" : ""}`}
           />
@@ -1363,6 +1428,156 @@ function TagIcon() {
   );
 }
 
+function TagSwatchIcon({ color }: { color: string }) {
+  const fillColor = categoryColorToHex(color);
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="18"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="18"
+    >
+      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+      <circle cx="7" cy="7" fill={fillColor} r="1.8" stroke="none" />
+    </svg>
+  );
+}
+
+function CheckIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      height="16"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="16"
+    >
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+function parseCategoryNames(value: string): string[] {
+  if (!value.trim()) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const items: string[] = [];
+  for (const part of value.split(",")) {
+    const normalized = part.trim();
+    if (!normalized) {
+      continue;
+    }
+
+    const key = normalized.toLocaleLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    items.push(normalized);
+  }
+
+  return items;
+}
+
+function buildCategoryOptions(
+  availableCategories: OutlookCategory[],
+  selectedCategories: string[],
+): CategoryOption[] {
+  const items = new Map<string, CategoryOption>();
+
+  for (const category of availableCategories) {
+    const displayName = category.displayName.trim();
+    if (!displayName) {
+      continue;
+    }
+
+    items.set(displayName.toLocaleLowerCase(), {
+      color: category.color,
+      displayName,
+    });
+  }
+
+  for (const selected of selectedCategories) {
+    const key = selected.toLocaleLowerCase();
+    if (!items.has(key)) {
+      items.set(key, {
+        color: "none",
+        displayName: selected,
+      });
+    }
+  }
+
+  return [...items.values()].toSorted((left, right) =>
+    left.displayName.localeCompare(right.displayName),
+  );
+}
+
+function getCategoryTriggerLabel(
+  selectedCategories: string[],
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  if (selectedCategories.length === 0) {
+    return t("eventEditor.categories");
+  }
+
+  if (selectedCategories.length === 1) {
+    return selectedCategories[0];
+  }
+
+  return t("eventEditor.categoriesSelected", { count: selectedCategories.length });
+}
+
+function categoryColorToHex(color: null | string | undefined): string {
+  if (!color) {
+    return "var(--ink-tertiary)";
+  }
+
+  const normalized = color.toLowerCase();
+  const map: Record<string, string> = {
+    none: "var(--ink-tertiary)",
+    preset0: "#c73d3d",
+    preset1: "#d97706",
+    preset2: "#8b5a3c",
+    preset3: "#ca8a04",
+    preset4: "#2f9e44",
+    preset5: "#0f766e",
+    preset6: "#5f7c24",
+    preset7: "#2563eb",
+    preset8: "#7e22ce",
+    preset9: "#be185d",
+    preset10: "#3b82f6",
+    preset11: "#1d4ed8",
+    preset12: "#6b7280",
+    preset13: "#374151",
+    preset14: "#111827",
+    preset15: "#991b1b",
+    preset16: "#c2410c",
+    preset17: "#78350f",
+    preset18: "#854d0e",
+    preset19: "#166534",
+    preset20: "#0f766e",
+    preset21: "#3f6212",
+    preset22: "#1e3a8a",
+    preset23: "#581c87",
+    preset24: "#701a75",
+  };
+
+  return map[normalized] ?? "var(--ink-tertiary)";
+}
+
 function LockIcon() {
   return (
     <svg
@@ -1379,6 +1594,48 @@ function LockIcon() {
       <rect height="11" width="18" x="3" y="11" rx="2" ry="2" />
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
     </svg>
+  );
+}
+
+function ShowAsIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="18"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="18"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  );
+}
+
+function TagIconWithDot({
+  selectedCategories,
+  categoryOptions,
+}: {
+  selectedCategories: string[];
+  categoryOptions: CategoryOption[];
+}) {
+  const firstCategory = selectedCategories[0];
+  const option = categoryOptions.find(
+    (item) => item.displayName.toLocaleLowerCase() === firstCategory?.toLocaleLowerCase(),
+  );
+  const dotColor = categoryColorToHex(option?.color);
+
+  return (
+    <span className="icon-with-indicator">
+      <TagIcon />
+      {selectedCategories.length > 0 && (
+        <span className="icon-indicator-dot" style={{ backgroundColor: dotColor }} />
+      )}
+    </span>
   );
 }
 

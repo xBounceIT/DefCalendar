@@ -58,6 +58,11 @@ const calendarSummarySchema = z.object({
   ownerAddress: z.string().nullable(),
 });
 
+const outlookCategorySchema = z.object({
+  color: z.string(),
+  displayName: z.string(),
+});
+
 const attendeeTypeSchema = z.enum(["required", "optional", "resource"]);
 
 const participantResponseStatusSchema = z.object({
@@ -282,6 +287,10 @@ const setCalendarVisibilityArgsSchema = z.object({
   isVisible: z.boolean(),
 });
 
+const listOutlookCategoriesArgsSchema = z.object({
+  homeAccountId: z.string(),
+});
+
 const deleteEventArgsSchema = z.object({
   calendarId: z.string(),
   eventId: z.string(),
@@ -430,6 +439,7 @@ type StoredAccount = z.infer<typeof storedAccountSchema>;
 type AuthSignInMode = z.infer<typeof authSignInModeSchema>;
 type AuthSignInRequest = z.infer<typeof authSignInRequestSchema>;
 type CalendarSummary = z.infer<typeof calendarSummarySchema>;
+type OutlookCategory = z.infer<typeof outlookCategorySchema>;
 type AttendeeType = z.infer<typeof attendeeTypeSchema>;
 type ParticipantResponseStatus = z.infer<typeof participantResponseStatusSchema>;
 type EventParticipant = z.infer<typeof eventParticipantSchema>;
@@ -446,6 +456,7 @@ type CalendarEvent = z.infer<typeof calendarEventSchema>;
 type EventDraft = z.infer<typeof eventDraftSchema>;
 type EventListArgs = z.infer<typeof eventListArgsSchema>;
 type SetCalendarVisibilityArgs = z.infer<typeof setCalendarVisibilityArgsSchema>;
+type ListOutlookCategoriesArgs = z.infer<typeof listOutlookCategoriesArgsSchema>;
 type DeleteEventArgs = z.infer<typeof deleteEventArgsSchema>;
 type EventReferenceArgs = z.infer<typeof eventReferenceArgsSchema>;
 type RespondToEventArgs = z.infer<typeof respondToEventArgsSchema>;
@@ -484,6 +495,7 @@ export {
   storedAccountSchema,
   calendarEventSchema,
   calendarSummarySchema,
+  outlookCategorySchema,
   calendarViewSchema,
   cancelEventArgsSchema,
   createDefaultSettings,
@@ -513,6 +525,7 @@ export {
   recurrenceRangeTypeSchema,
   recurrenceSchema,
   respondToEventArgsSchema,
+  listOutlookCategoriesArgsSchema,
   setCalendarVisibilityArgsSchema,
   sensitivitySchema,
   appUpdateStateSchema,
@@ -537,6 +550,7 @@ export {
   type CancelEventArgs,
   type DeleteEventArgs,
   type EventAttachment,
+  type ListOutlookCategoriesArgs,
   type ReminderDismissArgs,
   type ReminderDialogItem,
   type ReminderDialogState,
@@ -548,6 +562,7 @@ export {
   type EventResponseAction,
   type OnlineMeetingInfo,
   type ParticipantResponseStatus,
+  type OutlookCategory,
   type Recurrence,
   type RecurrenceEditScope,
   type RespondToEventArgs,
