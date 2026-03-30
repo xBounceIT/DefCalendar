@@ -571,7 +571,7 @@ function EventToolbar({
         )}
       </div>
 
-      <div className="event-toolbar__dropdown-container">
+      <div className="event-toolbar__dropdown-container event-toolbar__dropdown-container--icon-only">
         <button
           type="button"
           className={`event-toolbar__dropdown-trigger event-toolbar__dropdown-trigger--icon-only ${openDropdown === "categories" ? "event-toolbar__dropdown-trigger--open" : ""}`}
@@ -617,7 +617,7 @@ function EventToolbar({
         )}
       </div>
 
-      <div className="event-toolbar__dropdown-container">
+      <div className="event-toolbar__dropdown-container event-toolbar__dropdown-container--icon-only">
         <button
           type="button"
           className={`event-toolbar__dropdown-trigger event-toolbar__dropdown-trigger--icon-only ${openDropdown === "sensitivity" ? "event-toolbar__dropdown-trigger--open" : ""}`}
