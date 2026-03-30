@@ -288,9 +288,12 @@
         "overrideSynced": "Usa regole di promemoria locali al posto dei promemoria sincronizzati degli eventi",
         "ruleTime": "Tempo",
         "ruleWhen": "Quando",
-        "ruleActions": "Azioni",
         "addRule": "Aggiungi promemoria",
         "removeRule": "Rimuovi",
+        "time6hours": "6 ore",
+        "time12hours": "12 ore",
+        "time1day": "1 giorno",
+        "customPlaceholder": "Minuti",
         "whenOptions": {
           "before": "Prima dell'inizio",
           "after": "Dopo l'inizio"

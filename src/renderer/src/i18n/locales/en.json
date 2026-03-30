@@ -288,9 +288,12 @@
         "overrideSynced": "Use local reminder rules instead of synced event reminders",
         "ruleTime": "Time",
         "ruleWhen": "When",
-        "ruleActions": "Actions",
         "addRule": "Add reminder",
         "removeRule": "Remove",
+        "time6hours": "6 hours",
+        "time12hours": "12 hours",
+        "time1day": "1 day",
+        "customPlaceholder": "Minutes",
         "whenOptions": {
           "before": "Before start",
           "after": "After start"

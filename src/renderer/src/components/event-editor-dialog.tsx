@@ -473,14 +473,10 @@ function EventToolbar({
 
   const toggleCategory = (displayName: string) => {
     const normalized = displayName.toLocaleLowerCase();
-    const isSelected = selectedCategories.some(
-      (value) => value.toLocaleLowerCase() === normalized,
-    );
+    const isSelected = selectedCategories.some((value) => value.toLocaleLowerCase() === normalized);
     if (isSelected) {
       updateForm(onChange, {
-        categories: selectedCategories.filter(
-          (value) => value.toLocaleLowerCase() !== normalized,
-        ),
+        categories: selectedCategories.filter((value) => value.toLocaleLowerCase() !== normalized),
       });
       return;
     }
