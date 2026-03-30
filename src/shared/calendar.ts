@@ -43,21 +43,45 @@ function addMinutesToIso(value: string, minutes: number): string {
   return new Date(new Date(value).getTime() + minutes * 60_000).toISOString();
 }
 
-function roundUpToNext30Minutes(date: Date): Date {
+function roundUpToNext15Minutes(date: Date): Date {
   const result = new Date(date);
   const minutes = result.getMinutes();
-  const remainder = minutes % 30;
-  const minutesToAdd = remainder === 0 ? 0 : 30 - remainder;
+  const remainder = minutes % 15;
+  const minutesToAdd = remainder === 0 ? 0 : 15 - remainder;
   result.setMinutes(minutes + minutesToAdd, 0, 0);
   return result;
 }
 
-function getCalendarAccent(color: string | null | undefined): string {
+const CALENDAR_COLORS: readonly { name: string; hex: string }[] = [
+  { name: "blue", hex: "#3b82f6" },
+  { name: "green", hex: "#22c55e" },
+  { name: "orange", hex: "#f59e0b" },
+  { name: "purple", hex: "#a855f7" },
+  { name: "red", hex: "#ef4444" },
+  { name: "teal", hex: "#14b8a6" },
+  { name: "yellow", hex: "#eab308" },
+];
+
+function getCalendarAccent(
+  color: string | null | undefined,
+  userColor: string | null | undefined,
+): string {
+  if (userColor && userColor.trim().length > 0) {
+    const match = CALENDAR_COLORS.find((c) => c.name === userColor);
+    return match?.hex ?? userColor;
+  }
   if (color && color.trim().length > 0) {
     return color;
   }
-
   return "#2368ff";
+}
+
+function getCalendarColorName(color: string | null | undefined): string | null {
+  if (!color) {
+    return null;
+  }
+  const match = CALENDAR_COLORS.find((c) => c.name === color || c.hex === color);
+  return match?.name ?? null;
 }
 
 function toLocalDateKey(value: Date): string {
@@ -95,12 +119,14 @@ function buildEventDayKeys(events: CalendarEvent[]): Set<string> {
 export {
   addMinutesToIso,
   buildEventDayKeys,
+  CALENDAR_COLORS,
   CALENDAR_VIEW_LABELS,
   CALENDAR_VIEW_ORDER,
   fromDateTimeInputValue,
   getCalendarAccent,
+  getCalendarColorName,
   isEventEditable,
-  roundUpToNext30Minutes,
+  roundUpToNext15Minutes,
   toLocalDateKey,
   toDateTimeInputValue,
 };

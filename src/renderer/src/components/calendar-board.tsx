@@ -1,13 +1,12 @@
 import type {
-  DateClickArg,
   DatesSetArg,
   EventClickArg,
+  EventContentArg,
   EventDropArg,
   EventInput,
-  EventContentArg,
 } from "@fullcalendar/core";
 import itLocale from "@fullcalendar/core/locales/it";
-import type { EventResizeDoneArg } from "@fullcalendar/interaction";
+import type { DateClickArg, EventResizeDoneArg } from "@fullcalendar/interaction";
 import FullCalendar from "@fullcalendar/react";
 import React from "react";
 import dayGridPlugin from "@fullcalendar/daygrid";
@@ -34,17 +33,21 @@ interface CalendarBoardProps {
 
 const CALENDAR_PLUGINS = [dayGridPlugin, timeGridPlugin, interactionPlugin];
 
-interface EventMountInfo {
-  event: {
-    extendedProps: CalendarEventExtendedProps;
-  };
-  el: HTMLElement;
-}
-
 interface CalendarEventExtendedProps {
   calendarColor?: string | null;
   eventData?: Pick<CalendarEvent, "isReminderOn">;
 }
+
+const CALENDAR_COLOR_CLASS_NAMES: Record<string, string> = {
+  blue: "calendar-event--color-blue",
+  green: "calendar-event--color-green",
+  lightBlue: "calendar-event--color-blue",
+  orange: "calendar-event--color-orange",
+  purple: "calendar-event--color-purple",
+  red: "calendar-event--color-red",
+  teal: "calendar-event--color-teal",
+  yellow: "calendar-event--color-yellow",
+};
 
 function BellIcon() {
   return (
@@ -89,11 +92,22 @@ function renderEventContent(info: EventContentArg) {
   );
 }
 
-function handleEventDidMount(info: EventMountInfo): void {
-  const { calendarColor } = info.event.extendedProps;
-  if (calendarColor) {
-    info.el.setAttribute("data-calendar-color", calendarColor);
+function resolveCalendarColorClassName(color: string | null | undefined): null | string {
+  if (!color) {
+    return null;
   }
+
+  return CALENDAR_COLOR_CLASS_NAMES[color.trim()] ?? null;
+}
+
+function handleEventClassNames(info: EventContentArg): string[] {
+  const { calendarColor } = info.event.extendedProps as CalendarEventExtendedProps;
+  const className = resolveCalendarColorClassName(calendarColor);
+  if (!className) {
+    return [];
+  }
+
+  return [className];
 }
 
 function EmptyState() {
@@ -135,8 +149,8 @@ function CalendarSurface({
       slotEventOverlap={false}
       editable
       eventClick={onEventClick}
+      eventClassNames={handleEventClassNames}
       eventContent={renderEventContent}
-      eventDidMount={handleEventDidMount}
       eventDisplay="block"
       eventDrop={onEventDrop}
       eventResize={onEventResize}
