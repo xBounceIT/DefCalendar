@@ -58,7 +58,8 @@ function getCalendarAccent(
   userColor: string | null | undefined,
 ): string {
   if (userColor && userColor.trim().length > 0) {
-    return userColor;
+    const match = CALENDAR_COLORS.find((c) => c.name === userColor);
+    return match?.hex ?? userColor;
   }
   if (color && color.trim().length > 0) {
     return color;
