@@ -283,7 +283,12 @@ function NotificationsSection({
       return t("reminder.hours", { count: Math.floor(minutes / 60) });
     }
 
-    return t("settings.sections.notifications.time1day");
+    const days = Math.floor(minutes / 1440);
+    if (days === 1) {
+      return t("settings.sections.notifications.time1day");
+    }
+
+    return t("reminder.hours", { count: Math.floor(minutes / 60) });
   };
 
   const canAddRule = localReminderRules.length < MAX_LOCAL_REMINDER_RULES;
