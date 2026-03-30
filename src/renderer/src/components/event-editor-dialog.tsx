@@ -689,7 +689,7 @@ function EventToolbar({
 function generateTimeOptions(): { label: string; value: string }[] {
   const options: { label: string; value: string }[] = [];
   for (let h = 0; h < 24; h++) {
-    for (const m of [0, 30]) {
+    for (const m of [0, 15, 30, 45]) {
       const hour = h.toString().padStart(2, "0");
       const minute = m.toString().padStart(2, "0");
       const value = `${hour}:${minute}`;
@@ -796,8 +796,10 @@ function SchedulingSection({
     };
   }, [isExpanded]);
 
-  const startTimeMinutes = parseTimeToMinutes(extractTime(form.startInput));
-  const endTimeMinutes = parseTimeToMinutes(extractTime(form.endInput));
+  const startTime = extractTime(form.startInput) || "00:00";
+  const endTime = extractTime(form.endInput) || "00:30";
+  const startTimeMinutes = parseTimeToMinutes(startTime);
+  const endTimeMinutes = parseTimeToMinutes(endTime);
   const minimumEndMinutes = startTimeMinutes + 30;
   const endTimeOptions = useMemo(
     () =>
@@ -815,6 +817,27 @@ function SchedulingSection({
         })),
     [minimumEndMinutes, startTimeMinutes, t],
   );
+
+  const startTimeOptions = useMemo(() => {
+    const exists = TIME_OPTIONS.some((opt) => opt.value === startTime);
+    if (exists) {
+      return TIME_OPTIONS;
+    }
+    return [{ label: startTime, value: startTime }, ...TIME_OPTIONS];
+  }, [startTime]);
+
+  const endTimeOptionsWithCurrent = useMemo(() => {
+    const exists = endTimeOptions.some((opt) => opt.value === endTime);
+    if (exists) {
+      return endTimeOptions;
+    }
+    const durationLabel = formatDurationLabel(
+      startTimeMinutes,
+      endTimeMinutes < startTimeMinutes ? endTimeMinutes + 24 * 60 : endTimeMinutes,
+      t,
+    );
+    return [{ label: `${endTime} ${durationLabel}`, value: endTime }, ...endTimeOptions];
+  }, [endTime, endTimeOptions, startTimeMinutes, endTimeMinutes, t]);
 
   const handleStartTimeChange = (newTime: string) => {
     const currentDate = extractDate(form.startInput);
@@ -848,9 +871,14 @@ function SchedulingSection({
     while (adjustedEndMinutes < minimumEndMinutes) {
       adjustedEndMinutes += 24 * 60;
     }
+    const existingDayOffset = daysBetweenDateInputs(
+      extractDate(form.startInput),
+      extractDate(form.endInput),
+    );
+    const minimumDaysNeeded = Math.floor(adjustedEndMinutes / (24 * 60));
     const endDate = addDaysToDateInput(
       extractDate(form.startInput),
-      Math.floor(adjustedEndMinutes / (24 * 60)),
+      Math.max(existingDayOffset, minimumDaysNeeded),
     );
     const endTime = minutesToTime(adjustedEndMinutes);
     onChange((current) =>
@@ -909,9 +937,9 @@ function SchedulingSection({
               <select
                 disabled={disabled || form.allDay}
                 onChange={(e) => handleStartTimeChange(e.target.value)}
-                value={extractTime(form.startInput) || "00:00"}
+                value={startTime}
               >
-                {TIME_OPTIONS.map((opt) => (
+                {startTimeOptions.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
                   </option>
@@ -923,9 +951,9 @@ function SchedulingSection({
               <select
                 disabled={disabled || form.allDay}
                 onChange={(e) => handleEndTimeChange(e.target.value)}
-                value={extractTime(form.endInput) || "00:30"}
+                value={endTime}
               >
-                {endTimeOptions.map((opt) => (
+                {endTimeOptionsWithCurrent.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
                   </option>
