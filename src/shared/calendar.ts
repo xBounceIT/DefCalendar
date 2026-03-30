@@ -51,12 +51,46 @@ function getCalendarAccent(color: string | null | undefined): string {
   return "#2368ff";
 }
 
+function toLocalDateKey(value: Date): string {
+  const year = `${value.getFullYear()}`;
+  const month = `${value.getMonth() + 1}`.padStart(2, "0");
+  const day = `${value.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function buildEventDayKeys(events: CalendarEvent[]): Set<string> {
+  const dayKeys = new Set<string>();
+
+  for (const event of events) {
+    const start = new Date(event.start);
+    const end = new Date(event.end);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      continue;
+    }
+
+    const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const endTime = Math.max(start.getTime(), end.getTime() - 1);
+    const endDay = new Date(endTime);
+    let cursor = startDay;
+    const lastDay = new Date(endDay.getFullYear(), endDay.getMonth(), endDay.getDate());
+
+    while (cursor.getTime() <= lastDay.getTime()) {
+      dayKeys.add(toLocalDateKey(cursor));
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + 1);
+    }
+  }
+
+  return dayKeys;
+}
+
 export {
   addMinutesToIso,
+  buildEventDayKeys,
   CALENDAR_VIEW_LABELS,
   CALENDAR_VIEW_ORDER,
   fromDateTimeInputValue,
   getCalendarAccent,
   isEventEditable,
+  toLocalDateKey,
   toDateTimeInputValue,
 };

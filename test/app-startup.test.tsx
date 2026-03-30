@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 
+import type { DateSelectArg } from "@fullcalendar/core";
+import type { DateClickArg } from "@fullcalendar/interaction";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import React from "react";
 import App from "../src/renderer/src/app";
@@ -22,6 +24,7 @@ vi.mock<MockedCalendarModule>(import("@fullcalendar/timegrid"), () => ({
 }));
 
 const signedInSelectedDate = "2026-03-27T09:00:00.000Z";
+let capturedCalendarProps: Record<string, unknown> | null = null;
 const mockCalendarSurfaceDate = {
   current: new Date(signedInSelectedDate),
 };
@@ -60,7 +63,9 @@ vi.mock<MockedCalendarModule>(import("@fullcalendar/react"), async () => {
   const ReactModule = await import("react");
 
   return {
-    default: ReactModule.forwardRef(function MockCalendar(_props, ref) {
+    default: ReactModule.forwardRef(function MockCalendar(props, ref) {
+      capturedCalendarProps = props as Record<string, unknown>;
+
       ReactModule.useImperativeHandle(ref, () => ({
         getApi: () => mockCalendarSurfaceApi,
       }));
@@ -104,6 +109,7 @@ function installCalendarApi(calendarApi: CalendarApi): void {
 function restoreCalendarApi(): void {
   cleanup();
   vi.clearAllMocks();
+  capturedCalendarProps = null;
   mockCalendarSurfaceDate.current = new Date(signedInSelectedDate);
   mockCalendarSurfaceApi.view.type = "timeGridWeek";
 
@@ -129,6 +135,14 @@ function renderApp() {
       <App />
     </QueryClientProvider>,
   );
+}
+
+function getCalendarDateClickHandler(): (arg: DateClickArg) => void {
+  return capturedCalendarProps?.dateClick as (arg: DateClickArg) => void;
+}
+
+function getCalendarSelectHandler(): (arg: DateSelectArg) => void {
+  return capturedCalendarProps?.select as (arg: DateSelectArg) => void;
 }
 
 function createCalendarApiMock(): CalendarApi {
@@ -578,6 +592,100 @@ describe("app startup", () => {
           updated: true,
         });
       });
+    } finally {
+      restoreCalendarApi();
+      restoreResizeObserver();
+    }
+  });
+
+  it("refetches both board and mini-calendar events after refresh", async () => {
+    try {
+      installResizeObserverMock();
+      const calendarApi = createSignedInCalendarApiMock();
+      calendarApi.sync.refresh = vi.fn().mockResolvedValue({
+        lastSyncedAt: "2026-03-27T15:43:00.000Z",
+        message: "Synced 1 calendar, 1 event.",
+        messageKey: "sync.synced",
+        counts: {
+          calendars: 1,
+          events: 1,
+        },
+        state: "idle",
+      });
+      installCalendarApi(calendarApi);
+
+      renderApp();
+
+      await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
+      await waitFor(() => {
+        expect(calendarApi.events.list.mock.calls.length).toBeGreaterThanOrEqual(2);
+      });
+
+      fireEvent.click(screen.getByTitle("Sync"));
+
+      await waitFor(() => {
+        expect(calendarApi.sync.refresh).toHaveBeenCalledOnce();
+        expect(calendarApi.events.list.mock.calls.length).toBeGreaterThanOrEqual(4);
+      });
+    } finally {
+      restoreCalendarApi();
+      restoreResizeObserver();
+    }
+  });
+
+  it("requires a double click to create a point event from the calendar surface", async () => {
+    try {
+      installResizeObserverMock();
+      installCalendarApi(createSignedInCalendarApiMock());
+
+      renderApp();
+
+      await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
+
+      act(() => {
+        getCalendarDateClickHandler()({
+          allDay: true,
+          date: new Date("2026-03-30T00:00:00.000Z"),
+          jsEvent: { detail: 1 } as MouseEvent,
+        } as DateClickArg);
+      });
+
+      expect(screen.queryByRole("button", { name: "Create Event" })).toBeNull();
+
+      act(() => {
+        getCalendarDateClickHandler()({
+          allDay: true,
+          date: new Date("2026-03-30T00:00:00.000Z"),
+          jsEvent: { detail: 2 } as MouseEvent,
+        } as DateClickArg);
+      });
+
+      await expect(screen.findByRole("button", { name: "Create Event" })).resolves.not.toBeNull();
+    } finally {
+      restoreCalendarApi();
+      restoreResizeObserver();
+    }
+  });
+
+  it("still opens the create editor for drag selections", async () => {
+    try {
+      installResizeObserverMock();
+      installCalendarApi(createSignedInCalendarApiMock());
+
+      renderApp();
+
+      await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
+
+      act(() => {
+        getCalendarSelectHandler()({
+          allDay: false,
+          end: new Date("2026-03-30T10:00:00.000Z"),
+          start: new Date("2026-03-30T09:00:00.000Z"),
+        } as DateSelectArg);
+      });
+
+      await expect(screen.findByRole("button", { name: "Create Event" })).resolves.not.toBeNull();
+      expect(mockCalendarSurfaceApi.unselect).toHaveBeenCalled();
     } finally {
       restoreCalendarApi();
       restoreResizeObserver();
