@@ -785,6 +785,7 @@ class AppDatabase {
     `);
     this.migrateCalendarsTable();
     this.migrateReminderStateTable(hadReminderStateTable);
+    this.migrateReminderStateKeyFormat();
   }
 
   private migrateCalendarsTable(): void {
@@ -808,18 +809,30 @@ class AppDatabase {
 
     this.db.exec(`
       INSERT OR IGNORE INTO reminder_state (dedupe_key, dismissed_at)
-      SELECT dedupe_key, fired_at
+      SELECT dedupe_key || ':pre', fired_at
       FROM notification_state;
 
       INSERT OR IGNORE INTO reminder_state (dedupe_key, dismissed_at)
       SELECT
-        events.calendar_id || ':' || events.id || ':' || events.start_sort,
+        events.calendar_id || ':' || events.id || ':' || events.start_sort || ':pre',
         strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
       FROM events
       WHERE events.is_reminder_on = 1
         AND events.reminder_minutes_before_start IS NOT NULL
         AND julianday(events.start_sort) - (events.reminder_minutes_before_start / 1440.0) <
           julianday('now', '-5 minutes')
+    `);
+  }
+
+  private migrateReminderStateKeyFormat(): void {
+    this.db.exec(`
+      INSERT OR IGNORE INTO reminder_state (dedupe_key, snoozed_until, dismissed_at)
+      SELECT dedupe_key || ':pre', snoozed_until, dismissed_at
+      FROM reminder_state
+      WHERE dedupe_key NOT LIKE '%:pre' AND dedupe_key NOT LIKE '%:start';
+
+      DELETE FROM reminder_state
+      WHERE dedupe_key NOT LIKE '%:pre' AND dedupe_key NOT LIKE '%:start';
     `);
   }
 
