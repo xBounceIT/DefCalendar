@@ -852,10 +852,14 @@ button {
 .account-calendars {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   overflow: hidden;
   min-height: 0;
   padding: 0 16px;
+}
+
+.account-calendars-wrapper.expanded .account-calendars {
+  padding: 6px 16px;
 }
 
 .account-calendars .calendar-row-content {
@@ -871,7 +875,7 @@ button {
   grid-template-columns: auto 1fr;
   align-items: center;
   gap: 10px;
-  padding: 6px 8px;
+  padding: 4px 8px;
   border-radius: 6px;
   cursor: pointer;
   transition: background 0.1s ease;
@@ -882,11 +886,11 @@ button {
 }
 
 .account-calendars .calendar-row:first-child {
-  margin-top: 13px;
+  margin-top: 0;
 }
 
 .account-calendars .calendar-row:last-child {
-  margin-bottom: 14px;
+  margin-bottom: 0;
 }
 
 .calendar-row input[type="checkbox"] {
@@ -903,11 +907,25 @@ button {
   gap: 10px;
 }
 
+.calendar-row-wrapper {
+  position: relative;
+}
+
 .calendar-chip {
   width: 3px;
   height: 16px;
   border-radius: 2px;
   flex-shrink: 0;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition:
+    width 0.15s ease,
+    height 0.15s ease;
+}
+
+.calendar-chip:hover {
+  width: 6px;
 }
 
 .calendar-name {
@@ -917,6 +935,40 @@ button {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.color-picker {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  background: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  margin-top: 4px;
+}
+
+.color-picker-option {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.color-picker-option:hover {
+  transform: scale(1.1);
+}
+
+.color-picker-option.selected {
+  border-color: var(--ink);
 }
 
 /* Sync Section */
@@ -1650,51 +1702,58 @@ button {
 }
 
 /* Event colors with left border accent */
-.fc-event[data-calendar-color="lightBlue"],
-.fc-event[data-calendar-color="blue"] {
+.fc-event.calendar-event--color-blue {
   background: rgba(59, 130, 246, 0.2);
   border-left-color: #3b82f6;
   color: #93c5fd;
 }
 
-.fc-event[data-calendar-color="green"] {
+.fc-event.calendar-event--color-green {
   background: rgba(34, 197, 94, 0.2);
   border-left-color: #22c55e;
   color: #86efac;
 }
 
-.fc-event[data-calendar-color="orange"] {
+.fc-event.calendar-event--color-orange {
   background: rgba(245, 158, 11, 0.2);
   border-left-color: #f59e0b;
   color: #fcd34d;
 }
 
-.fc-event[data-calendar-color="purple"] {
+.fc-event.calendar-event--color-purple {
   background: rgba(168, 85, 247, 0.2);
   border-left-color: #a855f7;
   color: #d8b4fe;
 }
 
-.fc-event[data-calendar-color="red"] {
+.fc-event.calendar-event--color-red {
   background: rgba(239, 68, 68, 0.2);
   border-left-color: #ef4444;
   color: #fca5a5;
 }
 
-.fc-event[data-calendar-color="teal"] {
+.fc-event.calendar-event--color-teal {
   background: rgba(20, 184, 166, 0.2);
   border-left-color: #14b8a6;
   color: #5eead4;
 }
 
-.fc-event[data-calendar-color="yellow"] {
+.fc-event.calendar-event--color-yellow {
   background: rgba(234, 179, 8, 0.2);
   border-left-color: #eab308;
   color: #fde047;
 }
 
 /* Default event style */
-.fc-event:not([data-calendar-color]) {
+.fc-event:not(
+  .calendar-event--color-blue,
+  .calendar-event--color-green,
+  .calendar-event--color-orange,
+  .calendar-event--color-purple,
+  .calendar-event--color-red,
+  .calendar-event--color-teal,
+  .calendar-event--color-yellow
+) {
   background: var(--accent-bg);
   border-left-color: var(--accent);
   color: var(--ink);

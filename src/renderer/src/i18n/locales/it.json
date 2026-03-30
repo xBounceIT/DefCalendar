@@ -58,7 +58,8 @@
     "refresh": "Sincronizza",
     "settings": "Impostazioni",
     "signOut": "Disconnetti",
-    "language": "Lingua"
+    "language": "Lingua",
+    "changeCalendarColor": "Cambia colore calendario"
   },
   "miniCalendar": {
     "previousMonth": "Mese precedente",

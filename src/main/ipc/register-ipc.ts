@@ -16,6 +16,7 @@ import {
   reminderDismissArgsSchema,
   reminderSnoozeArgsSchema,
   respondToEventArgsSchema,
+  setCalendarColorArgsSchema,
   setCalendarVisibilityArgsSchema,
   syncStatusSchema,
   userSettingsPatchSchema,
@@ -155,6 +156,13 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     const args = setCalendarVisibilityArgsSchema.parse(input);
     dependencies.settings.setCalendarVisibility(args.calendarId, args.isVisible);
     void dependencies.reminders.checkNow();
+    return enrichCalendars();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.calendarsSetColor, async (event, input) => {
+    validateMainSender(event);
+    const args = setCalendarColorArgsSchema.parse(input);
+    dependencies.db.setCalendarColor(args.calendarId, args.color);
     return enrichCalendars();
   });
 

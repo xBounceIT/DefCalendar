@@ -318,7 +318,7 @@ describe("reminder service", () => {
     expect(fixture.db.listReminderCandidates).toHaveBeenCalledTimes(0);
     expect(fixture.db.listReminderEventsByStartRange).toHaveBeenCalledWith(
       ["calendar-1"],
-      "2026-03-30T09:35:00.000Z",
+      "2026-03-16T09:45:00.000Z",
       "2026-04-13T09:45:00.000Z",
     );
     expect(fixture.reminderManager.show).toHaveBeenCalledWith(

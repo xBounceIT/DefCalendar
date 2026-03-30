@@ -440,6 +440,18 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     queryClient.setQueryData(["calendars"], nextCalendars);
   }
 
+  async function handleCalendarColorChange(
+    calendar: CalendarSummary,
+    color: string,
+  ): Promise<void> {
+    const nextCalendars = await calendarApi.calendars.setColor({
+      calendarId: calendar.id,
+      color,
+    });
+    queryClient.setQueryData(["calendars"], nextCalendars);
+    await invalidateEventQueries(queryClient);
+  }
+
   function openCreateDialog(seed: EditorSeed): void {
     if (!editableCalendar) {
       setBannerError(t("app.noWritableCalendar"));
@@ -759,6 +771,9 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         eventDayKeys={miniCalendarEventDayKeys}
         isRefreshing={refreshMutation.isPending}
         onAccountAdd={() => setShowAuthScreen(true)}
+        onCalendarColorChange={(calendar, color) => {
+          void handleCalendarColorChange(calendar, color);
+        }}
         onCalendarToggle={(calendar) => {
           void handleCalendarToggle(calendar);
         }}
@@ -896,7 +911,7 @@ function buildCalendarEvents(
       editable: canEditEvent,
       end: event.end,
       extendedProps: {
-        calendarColor: calendar?.color ?? null,
+        calendarColor: calendar?.userColor ?? calendar?.color ?? null,
         calendarId: event.calendarId,
         eventData: event,
         eventId: event.id,

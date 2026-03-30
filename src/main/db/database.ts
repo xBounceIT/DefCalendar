@@ -70,6 +70,7 @@ class AppDatabase {
           home_account_id,
           name,
           color,
+          user_color,
           can_edit,
           can_share,
           is_default_calendar,
@@ -91,6 +92,7 @@ class AppDatabase {
         home_account_id,
         name,
         color,
+        user_color,
         can_edit,
         can_share,
         is_default_calendar,
@@ -129,6 +131,37 @@ class AppDatabase {
     return readStringProperty(row, "home_account_id");
   }
 
+  setCalendarColor(calendarId: string, color: string): CalendarSummary | null {
+    this.db.prepare("UPDATE calendars SET user_color = ? WHERE id = ?").run(color, calendarId);
+
+    const row = this.db
+      .prepare(
+        `
+        SELECT
+          id,
+          home_account_id,
+          name,
+          color,
+          user_color,
+          can_edit,
+          can_share,
+          is_default_calendar,
+          owner_name,
+          owner_address,
+          payload_json
+        FROM calendars
+        WHERE id = ?
+      `,
+      )
+      .get(calendarId);
+
+    if (!row) {
+      return null;
+    }
+
+    return readCalendarSummary(row);
+  }
+
   upsertCalendars(calendars: CalendarSummary[], homeAccountId: string): void {
     const upsert = this.db.prepare(`
       INSERT INTO calendars (
@@ -136,6 +169,7 @@ class AppDatabase {
         home_account_id,
         name,
         color,
+        user_color,
         can_edit,
         can_share,
         is_default_calendar,
@@ -148,6 +182,7 @@ class AppDatabase {
         @home_account_id,
         @name,
         @color,
+        NULL,
         @can_edit,
         @can_share,
         @is_default_calendar,
@@ -828,6 +863,7 @@ class AppDatabase {
       );
     `);
     this.migrateCalendarsTable();
+    this.migrateCalendarsUserColor();
     this.migrateReminderStateTable(hadReminderStateTable);
     this.migrateReminderStateKeyFormat();
   }
@@ -843,6 +879,20 @@ class AppDatabase {
     );
     if (!hasHomeAccountId) {
       this.db.exec("ALTER TABLE calendars ADD COLUMN home_account_id TEXT NOT NULL DEFAULT ''");
+    }
+  }
+
+  private migrateCalendarsUserColor(): void {
+    const tableInfo = this.db.prepare("PRAGMA table_info(calendars)").all();
+    const hasUserColor = tableInfo.some(
+      (col: unknown) =>
+        typeof col === "object" &&
+        col !== null &&
+        "name" in col &&
+        (col as Record<string, unknown>).name === "user_color",
+    );
+    if (!hasUserColor) {
+      this.db.exec("ALTER TABLE calendars ADD COLUMN user_color TEXT");
     }
   }
 
@@ -947,6 +997,7 @@ function readCalendarSummary(row: unknown): CalendarSummary {
     name: readStringProperty(row, "name"),
     ownerAddress: readNullableStringProperty(row, "owner_address"),
     ownerName: readNullableStringProperty(row, "owner_name"),
+    userColor: readNullableStringProperty(row, "user_color"),
   });
 }
 

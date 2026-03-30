@@ -1,7 +1,7 @@
 import type { AccountSummary, CalendarSummary, SyncStatus, UserSettings } from "@shared/schemas";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCircleUser, faPlus } from "@fortawesome/free-solid-svg-icons";
-import { getCalendarAccent } from "@shared/calendar";
+import { CALENDAR_COLORS, getCalendarAccent } from "@shared/calendar";
 import MiniCalendar from "./mini-calendar";
 import React from "react";
 import { formatSyncTimestamp } from "../date-formatting";
@@ -16,6 +16,7 @@ interface CalendarSidebarProps {
   isRefreshing: boolean;
   onAccountAdd: () => void;
   onCalendarToggle: (calendar: CalendarSummary) => void;
+  onCalendarColorChange: (calendar: CalendarSummary, color: string) => void;
   onCreateEvent: () => void;
   onDateSelect: (date: Date) => void;
   onMiniCalendarMonthChange: (month: Date) => void;
@@ -47,6 +48,45 @@ function ChevronIcon({ expanded }: { expanded: boolean }) {
   );
 }
 
+function ColorPicker({
+  selectedColor,
+  onSelect,
+  onClose,
+}: {
+  selectedColor: string | null;
+  onSelect: (color: string) => void;
+  onClose: () => void;
+}) {
+  const pickerRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    function handleClickOutside(event: MouseEvent): void {
+      if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [onClose]);
+
+  return (
+    <div className="color-picker" ref={pickerRef}>
+      {CALENDAR_COLORS.map((color) => (
+        <button
+          className={`color-picker-option ${selectedColor === color.name ? "selected" : ""}`}
+          key={color.name}
+          onClick={() => onSelect(color.name)}
+          style={{ backgroundColor: color.hex }}
+          type="button"
+        />
+      ))}
+    </div>
+  );
+}
+
 function CalendarListHeader({ onAdd }: { onAdd: () => void }) {
   const { t } = useTranslation();
 
@@ -68,30 +108,66 @@ function CalendarListHeader({ onAdd }: { onAdd: () => void }) {
 function CalendarRow({
   calendar,
   onCalendarToggle,
+  onColorChange,
+  openColorPickerId,
+  setOpenColorPickerId,
 }: {
   calendar: CalendarSummary;
   onCalendarToggle: (calendar: CalendarSummary) => void;
+  onColorChange: (calendar: CalendarSummary, color: string) => void;
+  openColorPickerId: string | null;
+  setOpenColorPickerId: (id: string | null) => void;
 }) {
+  const { t } = useTranslation();
+  const displayColor = getCalendarAccent(calendar.color, calendar.userColor);
+
+  const handleColorClick = (event: React.MouseEvent): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    setOpenColorPickerId(openColorPickerId === calendar.id ? null : calendar.id);
+  };
+
+  const handleColorSelect = (color: string): void => {
+    onColorChange(calendar, color);
+    setOpenColorPickerId(null);
+  };
+
+  const handleClose = (): void => {
+    setOpenColorPickerId(null);
+  };
+
   return (
-    <label
-      className="calendar-row"
-      htmlFor={`calendar-toggle-${calendar.id}`}
-      aria-label={calendar.name}
-    >
-      <input
-        id={`calendar-toggle-${calendar.id}`}
-        type="checkbox"
-        checked={calendar.isVisible}
-        onChange={() => onCalendarToggle(calendar)}
-      />
-      <div className="calendar-row-content">
-        <span
-          className="calendar-chip"
-          style={{ backgroundColor: getCalendarAccent(calendar.color) }}
+    <div className="calendar-row-wrapper">
+      <label
+        className="calendar-row"
+        htmlFor={`calendar-toggle-${calendar.id}`}
+        aria-label={calendar.name}
+      >
+        <input
+          id={`calendar-toggle-${calendar.id}`}
+          type="checkbox"
+          checked={calendar.isVisible}
+          onChange={() => onCalendarToggle(calendar)}
         />
-        <span className="calendar-name">{calendar.name}</span>
-      </div>
-    </label>
+        <div className="calendar-row-content">
+          <button
+            className="calendar-chip"
+            onClick={handleColorClick}
+            style={{ backgroundColor: displayColor }}
+            title={t("sidebar.changeCalendarColor")}
+            type="button"
+          />
+          <span className="calendar-name">{calendar.name}</span>
+        </div>
+      </label>
+      {openColorPickerId === calendar.id && (
+        <ColorPicker
+          selectedColor={calendar.userColor ?? calendar.color}
+          onSelect={handleColorSelect}
+          onClose={handleClose}
+        />
+      )}
+    </div>
   );
 }
 
@@ -99,14 +175,20 @@ function CalendarListGroup({
   account,
   calendars,
   onCalendarToggle,
+  onCalendarColorChange,
   isExpanded,
   onToggle,
+  openColorPickerId,
+  setOpenColorPickerId,
 }: {
   account: AccountSummary;
   calendars: CalendarSummary[];
   onCalendarToggle: (calendar: CalendarSummary) => void;
+  onCalendarColorChange: (calendar: CalendarSummary, color: string) => void;
   isExpanded: boolean;
   onToggle: () => void;
+  openColorPickerId: string | null;
+  setOpenColorPickerId: (id: string | null) => void;
 }) {
   return (
     <div className="calendar-list-group">
@@ -124,6 +206,9 @@ function CalendarListGroup({
                 calendar={calendar}
                 key={calendar.id}
                 onCalendarToggle={onCalendarToggle}
+                onColorChange={onCalendarColorChange}
+                openColorPickerId={openColorPickerId}
+                setOpenColorPickerId={setOpenColorPickerId}
               />
             ))}
           </div>
@@ -137,12 +222,15 @@ function CalendarList({
   accounts,
   calendars,
   onCalendarToggle,
+  onCalendarColorChange,
 }: {
   accounts: AccountSummary[];
   calendars: CalendarSummary[];
   onCalendarToggle: (calendar: CalendarSummary) => void;
+  onCalendarColorChange: (calendar: CalendarSummary, color: string) => void;
 }) {
   const [expandedGroups, setExpandedGroups] = React.useState<Set<string>>(() => new Set());
+  const [openColorPickerId, setOpenColorPickerId] = React.useState<string | null>(null);
 
   const groups = React.useMemo(() => {
     const grouped = new Map<string, CalendarSummary[]>();
@@ -182,8 +270,11 @@ function CalendarList({
           calendars={groups.get(homeAccountId) ?? []}
           isExpanded={expandedGroups.has(homeAccountId)}
           key={account.homeAccountId}
+          onCalendarColorChange={onCalendarColorChange}
           onCalendarToggle={onCalendarToggle}
           onToggle={() => handleToggleGroup(homeAccountId)}
+          openColorPickerId={openColorPickerId}
+          setOpenColorPickerId={setOpenColorPickerId}
         />
       ))}
     </div>
@@ -344,6 +435,7 @@ function CalendarSidebar(props: CalendarSidebarProps) {
         <CalendarList
           accounts={props.accounts}
           calendars={props.calendars}
+          onCalendarColorChange={props.onCalendarColorChange}
           onCalendarToggle={props.onCalendarToggle}
         />
       </div>

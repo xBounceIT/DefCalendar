@@ -58,7 +58,8 @@
     "refresh": "Sync",
     "settings": "Settings",
     "signOut": "Sign out",
-    "language": "Language"
+    "language": "Language",
+    "changeCalendarColor": "Change calendar color"
   },
   "miniCalendar": {
     "previousMonth": "Previous month",

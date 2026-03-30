@@ -15,6 +15,7 @@ import type {
   ListOutlookCategoriesArgs,
   OutlookCategory,
   RespondToEventArgs,
+  SetCalendarColorArgs,
   SetCalendarVisibilityArgs,
   SyncStatus,
   UserSettings,
@@ -32,6 +33,7 @@ export const IPC_CHANNELS = {
   authSwitchAccount: "auth:switch-account",
   authStateChanged: "auth:state-changed",
   calendarsList: "calendars:list",
+  calendarsSetColor: "calendars:set-color",
   calendarsSetVisibility: "calendars:set-visibility",
   categoriesList: "categories:list",
   eventsList: "events:list",
@@ -81,6 +83,7 @@ interface CalendarApi {
   };
   calendars: {
     list: () => Promise<CalendarSummary[]>;
+    setColor: (args: SetCalendarColorArgs) => Promise<CalendarSummary[]>;
     setVisibility: (args: SetCalendarVisibilityArgs) => Promise<CalendarSummary[]>;
   };
   categories: {
