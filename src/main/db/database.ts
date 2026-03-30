@@ -40,6 +40,7 @@ interface ReminderCandidate {
   dismissedAt: null | string;
   event: CalendarEvent;
   snoozedUntil: null | string;
+  reminderType: "pre" | "start";
 }
 
 class AppDatabase {
@@ -391,13 +392,17 @@ class AppDatabase {
     const placeholders = visibleCalendarIds.map(() => "?").join(", ");
     const statement = this.db.prepare(`
       SELECT
-        events.calendar_id || ':' || events.id || ':' || events.start_sort AS dedupe_key,
+        events.calendar_id || ':' || events.id || ':' || events.start_sort AS base_key,
         events.payload_json,
-        reminder_state.dismissed_at,
-        reminder_state.snoozed_until
+        reminder_state_pre.dismissed_at AS dismissed_at_pre,
+        reminder_state_pre.snoozed_until AS snoozed_until_pre,
+        reminder_state_start.dismissed_at AS dismissed_at_start,
+        reminder_state_start.snoozed_until AS snoozed_until_start
       FROM events
-      LEFT JOIN reminder_state
-        ON reminder_state.dedupe_key = events.calendar_id || ':' || events.id || ':' || events.start_sort
+      LEFT JOIN reminder_state AS reminder_state_pre
+        ON reminder_state_pre.dedupe_key = events.calendar_id || ':' || events.id || ':' || events.start_sort || ':pre'
+      LEFT JOIN reminder_state AS reminder_state_start
+        ON reminder_state_start.dedupe_key = events.calendar_id || ':' || events.id || ':' || events.start_sort || ':start'
       WHERE events.is_reminder_on = 1
         AND events.reminder_minutes_before_start IS NOT NULL
         AND events.start_sort <= ?
@@ -405,12 +410,33 @@ class AppDatabase {
       ORDER BY events.start_sort ASC, events.subject COLLATE NOCASE ASC
     `);
 
-    return statement.all(windowEnd, ...visibleCalendarIds).map((row) => ({
-      dedupeKey: readStringProperty(row, "dedupe_key"),
-      dismissedAt: readNullableStringProperty(row, "dismissed_at"),
-      event: calendarEventSchema.parse(JSON.parse(readStringProperty(row, "payload_json"))),
-      snoozedUntil: readNullableStringProperty(row, "snoozed_until"),
-    }));
+    const candidates: ReminderCandidate[] = [];
+
+    for (const row of statement.all(windowEnd, ...visibleCalendarIds)) {
+      const event = calendarEventSchema.parse(JSON.parse(readStringProperty(row, "payload_json")));
+      const baseKey = readStringProperty(row, "base_key");
+      const reminderMinutes = event.reminderMinutesBeforeStart;
+
+      if (reminderMinutes !== null && reminderMinutes > 0) {
+        candidates.push({
+          dedupeKey: `${baseKey}:pre`,
+          dismissedAt: readNullableStringProperty(row, "dismissed_at_pre"),
+          event,
+          reminderType: "pre",
+          snoozedUntil: readNullableStringProperty(row, "snoozed_until_pre"),
+        });
+      }
+
+      candidates.push({
+        dedupeKey: `${baseKey}:start`,
+        dismissedAt: readNullableStringProperty(row, "dismissed_at_start"),
+        event,
+        reminderType: "start",
+        snoozedUntil: readNullableStringProperty(row, "snoozed_until_start"),
+      });
+    }
+
+    return candidates;
   }
 
   getSettings(): UserSettings {

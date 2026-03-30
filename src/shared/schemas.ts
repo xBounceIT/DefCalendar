@@ -340,6 +340,7 @@ const reminderDialogItemSchema = z.object({
   location: z.string().nullable(),
   onlineMeeting: onlineMeetingInfoSchema.nullable().default(null),
   reminderMinutesBeforeStart: z.number().int().min(0),
+  reminderType: z.enum(["pre", "start"]).optional(),
   start: dateTimeStringSchema,
   subject: z.string(),
 });

@@ -21,15 +21,17 @@ function createCandidate(overrides?: {
   dedupeKey?: string;
   dismissedAt?: null | string;
   reminderMinutesBeforeStart?: number;
+  reminderType?: "pre" | "start";
   snoozedUntil?: null | string;
   start?: string;
   subject?: string;
 }) {
   const calendarId = overrides?.calendarId ?? "calendar-1";
   const start = overrides?.start ?? "2026-03-30T10:00:00.000Z";
+  const reminderType = overrides?.reminderType ?? "pre";
 
   return {
-    dedupeKey: overrides?.dedupeKey ?? `${calendarId}:event-1:${start}`,
+    dedupeKey: overrides?.dedupeKey ?? `${calendarId}:event-1:${start}:${reminderType}`,
     dismissedAt: overrides?.dismissedAt ?? null,
     event: {
       calendarId,
@@ -40,6 +42,7 @@ function createCandidate(overrides?: {
       start,
       subject: overrides?.subject ?? "Planning",
     },
+    reminderType,
     snoozedUntil: overrides?.snoozedUntil ?? null,
   };
 }
@@ -107,12 +110,13 @@ describe("reminder service", () => {
       {
         items: [
           {
-            dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z",
+            dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z:pre",
             end: "2026-03-30T10:30:00.000Z",
             isAllDay: false,
             location: "Room 3",
             onlineMeeting: null,
             reminderMinutesBeforeStart: 15,
+            reminderType: "pre",
             start: "2026-03-30T10:00:00.000Z",
             subject: "Planning",
           },
@@ -138,7 +142,7 @@ describe("reminder service", () => {
     expect(fixture.reminderManager.show).toHaveBeenLastCalledWith(
       expect.objectContaining({
         items: [
-          expect.objectContaining({ dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z" }),
+          expect.objectContaining({ dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z:pre" }),
         ],
       }),
       true,
@@ -188,7 +192,7 @@ describe("reminder service", () => {
       candidates: [
         createCandidate(),
         createCandidate({
-          dedupeKey: "calendar-1:event-2:2026-03-30T10:15:00.000Z",
+          dedupeKey: "calendar-1:event-2:2026-03-30T10:15:00.000Z:pre",
           reminderMinutesBeforeStart: 30,
           start: "2026-03-30T10:15:00.000Z",
           subject: "Follow up",
@@ -201,11 +205,55 @@ describe("reminder service", () => {
 
     expect(fixture.db.dismissReminder).toHaveBeenNthCalledWith(
       1,
-      "calendar-1:event-1:2026-03-30T10:00:00.000Z",
+      "calendar-1:event-1:2026-03-30T10:00:00.000Z:pre",
     );
     expect(fixture.db.dismissReminder).toHaveBeenNthCalledWith(
       2,
-      "calendar-1:event-2:2026-03-30T10:15:00.000Z",
+      "calendar-1:event-2:2026-03-30T10:15:00.000Z:pre",
+    );
+  });
+
+  it("shows a start-time reminder when the event starts", async () => {
+    vi.setSystemTime(new Date("2026-03-30T10:00:00.000Z"));
+    const fixture = createFixture({
+      candidates: [
+        createCandidate({ reminderType: "start" }),
+      ],
+    });
+
+    await fixture.service.checkNow();
+
+    expect(fixture.reminderManager.show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [
+          expect.objectContaining({
+            dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z:start",
+            reminderType: "start",
+          }),
+        ],
+      }),
+      true,
+    );
+  });
+
+  it("snoozes start-time reminders independently from pre-event reminders", async () => {
+    vi.setSystemTime(new Date("2026-03-30T10:00:00.000Z"));
+    const fixture = createFixture({
+      candidates: [
+        createCandidate({ reminderType: "pre" }),
+        createCandidate({ reminderType: "start", snoozedUntil: "2026-03-30T10:05:00.000Z" }),
+      ],
+    });
+
+    await fixture.service.checkNow();
+
+    expect(fixture.reminderManager.show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [
+          expect.objectContaining({ reminderType: "pre" }),
+        ],
+      }),
+      true,
     );
   });
 });
