@@ -704,6 +704,29 @@ function parseTimeToMinutes(time: string): number {
   return h * 60 + m;
 }
 
+function dateInputToDate(value: string): Date {
+  return new Date(`${value}T00:00:00`);
+}
+
+function formatDateInput(date: Date): string {
+  const year = date.getFullYear().toString().padStart(4, "0");
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const day = date.getDate().toString().padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function addDaysToDateInput(value: string, days: number): string {
+  const date = dateInputToDate(value);
+  date.setDate(date.getDate() + days);
+  return formatDateInput(date);
+}
+
+function daysBetweenDateInputs(from: string, to: string): number {
+  const fromDate = dateInputToDate(from);
+  const toDate = dateInputToDate(to);
+  return Math.round((toDate.getTime() - fromDate.getTime()) / (24 * 60 * 60 * 1000));
+}
+
 function minutesToTime(minutes: number): string {
   const h = Math.floor(minutes / 60) % 24;
   const m = minutes % 60;
@@ -775,16 +798,22 @@ function SchedulingSection({
 
   const startTimeMinutes = parseTimeToMinutes(extractTime(form.startInput));
   const endTimeMinutes = parseTimeToMinutes(extractTime(form.endInput));
+  const minimumEndMinutes = startTimeMinutes + 30;
   const endTimeOptions = useMemo(
     () =>
-      TIME_OPTIONS.filter((opt) => {
-        const optMinutes = parseTimeToMinutes(opt.value);
-        return optMinutes >= startTimeMinutes + 30;
-      }).map((opt) => ({
-        ...opt,
-        label: `${opt.label} ${formatDurationLabel(startTimeMinutes, parseTimeToMinutes(opt.value), t)}`,
-      })),
-    [startTimeMinutes, t],
+      TIME_OPTIONS.map((opt) => {
+        let effectiveEndMinutes = parseTimeToMinutes(opt.value);
+        while (effectiveEndMinutes < minimumEndMinutes) {
+          effectiveEndMinutes += 24 * 60;
+        }
+        return { ...opt, effectiveEndMinutes };
+      })
+        .filter((opt) => opt.effectiveEndMinutes >= minimumEndMinutes)
+        .map((opt) => ({
+          label: `${opt.label} ${formatDurationLabel(startTimeMinutes, opt.effectiveEndMinutes, t)}`,
+          value: opt.value,
+        })),
+    [minimumEndMinutes, startTimeMinutes, t],
   );
 
   const handleStartTimeChange = (newTime: string) => {
@@ -792,11 +821,19 @@ function SchedulingSection({
     const newStartMinutes = parseTimeToMinutes(newTime);
     let newEndInput = form.endInput;
 
-    const currentEndMinutes = endTimeMinutes;
+    const currentEndDayOffset = daysBetweenDateInputs(
+      extractDate(form.startInput),
+      extractDate(form.endInput),
+    );
+    const currentEndMinutes = endTimeMinutes + currentEndDayOffset * 24 * 60;
     if (currentEndMinutes < newStartMinutes + 30) {
       const adjustedEndMinutes = newStartMinutes + 30;
+      const adjustedEndDate = addDaysToDateInput(
+        currentDate,
+        Math.floor(adjustedEndMinutes / (24 * 60)),
+      );
       const adjustedEndTime = minutesToTime(adjustedEndMinutes);
-      newEndInput = combineDateTime(extractDate(form.endInput), adjustedEndTime);
+      newEndInput = combineDateTime(adjustedEndDate, adjustedEndTime);
     }
 
     onChange((current) =>
@@ -807,9 +844,17 @@ function SchedulingSection({
   };
 
   const handleEndTimeChange = (newTime: string) => {
-    const currentDate = extractDate(form.endInput);
+    let adjustedEndMinutes = parseTimeToMinutes(newTime);
+    while (adjustedEndMinutes < minimumEndMinutes) {
+      adjustedEndMinutes += 24 * 60;
+    }
+    const endDate = addDaysToDateInput(
+      extractDate(form.startInput),
+      Math.floor(adjustedEndMinutes / (24 * 60)),
+    );
+    const endTime = minutesToTime(adjustedEndMinutes);
     onChange((current) =>
-      current ? { ...current, endInput: combineDateTime(currentDate, newTime) } : current,
+      current ? { ...current, endInput: combineDateTime(endDate, endTime) } : current,
     );
   };
 
@@ -838,10 +883,20 @@ function SchedulingSection({
               <input
                 disabled={disabled}
                 onChange={(e) => {
+                  const previousStartDate = extractDate(form.startInput);
+                  const previousEndDate = extractDate(form.endInput);
                   const currentTime = extractTime(form.startInput) || "00:00";
+                  const endTime = extractTime(form.endInput) || "00:30";
+                  const newStartDate = e.target.value;
+                  const dayDelta = daysBetweenDateInputs(previousStartDate, newStartDate);
+                  const newEndDate = addDaysToDateInput(previousEndDate, dayDelta);
                   onChange((current) =>
                     current
-                      ? { ...current, startInput: combineDateTime(e.target.value, currentTime) }
+                      ? {
+                          ...current,
+                          startInput: combineDateTime(newStartDate, currentTime),
+                          endInput: combineDateTime(newEndDate, endTime),
+                        }
                       : current,
                   );
                 }}
