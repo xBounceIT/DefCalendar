@@ -42,6 +42,11 @@ interface ReminderCandidate {
   snoozedUntil: null | string;
 }
 
+interface ReminderStateSnapshot {
+  dismissedAt: null | string;
+  snoozedUntil: null | string;
+}
+
 class AppDatabase {
   private readonly db: Database.Database;
 
@@ -411,6 +416,45 @@ class AppDatabase {
       event: calendarEventSchema.parse(JSON.parse(readStringProperty(row, "payload_json"))),
       snoozedUntil: readNullableStringProperty(row, "snoozed_until"),
     }));
+  }
+
+  listReminderEventsByStartRange(
+    visibleCalendarIds: string[],
+    windowStart: string,
+    windowEnd: string,
+  ): CalendarEvent[] {
+    if (visibleCalendarIds.length === 0) {
+      return [];
+    }
+
+    const placeholders = visibleCalendarIds.map(() => "?").join(", ");
+    const statement = this.db.prepare(`
+      SELECT payload_json
+      FROM events
+      WHERE events.start_sort >= ?
+        AND events.start_sort <= ?
+        AND events.calendar_id IN (${placeholders})
+      ORDER BY events.start_sort ASC, events.subject COLLATE NOCASE ASC
+    `);
+
+    return statement
+      .all(windowStart, windowEnd, ...visibleCalendarIds)
+      .map((row) => calendarEventSchema.parse(JSON.parse(readStringProperty(row, "payload_json"))));
+  }
+
+  getReminderState(dedupeKey: string): null | ReminderStateSnapshot {
+    const row = this.db
+      .prepare("SELECT dismissed_at, snoozed_until FROM reminder_state WHERE dedupe_key = ?")
+      .get(dedupeKey);
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      dismissedAt: readNullableStringProperty(row, "dismissed_at"),
+      snoozedUntil: readNullableStringProperty(row, "snoozed_until"),
+    };
   }
 
   getSettings(): UserSettings {

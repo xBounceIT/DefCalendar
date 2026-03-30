@@ -29,8 +29,25 @@ type SettingsSection =
   | "about";
 
 type LanguageSetting = UserSettings["language"];
+type LocalReminderRuleSetting = UserSettings["localReminderRules"][number];
+type LocalReminderWhenSetting = LocalReminderRuleSetting["when"];
 type SyncIntervalSetting = UserSettings["syncIntervalMinutes"];
 type TimeFormatSetting = UserSettings["timeFormat"];
+
+const MAX_LOCAL_REMINDER_MINUTES = 20_160;
+const MAX_LOCAL_REMINDER_RULES = 10;
+const DEFAULT_LOCAL_REMINDER_RULE: LocalReminderRuleSetting = {
+  minutes: 15,
+  when: "before",
+};
+
+function clampLocalReminderMinutes(value: number): number {
+  if (Number.isNaN(value)) {
+    return DEFAULT_LOCAL_REMINDER_RULE.minutes;
+  }
+
+  return Math.max(0, Math.min(MAX_LOCAL_REMINDER_MINUTES, value));
+}
 
 function CloseIcon() {
   return (
@@ -146,14 +163,137 @@ function LanguageSection({ onSave, settings }: Pick<SettingsDialogProps, "onSave
   );
 }
 
-function NotificationsSection() {
+function NotificationsSection({
+  onSave,
+  settings,
+}: Pick<SettingsDialogProps, "onSave" | "settings">) {
   const { t } = useTranslation();
+  const whenOptions: LocalReminderWhenSetting[] = ["before", "after"];
+  const whenLabels: Record<LocalReminderWhenSetting, string> = {
+    before: t("settings.sections.notifications.whenOptions.before"),
+    after: t("settings.sections.notifications.whenOptions.after"),
+  };
+  const localReminderOverrideEnabled = settings.localReminderOverrideEnabled ?? false;
+  const localReminderRules =
+    settings.localReminderRules?.length > 0
+      ? settings.localReminderRules
+      : [{ ...DEFAULT_LOCAL_REMINDER_RULE }];
+
+  const updateRule = (index: number, patch: Partial<LocalReminderRuleSetting>) => {
+    const nextRules = localReminderRules.map((rule, ruleIndex) => {
+      if (ruleIndex !== index) {
+        return rule;
+      }
+
+      return {
+        ...rule,
+        ...patch,
+      };
+    });
+
+    onSave({ localReminderRules: nextRules });
+  };
+
+  const canAddRule = localReminderRules.length < MAX_LOCAL_REMINDER_RULES;
 
   return (
     <div className="settings-section">
       <h3>{t("settings.sections.notifications.title")}</h3>
       <div className="settings-fields">
         <p className="settings-placeholder">{t("settings.sections.notifications.description")}</p>
+        <label className="toggle-field settings-notifications__toggle">
+          <input
+            checked={localReminderOverrideEnabled}
+            onChange={(e) => {
+              onSave({ localReminderOverrideEnabled: e.target.checked });
+            }}
+            type="checkbox"
+          />
+          <span className="toggle-slider" />
+          <span>{t("settings.sections.notifications.overrideSynced")}</span>
+        </label>
+        {localReminderOverrideEnabled && (
+          <div className="settings-notifications__rules">
+            <div className="settings-notifications__header">
+              <span>{t("settings.sections.notifications.ruleTime")}</span>
+              <span>{t("settings.sections.notifications.ruleWhen")}</span>
+              <span>{t("settings.sections.notifications.ruleActions")}</span>
+            </div>
+            {localReminderRules.map((rule, index) => (
+              <div className="settings-notifications__rule" key={`local-reminder-rule-${index}`}
+              >
+                <input
+                  className="settings-notifications__time"
+                  max={MAX_LOCAL_REMINDER_MINUTES}
+                  min={0}
+                  onBlur={(e) => {
+                    const minutes = Number.parseInt(e.target.value, 10);
+                    if (Number.isNaN(minutes)) {
+                      updateRule(index, { minutes: DEFAULT_LOCAL_REMINDER_RULE.minutes });
+                    }
+                  }}
+                  onChange={(e) => {
+                    const minutes = Number.parseInt(e.target.value, 10);
+                    updateRule(index, { minutes: clampLocalReminderMinutes(minutes) });
+                  }}
+                  step={1}
+                  type="number"
+                  value={rule.minutes}
+                />
+                <select
+                  className="settings-notifications__when"
+                  onChange={(e) => {
+                    updateRule(index, { when: e.target.value as LocalReminderWhenSetting });
+                  }}
+                  value={rule.when}
+                >
+                  {whenOptions.map((when) => (
+                    <option key={when} value={when}>
+                      {whenLabels[when]}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="settings-notifications__remove"
+                  disabled={localReminderRules.length <= 1}
+                  onClick={() => {
+                    if (localReminderRules.length <= 1) {
+                      return;
+                    }
+
+                    onSave({
+                      localReminderRules: localReminderRules.filter(
+                        (_rule, ruleIndex) => ruleIndex !== index,
+                      ),
+                    });
+                  }}
+                  type="button"
+                >
+                  {t("settings.sections.notifications.removeRule")}
+                </button>
+              </div>
+            ))}
+            <button
+              className="settings-notifications__add"
+              disabled={!canAddRule}
+              onClick={() => {
+                if (!canAddRule) {
+                  return;
+                }
+
+                onSave({
+                  localReminderRules: [
+                    ...localReminderRules,
+                    { ...DEFAULT_LOCAL_REMINDER_RULE },
+                  ],
+                });
+              }}
+              type="button"
+            >
+              {t("settings.sections.notifications.addRule")}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -398,7 +538,7 @@ function SettingsDialog({
         return <LanguageSection onSave={onSave} settings={settings} />;
       }
       case "notifications": {
-        return <NotificationsSection />;
+        return <NotificationsSection onSave={onSave} settings={settings} />;
       }
       case "sync": {
         return <SyncSection onSave={onSave} settings={settings} />;

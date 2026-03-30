@@ -95,4 +95,22 @@ describe("settings service", () => {
 
     expect(fixture.readSettings().syncIntervalMinutes).toBe(30);
   });
+
+  it("persists local reminder override rules", () => {
+    const fixture = createSettingsFixture([]);
+
+    fixture.service.updateSettings({
+      localReminderOverrideEnabled: true,
+      localReminderRules: [
+        { minutes: 20, when: "before" },
+        { minutes: 10, when: "after" },
+      ],
+    });
+
+    expect(fixture.readSettings()).toMatchObject({ localReminderOverrideEnabled: true });
+    expect(fixture.readSettings().localReminderRules).toEqual([
+      { minutes: 20, when: "before" },
+      { minutes: 10, when: "after" },
+    ]);
+  });
 });

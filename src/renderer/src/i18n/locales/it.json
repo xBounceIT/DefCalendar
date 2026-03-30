@@ -284,7 +284,17 @@
       "notifications": {
         "label": "Notifiche",
         "title": "Impostazioni Notifiche",
-        "description": "Gestisci le preferenze di promemoria e notifiche."
+        "description": "Gestisci le preferenze di promemoria e notifiche.",
+        "overrideSynced": "Usa regole di promemoria locali al posto dei promemoria sincronizzati degli eventi",
+        "ruleTime": "Tempo",
+        "ruleWhen": "Quando",
+        "ruleActions": "Azioni",
+        "addRule": "Aggiungi promemoria",
+        "removeRule": "Rimuovi",
+        "whenOptions": {
+          "before": "Prima dell'inizio",
+          "after": "Dopo l'inizio"
+        }
       },
       "sync": {
         "label": "Sincronizzazione",

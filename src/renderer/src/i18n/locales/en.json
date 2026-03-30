@@ -284,7 +284,17 @@
       "notifications": {
         "label": "Notifications",
         "title": "Notification Settings",
-        "description": "Manage reminder and notification preferences."
+        "description": "Manage reminder and notification preferences.",
+        "overrideSynced": "Use local reminder rules instead of synced event reminders",
+        "ruleTime": "Time",
+        "ruleWhen": "When",
+        "ruleActions": "Actions",
+        "addRule": "Add reminder",
+        "removeRule": "Remove",
+        "whenOptions": {
+          "before": "Before start",
+          "after": "After start"
+        }
       },
       "sync": {
         "label": "Sync",
