@@ -1031,13 +1031,34 @@ function parseRecurrence(value?: GraphRecurrence): null | Recurrence {
   };
 }
 
+function normalizeGraphResponseValue(value: null | string | undefined): null | string {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized === "accepted" || normalized === "declined" || normalized === "tentative") {
+    return normalized;
+  }
+
+  if (normalized === "tentativelyaccepted") {
+    return "tentative";
+  }
+
+  if (normalized === "none" || normalized === "notresponded" || normalized === "organizer") {
+    return "none";
+  }
+
+  return normalized;
+}
+
 function parseResponseStatus(value?: GraphResponseStatus): null | ParticipantResponseStatus {
   if (!value) {
     return null;
   }
 
   return {
-    response: value.response ?? null,
+    response: normalizeGraphResponseValue(value.response),
     time: value.time ?? null,
   };
 }
@@ -1198,9 +1219,10 @@ function toParticipant(value: GraphAttendee | GraphRecipient): EventParticipant 
   let response: null | string = null;
   let type: EventParticipant["type"] = "required";
   if ("status" in value) {
-    response = value.status?.response ?? null;
+    const normalizedResponse = normalizeGraphResponseValue(value.status?.response);
+    response = normalizedResponse;
     status = {
-      response: value.status?.response ?? null,
+      response: normalizedResponse,
       time: value.status?.time ?? null,
     };
     if (value.type === "optional" || value.type === "resource") {
@@ -1276,5 +1298,5 @@ function isString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
-export { extractPlainTextFromGraphHtml };
+export { extractPlainTextFromGraphHtml, normalizeGraphResponseValue };
 export default GraphCalendarService;

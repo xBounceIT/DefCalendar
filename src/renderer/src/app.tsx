@@ -587,13 +587,14 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     event: CalendarEvent,
     action: EventResponseAction,
     comment: string,
+    sendResponse: boolean,
   ): Promise<void> {
     await respondToEventMutation.mutateAsync({
       action,
       calendarId: event.calendarId,
       comment,
       eventId: event.id,
-      sendResponse: true,
+      sendResponse,
     });
   }
 
