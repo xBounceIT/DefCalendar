@@ -1,4 +1,5 @@
 import type {
+  EventContentArg,
   DateSelectArg,
   DatesSetArg,
   EventClickArg,
@@ -6,21 +7,23 @@ import type {
   EventInput,
 } from "@fullcalendar/core";
 import itLocale from "@fullcalendar/core/locales/it";
-import type { CalendarView, UserSettings } from "@shared/schemas";
-import type { EventResizeDoneArg } from "@fullcalendar/interaction";
+import type { DateClickArg, EventResizeDoneArg } from "@fullcalendar/interaction";
 import FullCalendar from "@fullcalendar/react";
 import React from "react";
 import dayGridPlugin from "@fullcalendar/daygrid";
-import { buildEventTimeFormat } from "../date-formatting";
-import interactionPlugin from "../interaction-plugin";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import { useTranslation } from "react-i18next";
+import type { CalendarEvent, CalendarView, UserSettings } from "@shared/schemas";
+
+import { buildEventTimeFormat } from "../date-formatting";
+import interactionPlugin from "../interaction-plugin";
 
 interface CalendarBoardProps {
   activeView: CalendarView;
   calendarEvents: EventInput[];
   calendarRef: React.RefObject<FullCalendar | null>;
   hasVisibleCalendars: boolean;
+  onDateClick: (clickInfo: DateClickArg) => void;
   onDatesSet: (dates: DatesSetArg) => void;
   onEventClick: (clickInfo: EventClickArg) => void;
   onEventDrop: (changeInfo: EventDropArg) => void;
@@ -34,11 +37,57 @@ const CALENDAR_PLUGINS = [dayGridPlugin, timeGridPlugin, interactionPlugin];
 
 interface EventMountInfo {
   event: {
-    extendedProps: {
-      calendarColor?: string | null;
-    };
+    extendedProps: CalendarEventExtendedProps;
   };
   el: HTMLElement;
+}
+
+interface CalendarEventExtendedProps {
+  calendarColor?: string | null;
+  eventData?: Pick<CalendarEvent, "isReminderOn">;
+}
+
+function BellIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="calendar-event-content__icon"
+      fill="none"
+      focusable="false"
+      height="12"
+      viewBox="0 0 16 16"
+      width="12"
+    >
+      <path
+        d="M8 2.5a3 3 0 0 0-3 3v1.1c0 .7-.2 1.4-.6 2L3.7 9.8a1 1 0 0 0 .8 1.7h7a1 1 0 0 0 .8-1.7l-.7-1.2a3.8 3.8 0 0 1-.6-2V5.5a3 3 0 0 0-3-3Z"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M6.5 12.5a1.5 1.5 0 0 0 3 0"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
+}
+
+function renderEventContent(info: EventContentArg) {
+  const { eventData } = info.event.extendedProps as CalendarEventExtendedProps;
+  const hasReminder = Boolean(eventData?.isReminderOn);
+  const hasTime = info.timeText.length > 0;
+
+  return (
+    <div className="calendar-event-content">
+      {hasTime ? <span className="fc-event-time">{info.timeText}</span> : null}
+      <span className="fc-event-title">{info.event.title}</span>
+      {hasReminder ? <BellIcon /> : null}
+    </div>
+  );
 }
 
 function handleEventDidMount(info: EventMountInfo): void {
@@ -63,6 +112,7 @@ function CalendarSurface({
   activeView,
   calendarEvents,
   calendarRef,
+  onDateClick,
   onDatesSet,
   onEventClick,
   onEventDrop,
@@ -79,11 +129,13 @@ function CalendarSurface({
     <FullCalendar
       allDayMaintainDuration
       allDayText={t("eventEditor.allDay")}
+      dateClick={onDateClick}
       datesSet={onDatesSet}
       dayMaxEvents={3}
       dayMaxEventRows={3}
       editable
       eventClick={onEventClick}
+      eventContent={renderEventContent}
       eventDidMount={handleEventDidMount}
       eventDisplay="block"
       eventDrop={onEventDrop}
@@ -103,6 +155,7 @@ function CalendarSurface({
       ref={calendarRef}
       selectable
       select={onSelection}
+      selectMinDistance={1}
       selectMirror
       slotMaxTime="23:00:00"
       slotLabelFormat={eventTimeFormat}
@@ -163,6 +216,7 @@ function CalendarBoard(props: CalendarBoardProps) {
         activeView={props.activeView}
         calendarEvents={props.calendarEvents}
         calendarRef={props.calendarRef}
+        onDateClick={props.onDateClick}
         onDatesSet={props.onDatesSet}
         onEventClick={props.onEventClick}
         onEventDrop={props.onEventDrop}

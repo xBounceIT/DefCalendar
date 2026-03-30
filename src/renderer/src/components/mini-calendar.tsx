@@ -15,8 +15,11 @@ import {
 import { it } from "date-fns/locale";
 import type { Locale } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
+import { toLocalDateKey } from "@shared/calendar";
 
 interface MiniCalendarProps {
+  eventDayKeys: ReadonlySet<string>;
+  onVisibleMonthChange: (month: Date) => void;
   selectedDate: Date;
   onDateSelect: (date: Date) => void;
 }
@@ -140,10 +143,24 @@ function MiniCalendarHeader({
   );
 }
 
-function MiniCalendar({ selectedDate, onDateSelect }: MiniCalendarProps) {
+function MiniCalendar({
+  eventDayKeys,
+  onDateSelect,
+  onVisibleMonthChange,
+  selectedDate,
+}: MiniCalendarProps) {
   const { t, i18n } = useTranslation();
   const [currentMonth, setCurrentMonth] = React.useState(startOfMonth(selectedDate));
   const dateLocale = i18n.language === "it" ? it : undefined;
+
+  React.useEffect(() => {
+    const nextMonth = startOfMonth(selectedDate);
+    setCurrentMonth((prev) => (isSameMonth(prev, nextMonth) ? prev : nextMonth));
+  }, [selectedDate]);
+
+  React.useEffect(() => {
+    onVisibleMonthChange(currentMonth);
+  }, [currentMonth, onVisibleMonthChange]);
 
   const days = useMemo(() => {
     const monthStart = startOfMonth(currentMonth);
@@ -168,6 +185,12 @@ function MiniCalendar({ selectedDate, onDateSelect }: MiniCalendarProps) {
     onDateSelect(today);
   };
 
+  const handleDateClick = (day: Date) => {
+    const nextMonth = startOfMonth(day);
+    setCurrentMonth((prev) => (isSameMonth(prev, nextMonth) ? prev : nextMonth));
+    onDateSelect(day);
+  };
+
   return (
     <div className="mini-calendar">
       <MiniCalendarHeader
@@ -188,6 +211,9 @@ function MiniCalendar({ selectedDate, onDateSelect }: MiniCalendarProps) {
           const isTodayDate = isToday(day);
           const isSelected = isSameDay(day, selectedDate);
           const dayClasses = ["mini-calendar-day"];
+          if (eventDayKeys.has(toLocalDateKey(day))) {
+            dayClasses.push("has-events");
+          }
           if (!isCurrentMonth) {
             dayClasses.push("other-month");
           }
@@ -202,7 +228,7 @@ function MiniCalendar({ selectedDate, onDateSelect }: MiniCalendarProps) {
             <button
               key={day.toISOString()}
               className={dayClasses.join(" ")}
-              onClick={() => onDateSelect(day)}
+              onClick={() => handleDateClick(day)}
               type="button"
             >
               {format(day, "d")}

@@ -36,7 +36,12 @@ interface EventEditorDialogProps {
   onListAttachments: (event: CalendarEvent) => Promise<EventAttachment[]>;
   onOpenInOutlook: (url: string) => Promise<void>;
   onRemoveAttachment: (args: AttachmentDeleteArgs) => Promise<EventAttachment[]>;
-  onRespond: (event: CalendarEvent, action: EventResponseAction, comment: string) => Promise<void>;
+  onRespond: (
+    event: CalendarEvent,
+    action: EventResponseAction,
+    comment: string,
+    sendResponse: boolean,
+  ) => Promise<void>;
   onSave: (draft: EventDraft) => Promise<void>;
   state: EditorState | null;
   timeFormat: UserSettings["timeFormat"];
@@ -46,6 +51,7 @@ interface EditorFormState {
   allDay: boolean;
   allowNewTimeProposals: boolean;
   attendees: EventParticipant[];
+  attendeesInput: string;
   body: string;
   bodyContentType: BodyContentType;
   calendarId: string;
@@ -245,6 +251,29 @@ function EventEditorDialog(props: EventEditorDialogProps) {
             </div>
 
             <div className="field-row">
+              <AttendeesIcon />
+              <input
+                aria-label={t("eventEditor.tabs.attendees")}
+                className="field-input field-input--underline"
+                disabled={readOnlyForAttendee}
+                onChange={(event) => {
+                  const attendeesInput = event.target.value;
+                  setForm((current) =>
+                    current
+                      ? {
+                          ...current,
+                          ...buildAttendeesPatch(attendeesInput, current.attendees),
+                        }
+                      : current,
+                  );
+                }}
+                placeholder={t("eventEditor.tabs.attendees")}
+                type="text"
+                value={form.attendeesInput}
+              />
+            </div>
+
+            <div className="field-row">
               <LocationIcon />
               <input
                 className="field-input field-input--underline"
@@ -281,7 +310,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
             <NotesSection disabled={readOnlyForAttendee} form={form} onChange={setForm} />
           </div>
 
-          {editedEvent && (
+          {editedEvent?.isOrganizer && (
             <div className="slide-panel__section">
               <h4 className="slide-panel__section-title">{t("eventEditor.optionalResponses")}</h4>
               <CollapsibleSection title={t("eventEditor.optionalResponseActions")}>
@@ -290,7 +319,6 @@ function EventEditorDialog(props: EventEditorDialogProps) {
                   event={editedEvent}
                   form={form}
                   onCancelMeeting={props.onCancelMeeting}
-                  onRespond={props.onRespond}
                   onResponseCommentChange={(responseComment) =>
                     setForm((current) => (current ? { ...current, responseComment } : current))
                   }
@@ -302,9 +330,15 @@ function EventEditorDialog(props: EventEditorDialogProps) {
 
         <aside className="slide-panel__sidebar">
           <AttendeesSidebar
+            busy={props.busy}
             event={editedEvent}
             attendees={form.attendees}
+            form={form}
             organizer={organizer}
+            onRespond={props.onRespond}
+            onResponseCommentChange={(responseComment) =>
+              setForm((current) => (current ? { ...current, responseComment } : current))
+            }
             timeFormat={props.timeFormat}
           />
         </aside>
@@ -945,14 +979,27 @@ function TeamsSection({
 }
 
 function AttendeesSidebar({
+  busy,
   event,
   attendees,
+  form,
   organizer,
+  onRespond,
+  onResponseCommentChange,
   timeFormat,
 }: {
+  busy: boolean;
   event: CalendarEvent | null;
   attendees: EventParticipant[];
+  form: EditorFormState;
   organizer: EventParticipant | null;
+  onRespond: (
+    event: CalendarEvent,
+    action: EventResponseAction,
+    comment: string,
+    sendResponse: boolean,
+  ) => Promise<void>;
+  onResponseCommentChange: (value: string) => void;
   timeFormat: UserSettings["timeFormat"];
 }) {
   const { t } = useTranslation();
@@ -962,6 +1009,27 @@ function AttendeesSidebar({
     declined: false,
     pending: true,
   });
+  const [isResponsePopupOpen, setIsResponsePopupOpen] = useState(false);
+  const responseActionsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(clickEvent: MouseEvent) {
+      if (
+        responseActionsRef.current &&
+        !responseActionsRef.current.contains(clickEvent.target as Node)
+      ) {
+        setIsResponsePopupOpen(false);
+      }
+    }
+
+    if (isResponsePopupOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isResponsePopupOpen]);
 
   const toggleGroup = (group: string) => {
     setExpandedGroups((prev) => ({ ...prev, [group]: !prev[group] }));
@@ -969,10 +1037,15 @@ function AttendeesSidebar({
 
   // Group attendees by response status
   const groupedAttendees = {
-    accepted: attendees.filter((a) => a.response === "accepted"),
-    tentative: attendees.filter((a) => a.response === "tentative"),
-    declined: attendees.filter((a) => a.response === "declined"),
-    pending: attendees.filter((a) => !a.response || a.response === "none"),
+    accepted: attendees.filter((attendee) => getEffectiveAttendeeResponse(attendee) === "accepted"),
+    tentative: attendees.filter(
+      (attendee) => getEffectiveAttendeeResponse(attendee) === "tentative",
+    ),
+    declined: attendees.filter((attendee) => getEffectiveAttendeeResponse(attendee) === "declined"),
+    pending: attendees.filter((attendee) => {
+      const response = getEffectiveAttendeeResponse(attendee);
+      return !response || response === "none";
+    }),
   };
 
   const getGroupLabel = (group: string, count: number): string => {
@@ -996,7 +1069,7 @@ function AttendeesSidebar({
   };
 
   const getAttendeeAvatarClass = (response: string | null | undefined): string => {
-    switch (response) {
+    switch (normalizeResponseValue(response)) {
       case "accepted": {
         return "attendees-sidebar__attendee-avatar--accepted";
       }
@@ -1047,10 +1120,45 @@ function AttendeesSidebar({
   };
 
   const displayOrganizer = event?.organizer ?? organizer;
+  const showResponseActions = Boolean(event && !event.isOrganizer);
+  const advancedResponseOptions: {
+    action: EventResponseAction;
+    label: string;
+    sendResponse: boolean;
+  }[] = [
+    {
+      action: "tentative",
+      label: t("eventEditor.responseActions.tentative"),
+      sendResponse: true,
+    },
+    {
+      action: "accept",
+      label: t("eventEditor.responseActions.acceptWithoutResponse"),
+      sendResponse: false,
+    },
+    {
+      action: "decline",
+      label: t("eventEditor.responseActions.refuseWithoutResponse"),
+      sendResponse: false,
+    },
+    {
+      action: "tentative",
+      label: t("eventEditor.responseActions.tentativeWithoutResponse"),
+      sendResponse: false,
+    },
+  ];
+
+  const submitResponse = (action: EventResponseAction, sendResponse: boolean, comment: string) => {
+    if (!event) {
+      return;
+    }
+
+    void onRespond(event, action, sendResponse ? comment : "", sendResponse);
+    setIsResponsePopupOpen(false);
+  };
 
   return (
     <div className="attendees-sidebar">
-      {/* Organizer Section */}
       {displayOrganizer && (
         <div className="attendees-sidebar__section">
           <h4 className="attendees-sidebar__title">{t("eventEditor.organizerRole")}</h4>
@@ -1072,7 +1180,80 @@ function AttendeesSidebar({
         </div>
       )}
 
-      {/* Attendees Section */}
+      {showResponseActions && (
+        <div className="attendees-sidebar__section">
+          <h4 className="attendees-sidebar__title">{t("eventEditor.optionalResponses")}</h4>
+          <div className="attendees-sidebar__responses" ref={responseActionsRef}>
+            {event?.responseStatus?.response && (
+              <span className="attendees-sidebar__response-meta">
+                {t("eventEditor.yourResponse", {
+                  response: getResponseStatusLabel(t, event.responseStatus.response),
+                })}
+              </span>
+            )}
+            <div className="attendees-sidebar__response-actions">
+              <button
+                className="attendees-sidebar__response-button attendees-sidebar__response-button--accept"
+                disabled={busy}
+                onClick={() => submitResponse("accept", true, "")}
+                type="button"
+              >
+                <CheckIcon />
+                <span>{t("eventEditor.responseActions.accept")}</span>
+              </button>
+              <button
+                className="attendees-sidebar__response-button attendees-sidebar__response-button--refuse"
+                disabled={busy}
+                onClick={() => submitResponse("decline", true, "")}
+                type="button"
+              >
+                <CloseIcon />
+                <span>{t("eventEditor.responseActions.decline")}</span>
+              </button>
+              <button
+                aria-expanded={isResponsePopupOpen}
+                className={`attendees-sidebar__response-button attendees-sidebar__response-button--other ${isResponsePopupOpen ? "attendees-sidebar__response-button--open" : ""}`}
+                disabled={busy}
+                onClick={() => setIsResponsePopupOpen((current) => !current)}
+                type="button"
+              >
+                <span>{t("eventEditor.responseActions.other")}</span>
+                <ChevronDownIcon
+                  className={`attendees-sidebar__response-arrow ${isResponsePopupOpen ? "expanded" : ""}`}
+                />
+              </button>
+            </div>
+            {isResponsePopupOpen && (
+              <div className="attendees-sidebar__response-popup">
+                <label className="field field--full attendees-sidebar__response-comment">
+                  <span>{t("eventEditor.comment")}</span>
+                  <textarea
+                    onChange={(eventValue) => onResponseCommentChange(eventValue.target.value)}
+                    rows={4}
+                    value={form.responseComment}
+                  />
+                </label>
+                <div className="attendees-sidebar__response-popup-actions">
+                  {advancedResponseOptions.map((option) => (
+                    <button
+                      key={`${option.action}-${option.sendResponse ? "send" : "silent"}`}
+                      className="attendees-sidebar__response-popup-button"
+                      disabled={busy}
+                      onClick={() =>
+                        submitResponse(option.action, option.sendResponse, form.responseComment)
+                      }
+                      type="button"
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="attendees-sidebar__section">
         <h4 className="attendees-sidebar__title">
           {t("eventEditor.tabs.attendees")}
@@ -1120,7 +1301,7 @@ function AttendeesSidebar({
                           className="attendees-sidebar__attendee"
                         >
                           <div
-                            className={`attendees-sidebar__attendee-avatar ${getAttendeeAvatarClass(attendee.response)}`}
+                            className={`attendees-sidebar__attendee-avatar ${getAttendeeAvatarClass(getEffectiveAttendeeResponse(attendee))}`}
                           >
                             {getInitials(attendee.name, attendee.email)}
                           </div>
@@ -1290,6 +1471,27 @@ function LocationIcon() {
     >
       <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
       <circle cx="12" cy="10" r="3" />
+    </svg>
+  );
+}
+
+function AttendeesIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="20"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="20"
+    >
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
     </svg>
   );
 }
@@ -1702,14 +1904,12 @@ function ResponsesSection({
   event,
   form,
   onCancelMeeting,
-  onRespond,
   onResponseCommentChange,
 }: {
   busy: boolean;
   event: CalendarEvent | null;
   form: EditorFormState;
   onCancelMeeting: (event: CalendarEvent, comment: string) => Promise<void>;
-  onRespond: (event: CalendarEvent, action: EventResponseAction, comment: string) => Promise<void>;
   onResponseCommentChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
@@ -1726,7 +1926,11 @@ function ResponsesSection({
             : t("eventEditor.attendeeWorkflow")}
         </span>
         {event.responseStatus?.response && (
-          <span>{t("eventEditor.yourResponse", { response: event.responseStatus.response })}</span>
+          <span>
+            {t("eventEditor.yourResponse", {
+              response: getResponseStatusLabel(t, event.responseStatus.response),
+            })}
+          </span>
         )}
       </div>
       <label className="field field--full">
@@ -1737,36 +1941,18 @@ function ResponsesSection({
           value={form.responseComment}
         />
       </label>
-      {event.isOrganizer ? (
-        event.attendees.length > 0 ? (
-          <button
-            className="ghost-button ghost-button--danger"
-            disabled={busy}
-            onClick={() => {
-              void onCancelMeeting(event, form.responseComment);
-            }}
-            type="button"
-          >
-            {t("eventEditor.cancelMeeting")}
-          </button>
-        ) : null
-      ) : (
-        <div className="dialog-footer__left">
-          {(["accept", "tentative", "decline"] as EventResponseAction[]).map((action) => (
-            <button
-              key={action}
-              className="ghost-button"
-              disabled={busy}
-              onClick={() => {
-                void onRespond(event, action, form.responseComment);
-              }}
-              type="button"
-            >
-              {getResponseActionLabel(t, action)}
-            </button>
-          ))}
-        </div>
-      )}
+      {event.attendees.length > 0 ? (
+        <button
+          className="ghost-button ghost-button--danger"
+          disabled={busy}
+          onClick={() => {
+            void onCancelMeeting(event, form.responseComment);
+          }}
+          type="button"
+        >
+          {t("eventEditor.cancelMeeting")}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -1934,13 +2120,15 @@ function buildFormState(state: EventEditorDialogProps["state"]): EditorFormState
 
   const event = state.mode === "edit" ? state.event : null;
   const draft = state.mode === "create" ? state.draft : null;
+  const attendees = event?.attendees ?? draft?.attendees ?? [];
   const recurrence = event?.recurrence ?? draft?.recurrence ?? null;
   const createAllDay = state.mode === "create" ? state.allDay : (event?.isAllDay ?? false);
 
   return {
     allDay: createAllDay,
     allowNewTimeProposals: event?.allowNewTimeProposals ?? draft?.allowNewTimeProposals ?? true,
-    attendees: event?.attendees ?? draft?.attendees ?? [],
+    attendees,
+    attendeesInput: formatAttendeesInput(attendees),
     body: event?.body ?? draft?.body ?? "",
     bodyContentType: event?.bodyContentType ?? draft?.bodyContentType ?? "text",
     calendarId: state.mode === "create" ? state.calendarId : event!.calendarId,
@@ -2004,7 +2192,7 @@ function buildDraft(form: EditorFormState, event: CalendarEvent | null): EventDr
   return {
     attachmentIdsToRemove: [],
     attachmentsToAdd: [],
-    attendees: form.attendees,
+    attendees: buildAttendeesFromInput(form.attendeesInput, form.attendees),
     allowNewTimeProposals: form.allowNewTimeProposals,
     body: form.body.trim() || null,
     bodyContentType: form.bodyContentType,
@@ -2075,6 +2263,72 @@ function resolveEventId(event: CalendarEvent | null, form: EditorFormState): str
   return event.id;
 }
 
+function buildAttendeesPatch(
+  attendeesInput: string,
+  existingAttendees: EventParticipant[],
+): Pick<EditorFormState, "attendees" | "attendeesInput"> {
+  return {
+    attendees: buildAttendeesFromInput(attendeesInput, existingAttendees),
+    attendeesInput,
+  };
+}
+
+function buildAttendeesFromInput(
+  attendeesInput: string,
+  existingAttendees: EventParticipant[],
+): EventParticipant[] {
+  const existingByEmail = new Map<string, EventParticipant>();
+  for (const attendee of existingAttendees) {
+    const normalizedEmail = normalizeAttendeeEmail(attendee.email);
+    if (!normalizedEmail) {
+      continue;
+    }
+    existingByEmail.set(normalizedEmail, attendee);
+  }
+
+  return parseAttendeeEmails(attendeesInput).map((email) => {
+    const normalizedEmail = normalizeAttendeeEmail(email);
+    const existingAttendee = normalizedEmail ? existingByEmail.get(normalizedEmail) : null;
+    if (existingAttendee) {
+      return { ...existingAttendee, email };
+    }
+
+    return {
+      email,
+      name: null,
+      response: null,
+      status: null,
+      type: "required",
+    };
+  });
+}
+
+function formatAttendeesInput(attendees: EventParticipant[]): string {
+  return attendees
+    .map((attendee) => attendee.email?.trim() ?? "")
+    .filter(Boolean)
+    .join(", ");
+}
+
+function parseAttendeeEmails(value: string): string[] {
+  const uniqueEmails = new Map<string, string>();
+  for (const part of value.split(/[\n,;]+/)) {
+    const email = part.trim();
+    const normalizedEmail = normalizeAttendeeEmail(email);
+    if (!normalizedEmail || uniqueEmails.has(normalizedEmail)) {
+      continue;
+    }
+    uniqueEmails.set(normalizedEmail, email);
+  }
+
+  return [...uniqueEmails.values()];
+}
+
+function normalizeAttendeeEmail(value: null | string | undefined): null | string {
+  const normalized = value?.trim().toLowerCase();
+  return normalized || null;
+}
+
 function toggleAllDayForm(form: EditorFormState, nextAllDay: boolean): Partial<EditorFormState> {
   if (nextAllDay) {
     return {
@@ -2136,19 +2390,49 @@ function formatAttachmentSize(size: number): string {
   return `${Math.round((size / 1024) * 10) / 10} KB`;
 }
 
-function getResponseActionLabel(
+function getResponseStatusLabel(
   t: ReturnType<typeof useTranslation>["t"],
-  action: EventResponseAction,
+  response: null | string | undefined,
 ): string {
-  if (action === "accept") {
-    return t("eventEditor.responseActions.accept");
+  const normalizedResponse = normalizeResponseValue(response);
+  if (normalizedResponse === "accepted") {
+    return t("eventEditor.responseAccepted");
   }
 
-  if (action === "tentative") {
-    return t("eventEditor.responseActions.tentative");
+  if (normalizedResponse === "declined") {
+    return t("eventEditor.responseDeclined");
   }
 
-  return t("eventEditor.responseActions.decline");
+  if (normalizedResponse === "tentative") {
+    return t("eventEditor.responseTentative");
+  }
+
+  return t("eventEditor.responseUnknown");
+}
+
+function normalizeResponseValue(response: null | string | undefined): null | string {
+  const normalized = response?.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized === "accepted" || normalized === "declined" || normalized === "tentative") {
+    return normalized;
+  }
+
+  if (normalized === "tentativelyaccepted") {
+    return "tentative";
+  }
+
+  if (normalized === "none" || normalized === "notresponded" || normalized === "organizer") {
+    return "none";
+  }
+
+  return normalized;
+}
+
+function getEffectiveAttendeeResponse(attendee: EventParticipant): null | string {
+  return normalizeResponseValue(attendee.status?.response ?? attendee.response);
 }
 
 function extractUrls(value: string): string[] {
@@ -2355,28 +2639,11 @@ function getAttendeeResponseLabel(
   t: ReturnType<typeof useTranslation>["t"],
   attendee: EventParticipant,
 ): string {
-  const response = attendee.status?.response ?? attendee.response;
-  if (!response) {
-    return t("eventEditor.responseUnknown");
-  }
-
-  if (response === "accepted") {
-    return t("eventEditor.responseAccepted");
-  }
-
-  if (response === "declined") {
-    return t("eventEditor.responseDeclined");
-  }
-
-  if (response === "tentativelyAccepted") {
-    return t("eventEditor.responseTentative");
-  }
-
-  return t("eventEditor.responseUnknown");
+  return getResponseStatusLabel(t, getEffectiveAttendeeResponse(attendee));
 }
 
 function getAttendeeResponseClass(attendee: EventParticipant): string {
-  const response = attendee.status?.response ?? attendee.response;
+  const response = getEffectiveAttendeeResponse(attendee);
   if (response === "accepted") {
     return "attendee-row__status--accepted";
   }

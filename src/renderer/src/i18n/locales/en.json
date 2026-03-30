@@ -186,8 +186,12 @@
     },
     "responseActions": {
       "accept": "Accept",
+      "acceptWithoutResponse": "Accept without sending",
+      "other": "Other",
+      "refuseWithoutResponse": "Refuse without sending",
       "tentative": "Tentative",
-      "decline": "Decline"
+      "tentativeWithoutResponse": "Tentative without sending",
+      "decline": "Refuse"
     },
     "openInOutlook": "Open in Outlook",
     "organizerSelf": "Owned by signed-in user",

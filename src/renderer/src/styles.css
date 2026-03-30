@@ -628,6 +628,18 @@ button {
   width: 100%;
   height: 100%;
   min-height: 28px;
+  position: relative;
+}
+
+.mini-calendar-day.has-events::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 .mini-calendar-day:hover {
@@ -1461,6 +1473,8 @@ button {
 }
 
 .fc-event-main {
+  display: flex;
+  min-width: 0;
   padding: 0;
 }
 
@@ -1474,6 +1488,33 @@ button {
 .fc-event-title {
   font-weight: 400;
   color: var(--ink);
+}
+
+.calendar-event-content {
+  display: flex;
+  align-items: baseline;
+  line-height: 1.25;
+  min-width: 0;
+}
+
+.calendar-event-content > .fc-event-time {
+  flex: 0 0 auto;
+  margin-right: 4px;
+}
+
+.calendar-event-content__icon {
+  flex: 0 0 auto;
+  margin-left: 4px;
+  margin-top: 2px;
+  opacity: 0.8;
+}
+
+.calendar-event-content > .fc-event-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Event colors with left border accent */
@@ -2676,6 +2717,10 @@ button {
   background: transparent;
 }
 
+.field-input:focus-visible {
+  outline: none;
+}
+
 .field-select {
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
@@ -3148,6 +3193,157 @@ button {
 .attendees-sidebar__organizer-meta {
   font-size: 12px;
   color: var(--ink-tertiary);
+}
+
+.attendees-sidebar__responses {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.attendees-sidebar__response-meta {
+  font-size: 12px;
+  color: var(--ink-secondary);
+}
+
+.attendees-sidebar__response-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.attendees-sidebar__response-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.attendees-sidebar__response-button svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.attendees-sidebar__response-button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--line-strong);
+}
+
+.attendees-sidebar__response-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.attendees-sidebar__response-button--accept {
+  color: #15803d;
+  border-color: rgba(34, 197, 94, 0.24);
+}
+
+.attendees-sidebar__response-button--accept:hover:not(:disabled) {
+  background: rgba(34, 197, 94, 0.08);
+  border-color: rgba(34, 197, 94, 0.36);
+}
+
+.attendees-sidebar__response-button--refuse {
+  color: #b91c1c;
+  border-color: rgba(239, 68, 68, 0.24);
+}
+
+.attendees-sidebar__response-button--refuse:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.36);
+}
+
+.attendees-sidebar__response-button--other {
+  grid-column: 1 / -1;
+  justify-content: space-between;
+  color: var(--ink);
+}
+
+.attendees-sidebar__response-button--open {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.attendees-sidebar__response-arrow {
+  transition: transform 200ms ease;
+}
+
+.attendees-sidebar__response-arrow.expanded {
+  transform: rotate(180deg);
+}
+
+.attendees-sidebar__response-popup {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-elevated);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+}
+
+.attendees-sidebar__response-comment {
+  margin: 0;
+}
+
+.attendees-sidebar__response-comment textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.attendees-sidebar__response-popup-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.attendees-sidebar__response-popup-button {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
+}
+
+.attendees-sidebar__response-popup-button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--line-strong);
+}
+
+.attendees-sidebar__response-popup-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .attendees-sidebar__group {

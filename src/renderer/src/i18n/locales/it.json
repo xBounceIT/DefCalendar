@@ -186,7 +186,11 @@
     },
     "responseActions": {
       "accept": "Accetta",
+      "acceptWithoutResponse": "Accetta senza inviare",
+      "other": "Altro",
+      "refuseWithoutResponse": "Rifiuta senza inviare",
       "tentative": "Provvisorio",
+      "tentativeWithoutResponse": "Provvisorio senza inviare",
       "decline": "Rifiuta"
     },
     "openInOutlook": "Apri in Outlook",
