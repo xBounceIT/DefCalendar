@@ -65,6 +65,8 @@ const WHITELIST = new Set([
   "put",
   "delete",
   "patch",
+  "Promise",
+  "void",
   // Common abbreviations
   "min",
   "max",
@@ -91,6 +93,8 @@ const WHITELIST = new Set([
   "cjs",
   "mjs",
   "d.ts",
+  // TypeScript type annotations that get captured by JSX text extraction
+  "): Promise",
 ]);
 
 function isWhitelisted(text: string): boolean {

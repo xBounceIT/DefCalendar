@@ -628,6 +628,18 @@ button {
   width: 100%;
   height: 100%;
   min-height: 28px;
+  position: relative;
+}
+
+.mini-calendar-day.has-events::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 .mini-calendar-day:hover {
@@ -1461,6 +1473,8 @@ button {
 }
 
 .fc-event-main {
+  display: flex;
+  min-width: 0;
   padding: 0;
 }
 
@@ -1474,6 +1488,33 @@ button {
 .fc-event-title {
   font-weight: 400;
   color: var(--ink);
+}
+
+.calendar-event-content {
+  display: flex;
+  align-items: baseline;
+  line-height: 1.25;
+  min-width: 0;
+}
+
+.calendar-event-content > .fc-event-time {
+  flex: 0 0 auto;
+  margin-right: 4px;
+}
+
+.calendar-event-content__icon {
+  flex: 0 0 auto;
+  margin-left: 4px;
+  margin-top: 2px;
+  opacity: 0.8;
+}
+
+.calendar-event-content > .fc-event-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Event colors with left border accent */

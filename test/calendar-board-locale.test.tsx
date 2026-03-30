@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, render } from "@testing-library/react";
-import type { EventInput } from "@fullcalendar/core";
+import type { EventContentArg, EventInput } from "@fullcalendar/core";
 import React from "react";
 import i18n from "i18next";
 import itTranslations from "../src/renderer/src/i18n/locales/it.json";
@@ -52,6 +52,7 @@ async function renderBoard(language: "en" | "it") {
       calendarEvents={events}
       calendarRef={calendarRef}
       hasVisibleCalendars
+      onDateClick={vi.fn()}
       onDatesSet={vi.fn()}
       onEventClick={vi.fn()}
       onEventDrop={vi.fn()}
@@ -60,6 +61,28 @@ async function renderBoard(language: "en" | "it") {
       selectedDate="2026-03-29T00:00:00.000Z"
       timeFormat="system"
     />,
+  );
+}
+
+function renderCalendarEventContent(isReminderOn: boolean) {
+  const eventContent = capturedCalendarProps?.eventContent as (
+    info: EventContentArg,
+  ) => React.ReactNode;
+
+  return render(
+    <>
+      {eventContent({
+        event: {
+          title: "Focus time",
+          extendedProps: {
+            eventData: {
+              isReminderOn,
+            },
+          },
+        } as EventContentArg["event"],
+        timeText: "9:00",
+      } as EventContentArg)}
+    </>,
   );
 }
 
@@ -76,5 +99,31 @@ describe("calendar board locale", () => {
 
     expect(capturedCalendarProps?.locale).toBe("en");
     expect(capturedCalendarProps?.allDayText).toBe("All day");
+  });
+
+  it("passes the double-click creation callbacks to FullCalendar", async () => {
+    await renderBoard("en");
+
+    expect(capturedCalendarProps?.dateClick).toEqual(expect.any(Function));
+    expect(capturedCalendarProps?.select).toEqual(expect.any(Function));
+    expect(capturedCalendarProps?.selectMinDistance).toBe(1);
+  });
+
+  it("renders a bell icon for events with reminders", async () => {
+    await renderBoard("en");
+
+    const { container, getByText } = renderCalendarEventContent(true);
+
+    getByText("9:00");
+    getByText("Focus time");
+    expect(container.querySelector(".calendar-event-content__icon")).not.toBeNull();
+  });
+
+  it("does not render a bell icon for events without reminders", async () => {
+    await renderBoard("en");
+
+    const { container } = renderCalendarEventContent(false);
+
+    expect(container.querySelector(".calendar-event-content__icon")).toBeNull();
   });
 });

@@ -9,7 +9,7 @@ import type {
 import type { CalendarView, UserSettings } from "@shared/schemas";
 
 import CalendarBoard from "./calendar-board";
-import type { EventResizeDoneArg } from "@fullcalendar/interaction";
+import type { DateClickArg, EventResizeDoneArg } from "@fullcalendar/interaction";
 import type FullCalendar from "@fullcalendar/react";
 import React from "react";
 import { formatHeaderDate } from "../date-formatting";
@@ -23,6 +23,7 @@ interface WorkspacePanelProps {
   canCreateEvent: boolean;
   hasVisibleCalendars: boolean;
   onCreateEvent: () => void;
+  onDateClick: (clickInfo: DateClickArg) => void;
   onDatesSet: (dates: DatesSetArg) => void;
   onEventClick: (clickInfo: EventClickArg) => void;
   onEventDrop: (changeInfo: EventDropArg) => void;
@@ -243,6 +244,7 @@ function WorkspacePanel(props: WorkspacePanelProps) {
         calendarEvents={props.calendarEvents}
         calendarRef={props.calendarRef}
         hasVisibleCalendars={props.hasVisibleCalendars}
+        onDateClick={props.onDateClick}
         onDatesSet={props.onDatesSet}
         onEventClick={props.onEventClick}
         onEventDrop={props.onEventDrop}

@@ -5,10 +5,11 @@ import type {
   EventDropArg,
   EventInput,
 } from "@fullcalendar/core";
-import type { EventResizeDoneArg } from "@fullcalendar/interaction";
+import type { DateClickArg, EventResizeDoneArg } from "@fullcalendar/interaction";
 import type FullCalendar from "@fullcalendar/react";
+import { endOfMonth, endOfWeek, startOfMonth, startOfWeek } from "date-fns";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { addMinutesToIso, isEventEditable } from "@shared/calendar";
+import { addMinutesToIso, buildEventDayKeys, isEventEditable } from "@shared/calendar";
 import { isAdminApprovalRequiredMessage } from "@shared/exchange-auth";
 import type { CalendarApi } from "@shared/ipc";
 import { calendarViewSchema } from "@shared/schema-values";
@@ -48,6 +49,13 @@ interface EditorSeed {
 
 const EMPTY_CALENDARS: CalendarSummary[] = [];
 const EMPTY_EVENTS: CalendarEvent[] = [];
+const eventQueryKeys = {
+  all: ["events"] as const,
+  board: (calendarIds: string[], rangeStart: string, rangeEnd: string) =>
+    ["events", "board", calendarIds, rangeStart, rangeEnd] as const,
+  miniCalendar: (calendarIds: string[], rangeStart: string, rangeEnd: string) =>
+    ["events", "mini-calendar", calendarIds, rangeStart, rangeEnd] as const,
+};
 
 function App() {
   const { calendarApi } = globalThis;
@@ -106,6 +114,9 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     setRange,
     setSelectedDate,
   } = useUiStore();
+  const [miniCalendarMonth, setMiniCalendarMonth] = useState(() =>
+    startOfMonth(new Date(selectedDate)),
+  );
 
   const authQuery = useQuery({
     queryFn: () => calendarApi.auth.getState(),
@@ -137,6 +148,10 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
       .toSorted();
     return ids;
   }, [calendarsQuery.data]);
+  const miniCalendarRange = useMemo(
+    () => createMiniCalendarRange(miniCalendarMonth),
+    [miniCalendarMonth],
+  );
 
   const eventsQuery = useQuery({
     enabled: signedIn && visibleCalendarIds.length > 0,
@@ -146,17 +161,25 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         end: rangeEnd,
         start: rangeStart,
       }),
-    queryKey: ["events"],
+    queryKey: eventQueryKeys.board(visibleCalendarIds, rangeStart, rangeEnd),
     gcTime: 0,
     staleTime: 0,
     placeholderData: (previousData) => previousData,
   });
-
-  useEffect(() => {
-    if (signedIn && visibleCalendarIds.length > 0) {
-      void queryClient.invalidateQueries({ queryKey: ["events"] });
-    }
-  }, [rangeStart, rangeEnd, visibleCalendarIds, signedIn, queryClient]);
+  const miniCalendarEventsQuery = useQuery({
+    enabled: signedIn && visibleCalendarIds.length > 0,
+    queryFn: () =>
+      calendarApi.events.list({
+        calendarIds: visibleCalendarIds,
+        end: miniCalendarRange.rangeEnd,
+        start: miniCalendarRange.rangeStart,
+      }),
+    queryKey: eventQueryKeys.miniCalendar(
+      visibleCalendarIds,
+      miniCalendarRange.rangeStart,
+      miniCalendarRange.rangeEnd,
+    ),
+  });
 
   const signInMutation = useMutation({
     mutationFn: (mode: AuthSignInMode = "user") => calendarApi.auth.signInWithExchange365(mode),
@@ -168,7 +191,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
       setShowAuthScreen(false);
       setShowCalendarSelection(true);
       queryClient.setQueryData(["calendars"], EMPTY_CALENDARS);
-      queryClient.setQueryData(["events"], EMPTY_EVENTS);
+      queryClient.removeQueries({ queryKey: eventQueryKeys.all });
       await invalidateCalendarData(queryClient);
     },
   });
@@ -194,7 +217,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
       setSyncStatus(status);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["calendars"] }),
-        queryClient.invalidateQueries({ queryKey: ["events"] }),
+        invalidateEventQueries(queryClient),
       ]);
     },
   });
@@ -206,7 +229,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     },
     onSuccess: async () => {
       resetEditor(setDialogError, setEditorState);
-      await queryClient.invalidateQueries({ queryKey: ["events"] });
+      await invalidateEventQueries(queryClient);
     },
   });
 
@@ -217,7 +240,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     },
     onSuccess: async () => {
       resetEditor(setDialogError, setEditorState);
-      await queryClient.invalidateQueries({ queryKey: ["events"] });
+      await invalidateEventQueries(queryClient);
     },
   });
 
@@ -233,7 +256,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     },
     onSuccess: async () => {
       resetEditor(setDialogError, setEditorState);
-      await queryClient.invalidateQueries({ queryKey: ["events"] });
+      await invalidateEventQueries(queryClient);
     },
   });
 
@@ -244,7 +267,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     },
     onSuccess: async () => {
       resetEditor(setDialogError, setEditorState);
-      await queryClient.invalidateQueries({ queryKey: ["events"] });
+      await invalidateEventQueries(queryClient);
     },
   });
 
@@ -255,7 +278,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     },
     onSuccess: async () => {
       resetEditor(setDialogError, setEditorState);
-      await queryClient.invalidateQueries({ queryKey: ["events"] });
+      await invalidateEventQueries(queryClient);
     },
   });
 
@@ -272,7 +295,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
       if (status.state !== "syncing") {
         void Promise.all([
           queryClient.invalidateQueries({ queryKey: ["calendars"] }),
-          queryClient.invalidateQueries({ queryKey: ["events"] }),
+          invalidateEventQueries(queryClient),
         ]);
       }
     });
@@ -372,6 +395,10 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     () => buildCalendarEvents(events, calendarMap),
     [calendarMap, events],
   );
+  const miniCalendarEventDayKeys = useMemo(
+    () => buildEventDayKeys(miniCalendarEventsQuery.data ?? EMPTY_EVENTS),
+    [miniCalendarEventsQuery.data],
+  );
 
   const busy =
     signInMutation.isPending ||
@@ -431,6 +458,19 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
       start: selection.start.toISOString(),
     });
     calendarRef.current?.getApi().unselect();
+  }
+
+  function handleDateClick(clickInfo: DateClickArg): void {
+    if (clickInfo.jsEvent.detail !== 2) {
+      return;
+    }
+
+    const start = clickInfo.date.toISOString();
+    openCreateDialog({
+      allDay: clickInfo.allDay,
+      end: clickInfo.allDay ? addDaysToIso(start, 1) : addMinutesToIso(start, 60),
+      start,
+    });
   }
 
   function handleEventClick(clickInfo: EventClickArg): void {
@@ -624,7 +664,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
 
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["calendars"] }),
-        queryClient.invalidateQueries({ queryKey: ["events"] }),
+        invalidateEventQueries(queryClient),
       ]);
 
       if (selectedCalendarIds.length > 0) {
@@ -690,7 +730,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     authError: authQuery.error,
     bannerError,
     calendarsError: calendarsQuery.error,
-    eventsError: eventsQuery.error,
+    eventsError: eventsQuery.error ?? miniCalendarEventsQuery.error,
   });
 
   function handleDateSelect(date: Date): void {
@@ -708,6 +748,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         accounts={accounts}
         calendars={calendars}
         canCreateEvent={Boolean(editableCalendar)}
+        eventDayKeys={miniCalendarEventDayKeys}
         isRefreshing={refreshMutation.isPending}
         onAccountAdd={() => setShowAuthScreen(true)}
         onCalendarToggle={(calendar) => {
@@ -715,6 +756,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         }}
         onCreateEvent={openSelectedDateComposer}
         onDateSelect={handleDateSelect}
+        onMiniCalendarMonthChange={setMiniCalendarMonth}
         onRefresh={() => {
           refreshMutation.mutate();
         }}
@@ -734,6 +776,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         canCreateEvent={Boolean(editableCalendar)}
         hasVisibleCalendars={visibleCalendarIds.length > 0}
         onCreateEvent={openSelectedDateComposer}
+        onDateClick={handleDateClick}
         onDatesSet={handleDatesSet}
         onEventClick={handleEventClick}
         onEventDrop={(changeInfo) => {
@@ -879,6 +922,12 @@ function getEventBoundary(value: Date | null | undefined, fallback: string): str
   return fallback;
 }
 
+function addDaysToIso(value: string, days: number): string {
+  const date = new Date(value);
+  date.setDate(date.getDate() + days);
+  return date.toISOString();
+}
+
 async function invalidateCalendarData(
   queryClient: ReturnType<typeof useQueryClient>,
 ): Promise<void> {
@@ -886,8 +935,21 @@ async function invalidateCalendarData(
     queryClient.invalidateQueries({ queryKey: ["auth"] }),
     queryClient.invalidateQueries({ queryKey: ["settings"] }),
     queryClient.invalidateQueries({ queryKey: ["calendars"] }),
-    queryClient.invalidateQueries({ queryKey: ["events"] }),
+    invalidateEventQueries(queryClient),
   ]);
+}
+
+function createMiniCalendarRange(month: Date): { rangeEnd: string; rangeStart: string } {
+  const monthStart = startOfMonth(month);
+  const monthEnd = endOfMonth(month);
+  return {
+    rangeEnd: endOfWeek(monthEnd, { weekStartsOn: 1 }).toISOString(),
+    rangeStart: startOfWeek(monthStart, { weekStartsOn: 1 }).toISOString(),
+  };
+}
+
+function invalidateEventQueries(queryClient: ReturnType<typeof useQueryClient>): Promise<void> {
+  return queryClient.invalidateQueries({ queryKey: eventQueryKeys.all });
 }
 
 async function openExternalEvent(url: string): Promise<void> {
