@@ -36,7 +36,7 @@ async function bootstrap(): Promise<void> {
   setMainLocale(resolveMainLocale(savedSettings.language, app.getLocale()));
 
   const reminderManager = new ReminderWindowManager();
-  const reminders = new ReminderService(db, reminderManager);
+  const reminders = new ReminderService(db, reminderManager, settings);
   const auth = new MsalAuthService(
     config,
     new SafeStorageTokenCache(join(app.getPath("userData"), "msal-token-cache.bin")),
@@ -57,6 +57,7 @@ async function bootstrap(): Promise<void> {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.setTitle(locale === "it" ? "DefCalendar" : "DefCalendar");
       }
+      void reminders.checkNow();
     }
   });
 
@@ -64,6 +65,7 @@ async function bootstrap(): Promise<void> {
     await auth.signOutAll();
     db.clearUserData();
     sync.reset();
+    await reminders.checkNow();
 
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send(IPC_CHANNELS.authStateChanged, auth.getAuthState());
@@ -111,6 +113,7 @@ async function bootstrap(): Promise<void> {
     auth,
     db,
     graph,
+    reminders,
     reminderManager,
     settings,
     sync,

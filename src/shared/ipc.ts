@@ -18,7 +18,7 @@ import type {
   UserSettings,
   UserSettingsPatch,
 } from "./schemas";
-import type { EventResponseAction, ReminderPopupData } from "./ipc-types";
+import type { EventResponseAction, ReminderDialogItem, ReminderDialogState } from "./ipc-types";
 
 export const IPC_CHANNELS = {
   appGetLocale: "app:get-locale",
@@ -51,6 +51,8 @@ export const IPC_CHANNELS = {
   updatesStatusChanged: "updates:status-changed",
   settingsGet: "settings:get",
   settingsUpdate: "settings:update",
+  reminderGetState: "reminder:get-state",
+  reminderStateChanged: "reminder:state-changed",
   reminderSnooze: "reminder:snooze",
   reminderDismiss: "reminder:dismiss",
   reminderDismissAll: "reminder:dismiss-all",
@@ -106,6 +108,8 @@ interface CalendarApi {
     update: (patch: UserSettingsPatch) => Promise<UserSettings>;
   };
   reminder: {
+    getState: () => Promise<ReminderDialogState>;
+    onState: (listener: (state: ReminderDialogState) => void) => () => void;
     snooze: (dedupeKey: string, minutes: number) => Promise<void>;
     dismiss: (dedupeKey: string) => Promise<void>;
     dismissAll: () => Promise<void>;
@@ -118,4 +122,10 @@ interface CalendarApi {
   };
 }
 
-export { type CalendarApi, type EventAttachment, type EventResponseAction, type ReminderPopupData };
+export {
+  type CalendarApi,
+  type EventAttachment,
+  type EventResponseAction,
+  type ReminderDialogItem,
+  type ReminderDialogState,
+};

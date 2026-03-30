@@ -18,8 +18,7 @@ import { useTranslation } from "react-i18next";
 
 import type { EditorState } from "../event-editor-state";
 import { formatHeaderDate, formatLocalizedDate } from "../date-formatting";
-import teamsIcon from "../assets/teams.png";
-import gmeetIcon from "../assets/gmeet.png";
+import { MeetingIcon, TeamsIcon } from "./meeting-icon";
 
 interface EventEditorDialogProps {
   accounts: AccountSummary[];
@@ -1189,25 +1188,6 @@ function CalendarIcon() {
   );
 }
 
-function MeetingIcon({ url }: { url: string }) {
-  if (isGoogleMeetUrl(url)) {
-    return <GMeetIcon />;
-  }
-  return <TeamsIcon />;
-}
-
-function TeamsIcon() {
-  return (
-    <img alt="" aria-hidden="true" src={teamsIcon} style={{ width: "16px", height: "16px" }} />
-  );
-}
-
-function GMeetIcon() {
-  return (
-    <img alt="" aria-hidden="true" src={gmeetIcon} style={{ width: "16px", height: "16px" }} />
-  );
-}
-
 function SubjectIcon() {
   return (
     <svg
@@ -1400,15 +1380,6 @@ function LockIcon() {
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
     </svg>
   );
-}
-
-function isGoogleMeetUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return parsed.hostname === "meet.google.com" || parsed.hostname.endsWith(".meet.google.com");
-  } catch {
-    return false;
-  }
 }
 
 function formatDateRangeSummary(

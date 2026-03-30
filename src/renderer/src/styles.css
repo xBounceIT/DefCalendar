@@ -2232,7 +2232,7 @@ button {
 .slide-panel {
   position: relative;
   z-index: 1001;
-  width: min(800px, calc(100vw - 48px));
+  width: min(880px, calc(100vw - 48px));
   min-width: 600px;
   max-height: calc(100vh - 48px);
   display: grid;
@@ -2447,11 +2447,14 @@ button {
 
 .event-toolbar__dropdown-container {
   position: relative;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .event-toolbar__dropdown-trigger {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
   padding: 8px 12px;
   border: 1px solid var(--line);
@@ -2461,6 +2464,7 @@ button {
   font-size: 13px;
   cursor: pointer;
   transition: all 0.15s ease;
+  width: 100%;
 }
 
 .event-toolbar__dropdown-trigger:hover {

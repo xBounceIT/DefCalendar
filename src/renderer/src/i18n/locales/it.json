@@ -282,7 +282,9 @@
       "sync": {
         "label": "Sincronizzazione",
         "title": "Impostazioni Sincronizzazione",
-        "description": "Configura il comportamento e la pianificazione della sincronizzazione."
+        "description": "Configura il comportamento e la pianificazione della sincronizzazione.",
+        "interval": "Sincronizza automaticamente ogni",
+        "intervalOption": "{{value}} min"
       },
       "about": {
         "label": "Informazioni",

@@ -78,6 +78,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   const calendarRef = useRef<FullCalendar | null>(null);
   const queryClient = useQueryClient();
   const fallbackSettings = useMemo(() => createDefaultSettings(), []);
+  const startupSelectedDate = useRef(new Date().toISOString());
   const [bannerError, setBannerError] = useState<string | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [editorState, setEditorState] = useState<EditorState | null>(null);
@@ -288,7 +289,10 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
 
   useEffect(() => {
     if (settingsQuery.data && !hydrated) {
-      hydrate(settingsQuery.data);
+      hydrate({
+        ...settingsQuery.data,
+        selectedDate: startupSelectedDate.current,
+      });
     }
   }, [hydrate, hydrated, settingsQuery.data]);
 

@@ -19,15 +19,15 @@ interface SyncServiceDependencies {
 
 class SyncService {
   private readonly dependencies: SyncServiceDependencies;
-  private readonly intervalMs: number;
   private readonly listeners = new Set<(status: SyncStatus) => void>();
   private timer: NodeJS.Timeout | null = null;
   private inFlight: Promise<SyncStatus> | null = null;
+  private pendingMutationAllAccounts = false;
+  private readonly pendingMutationAccountIds = new Set<string>();
   private status: SyncStatus;
 
   constructor(dependencies: SyncServiceDependencies) {
     this.dependencies = dependencies;
-    this.intervalMs = dependencies.config.syncIntervalMinutes * 60_000;
     this.status = dependencies.db.getLatestSyncStatus();
   }
 
@@ -38,13 +38,22 @@ class SyncService {
 
     this.timer = setInterval(() => {
       void this.syncAll("interval");
-    }, this.intervalMs);
+    }, this.getIntervalMs());
   }
 
   stop(): void {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
+    }
+  }
+
+  refreshSchedule(): void {
+    const isRunning = this.timer !== null;
+    this.stop();
+
+    if (isRunning) {
+      this.start();
     }
   }
 
@@ -72,6 +81,10 @@ class SyncService {
 
   async syncAll(reason: SyncReason, homeAccountId?: string): Promise<SyncStatus> {
     if (this.inFlight) {
+      if (reason === "mutation") {
+        this.queuePendingMutation(homeAccountId);
+      }
+
       return this.inFlight;
     }
 
@@ -84,7 +97,55 @@ class SyncService {
       if (this.inFlight === nextSync) {
         this.inFlight = null;
       }
+
+      this.startPendingMutationSync();
     }
+  }
+
+  private queuePendingMutation(homeAccountId?: string): void {
+    if (!homeAccountId) {
+      this.pendingMutationAllAccounts = true;
+      this.pendingMutationAccountIds.clear();
+      return;
+    }
+
+    if (!this.pendingMutationAllAccounts) {
+      this.pendingMutationAccountIds.add(homeAccountId);
+    }
+  }
+
+  private startPendingMutationSync(): void {
+    if (this.inFlight) {
+      return;
+    }
+
+    const homeAccountId = this.takePendingMutationHomeAccountId();
+    if (homeAccountId === null) {
+      return;
+    }
+
+    void this.syncAll("mutation", homeAccountId);
+  }
+
+  private takePendingMutationHomeAccountId(): null | string | undefined {
+    if (this.pendingMutationAllAccounts) {
+      this.pendingMutationAllAccounts = false;
+      this.pendingMutationAccountIds.clear();
+      return undefined;
+    }
+
+    if (this.pendingMutationAccountIds.size === 0) {
+      return null;
+    }
+
+    if (this.pendingMutationAccountIds.size === 1) {
+      const [homeAccountId] = this.pendingMutationAccountIds;
+      this.pendingMutationAccountIds.clear();
+      return homeAccountId;
+    }
+
+    this.pendingMutationAccountIds.clear();
+    return undefined;
   }
 
   private async runSync(reason: SyncReason, homeAccountId?: string): Promise<SyncStatus> {
@@ -263,6 +324,14 @@ class SyncService {
     }
 
     return this.dependencies.auth.getAccountIds();
+  }
+
+  private getIntervalMs(): number {
+    const syncIntervalMinutes =
+      this.dependencies.settings.getSettings().syncIntervalMinutes ??
+      this.dependencies.config.syncIntervalMinutes;
+
+    return syncIntervalMinutes * 60_000;
   }
 
   private setStatus(status: SyncStatus): void {
