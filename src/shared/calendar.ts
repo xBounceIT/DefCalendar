@@ -47,7 +47,7 @@ function roundUpToNext30Minutes(date: Date): Date {
   const result = new Date(date);
   const minutes = result.getMinutes();
   const remainder = minutes % 30;
-  const minutesToAdd = 30 - remainder;
+  const minutesToAdd = remainder === 0 ? 0 : 30 - remainder;
   result.setMinutes(minutes + minutesToAdd, 0, 0);
   return result;
 }
