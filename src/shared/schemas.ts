@@ -338,6 +338,7 @@ const reminderDialogItemSchema = z.object({
   end: dateTimeStringSchema,
   isAllDay: z.boolean(),
   location: z.string().nullable(),
+  onlineMeeting: onlineMeetingInfoSchema.nullable().default(null),
   reminderMinutesBeforeStart: z.number().int().min(0),
   start: dateTimeStringSchema,
   subject: z.string(),

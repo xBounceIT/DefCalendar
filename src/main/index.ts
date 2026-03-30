@@ -124,48 +124,6 @@ async function bootstrap(): Promise<void> {
   reminders.start();
   sync.start();
 
-  // Temporary: Show test reminder popup on startup for styling verification
-  if (process.env.ELECTRON_RENDERER_URL || !app.isPackaged) {
-    setTimeout(() => {
-      reminderManager.show(
-        {
-          items: [
-            {
-              dedupeKey: "test-1",
-              end: new Date(Date.now() + 3600000).toISOString(),
-              isAllDay: false,
-              location: "Conference Room A",
-              reminderMinutesBeforeStart: 15,
-              start: new Date(Date.now() + 3600000).toISOString(),
-              subject: "Team Standup Meeting",
-            },
-            {
-              dedupeKey: "test-2",
-              end: new Date(Date.now() + 7200000).toISOString(),
-              isAllDay: false,
-              location: null,
-              reminderMinutesBeforeStart: 5,
-              start: new Date(Date.now() + 7200000).toISOString(),
-              subject: "Review Pull Requests",
-            },
-            {
-              dedupeKey: "test-3",
-              end: new Date(Date.now() + 14400000).toISOString(),
-              isAllDay: false,
-              location: "Building 2 - Room 301",
-              reminderMinutesBeforeStart: 30,
-              start: new Date(Date.now() + 14400000).toISOString(),
-              subject: "Client Presentation",
-            },
-          ],
-          locale: "en",
-          timeFormat: "system",
-        },
-        true,
-      );
-    }, 2000);
-  }
-
   if (auth.hasSession()) {
     void sync.syncAll("startup");
   }

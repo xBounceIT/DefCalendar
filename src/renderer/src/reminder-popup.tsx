@@ -5,6 +5,7 @@ import { initReactI18next, useTranslation } from "react-i18next";
 import type { ReminderDialogItem, ReminderDialogState } from "@shared/ipc";
 import type { UserSettings } from "@shared/schemas";
 
+import { MeetingIcon } from "./components/meeting-icon";
 import en from "./i18n/locales/en.json";
 import it from "./i18n/locales/it.json";
 
@@ -152,6 +153,16 @@ function ReminderPopup() {
     }
   };
 
+  const handleJoinMeeting = (item: ReminderDialogItem) => {
+    const joinUrl = item.onlineMeeting?.joinUrl;
+    if (!calendarApi || !joinUrl) {
+      return;
+    }
+
+    setSelectedKey(item.dedupeKey);
+    void calendarApi.events.openWebLink(joinUrl);
+  };
+
   return (
     <div className="reminder-shell">
       <div className="reminder-popup">
@@ -172,27 +183,45 @@ function ReminderPopup() {
           </button>
         </div>
 
-        <div className="reminder-list" role="listbox">
+        <div className="reminder-list" role="list">
           {state.items.map((item) => {
             const isSelected = selectedReminder?.dedupeKey === item.dedupeKey;
 
             return (
-              <button
+              <div
                 key={item.dedupeKey}
                 className={`reminder-item${isSelected ? " reminder-item--selected" : ""}`}
-                onClick={() => setSelectedKey(item.dedupeKey)}
-                type="button"
+                role="listitem"
               >
-                <div className="reminder-item-content">
-                  <span className="reminder-item-subject">
-                    {item.subject || t("reminder.untitledEvent")}
-                  </span>
-                  <span className="reminder-item-time">
-                    {formatEventTime(item, state.locale, state.timeFormat)}
-                  </span>
-                  {item.location && <span className="reminder-item-location">{item.location}</span>}
-                </div>
-              </button>
+                <button
+                  aria-pressed={isSelected}
+                  className="reminder-item-select"
+                  onClick={() => setSelectedKey(item.dedupeKey)}
+                  type="button"
+                >
+                  <div className="reminder-item-content">
+                    <span className="reminder-item-subject">
+                      {item.subject || t("reminder.untitledEvent")}
+                    </span>
+                    <span className="reminder-item-time">
+                      {formatEventTime(item, state.locale, state.timeFormat)}
+                    </span>
+                    {item.location && (
+                      <span className="reminder-item-location">{item.location}</span>
+                    )}
+                  </div>
+                </button>
+                {item.onlineMeeting?.joinUrl && (
+                  <button
+                    className="reminder-item-join"
+                    onClick={() => handleJoinMeeting(item)}
+                    type="button"
+                  >
+                    <MeetingIcon url={item.onlineMeeting.joinUrl} />
+                    <span>{t("eventEditor.joinMeeting")}</span>
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>

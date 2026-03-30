@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import registerIpc from "../src/main/ipc/register-ipc";
+import { IPC_CHANNELS } from "../src/shared/ipc";
+
 const { app, ipcMain, shell } = vi.hoisted(() => ({
   app: {
     getLocale: vi.fn().mockReturnValue("en-US"),
@@ -18,9 +21,6 @@ vi.mock(import("@main/electron-runtime"), () => ({
   ipcMain,
   shell,
 }));
-
-import registerIpc from "../src/main/ipc/register-ipc";
-import { IPC_CHANNELS } from "../src/shared/ipc";
 
 function createCalendarEvent() {
   return {

@@ -113,17 +113,22 @@ function createFixture(args?: {
 }
 
 function createDeferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
+  const deferred: {
+    reject: (reason?: unknown) => void;
+    resolve: (value: T | PromiseLike<T>) => void;
+  } = {
+    reject: () => undefined,
+    resolve: () => undefined,
+  };
+  const promise = new Promise<T>((resolve, reject) => {
+    deferred.resolve = resolve;
+    deferred.reject = reject;
   });
 
   return {
     promise,
-    reject,
-    resolve,
+    reject: deferred.reject,
+    resolve: deferred.resolve,
   };
 }
 
@@ -241,7 +246,7 @@ describe("sync service", () => {
       expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(0);
 
       await vi.advanceTimersByTimeAsync(60_000);
-      expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(1);
+      expect(fixture.graph.listCalendars).toHaveBeenCalledOnce();
 
       fixture.service.stop();
     } finally {
@@ -267,7 +272,7 @@ describe("sync service", () => {
       expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(0);
 
       await vi.advanceTimersByTimeAsync(5 * 60_000);
-      expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(1);
+      expect(fixture.graph.listCalendars).toHaveBeenCalledOnce();
 
       fixture.service.stop();
     } finally {
@@ -286,7 +291,7 @@ describe("sync service", () => {
     const firstSync = fixture.service.syncAll("manual");
     const overlappingMutation = fixture.service.syncAll("mutation", "account-1");
 
-    expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(1);
+    expect(fixture.graph.listCalendars).toHaveBeenCalledOnce();
 
     firstCalendars.resolve([createCalendar("calendar-a")]);
 
@@ -371,6 +376,6 @@ describe("sync service", () => {
     await Promise.all([firstSync, overlappingManual]);
     await Promise.resolve();
 
-    expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(1);
+    expect(fixture.graph.listCalendars).toHaveBeenCalledOnce();
   });
 });

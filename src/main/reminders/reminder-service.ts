@@ -162,6 +162,7 @@ class ReminderService {
             end: candidate.event.end,
             isAllDay: candidate.event.isAllDay,
             location: candidate.event.location,
+            onlineMeeting: candidate.event.onlineMeeting ?? null,
             reminderMinutesBeforeStart: reminderMinutes,
             start: candidate.event.start,
             subject: candidate.event.subject,

@@ -111,6 +111,7 @@ describe("reminder service", () => {
             end: "2026-03-30T10:30:00.000Z",
             isAllDay: false,
             location: "Room 3",
+            onlineMeeting: null,
             reminderMinutesBeforeStart: 15,
             start: "2026-03-30T10:00:00.000Z",
             subject: "Planning",
