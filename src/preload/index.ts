@@ -84,6 +84,7 @@ const calendarApi: CalendarApi = {
       ipcRenderer.invoke(IPC_CHANNELS.reminderSnooze, { dedupeKey, minutes }),
     dismiss: (dedupeKey: string) => ipcRenderer.invoke(IPC_CHANNELS.reminderDismiss, { dedupeKey }),
     dismissAll: () => ipcRenderer.invoke(IPC_CHANNELS.reminderDismissAll),
+    minimizeWindow: () => ipcRenderer.invoke(IPC_CHANNELS.reminderWindowMinimize),
   },
   window: {
     minimize: () => ipcRenderer.invoke(IPC_CHANNELS.windowMinimize),
