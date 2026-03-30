@@ -4,6 +4,7 @@
     "close": "Close",
     "cancel": "Cancel",
     "delete": "Delete",
+    "loading": "Loading…",
     "saving": "Saving…",
     "calendar": "Calendar",
     "sync": "Sync",
@@ -121,6 +122,8 @@
     "saveChanges": "Save Changes",
     "categories": "Categories",
     "categoriesPlaceholder": "Comma-separated",
+    "categoriesSelected": "{{count}} categories",
+    "categoriesEmpty": "No categories available",
     "sensitivity": "Sensitivity",
     "sensitivityNormal": "Normal",
     "sensitivityPersonal": "Personal",
@@ -192,8 +195,12 @@
     },
     "responseActions": {
       "accept": "Accept",
+      "acceptWithoutResponse": "Accept without sending",
+      "other": "Other",
+      "refuseWithoutResponse": "Refuse without sending",
       "tentative": "Tentative",
-      "decline": "Decline"
+      "tentativeWithoutResponse": "Tentative without sending",
+      "decline": "Refuse"
     },
     "openInOutlook": "Open in Outlook",
     "organizerSelf": "Owned by signed-in user",
@@ -210,6 +217,7 @@
   },
   "reminder": {
     "title": "Reminder",
+    "minimize": "Minimize",
     "dismissAll": "Dismiss All",
     "snooze": "Snooze",
     "dismiss": "Dismiss",
@@ -286,7 +294,20 @@
       "notifications": {
         "label": "Notifications",
         "title": "Notification Settings",
-        "description": "Manage reminder and notification preferences."
+        "description": "Manage reminder and notification preferences.",
+        "overrideSynced": "Use local reminder rules instead of synced event reminders",
+        "ruleTime": "Time",
+        "ruleWhen": "When",
+        "addRule": "Add reminder",
+        "removeRule": "Remove",
+        "time6hours": "6 hours",
+        "time12hours": "12 hours",
+        "time1day": "1 day",
+        "customPlaceholder": "Minutes",
+        "whenOptions": {
+          "before": "Before start",
+          "after": "After start"
+        }
       },
       "sync": {
         "label": "Sync",

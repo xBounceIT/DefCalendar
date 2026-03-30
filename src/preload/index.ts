@@ -29,6 +29,9 @@ const calendarApi: CalendarApi = {
     list: () => ipcRenderer.invoke(IPC_CHANNELS.calendarsList),
     setVisibility: (args) => ipcRenderer.invoke(IPC_CHANNELS.calendarsSetVisibility, args),
   },
+  categories: {
+    list: (args) => ipcRenderer.invoke(IPC_CHANNELS.categoriesList, args),
+  },
   events: {
     list: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsList, args),
     create: (draft) => ipcRenderer.invoke(IPC_CHANNELS.eventsCreate, draft),
@@ -84,6 +87,7 @@ const calendarApi: CalendarApi = {
       ipcRenderer.invoke(IPC_CHANNELS.reminderSnooze, { dedupeKey, minutes }),
     dismiss: (dedupeKey: string) => ipcRenderer.invoke(IPC_CHANNELS.reminderDismiss, { dedupeKey }),
     dismissAll: () => ipcRenderer.invoke(IPC_CHANNELS.reminderDismissAll),
+    minimizeWindow: () => ipcRenderer.invoke(IPC_CHANNELS.reminderWindowMinimize),
   },
   window: {
     minimize: () => ipcRenderer.invoke(IPC_CHANNELS.windowMinimize),

@@ -15,12 +15,13 @@ describe("app config", () => {
       "offline_access",
       "User.Read",
       "Calendars.ReadWrite",
+      "MailboxSettings.Read",
     ]);
   });
 
   it("supports optional development overrides for auth configuration", () => {
     const env: NodeJS.ProcessEnv = {
-      GRAPH_SCOPES: "User.Read Calendars.ReadWrite",
+      GRAPH_SCOPES: "User.Read Calendars.ReadWrite MailboxSettings.Read",
       MSAL_AUTHORITY: "https://login.microsoftonline.com/example.onmicrosoft.com",
       MSAL_CLIENT_ID: "11111111-1111-1111-1111-111111111111",
     };
@@ -28,7 +29,11 @@ describe("app config", () => {
 
     expect(config.clientId).toBe(env.MSAL_CLIENT_ID);
     expect(config.authority).toBe(env.MSAL_AUTHORITY);
-    expect(config.graphScopes).toEqual(["User.Read", "Calendars.ReadWrite"]);
+    expect(config.graphScopes).toEqual([
+      "User.Read",
+      "Calendars.ReadWrite",
+      "MailboxSettings.Read",
+    ]);
   });
 
   it("ignores the legacy MSAL_REDIRECT_URI override", () => {

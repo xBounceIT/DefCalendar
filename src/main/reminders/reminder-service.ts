@@ -4,6 +4,7 @@ import type SettingsService from "@main/settings/settings-service";
 import { app, powerMonitor } from "@main/electron-runtime";
 import { resolveMainLocale } from "@main/i18n";
 import type { ReminderDialogItem, ReminderDialogState } from "@shared/ipc";
+import type { LocalReminderRule, UserSettings } from "@shared/schemas";
 
 const MAX_REMINDER_MINUTES = 20_160;
 const REMINDER_REFRESH_INTERVAL_MS = 60_000;
@@ -17,6 +18,11 @@ interface ReminderEvaluation {
 interface DueReminderEntry {
   dueAt: number;
   item: ReminderDialogItem;
+}
+
+interface ReminderComputation {
+  dueItems: DueReminderEntry[];
+  nextCheckAt: null | number;
 }
 
 class ReminderService {
@@ -128,11 +134,27 @@ class ReminderService {
 
   private evaluate(now: number): ReminderEvaluation {
     const settings = this.settings.getSettings();
+    const computation = settings.localReminderOverrideEnabled
+      ? this.evaluateWithLocalReminderRules(
+          now,
+          settings.visibleCalendarIds,
+          settings.localReminderRules,
+        )
+      : this.evaluateWithSyncedReminderSettings(now, settings.visibleCalendarIds);
+
+    return this.toReminderEvaluation(now, computation, settings);
+  }
+
+  private evaluateWithSyncedReminderSettings(
+    now: number,
+    visibleCalendarIds: string[],
+  ): ReminderComputation {
     const dueItems: DueReminderEntry[] = [];
     let nextCheckAt: null | number = null;
+    const schedulingHorizon = now + MAX_REMINDER_MINUTES * 60_000;
     const candidates = this.db.listReminderCandidates(
-      settings.visibleCalendarIds,
-      new Date(now + MAX_REMINDER_MINUTES * 60_000).toISOString(),
+      visibleCalendarIds,
+      new Date(schedulingHorizon).toISOString(),
     );
 
     for (const candidate of candidates) {
@@ -145,10 +167,13 @@ class ReminderService {
         continue;
       }
 
-      const reminderAt = new Date(candidate.event.start).getTime() - reminderMinutes * 60_000;
-      if (Number.isNaN(reminderAt)) {
+      const eventStart = new Date(candidate.event.start).getTime();
+      if (Number.isNaN(eventStart)) {
         continue;
       }
+
+      const reminderAt =
+        candidate.reminderType === "start" ? eventStart : eventStart - reminderMinutes * 60_000;
 
       const snoozedUntil = candidate.snoozedUntil
         ? new Date(candidate.snoozedUntil).getTime()
@@ -164,6 +189,7 @@ class ReminderService {
             location: candidate.event.location,
             onlineMeeting: candidate.event.onlineMeeting ?? null,
             reminderMinutesBeforeStart: reminderMinutes,
+            reminderType: candidate.reminderType,
             start: candidate.event.start,
             subject: candidate.event.subject,
           },
@@ -171,10 +197,119 @@ class ReminderService {
         continue;
       }
 
-      if (nextCheckAt === null || dueAt < nextCheckAt) {
-        nextCheckAt = dueAt;
+      const nextDueAt = Math.min(dueAt, schedulingHorizon);
+
+      if (nextCheckAt === null || nextDueAt < nextCheckAt) {
+        nextCheckAt = nextDueAt;
       }
     }
+
+    return {
+      dueItems,
+      nextCheckAt,
+    };
+  }
+
+  private evaluateWithLocalReminderRules(
+    now: number,
+    visibleCalendarIds: string[],
+    localReminderRules: LocalReminderRule[],
+  ): ReminderComputation {
+    const dueItems: DueReminderEntry[] = [];
+    let nextCheckAt: null | number = null;
+    const schedulingHorizon = now + MAX_REMINDER_MINUTES * 60_000;
+
+    if (localReminderRules.length === 0) {
+      return {
+        dueItems,
+        nextCheckAt,
+      };
+    }
+
+    let maxBeforeMinutes = 0;
+    let maxAfterMinutes = 0;
+    for (const rule of localReminderRules) {
+      if (rule.when === "after") {
+        maxAfterMinutes = Math.max(maxAfterMinutes, rule.minutes);
+      } else {
+        maxBeforeMinutes = Math.max(maxBeforeMinutes, rule.minutes);
+      }
+    }
+
+    const lookbackMinutes = maxBeforeMinutes > 0 ? MAX_REMINDER_MINUTES : maxAfterMinutes;
+    const events = this.db.listReminderEventsByStartRange(
+      visibleCalendarIds,
+      new Date(now - lookbackMinutes * 60_000).toISOString(),
+      new Date(schedulingHorizon).toISOString(),
+    );
+
+    for (const event of events) {
+      const eventStart = new Date(event.start).getTime();
+      if (Number.isNaN(eventStart)) {
+        continue;
+      }
+
+      for (const rule of localReminderRules) {
+        const reminderAt =
+          rule.when === "before"
+            ? eventStart - rule.minutes * 60_000
+            : eventStart + rule.minutes * 60_000;
+        const dedupeKey = this.createLocalReminderDedupeKey(
+          event.calendarId,
+          event.id,
+          event.start,
+          rule,
+        );
+        const reminderState = this.db.getReminderState(dedupeKey);
+
+        if (reminderState?.dismissedAt) {
+          continue;
+        }
+
+        const snoozedUntil = reminderState?.snoozedUntil
+          ? new Date(reminderState.snoozedUntil).getTime()
+          : null;
+        const dueAt =
+          snoozedUntil !== null && snoozedUntil > reminderAt ? snoozedUntil : reminderAt;
+
+        if (dueAt <= now) {
+          dueItems.push({
+            dueAt,
+            item: {
+              dedupeKey,
+              end: event.end,
+              isAllDay: event.isAllDay,
+              location: event.location,
+              onlineMeeting: event.onlineMeeting ?? null,
+              reminderMinutesBeforeStart: rule.minutes,
+              start: event.start,
+              subject: event.subject,
+            },
+          });
+          continue;
+        }
+
+        const nextDueAt = Math.min(dueAt, schedulingHorizon);
+
+        if (nextCheckAt === null || nextDueAt < nextCheckAt) {
+          nextCheckAt = nextDueAt;
+        }
+      }
+    }
+
+    return {
+      dueItems,
+      nextCheckAt,
+    };
+  }
+
+  private toReminderEvaluation(
+    now: number,
+    computation: ReminderComputation,
+    settings: Pick<UserSettings, "language" | "timeFormat">,
+  ): ReminderEvaluation {
+    const dueItems = [...computation.dueItems];
+    let nextCheckAt = computation.nextCheckAt;
 
     dueItems.sort((left, right) => {
       if (left.dueAt !== right.dueAt) {
@@ -205,6 +340,15 @@ class ReminderService {
         timeFormat: settings.timeFormat,
       },
     };
+  }
+
+  private createLocalReminderDedupeKey(
+    calendarId: string,
+    eventId: string,
+    eventStart: string,
+    rule: LocalReminderRule,
+  ): string {
+    return `${calendarId}:${eventId}:${eventStart}:${rule.when}:${rule.minutes}`;
   }
 
   private scheduleNextCheck(nextCheckAt: null | number, now: number): void {

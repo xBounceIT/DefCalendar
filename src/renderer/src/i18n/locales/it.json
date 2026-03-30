@@ -4,6 +4,7 @@
     "close": "Chiudi",
     "cancel": "Annulla",
     "delete": "Elimina",
+    "loading": "Caricamento…",
     "saving": "Salvataggio…",
     "calendar": "Calendario",
     "sync": "Sincronizza",
@@ -121,6 +122,8 @@
     "saveChanges": "Salva modifiche",
     "categories": "Categorie",
     "categoriesPlaceholder": "Separate da virgole",
+    "categoriesSelected": "{{count}} categorie",
+    "categoriesEmpty": "Nessuna categoria disponibile",
     "sensitivity": "Riservatezza",
     "sensitivityNormal": "Normale",
     "sensitivityPersonal": "Personale",
@@ -192,7 +195,11 @@
     },
     "responseActions": {
       "accept": "Accetta",
+      "acceptWithoutResponse": "Accetta senza inviare",
+      "other": "Altro",
+      "refuseWithoutResponse": "Rifiuta senza inviare",
       "tentative": "Provvisorio",
+      "tentativeWithoutResponse": "Provvisorio senza inviare",
       "decline": "Rifiuta"
     },
     "openInOutlook": "Apri in Outlook",
@@ -210,6 +217,7 @@
   },
   "reminder": {
     "title": "Promemoria",
+    "minimize": "Riduci a icona",
     "dismissAll": "Ignora tutto",
     "snooze": "Rimanda",
     "dismiss": "Ignora",
@@ -286,7 +294,20 @@
       "notifications": {
         "label": "Notifiche",
         "title": "Impostazioni Notifiche",
-        "description": "Gestisci le preferenze di promemoria e notifiche."
+        "description": "Gestisci le preferenze di promemoria e notifiche.",
+        "overrideSynced": "Usa regole di promemoria locali al posto dei promemoria sincronizzati degli eventi",
+        "ruleTime": "Tempo",
+        "ruleWhen": "Quando",
+        "addRule": "Aggiungi promemoria",
+        "removeRule": "Rimuovi",
+        "time6hours": "6 ore",
+        "time12hours": "12 ore",
+        "time1day": "1 giorno",
+        "customPlaceholder": "Minuti",
+        "whenOptions": {
+          "before": "Prima dell'inizio",
+          "after": "Dopo l'inizio"
+        }
       },
       "sync": {
         "label": "Sincronizzazione",

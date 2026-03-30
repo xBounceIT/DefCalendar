@@ -163,6 +163,12 @@ function ReminderPopup() {
     void calendarApi.events.openWebLink(joinUrl);
   };
 
+  const handleMinimize = () => {
+    if (calendarApi) {
+      void calendarApi.reminder.minimizeWindow();
+    }
+  };
+
   return (
     <div className="reminder-shell">
       <div className="reminder-popup">
@@ -171,16 +177,28 @@ function ReminderPopup() {
             <span className="reminder-title">{t("reminder.title")}</span>
             <span className="reminder-count">{state.items.length}</span>
           </div>
-          <button
-            className="reminder-close"
-            onClick={() => window.close()}
-            type="button"
-            aria-label="Close"
-          >
-            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M2 2l8 8M10 2l-8 8" />
-            </svg>
-          </button>
+          <div className="reminder-header-right">
+            <button
+              className="reminder-minimize"
+              onClick={handleMinimize}
+              type="button"
+              aria-label={t("reminder.minimize")}
+            >
+              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M2 6h8" />
+              </svg>
+            </button>
+            <button
+              className="reminder-close"
+              onClick={() => window.close()}
+              type="button"
+              aria-label="Close"
+            >
+              <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M2 2l8 8M10 2l-8 8" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div className="reminder-list" role="list">
@@ -240,11 +258,11 @@ function ReminderPopup() {
               <option value={60}>{t("reminder.snooze1hour")}</option>
               <option value={1440}>{t("reminder.snoozeTomorrow")}</option>
             </select>
-          </div>
-          <div className="reminder-footer-right">
             <button className="btn-snooze" onClick={handleSnooze} type="button">
               {t("reminder.snooze")}
             </button>
+          </div>
+          <div className="reminder-footer-right">
             <button className="btn-dismiss" onClick={handleDismiss} type="button">
               {t("reminder.dismiss")}
             </button>

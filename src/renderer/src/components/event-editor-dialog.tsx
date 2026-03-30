@@ -9,10 +9,11 @@ import type {
   EventDraft,
   EventParticipant,
   EventResponseAction,
+  OutlookCategory,
   Recurrence,
   UserSettings,
 } from "@shared/schemas";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { fromDateTimeInputValue, toDateTimeInputValue } from "@shared/calendar";
 import { useTranslation } from "react-i18next";
 
@@ -22,8 +23,10 @@ import { MeetingIcon, TeamsIcon } from "./meeting-icon";
 
 interface EventEditorDialogProps {
   accounts: AccountSummary[];
+  availableCategoriesByAccount: Record<string, OutlookCategory[]>;
   busy: boolean;
   calendars: CalendarSummary[];
+  categoriesLoading: boolean;
   errorMessage: null | string;
   onAddAttachment: (args: AttachmentUploadArgs) => Promise<EventAttachment[]>;
   onCancelMeeting: (event: CalendarEvent, comment: string) => Promise<void>;
@@ -33,7 +36,12 @@ interface EventEditorDialogProps {
   onListAttachments: (event: CalendarEvent) => Promise<EventAttachment[]>;
   onOpenInOutlook: (url: string) => Promise<void>;
   onRemoveAttachment: (args: AttachmentDeleteArgs) => Promise<EventAttachment[]>;
-  onRespond: (event: CalendarEvent, action: EventResponseAction, comment: string) => Promise<void>;
+  onRespond: (
+    event: CalendarEvent,
+    action: EventResponseAction,
+    comment: string,
+    sendResponse: boolean,
+  ) => Promise<void>;
   onSave: (draft: EventDraft) => Promise<void>;
   state: EditorState | null;
   timeFormat: UserSettings["timeFormat"];
@@ -43,10 +51,11 @@ interface EditorFormState {
   allDay: boolean;
   allowNewTimeProposals: boolean;
   attendees: EventParticipant[];
+  attendeesInput: string;
   body: string;
   bodyContentType: BodyContentType;
   calendarId: string;
-  categories: string;
+  categories: string[];
   endInput: string;
   isOnlineMeeting: boolean;
   isReminderOn: boolean;
@@ -66,6 +75,11 @@ interface EditorFormState {
   showAs: NonNullable<CalendarEvent["showAs"]>;
   startInput: string;
   subject: string;
+}
+
+interface CategoryOption {
+  color: string;
+  displayName: string;
 }
 
 function buildAccountParticipant(account: AccountSummary | null): EventParticipant | null {
@@ -137,6 +151,9 @@ function EventEditorDialog(props: EventEditorDialogProps) {
   const readOnlyForAttendee = Boolean(editedEvent && !editedEvent.isOrganizer);
   const selectedCalendar =
     props.calendars.find((calendar) => calendar.id === form.calendarId) ?? null;
+  const availableCategories = selectedCalendar
+    ? (props.availableCategoriesByAccount[selectedCalendar.homeAccountId] ?? [])
+    : [];
   const organizer = selectedCalendar
     ? buildAccountParticipant(
         props.accounts.find(
@@ -183,6 +200,8 @@ function EventEditorDialog(props: EventEditorDialogProps) {
         </header>
 
         <EventToolbar
+          availableCategories={availableCategories}
+          categoriesLoading={props.categoriesLoading}
           editedEvent={editedEvent}
           form={form}
           onChange={setForm}
@@ -232,6 +251,29 @@ function EventEditorDialog(props: EventEditorDialogProps) {
             </div>
 
             <div className="field-row">
+              <AttendeesIcon />
+              <input
+                aria-label={t("eventEditor.tabs.attendees")}
+                className="field-input field-input--underline"
+                disabled={readOnlyForAttendee}
+                onChange={(event) => {
+                  const attendeesInput = event.target.value;
+                  setForm((current) =>
+                    current
+                      ? {
+                          ...current,
+                          ...buildAttendeesPatch(attendeesInput, current.attendees),
+                        }
+                      : current,
+                  );
+                }}
+                placeholder={t("eventEditor.tabs.attendees")}
+                type="text"
+                value={form.attendeesInput}
+              />
+            </div>
+
+            <div className="field-row">
               <LocationIcon />
               <input
                 className="field-input field-input--underline"
@@ -268,7 +310,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
             <NotesSection disabled={readOnlyForAttendee} form={form} onChange={setForm} />
           </div>
 
-          {editedEvent && (
+          {editedEvent?.isOrganizer && (
             <div className="slide-panel__section">
               <h4 className="slide-panel__section-title">{t("eventEditor.optionalResponses")}</h4>
               <CollapsibleSection title={t("eventEditor.optionalResponseActions")}>
@@ -277,7 +319,6 @@ function EventEditorDialog(props: EventEditorDialogProps) {
                   event={editedEvent}
                   form={form}
                   onCancelMeeting={props.onCancelMeeting}
-                  onRespond={props.onRespond}
                   onResponseCommentChange={(responseComment) =>
                     setForm((current) => (current ? { ...current, responseComment } : current))
                   }
@@ -289,9 +330,15 @@ function EventEditorDialog(props: EventEditorDialogProps) {
 
         <aside className="slide-panel__sidebar">
           <AttendeesSidebar
+            busy={props.busy}
             event={editedEvent}
             attendees={form.attendees}
+            form={form}
             organizer={organizer}
+            onRespond={props.onRespond}
+            onResponseCommentChange={(responseComment) =>
+              setForm((current) => (current ? { ...current, responseComment } : current))
+            }
             timeFormat={props.timeFormat}
           />
         </aside>
@@ -326,12 +373,16 @@ function EventEditorDialog(props: EventEditorDialogProps) {
 }
 
 function EventToolbar({
+  availableCategories,
+  categoriesLoading,
   editedEvent,
   form,
   onChange,
   onDelete,
   onDuplicate,
 }: {
+  availableCategories: OutlookCategory[];
+  categoriesLoading: boolean;
   editedEvent: CalendarEvent | null;
   form: EditorFormState;
   onChange: React.Dispatch<React.SetStateAction<EditorFormState | null>>;
@@ -408,6 +459,33 @@ function EventToolbar({
     return option?.label || form.sensitivity;
   };
 
+  const selectedCategories = form.categories;
+
+  const categoryOptions = useMemo(
+    () => buildCategoryOptions(availableCategories, selectedCategories),
+    [availableCategories, selectedCategories],
+  );
+
+  const categoryTriggerLabel = useMemo(
+    () => getCategoryTriggerLabel(selectedCategories, t),
+    [selectedCategories, t],
+  );
+
+  const toggleCategory = (displayName: string) => {
+    const normalized = displayName.toLocaleLowerCase();
+    const isSelected = selectedCategories.some((value) => value.toLocaleLowerCase() === normalized);
+    if (isSelected) {
+      updateForm(onChange, {
+        categories: selectedCategories.filter((value) => value.toLocaleLowerCase() !== normalized),
+      });
+      return;
+    }
+
+    updateForm(onChange, {
+      categories: [...selectedCategories, displayName],
+    });
+  };
+
   return (
     <div className="event-toolbar" ref={containerRef}>
       <div className="event-toolbar__group">
@@ -454,13 +532,14 @@ function EventToolbar({
 
       <div className="event-toolbar__separator" />
 
-      <div className="event-toolbar__dropdown-container">
+      <div className="event-toolbar__dropdown-container event-toolbar__dropdown-container--icon-only">
         <button
           type="button"
-          className={`event-toolbar__dropdown-trigger ${openDropdown === "showAs" ? "event-toolbar__dropdown-trigger--open" : ""}`}
+          className={`event-toolbar__dropdown-trigger event-toolbar__dropdown-trigger--icon-only ${openDropdown === "showAs" ? "event-toolbar__dropdown-trigger--open" : ""}`}
           onClick={() => setOpenDropdown(openDropdown === "showAs" ? null : "showAs")}
+          title={getShowAsLabel()}
         >
-          <span className="event-toolbar__dropdown-label">{getShowAsLabel()}</span>
+          <ShowAsIcon />
           <ChevronDownIcon
             className={`event-toolbar__dropdown-arrow ${openDropdown === "showAs" ? "expanded" : ""}`}
           />
@@ -484,14 +563,14 @@ function EventToolbar({
         )}
       </div>
 
-      <div className="event-toolbar__dropdown-container">
+      <div className="event-toolbar__dropdown-container event-toolbar__dropdown-container--icon-only">
         <button
           type="button"
-          className={`event-toolbar__dropdown-trigger ${openDropdown === "reminder" ? "event-toolbar__dropdown-trigger--open" : ""}`}
+          className={`event-toolbar__dropdown-trigger event-toolbar__dropdown-trigger--icon-only ${openDropdown === "reminder" ? "event-toolbar__dropdown-trigger--open" : ""}`}
           onClick={() => setOpenDropdown(openDropdown === "reminder" ? null : "reminder")}
+          title={getReminderLabel()}
         >
           <BellIcon />
-          <span className="event-toolbar__dropdown-label">{getReminderLabel()}</span>
           <ChevronDownIcon
             className={`event-toolbar__dropdown-arrow ${openDropdown === "reminder" ? "expanded" : ""}`}
           />
@@ -525,41 +604,60 @@ function EventToolbar({
         )}
       </div>
 
-      <div className="event-toolbar__dropdown-container">
+      <div className="event-toolbar__dropdown-container event-toolbar__dropdown-container--icon-only">
         <button
           type="button"
-          className={`event-toolbar__dropdown-trigger ${openDropdown === "categories" ? "event-toolbar__dropdown-trigger--open" : ""}`}
+          className={`event-toolbar__dropdown-trigger event-toolbar__dropdown-trigger--icon-only ${openDropdown === "categories" ? "event-toolbar__dropdown-trigger--open" : ""}`}
           onClick={() => setOpenDropdown(openDropdown === "categories" ? null : "categories")}
+          title={t("eventEditor.categories")}
         >
-          <TagIcon />
-          <span className="event-toolbar__dropdown-label">
-            {form.categories ? form.categories.split(",")[0].trim() : t("eventEditor.categories")}
-          </span>
+          <TagIconColored
+            selectedCategories={selectedCategories}
+            categoryOptions={categoryOptions}
+          />
           <ChevronDownIcon
             className={`event-toolbar__dropdown-arrow ${openDropdown === "categories" ? "expanded" : ""}`}
           />
         </button>
         {openDropdown === "categories" && (
           <div className="event-toolbar__dropdown event-toolbar__dropdown--categories">
-            <input
-              type="text"
-              className="event-toolbar__categories-input"
-              placeholder={t("eventEditor.categoriesPlaceholder")}
-              value={form.categories}
-              onChange={(e) => updateForm(onChange, { categories: e.target.value })}
-            />
+            <div className="event-toolbar__dropdown-heading">{categoryTriggerLabel}</div>
+            {categoriesLoading && (
+              <div className="event-toolbar__dropdown-note">{t("common.loading")}</div>
+            )}
+            {!categoriesLoading && categoryOptions.length === 0 && (
+              <div className="event-toolbar__dropdown-note">{t("eventEditor.categoriesEmpty")}</div>
+            )}
+            {!categoriesLoading &&
+              categoryOptions.map((category) => {
+                const selected = selectedCategories.some(
+                  (value) => value.toLocaleLowerCase() === category.displayName.toLocaleLowerCase(),
+                );
+                return (
+                  <button
+                    key={category.displayName}
+                    type="button"
+                    className={`event-toolbar__dropdown-item event-toolbar__dropdown-item--category ${selected ? "event-toolbar__dropdown-item--selected" : ""}`}
+                    onClick={() => toggleCategory(category.displayName)}
+                  >
+                    <TagSwatchIcon color={category.color} />
+                    <span className="event-toolbar__category-name">{category.displayName}</span>
+                    {selected && <CheckIcon className="event-toolbar__category-check" />}
+                  </button>
+                );
+              })}
           </div>
         )}
       </div>
 
-      <div className="event-toolbar__dropdown-container">
+      <div className="event-toolbar__dropdown-container event-toolbar__dropdown-container--icon-only">
         <button
           type="button"
-          className={`event-toolbar__dropdown-trigger ${openDropdown === "sensitivity" ? "event-toolbar__dropdown-trigger--open" : ""}`}
+          className={`event-toolbar__dropdown-trigger event-toolbar__dropdown-trigger--icon-only ${openDropdown === "sensitivity" ? "event-toolbar__dropdown-trigger--open" : ""}`}
           onClick={() => setOpenDropdown(openDropdown === "sensitivity" ? null : "sensitivity")}
+          title={getSensitivityLabel()}
         >
           <LockIcon />
-          <span className="event-toolbar__dropdown-label">{getSensitivityLabel()}</span>
           <ChevronDownIcon
             className={`event-toolbar__dropdown-arrow ${openDropdown === "sensitivity" ? "expanded" : ""}`}
           />
@@ -877,14 +975,27 @@ function TeamsSection({
 }
 
 function AttendeesSidebar({
+  busy,
   event,
   attendees,
+  form,
   organizer,
+  onRespond,
+  onResponseCommentChange,
   timeFormat,
 }: {
+  busy: boolean;
   event: CalendarEvent | null;
   attendees: EventParticipant[];
+  form: EditorFormState;
   organizer: EventParticipant | null;
+  onRespond: (
+    event: CalendarEvent,
+    action: EventResponseAction,
+    comment: string,
+    sendResponse: boolean,
+  ) => Promise<void>;
+  onResponseCommentChange: (value: string) => void;
   timeFormat: UserSettings["timeFormat"];
 }) {
   const { t } = useTranslation();
@@ -894,6 +1005,27 @@ function AttendeesSidebar({
     declined: false,
     pending: true,
   });
+  const [isResponsePopupOpen, setIsResponsePopupOpen] = useState(false);
+  const responseActionsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(clickEvent: MouseEvent) {
+      if (
+        responseActionsRef.current &&
+        !responseActionsRef.current.contains(clickEvent.target as Node)
+      ) {
+        setIsResponsePopupOpen(false);
+      }
+    }
+
+    if (isResponsePopupOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isResponsePopupOpen]);
 
   const toggleGroup = (group: string) => {
     setExpandedGroups((prev) => ({ ...prev, [group]: !prev[group] }));
@@ -901,10 +1033,15 @@ function AttendeesSidebar({
 
   // Group attendees by response status
   const groupedAttendees = {
-    accepted: attendees.filter((a) => a.response === "accepted"),
-    tentative: attendees.filter((a) => a.response === "tentative"),
-    declined: attendees.filter((a) => a.response === "declined"),
-    pending: attendees.filter((a) => !a.response || a.response === "none"),
+    accepted: attendees.filter((attendee) => getEffectiveAttendeeResponse(attendee) === "accepted"),
+    tentative: attendees.filter(
+      (attendee) => getEffectiveAttendeeResponse(attendee) === "tentative",
+    ),
+    declined: attendees.filter((attendee) => getEffectiveAttendeeResponse(attendee) === "declined"),
+    pending: attendees.filter((attendee) => {
+      const response = getEffectiveAttendeeResponse(attendee);
+      return !response || response === "none";
+    }),
   };
 
   const getGroupLabel = (group: string, count: number): string => {
@@ -928,7 +1065,7 @@ function AttendeesSidebar({
   };
 
   const getAttendeeAvatarClass = (response: string | null | undefined): string => {
-    switch (response) {
+    switch (normalizeResponseValue(response)) {
       case "accepted": {
         return "attendees-sidebar__attendee-avatar--accepted";
       }
@@ -979,10 +1116,45 @@ function AttendeesSidebar({
   };
 
   const displayOrganizer = event?.organizer ?? organizer;
+  const showResponseActions = Boolean(event && !event.isOrganizer);
+  const advancedResponseOptions: {
+    action: EventResponseAction;
+    label: string;
+    sendResponse: boolean;
+  }[] = [
+    {
+      action: "tentative",
+      label: t("eventEditor.responseActions.tentative"),
+      sendResponse: true,
+    },
+    {
+      action: "accept",
+      label: t("eventEditor.responseActions.acceptWithoutResponse"),
+      sendResponse: false,
+    },
+    {
+      action: "decline",
+      label: t("eventEditor.responseActions.refuseWithoutResponse"),
+      sendResponse: false,
+    },
+    {
+      action: "tentative",
+      label: t("eventEditor.responseActions.tentativeWithoutResponse"),
+      sendResponse: false,
+    },
+  ];
+
+  const submitResponse = (action: EventResponseAction, sendResponse: boolean, comment: string) => {
+    if (!event) {
+      return;
+    }
+
+    void onRespond(event, action, sendResponse ? comment : "", sendResponse);
+    setIsResponsePopupOpen(false);
+  };
 
   return (
     <div className="attendees-sidebar">
-      {/* Organizer Section */}
       {displayOrganizer && (
         <div className="attendees-sidebar__section">
           <h4 className="attendees-sidebar__title">{t("eventEditor.organizerRole")}</h4>
@@ -1004,7 +1176,80 @@ function AttendeesSidebar({
         </div>
       )}
 
-      {/* Attendees Section */}
+      {showResponseActions && (
+        <div className="attendees-sidebar__section">
+          <h4 className="attendees-sidebar__title">{t("eventEditor.optionalResponses")}</h4>
+          <div className="attendees-sidebar__responses" ref={responseActionsRef}>
+            {event?.responseStatus?.response && (
+              <span className="attendees-sidebar__response-meta">
+                {t("eventEditor.yourResponse", {
+                  response: getResponseStatusLabel(t, event.responseStatus.response),
+                })}
+              </span>
+            )}
+            <div className="attendees-sidebar__response-actions">
+              <button
+                className="attendees-sidebar__response-button attendees-sidebar__response-button--accept"
+                disabled={busy}
+                onClick={() => submitResponse("accept", true, "")}
+                type="button"
+              >
+                <CheckIcon />
+                <span>{t("eventEditor.responseActions.accept")}</span>
+              </button>
+              <button
+                className="attendees-sidebar__response-button attendees-sidebar__response-button--refuse"
+                disabled={busy}
+                onClick={() => submitResponse("decline", true, "")}
+                type="button"
+              >
+                <CloseIcon />
+                <span>{t("eventEditor.responseActions.decline")}</span>
+              </button>
+              <button
+                aria-expanded={isResponsePopupOpen}
+                className={`attendees-sidebar__response-button attendees-sidebar__response-button--other ${isResponsePopupOpen ? "attendees-sidebar__response-button--open" : ""}`}
+                disabled={busy}
+                onClick={() => setIsResponsePopupOpen((current) => !current)}
+                type="button"
+              >
+                <span>{t("eventEditor.responseActions.other")}</span>
+                <ChevronDownIcon
+                  className={`attendees-sidebar__response-arrow ${isResponsePopupOpen ? "expanded" : ""}`}
+                />
+              </button>
+            </div>
+            {isResponsePopupOpen && (
+              <div className="attendees-sidebar__response-popup">
+                <label className="field field--full attendees-sidebar__response-comment">
+                  <span>{t("eventEditor.comment")}</span>
+                  <textarea
+                    onChange={(eventValue) => onResponseCommentChange(eventValue.target.value)}
+                    rows={4}
+                    value={form.responseComment}
+                  />
+                </label>
+                <div className="attendees-sidebar__response-popup-actions">
+                  {advancedResponseOptions.map((option) => (
+                    <button
+                      key={`${option.action}-${option.sendResponse ? "send" : "silent"}`}
+                      className="attendees-sidebar__response-popup-button"
+                      disabled={busy}
+                      onClick={() =>
+                        submitResponse(option.action, option.sendResponse, form.responseComment)
+                      }
+                      type="button"
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="attendees-sidebar__section">
         <h4 className="attendees-sidebar__title">
           {t("eventEditor.tabs.attendees")}
@@ -1052,7 +1297,7 @@ function AttendeesSidebar({
                           className="attendees-sidebar__attendee"
                         >
                           <div
-                            className={`attendees-sidebar__attendee-avatar ${getAttendeeAvatarClass(attendee.response)}`}
+                            className={`attendees-sidebar__attendee-avatar ${getAttendeeAvatarClass(getEffectiveAttendeeResponse(attendee))}`}
                           >
                             {getInitials(attendee.name, attendee.email)}
                           </div>
@@ -1226,6 +1471,27 @@ function LocationIcon() {
   );
 }
 
+function AttendeesIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="20"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="20"
+    >
+      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  );
+}
+
 function CalendarSelectIcon() {
   return (
     <svg
@@ -1363,6 +1629,131 @@ function TagIcon() {
   );
 }
 
+function TagSwatchIcon({ color }: { color: string }) {
+  const strokeColor = categoryColorToHex(color);
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="18"
+      stroke={strokeColor}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="18"
+    >
+      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+      <line x1="7" x2="7.01" y1="7" y2="7" />
+    </svg>
+  );
+}
+
+function CheckIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      height="16"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="16"
+    >
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+function buildCategoryOptions(
+  availableCategories: OutlookCategory[],
+  selectedCategories: string[],
+): CategoryOption[] {
+  const items = new Map<string, CategoryOption>();
+
+  for (const category of availableCategories) {
+    const displayName = category.displayName.trim();
+    if (!displayName) {
+      continue;
+    }
+
+    items.set(displayName.toLocaleLowerCase(), {
+      color: category.color,
+      displayName,
+    });
+  }
+
+  for (const selected of selectedCategories) {
+    const key = selected.toLocaleLowerCase();
+    if (!items.has(key)) {
+      items.set(key, {
+        color: "none",
+        displayName: selected,
+      });
+    }
+  }
+
+  return [...items.values()].toSorted((left, right) =>
+    left.displayName.localeCompare(right.displayName),
+  );
+}
+
+function getCategoryTriggerLabel(
+  selectedCategories: string[],
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  if (selectedCategories.length === 0) {
+    return t("eventEditor.categories");
+  }
+
+  if (selectedCategories.length === 1) {
+    return selectedCategories[0];
+  }
+
+  return t("eventEditor.categoriesSelected", { count: selectedCategories.length });
+}
+
+function categoryColorToHex(color: null | string | undefined): string {
+  if (!color) {
+    return "var(--ink-tertiary)";
+  }
+
+  const normalized = color.toLowerCase();
+  const map: Record<string, string> = {
+    none: "var(--ink-tertiary)",
+    preset0: "#c73d3d",
+    preset1: "#d97706",
+    preset2: "#8b5a3c",
+    preset3: "#ca8a04",
+    preset4: "#2f9e44",
+    preset5: "#0f766e",
+    preset6: "#5f7c24",
+    preset7: "#2563eb",
+    preset8: "#7e22ce",
+    preset9: "#be185d",
+    preset10: "#3b82f6",
+    preset11: "#1d4ed8",
+    preset12: "#6b7280",
+    preset13: "#374151",
+    preset14: "#111827",
+    preset15: "#991b1b",
+    preset16: "#c2410c",
+    preset17: "#78350f",
+    preset18: "#854d0e",
+    preset19: "#166534",
+    preset20: "#0f766e",
+    preset21: "#3f6212",
+    preset22: "#1e3a8a",
+    preset23: "#581c87",
+    preset24: "#701a75",
+  };
+
+  return map[normalized] ?? "var(--ink-tertiary)";
+}
+
 function LockIcon() {
   return (
     <svg
@@ -1378,6 +1769,57 @@ function LockIcon() {
     >
       <rect height="11" width="18" x="3" y="11" rx="2" ry="2" />
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  );
+}
+
+function ShowAsIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="18"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="18"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  );
+}
+
+function TagIconColored({
+  selectedCategories,
+  categoryOptions,
+}: {
+  selectedCategories: string[];
+  categoryOptions: CategoryOption[];
+}) {
+  const firstCategory = selectedCategories[0];
+  const option = categoryOptions.find(
+    (item) => item.displayName.toLocaleLowerCase() === firstCategory?.toLocaleLowerCase(),
+  );
+  const strokeColor =
+    selectedCategories.length > 0 ? categoryColorToHex(option?.color) : "currentColor";
+
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="18"
+      stroke={strokeColor}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="18"
+    >
+      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+      <line x1="7" x2="7.01" y1="7" y2="7" />
     </svg>
   );
 }
@@ -1458,14 +1900,12 @@ function ResponsesSection({
   event,
   form,
   onCancelMeeting,
-  onRespond,
   onResponseCommentChange,
 }: {
   busy: boolean;
   event: CalendarEvent | null;
   form: EditorFormState;
   onCancelMeeting: (event: CalendarEvent, comment: string) => Promise<void>;
-  onRespond: (event: CalendarEvent, action: EventResponseAction, comment: string) => Promise<void>;
   onResponseCommentChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
@@ -1482,7 +1922,11 @@ function ResponsesSection({
             : t("eventEditor.attendeeWorkflow")}
         </span>
         {event.responseStatus?.response && (
-          <span>{t("eventEditor.yourResponse", { response: event.responseStatus.response })}</span>
+          <span>
+            {t("eventEditor.yourResponse", {
+              response: getResponseStatusLabel(t, event.responseStatus.response),
+            })}
+          </span>
         )}
       </div>
       <label className="field field--full">
@@ -1493,36 +1937,18 @@ function ResponsesSection({
           value={form.responseComment}
         />
       </label>
-      {event.isOrganizer ? (
-        event.attendees.length > 0 ? (
-          <button
-            className="ghost-button ghost-button--danger"
-            disabled={busy}
-            onClick={() => {
-              void onCancelMeeting(event, form.responseComment);
-            }}
-            type="button"
-          >
-            {t("eventEditor.cancelMeeting")}
-          </button>
-        ) : null
-      ) : (
-        <div className="dialog-footer__left">
-          {(["accept", "tentative", "decline"] as EventResponseAction[]).map((action) => (
-            <button
-              key={action}
-              className="ghost-button"
-              disabled={busy}
-              onClick={() => {
-                void onRespond(event, action, form.responseComment);
-              }}
-              type="button"
-            >
-              {getResponseActionLabel(t, action)}
-            </button>
-          ))}
-        </div>
-      )}
+      {event.attendees.length > 0 ? (
+        <button
+          className="ghost-button ghost-button--danger"
+          disabled={busy}
+          onClick={() => {
+            void onCancelMeeting(event, form.responseComment);
+          }}
+          type="button"
+        >
+          {t("eventEditor.cancelMeeting")}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -1690,17 +2116,19 @@ function buildFormState(state: EventEditorDialogProps["state"]): EditorFormState
 
   const event = state.mode === "edit" ? state.event : null;
   const draft = state.mode === "create" ? state.draft : null;
+  const attendees = event?.attendees ?? draft?.attendees ?? [];
   const recurrence = event?.recurrence ?? draft?.recurrence ?? null;
   const createAllDay = state.mode === "create" ? state.allDay : (event?.isAllDay ?? false);
 
   return {
     allDay: createAllDay,
     allowNewTimeProposals: event?.allowNewTimeProposals ?? draft?.allowNewTimeProposals ?? true,
-    attendees: event?.attendees ?? draft?.attendees ?? [],
+    attendees,
+    attendeesInput: formatAttendeesInput(attendees),
     body: event?.body ?? draft?.body ?? "",
     bodyContentType: event?.bodyContentType ?? draft?.bodyContentType ?? "text",
     calendarId: state.mode === "create" ? state.calendarId : event!.calendarId,
-    categories: (event?.categories ?? draft?.categories ?? []).join(", "),
+    categories: event?.categories ?? draft?.categories ?? [],
     endInput: buildEndInput(state),
     isOnlineMeeting: event?.isOnlineMeeting ?? draft?.isOnlineMeeting ?? false,
     isReminderOn: event?.isReminderOn ?? draft?.isReminderOn ?? true,
@@ -1760,15 +2188,12 @@ function buildDraft(form: EditorFormState, event: CalendarEvent | null): EventDr
   return {
     attachmentIdsToRemove: [],
     attachmentsToAdd: [],
-    attendees: form.attendees,
+    attendees: buildAttendeesFromInput(form.attendeesInput, form.attendees),
     allowNewTimeProposals: form.allowNewTimeProposals,
     body: form.body.trim() || null,
     bodyContentType: form.bodyContentType,
     calendarId: form.calendarId,
-    categories: form.categories
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean),
+    categories: form.categories,
     end,
     etag: event?.etag ?? null,
     id: resolveEventId(event, form),
@@ -1834,6 +2259,72 @@ function resolveEventId(event: CalendarEvent | null, form: EditorFormState): str
   return event.id;
 }
 
+function buildAttendeesPatch(
+  attendeesInput: string,
+  existingAttendees: EventParticipant[],
+): Pick<EditorFormState, "attendees" | "attendeesInput"> {
+  return {
+    attendees: buildAttendeesFromInput(attendeesInput, existingAttendees),
+    attendeesInput,
+  };
+}
+
+function buildAttendeesFromInput(
+  attendeesInput: string,
+  existingAttendees: EventParticipant[],
+): EventParticipant[] {
+  const existingByEmail = new Map<string, EventParticipant>();
+  for (const attendee of existingAttendees) {
+    const normalizedEmail = normalizeAttendeeEmail(attendee.email);
+    if (!normalizedEmail) {
+      continue;
+    }
+    existingByEmail.set(normalizedEmail, attendee);
+  }
+
+  return parseAttendeeEmails(attendeesInput).map((email) => {
+    const normalizedEmail = normalizeAttendeeEmail(email);
+    const existingAttendee = normalizedEmail ? existingByEmail.get(normalizedEmail) : null;
+    if (existingAttendee) {
+      return { ...existingAttendee, email };
+    }
+
+    return {
+      email,
+      name: null,
+      response: null,
+      status: null,
+      type: "required",
+    };
+  });
+}
+
+function formatAttendeesInput(attendees: EventParticipant[]): string {
+  return attendees
+    .map((attendee) => attendee.email?.trim() ?? "")
+    .filter(Boolean)
+    .join(", ");
+}
+
+function parseAttendeeEmails(value: string): string[] {
+  const uniqueEmails = new Map<string, string>();
+  for (const part of value.split(/[\n,;]+/)) {
+    const email = part.trim();
+    const normalizedEmail = normalizeAttendeeEmail(email);
+    if (!normalizedEmail || uniqueEmails.has(normalizedEmail)) {
+      continue;
+    }
+    uniqueEmails.set(normalizedEmail, email);
+  }
+
+  return [...uniqueEmails.values()];
+}
+
+function normalizeAttendeeEmail(value: null | string | undefined): null | string {
+  const normalized = value?.trim().toLowerCase();
+  return normalized || null;
+}
+
 function toggleAllDayForm(form: EditorFormState, nextAllDay: boolean): Partial<EditorFormState> {
   if (nextAllDay) {
     return {
@@ -1895,19 +2386,49 @@ function formatAttachmentSize(size: number): string {
   return `${Math.round((size / 1024) * 10) / 10} KB`;
 }
 
-function getResponseActionLabel(
+function getResponseStatusLabel(
   t: ReturnType<typeof useTranslation>["t"],
-  action: EventResponseAction,
+  response: null | string | undefined,
 ): string {
-  if (action === "accept") {
-    return t("eventEditor.responseActions.accept");
+  const normalizedResponse = normalizeResponseValue(response);
+  if (normalizedResponse === "accepted") {
+    return t("eventEditor.responseAccepted");
   }
 
-  if (action === "tentative") {
-    return t("eventEditor.responseActions.tentative");
+  if (normalizedResponse === "declined") {
+    return t("eventEditor.responseDeclined");
   }
 
-  return t("eventEditor.responseActions.decline");
+  if (normalizedResponse === "tentative") {
+    return t("eventEditor.responseTentative");
+  }
+
+  return t("eventEditor.responseUnknown");
+}
+
+function normalizeResponseValue(response: null | string | undefined): null | string {
+  const normalized = response?.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized === "accepted" || normalized === "declined" || normalized === "tentative") {
+    return normalized;
+  }
+
+  if (normalized === "tentativelyaccepted") {
+    return "tentative";
+  }
+
+  if (normalized === "none" || normalized === "notresponded" || normalized === "organizer") {
+    return "none";
+  }
+
+  return normalized;
+}
+
+function getEffectiveAttendeeResponse(attendee: EventParticipant): null | string {
+  return normalizeResponseValue(attendee.status?.response ?? attendee.response);
 }
 
 function extractUrls(value: string): string[] {
@@ -2114,28 +2635,11 @@ function getAttendeeResponseLabel(
   t: ReturnType<typeof useTranslation>["t"],
   attendee: EventParticipant,
 ): string {
-  const response = attendee.status?.response ?? attendee.response;
-  if (!response) {
-    return t("eventEditor.responseUnknown");
-  }
-
-  if (response === "accepted") {
-    return t("eventEditor.responseAccepted");
-  }
-
-  if (response === "declined") {
-    return t("eventEditor.responseDeclined");
-  }
-
-  if (response === "tentativelyAccepted") {
-    return t("eventEditor.responseTentative");
-  }
-
-  return t("eventEditor.responseUnknown");
+  return getResponseStatusLabel(t, getEffectiveAttendeeResponse(attendee));
 }
 
 function getAttendeeResponseClass(attendee: EventParticipant): string {
-  const response = attendee.status?.response ?? attendee.response;
+  const response = getEffectiveAttendeeResponse(attendee);
   if (response === "accepted") {
     return "attendee-row__status--accepted";
   }

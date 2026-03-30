@@ -12,11 +12,13 @@ interface CalendarSidebarProps {
   accounts: AccountSummary[];
   calendars: CalendarSummary[];
   canCreateEvent: boolean;
+  eventDayKeys: ReadonlySet<string>;
   isRefreshing: boolean;
   onAccountAdd: () => void;
   onCalendarToggle: (calendar: CalendarSummary) => void;
   onCreateEvent: () => void;
   onDateSelect: (date: Date) => void;
+  onMiniCalendarMonthChange: (month: Date) => void;
   onRefresh: () => void;
   onSignOut: () => void;
   selectedDate: string;
@@ -330,7 +332,12 @@ function CalendarSidebar(props: CalendarSidebarProps) {
     <aside className="sidebar">
       <h1 className="sidebar-title">{t("sidebar.title")}</h1>
 
-      <MiniCalendar selectedDate={selectedDate} onDateSelect={props.onDateSelect} />
+      <MiniCalendar
+        eventDayKeys={props.eventDayKeys}
+        onDateSelect={props.onDateSelect}
+        onVisibleMonthChange={props.onMiniCalendarMonthChange}
+        selectedDate={selectedDate}
+      />
 
       <div className="sidebar-section">
         <CalendarListHeader onAdd={props.onAccountAdd} />

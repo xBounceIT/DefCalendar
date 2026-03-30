@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 
+import type { DateClickArg } from "@fullcalendar/interaction";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, expectTypeOf, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import React from "react";
 import App from "../src/renderer/src/app";
 import useUiStore from "../src/renderer/src/store";
@@ -24,10 +25,10 @@ vi.mock<MockedCalendarModule>(import("@fullcalendar/timegrid"), () => ({
 }));
 
 const signedInSelectedDate = "2026-03-27T09:00:00.000Z";
+let capturedCalendarProps: null | Record<string, unknown> = null;
 const mockCalendarSurfaceDate = {
   current: new Date(signedInSelectedDate),
 };
-let capturedCalendarProps: null | Record<string, unknown> = null;
 
 const mockCalendarSurfaceApi = {
   changeView: vi.fn(),
@@ -127,9 +128,9 @@ function installCalendarApi(calendarApi: CalendarApi): void {
 function restoreCalendarApi(): void {
   cleanup();
   vi.clearAllMocks();
+  capturedCalendarProps = null;
   mockCalendarSurfaceDate.current = new Date(signedInSelectedDate);
   mockCalendarSurfaceApi.view.type = "timeGridWeek";
-  capturedCalendarProps = null;
   resetUiStoreState();
 
   if (originalCalendarApiDescriptor) {
@@ -156,6 +157,10 @@ function renderApp() {
   );
 }
 
+function getCalendarDateClickHandler(): (arg: DateClickArg) => void {
+  return capturedCalendarProps?.dateClick as (arg: DateClickArg) => void;
+}
+
 function createCalendarApiMock(): CalendarApi {
   return {
     app: {
@@ -173,6 +178,9 @@ function createCalendarApiMock(): CalendarApi {
     calendars: {
       list: vi.fn(),
       setVisibility: vi.fn(),
+    },
+    categories: {
+      list: vi.fn().mockResolvedValue([]),
     },
     events: {
       addAttachment: vi.fn(),
@@ -300,6 +308,9 @@ function createSignedInCalendarApiMock(): CalendarApi {
         },
       ]),
       setVisibility: vi.fn(),
+    },
+    categories: {
+      list: vi.fn().mockResolvedValue([]),
     },
     events: {
       addAttachment: vi.fn(),
@@ -453,6 +464,9 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
         },
       ]),
       setVisibility: vi.fn(),
+    },
+    categories: {
+      list: vi.fn().mockResolvedValue([]),
     },
     events: {
       create: vi.fn(),
@@ -609,6 +623,41 @@ describe("app startup", () => {
     }
   });
 
+  it("refetches both board and mini-calendar events after refresh", async () => {
+    try {
+      installResizeObserverMock();
+      const calendarApi = createSignedInCalendarApiMock();
+      calendarApi.sync.refresh = vi.fn().mockResolvedValue({
+        lastSyncedAt: "2026-03-27T15:43:00.000Z",
+        message: "Synced 1 calendar, 1 event.",
+        messageKey: "sync.synced",
+        counts: {
+          calendars: 1,
+          events: 1,
+        },
+        state: "idle",
+      });
+      installCalendarApi(calendarApi);
+
+      renderApp();
+
+      await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
+      await waitFor(() => {
+        expect(calendarApi.events.list.mock.calls.length).toBeGreaterThanOrEqual(2);
+      });
+
+      fireEvent.click(screen.getByTitle("Sync"));
+
+      await waitFor(() => {
+        expect(calendarApi.sync.refresh).toHaveBeenCalledOnce();
+        expect(calendarApi.events.list.mock.calls.length).toBeGreaterThanOrEqual(4);
+      });
+    } finally {
+      restoreCalendarApi();
+      restoreResizeObserver();
+    }
+  });
+
   it("dismisses the day events table when navigating to a new range", async () => {
     try {
       installResizeObserverMock();
@@ -622,7 +671,7 @@ describe("app startup", () => {
         | ((arg: { date: Date }) => void)
         | undefined;
 
-      expectTypeOf(dateClick).toBeFunction();
+      expect(dateClick).toBeInstanceOf(Function);
 
       act(() => {
         dateClick?.({
@@ -639,7 +688,7 @@ describe("app startup", () => {
             view: { calendar: { getDate: () => Date }; type: string };
           }) => void)
         | undefined;
-      expectTypeOf(datesSet).toBeFunction();
+      expect(datesSet).toBeInstanceOf(Function);
 
       act(() => {
         datesSet?.({
@@ -773,7 +822,7 @@ describe("app startup", () => {
       renderApp();
 
       expect(screen.getByText(/secure desktop bridge|ponte desktop sicuro/i)).not.toBeNull();
-      expect(screen.getByText(/Restart the app|Riavvia l’app/i)).not.toBeNull();
+      expect(screen.getByText(/restart the app|riavvia/i)).not.toBeNull();
     } finally {
       restoreCalendarApi();
       restoreResizeObserver();

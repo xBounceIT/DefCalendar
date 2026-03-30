@@ -106,6 +106,10 @@ describe("i18n translation completeness", () => {
       "eventEditor.tabs.details",
       "eventEditor.tabs.scheduling",
       "eventEditor.tabs.teams",
+      "settings.sections.notifications.time6hours",
+      "settings.sections.notifications.time12hours",
+      "settings.sections.notifications.time1day",
+      "settings.sections.notifications.customPlaceholder",
     ]);
 
     const orphaned: string[] = [];

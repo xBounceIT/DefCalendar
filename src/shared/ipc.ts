@@ -12,6 +12,8 @@ import type {
   EventDraft,
   EventListArgs,
   EventReferenceArgs,
+  ListOutlookCategoriesArgs,
+  OutlookCategory,
   RespondToEventArgs,
   SetCalendarVisibilityArgs,
   SyncStatus,
@@ -31,6 +33,7 @@ export const IPC_CHANNELS = {
   authStateChanged: "auth:state-changed",
   calendarsList: "calendars:list",
   calendarsSetVisibility: "calendars:set-visibility",
+  categoriesList: "categories:list",
   eventsList: "events:list",
   eventsCreate: "events:create",
   eventsUpdate: "events:update",
@@ -56,6 +59,7 @@ export const IPC_CHANNELS = {
   reminderSnooze: "reminder:snooze",
   reminderDismiss: "reminder:dismiss",
   reminderDismissAll: "reminder:dismiss-all",
+  reminderWindowMinimize: "reminder:window-minimize",
   windowMinimize: "window:minimize",
   windowMaximize: "window:maximize",
   windowClose: "window:close",
@@ -78,6 +82,9 @@ interface CalendarApi {
   calendars: {
     list: () => Promise<CalendarSummary[]>;
     setVisibility: (args: SetCalendarVisibilityArgs) => Promise<CalendarSummary[]>;
+  };
+  categories: {
+    list: (args: ListOutlookCategoriesArgs) => Promise<OutlookCategory[]>;
   };
   events: {
     list: (args: EventListArgs) => Promise<CalendarEvent[]>;
@@ -113,6 +120,7 @@ interface CalendarApi {
     snooze: (dedupeKey: string, minutes: number) => Promise<void>;
     dismiss: (dedupeKey: string) => Promise<void>;
     dismissAll: () => Promise<void>;
+    minimizeWindow: () => Promise<void>;
   };
   window: {
     minimize: () => Promise<void>;

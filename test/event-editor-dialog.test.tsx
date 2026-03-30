@@ -1,16 +1,20 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createInstance } from "i18next";
 import React from "react";
 import { I18nextProvider, initReactI18next } from "react-i18next";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import EventEditorDialog from "../src/renderer/src/components/event-editor-dialog";
 import enTranslations from "../src/renderer/src/i18n/locales/en.json";
 import type { EditorState } from "../src/renderer/src/event-editor-state";
 import type { CalendarEvent, CalendarSummary, EventParticipant } from "../src/shared/schemas";
+
+afterEach(() => {
+  cleanup();
+});
 
 function createCalendar(): CalendarSummary {
   return {
@@ -37,7 +41,7 @@ function createParticipant(): EventParticipant {
   };
 }
 
-function createEvent(): CalendarEvent {
+function createEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
   return {
     allowNewTimeProposals: true,
     attachments: [],
@@ -77,7 +81,25 @@ function createEvent(): CalendarEvent {
     type: null,
     unsupportedReason: null,
     webLink: "https://outlook.office.com/calendar/item/1",
+    ...overrides,
   };
+}
+
+function createAttendeeEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
+  return createEvent({
+    attendees: [
+      {
+        email: "coworker@example.com",
+        name: "Coworker",
+        response: "accepted",
+        status: null,
+        type: "required",
+      },
+    ],
+    isOrganizer: false,
+    responseStatus: null,
+    ...overrides,
+  });
 }
 
 function renderDialog(props?: Partial<React.ComponentProps<typeof EventEditorDialog>>) {
@@ -107,8 +129,16 @@ function renderDialog(props?: Partial<React.ComponentProps<typeof EventEditorDia
             username: "user@example.com",
           },
         ]}
+        availableCategoriesByAccount={{
+          "account-1": [
+            { color: "preset7", displayName: "Blue category" },
+            { color: "preset4", displayName: "Green category" },
+            { color: "preset0", displayName: "Red category" },
+          ],
+        }}
         busy={false}
         calendars={[createCalendar()]}
+        categoriesLoading={false}
         errorMessage={null}
         onAddAttachment={vi.fn().mockResolvedValue([])}
         onCancelMeeting={vi.fn().mockResolvedValue(undefined)}
@@ -130,6 +160,10 @@ function renderDialog(props?: Partial<React.ComponentProps<typeof EventEditorDia
   return { onSave };
 }
 
+afterEach(() => {
+  cleanup();
+});
+
 describe("event editor dialog", () => {
   it("shows and preserves a zero-minute reminder", async () => {
     const { onSave } = renderDialog();
@@ -144,5 +178,269 @@ describe("event editor dialog", () => {
         reminderMinutesBeforeStart: 0,
       }),
     );
+  });
+
+  it("selects categories from the tag dropdown", async () => {
+    const { onSave } = renderDialog();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Categories/i })[0]!);
+    fireEvent.click(screen.getByRole("button", { name: /Blue category/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Red category/i }));
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Save Changes" })[0]!);
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        categories: ["Blue category", "Red category"],
+      }),
+    );
+  });
+
+  it("saves attendees from the attendees row in create mode", () => {
+    const { onSave } = renderDialog({
+      state: {
+        allDay: false,
+        calendarId: "calendar-1",
+        end: "2026-03-30T10:00:00.000Z",
+        mode: "create",
+        start: "2026-03-30T09:00:00.000Z",
+      },
+    });
+
+    expect(screen.queryByRole("button", { name: "Add attendee" })).toBeNull();
+
+    fireEvent.change(screen.getByPlaceholderText("Subject"), {
+      target: { value: "Planning" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Attendees" }), {
+      target: { value: "alice@example.com, bob@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attendees: [
+          {
+            email: "alice@example.com",
+            name: null,
+            response: null,
+            status: null,
+            type: "required",
+          },
+          {
+            email: "bob@example.com",
+            name: null,
+            response: null,
+            status: null,
+            type: "required",
+          },
+        ],
+      }),
+    );
+  });
+
+  it("preserves selected categories missing from account master list", async () => {
+    const { onSave } = renderDialog({
+      availableCategoriesByAccount: {
+        "account-1": [{ color: "preset7", displayName: "Blue category" }],
+      },
+      state: {
+        event: createEvent({ categories: ["Legacy category"] }),
+        mode: "edit",
+      },
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Save Changes" })[0]!);
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        categories: ["Legacy category"],
+      }),
+    );
+  });
+
+  it("prefills attendees row from existing attendees", () => {
+    renderDialog({
+      state: {
+        event: createEvent({
+          attendees: [
+            {
+              email: "alice@example.com",
+              name: "Alice",
+              response: null,
+              status: null,
+              type: "required",
+            },
+            {
+              email: "bob@example.com",
+              name: "Bob",
+              response: null,
+              status: null,
+              type: "optional",
+            },
+          ],
+        }),
+        mode: "edit",
+      },
+    });
+
+    expect(screen.getByRole("textbox", { name: "Attendees" })).toHaveValue(
+      "alice@example.com, bob@example.com",
+    );
+  });
+
+  it("shows attendee response actions in the sidebar", () => {
+    renderDialog({
+      state: {
+        event: createAttendeeEvent(),
+        mode: "edit",
+      },
+    });
+
+    const organizerHeading = screen.getByText("Organizer");
+    const responsesHeading = screen.getByText("Responses");
+
+    expect(screen.getByRole("button", { name: "Accept" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refuse" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Other" })).toBeInTheDocument();
+    expect(screen.queryByText("Response actions")).toBeNull();
+    expect(organizerHeading.compareDocumentPosition(responsesHeading)).toBeGreaterThan(0);
+  });
+
+  it("shows notResponded attendees in the no response group", () => {
+    renderDialog({
+      state: {
+        event: createAttendeeEvent({
+          attendees: [
+            {
+              email: "andrea@example.com",
+              name: "Andrea",
+              response: "notResponded",
+              status: {
+                response: "notResponded",
+                time: null,
+              },
+              type: "required",
+            },
+          ],
+        }),
+        mode: "edit",
+      },
+    });
+
+    expect(screen.getByText("No response: 1")).toBeInTheDocument();
+    expect(screen.getByText("Andrea")).toBeInTheDocument();
+  });
+
+  it("shows tentativelyAccepted attendees in the tentative group", () => {
+    renderDialog({
+      state: {
+        event: createAttendeeEvent({
+          attendees: [
+            {
+              email: "fabio@example.com",
+              name: "Fabio",
+              response: "tentativelyAccepted",
+              status: {
+                response: "tentativelyAccepted",
+                time: null,
+              },
+              type: "required",
+            },
+          ],
+        }),
+        mode: "edit",
+      },
+    });
+
+    expect(screen.getByText("Tentative: 1")).toBeInTheDocument();
+    expect(screen.getByText("Fabio")).toBeInTheDocument();
+  });
+
+  it("sends accept immediately from the sidebar", () => {
+    const attendeeEvent = createAttendeeEvent();
+    const onRespond = vi.fn().mockResolvedValue(undefined);
+
+    renderDialog({
+      onRespond,
+      state: {
+        event: attendeeEvent,
+        mode: "edit",
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+
+    expect(onRespond).toHaveBeenCalledWith(attendeeEvent, "accept", "", true);
+  });
+
+  it("sends refuse immediately from the sidebar", () => {
+    const attendeeEvent = createAttendeeEvent();
+    const onRespond = vi.fn().mockResolvedValue(undefined);
+
+    renderDialog({
+      onRespond,
+      state: {
+        event: attendeeEvent,
+        mode: "edit",
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Refuse" }));
+
+    expect(onRespond).toHaveBeenCalledWith(attendeeEvent, "decline", "", true);
+  });
+
+  it("supports tentative responses with a comment from the other popup", () => {
+    const attendeeEvent = createAttendeeEvent();
+    const onRespond = vi.fn().mockResolvedValue(undefined);
+
+    renderDialog({
+      onRespond,
+      state: {
+        event: attendeeEvent,
+        mode: "edit",
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Other" }));
+    fireEvent.change(screen.getByLabelText("Comment"), {
+      target: { value: "Need to confirm a conflict" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Tentative" }));
+
+    expect(onRespond).toHaveBeenCalledWith(
+      attendeeEvent,
+      "tentative",
+      "Need to confirm a conflict",
+      true,
+    );
+  });
+
+  it("supports silent responses from the other popup and closes on outside click", () => {
+    const attendeeEvent = createAttendeeEvent();
+    const onRespond = vi.fn().mockResolvedValue(undefined);
+
+    renderDialog({
+      onRespond,
+      state: {
+        event: attendeeEvent,
+        mode: "edit",
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Other" }));
+    expect(screen.getByRole("button", { name: "Tentative without sending" })).toBeInTheDocument();
+
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole("button", { name: "Tentative without sending" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Other" }));
+    fireEvent.change(screen.getByLabelText("Comment"), {
+      target: { value: "This comment should not be sent" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Refuse without sending" }));
+
+    expect(onRespond).toHaveBeenCalledWith(attendeeEvent, "decline", "", false);
   });
 });

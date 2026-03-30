@@ -132,6 +132,9 @@ function createFixture() {
     cancelEvent: vi.fn().mockResolvedValue(undefined),
     createEvent: vi.fn().mockResolvedValue(storedEvent),
     deleteEvent: vi.fn().mockResolvedValue(undefined),
+    listOutlookCategories: vi
+      .fn()
+      .mockResolvedValue([{ color: "preset7", displayName: "Blue category" }]),
     updateEvent: vi.fn().mockResolvedValue(storedEvent),
   };
   const reminders = {
@@ -248,5 +251,17 @@ describe("register ipc", () => {
       fixture.handlers.get(IPC_CHANNELS.eventsOpenWebLink)?.({ sender: {} }, url),
     ).rejects.toThrow("Rejected IPC request from an untrusted sender.");
     expect(shell.openExternal).not.toHaveBeenCalled();
+  });
+
+  it("lists outlook categories for an account", async () => {
+    const fixture = createFixture();
+    const invokeEvent = { sender: fixture.mainWebContents };
+
+    const response = await fixture.handlers.get(IPC_CHANNELS.categoriesList)?.(invokeEvent, {
+      homeAccountId: "account-1",
+    });
+
+    expect(fixture.graph.listOutlookCategories).toHaveBeenCalledWith("account-1");
+    expect(response).toStrictEqual([{ color: "preset7", displayName: "Blue category" }]);
   });
 });

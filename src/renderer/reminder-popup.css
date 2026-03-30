@@ -60,12 +60,21 @@ body {
   background: var(--surface);
   border-bottom: 1px solid var(--line);
   flex-shrink: 0;
+  -webkit-app-region: drag;
 }
 
 .reminder-header-left {
   display: flex;
   align-items: center;
   gap: 6px;
+  -webkit-app-region: no-drag;
+}
+
+.reminder-header-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  -webkit-app-region: no-drag;
 }
 
 .reminder-title {
@@ -111,6 +120,33 @@ body {
 }
 
 .reminder-close svg {
+  width: 10px;
+  height: 10px;
+}
+
+.reminder-minimize {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--ink-tertiary);
+  transition:
+    background 0.1s ease,
+    color 0.1s ease;
+}
+
+.reminder-minimize:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.reminder-minimize svg {
   width: 10px;
   height: 10px;
 }

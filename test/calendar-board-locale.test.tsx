@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, render } from "@testing-library/react";
-import type { EventInput } from "@fullcalendar/core";
+import type { EventContentArg, EventInput } from "@fullcalendar/core";
 import React from "react";
 import i18n from "i18next";
 import itTranslations from "../src/renderer/src/i18n/locales/it.json";
@@ -63,6 +63,28 @@ async function renderBoard(language: "en" | "it") {
   );
 }
 
+function renderCalendarEventContent(isReminderOn: boolean) {
+  const eventContent = capturedCalendarProps?.eventContent as (
+    info: EventContentArg,
+  ) => React.ReactNode;
+
+  return render(
+    <>
+      {eventContent({
+        event: {
+          title: "Focus time",
+          extendedProps: {
+            eventData: {
+              isReminderOn,
+            },
+          },
+        } as EventContentArg["event"],
+        timeText: "9:00",
+      } as EventContentArg)}
+    </>,
+  );
+}
+
 describe("calendar board locale", () => {
   it("passes the Italian locale and translated all-day label", async () => {
     await renderBoard("it");
@@ -80,5 +102,32 @@ describe("calendar board locale", () => {
 
     expect(capturedCalendarProps?.locale).toBe("en");
     expect(capturedCalendarProps?.allDayText).toBe("All day");
+  });
+
+  it("passes the day click callback to FullCalendar", async () => {
+    await renderBoard("en");
+
+    expect(capturedCalendarProps?.dateClick).toEqual(expect.any(Function));
+    expect(capturedCalendarProps?.selectable).toBeUndefined();
+    expect(capturedCalendarProps?.select).toBeUndefined();
+    expect(capturedCalendarProps?.selectMirror).toBeUndefined();
+  });
+
+  it("renders a bell icon for events with reminders", async () => {
+    await renderBoard("en");
+
+    const { container, getByText } = renderCalendarEventContent(true);
+
+    getByText("9:00");
+    getByText("Focus time");
+    expect(container.querySelector(".calendar-event-content__icon")).not.toBeNull();
+  });
+
+  it("does not render a bell icon for events without reminders", async () => {
+    await renderBoard("en");
+
+    const { container } = renderCalendarEventContent(false);
+
+    expect(container.querySelector(".calendar-event-content__icon")).toBeNull();
   });
 });

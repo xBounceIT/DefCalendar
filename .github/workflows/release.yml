@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Validate tag and package version
+        shell: pwsh
+        env:
+          ACTUAL_TAG: ${{ github.ref_name }}
+        run: |
+          $packageJson = Get-Content package.json -Raw | ConvertFrom-Json
+          $expectedTag = "v$($packageJson.version)"
+          $actualTag = $env:ACTUAL_TAG
+          if ($actualTag -ne $expectedTag) {
+            throw "Tag $actualTag does not match package.json version $expectedTag"
+          }
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and publish assets
+        run: npm run dist:publish
+
+      - name: Generate release notes from previous tag
+        shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
+          OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          $tag = $env:TAG
+          $owner = $env:OWNER
+          $repo = $env:REPO_NAME
+          $target = $env:TARGET_SHA
+          $previousTag = $null
+          $resolvedPreviousTag = git describe --tags --abbrev=0 "$tag^" 2>$null
+          if ($LASTEXITCODE -eq 0 -and $resolvedPreviousTag) {
+            $previousTag = $resolvedPreviousTag.Trim()
+          }
+
+          $apiArgs = @(
+            "repos/$owner/$repo/releases/generate-notes",
+            "--method", "POST",
+            "-f", "tag_name=$tag",
+            "-f", "target_commitish=$target"
+          )
+
+          if ($previousTag) {
+            $apiArgs += @("-f", "previous_tag_name=$previousTag")
+          }
+
+          $notes = gh api @apiArgs | ConvertFrom-Json
+          $notesFile = Join-Path $env:RUNNER_TEMP "release-notes.md"
+          $notes.body | Out-File -FilePath $notesFile -Encoding utf8
+          gh release edit "$tag" --title "$($notes.name)" --notes-file "$notesFile" --draft

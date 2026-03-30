@@ -265,8 +265,8 @@ function WorkspacePanel(props: WorkspacePanelProps) {
         activeView={props.activeView}
         calendarEvents={props.calendarEvents}
         calendarRef={props.calendarRef}
-        onDateClick={props.onDateClick}
         hasVisibleCalendars={props.hasVisibleCalendars}
+        onDateClick={props.onDateClick}
         onDatesSet={props.onDatesSet}
         onEventClick={props.onEventClick}
         onEventDrop={props.onEventDrop}

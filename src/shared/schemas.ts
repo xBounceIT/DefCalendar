@@ -58,6 +58,11 @@ const calendarSummarySchema = z.object({
   ownerAddress: z.string().nullable(),
 });
 
+const outlookCategorySchema = z.object({
+  color: z.string(),
+  displayName: z.string(),
+});
+
 const attendeeTypeSchema = z.enum(["required", "optional", "resource"]);
 
 const participantResponseStatusSchema = z.object({
@@ -282,6 +287,10 @@ const setCalendarVisibilityArgsSchema = z.object({
   isVisible: z.boolean(),
 });
 
+const listOutlookCategoriesArgsSchema = z.object({
+  homeAccountId: z.string(),
+});
+
 const deleteEventArgsSchema = z.object({
   calendarId: z.string(),
   eventId: z.string(),
@@ -340,6 +349,7 @@ const reminderDialogItemSchema = z.object({
   location: z.string().nullable(),
   onlineMeeting: onlineMeetingInfoSchema.nullable().default(null),
   reminderMinutesBeforeStart: z.number().int().min(0),
+  reminderType: z.enum(["pre", "start"]).optional(),
   start: dateTimeStringSchema,
   subject: z.string(),
 });
@@ -381,6 +391,11 @@ const appUpdateStatusSchema = z.object({
 const updateChannelSchema = z.enum(["stable", "prerelease"]);
 const languageSettingSchema = z.enum(["system", "en", "it"]);
 const timeFormatSettingSchema = z.enum(["system", "12h", "24h"]);
+const localReminderWhenSchema = z.enum(["before", "after"]);
+const localReminderRuleSchema = z.object({
+  minutes: z.number().int().min(0).max(20_160),
+  when: localReminderWhenSchema,
+});
 const syncIntervalMinutesSettingSchema = z.union([
   z.literal(5),
   z.literal(10),
@@ -404,6 +419,20 @@ const syncIntervalMinutesPreferenceSchema = z.preprocess(
   syncIntervalMinutesSettingSchema.default(5),
 );
 
+const localReminderOverrideEnabledPreferenceSchema = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  z.boolean().default(false),
+);
+
+const localReminderRulesPreferenceSchema = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  z
+    .array(localReminderRuleSchema)
+    .min(1)
+    .max(10)
+    .default([{ minutes: 15, when: "before" }]),
+);
+
 const reminderDialogStateSchema = z.object({
   items: z.array(reminderDialogItemSchema),
   locale: z.enum(["en", "it"]),
@@ -418,6 +447,8 @@ const userSettingsSchema = z.object({
   language: languagePreferenceSchema,
   timeFormat: timeFormatPreferenceSchema,
   syncIntervalMinutes: syncIntervalMinutesPreferenceSchema,
+  localReminderOverrideEnabled: localReminderOverrideEnabledPreferenceSchema,
+  localReminderRules: localReminderRulesPreferenceSchema,
   updateChannel: updateChannelSchema.default("stable"),
 });
 
@@ -430,6 +461,7 @@ type StoredAccount = z.infer<typeof storedAccountSchema>;
 type AuthSignInMode = z.infer<typeof authSignInModeSchema>;
 type AuthSignInRequest = z.infer<typeof authSignInRequestSchema>;
 type CalendarSummary = z.infer<typeof calendarSummarySchema>;
+type OutlookCategory = z.infer<typeof outlookCategorySchema>;
 type AttendeeType = z.infer<typeof attendeeTypeSchema>;
 type ParticipantResponseStatus = z.infer<typeof participantResponseStatusSchema>;
 type EventParticipant = z.infer<typeof eventParticipantSchema>;
@@ -446,6 +478,7 @@ type CalendarEvent = z.infer<typeof calendarEventSchema>;
 type EventDraft = z.infer<typeof eventDraftSchema>;
 type EventListArgs = z.infer<typeof eventListArgsSchema>;
 type SetCalendarVisibilityArgs = z.infer<typeof setCalendarVisibilityArgsSchema>;
+type ListOutlookCategoriesArgs = z.infer<typeof listOutlookCategoriesArgsSchema>;
 type DeleteEventArgs = z.infer<typeof deleteEventArgsSchema>;
 type EventReferenceArgs = z.infer<typeof eventReferenceArgsSchema>;
 type RespondToEventArgs = z.infer<typeof respondToEventArgsSchema>;
@@ -459,6 +492,8 @@ type ReminderDialogState = z.infer<typeof reminderDialogStateSchema>;
 type SyncStatus = z.infer<typeof syncStatusSchema>;
 type AppUpdateState = z.infer<typeof appUpdateStateSchema>;
 type AppUpdateStatus = z.infer<typeof appUpdateStatusSchema>;
+type LocalReminderWhen = z.infer<typeof localReminderWhenSchema>;
+type LocalReminderRule = z.infer<typeof localReminderRuleSchema>;
 type UserSettings = z.infer<typeof userSettingsSchema>;
 type UserSettingsPatch = z.infer<typeof userSettingsPatchSchema>;
 type UpdateChannel = z.infer<typeof updateChannelSchema>;
@@ -472,6 +507,8 @@ function createDefaultSettings(): UserSettings {
     language: "system",
     timeFormat: "system",
     syncIntervalMinutes: 5,
+    localReminderOverrideEnabled: false,
+    localReminderRules: [{ minutes: 15, when: "before" }],
     updateChannel: "stable",
   };
 }
@@ -484,6 +521,7 @@ export {
   storedAccountSchema,
   calendarEventSchema,
   calendarSummarySchema,
+  outlookCategorySchema,
   calendarViewSchema,
   cancelEventArgsSchema,
   createDefaultSettings,
@@ -513,10 +551,13 @@ export {
   recurrenceRangeTypeSchema,
   recurrenceSchema,
   respondToEventArgsSchema,
+  listOutlookCategoriesArgsSchema,
   setCalendarVisibilityArgsSchema,
   sensitivitySchema,
   appUpdateStateSchema,
   appUpdateStatusSchema,
+  localReminderRuleSchema,
+  localReminderWhenSchema,
   syncStatusSchema,
   updateChannelSchema,
   userSettingsPatchSchema,
@@ -537,6 +578,9 @@ export {
   type CancelEventArgs,
   type DeleteEventArgs,
   type EventAttachment,
+  type ListOutlookCategoriesArgs,
+  type LocalReminderRule,
+  type LocalReminderWhen,
   type ReminderDismissArgs,
   type ReminderDialogItem,
   type ReminderDialogState,
@@ -548,6 +592,7 @@ export {
   type EventResponseAction,
   type OnlineMeetingInfo,
   type ParticipantResponseStatus,
+  type OutlookCategory,
   type Recurrence,
   type RecurrenceEditScope,
   type RespondToEventArgs,

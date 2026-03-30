@@ -55,6 +55,12 @@ class ReminderWindowManager {
     );
   }
 
+  minimize(): void {
+    if (this.window && !this.window.isDestroyed()) {
+      this.window.minimize();
+    }
+  }
+
   private ensureWindow(): BrowserWindow {
     if (this.window && !this.window.isDestroyed()) {
       return this.window;
@@ -69,7 +75,7 @@ class ReminderWindowManager {
       frame: false,
       height: POPUP_HEIGHT,
       maximizable: false,
-      minimizable: false,
+      minimizable: true,
       resizable: false,
       show: false,
       skipTaskbar: true,
