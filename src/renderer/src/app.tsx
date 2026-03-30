@@ -1,10 +1,4 @@
-import type {
-  DateSelectArg,
-  DatesSetArg,
-  EventClickArg,
-  EventDropArg,
-  EventInput,
-} from "@fullcalendar/core";
+import type { DatesSetArg, EventClickArg, EventDropArg, EventInput } from "@fullcalendar/core";
 import type { DateClickArg, EventResizeDoneArg } from "@fullcalendar/interaction";
 import type FullCalendar from "@fullcalendar/react";
 import { endOfMonth, endOfWeek, startOfMonth, startOfWeek } from "date-fns";
@@ -106,14 +100,17 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   const localizedSyncStatus = useMemo(() => localizeSyncStatus(syncStatus, t), [syncStatus, t]);
   const {
     activeView,
+    clearSelectedDayForTable,
     hydrate,
     hydrated,
     rangeEnd,
     rangeStart,
     selectedDate,
+    selectedDayForTable,
     setActiveView,
     setRange,
     setSelectedDate,
+    setSelectedDayForTable,
   } = useUiStore();
   const [miniCalendarMonth, setMiniCalendarMonth] = useState(() =>
     startOfMonth(new Date(selectedDate)),
@@ -476,26 +473,8 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     });
   }
 
-  function handleSelection(selection: DateSelectArg): void {
-    openCreateDialog({
-      allDay: selection.allDay,
-      end: selection.end.toISOString(),
-      start: selection.start.toISOString(),
-    });
-    calendarRef.current?.getApi().unselect();
-  }
-
   function handleDateClick(clickInfo: DateClickArg): void {
-    if (clickInfo.jsEvent.detail !== 2) {
-      return;
-    }
-
-    const start = clickInfo.date.toISOString();
-    openCreateDialog({
-      allDay: clickInfo.allDay,
-      end: clickInfo.allDay ? addDaysToIso(start, 1) : addMinutesToIso(start, 60),
-      start,
-    });
+    setSelectedDayForTable(clickInfo.date.toISOString());
   }
 
   function handleEventClick(clickInfo: EventClickArg): void {
@@ -565,6 +544,9 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     const nextRangeEnd = dates.end.toISOString();
     if (rangeStart !== nextRangeStart || rangeEnd !== nextRangeEnd) {
       setRange(nextRangeStart, nextRangeEnd);
+      if (selectedDayForTable) {
+        clearSelectedDayForTable();
+      }
     }
 
     const nextSelectedDate = dates.view.calendar.getDate().toISOString();
@@ -800,7 +782,9 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         calendarEvents={calendarEvents}
         calendarRef={calendarRef}
         canCreateEvent={Boolean(editableCalendar)}
+        events={events}
         hasVisibleCalendars={visibleCalendarIds.length > 0}
+        onClearDaySelection={clearSelectedDayForTable}
         onCreateEvent={openSelectedDateComposer}
         onDateClick={handleDateClick}
         onDatesSet={handleDatesSet}
@@ -813,10 +797,10 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         }}
         onNext={handleNext}
         onPrev={handlePrev}
-        onSelection={handleSelection}
         onToday={handleToday}
         onViewSelect={handleViewSelect}
         selectedDate={selectedDate}
+        selectedDayForTable={selectedDayForTable}
         timeFormat={appSettings.timeFormat}
       />
       <SettingsDialog

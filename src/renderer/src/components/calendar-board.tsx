@@ -1,13 +1,13 @@
 import type {
-  EventContentArg,
-  DateSelectArg,
+  DateClickArg,
   DatesSetArg,
   EventClickArg,
   EventDropArg,
   EventInput,
+  EventContentArg,
 } from "@fullcalendar/core";
 import itLocale from "@fullcalendar/core/locales/it";
-import type { DateClickArg, EventResizeDoneArg } from "@fullcalendar/interaction";
+import type { EventResizeDoneArg } from "@fullcalendar/interaction";
 import FullCalendar from "@fullcalendar/react";
 import React from "react";
 import dayGridPlugin from "@fullcalendar/daygrid";
@@ -28,7 +28,6 @@ interface CalendarBoardProps {
   onEventClick: (clickInfo: EventClickArg) => void;
   onEventDrop: (changeInfo: EventDropArg) => void;
   onEventResize: (changeInfo: EventResizeDoneArg) => void;
-  onSelection: (selection: DateSelectArg) => void;
   selectedDate: string;
   timeFormat: UserSettings["timeFormat"];
 }
@@ -117,7 +116,6 @@ function CalendarSurface({
   onEventClick,
   onEventDrop,
   onEventResize,
-  onSelection,
   selectedDate,
   timeFormat,
 }: Omit<CalendarBoardProps, "hasVisibleCalendars">) {
@@ -133,6 +131,8 @@ function CalendarSurface({
       datesSet={onDatesSet}
       dayMaxEvents={3}
       dayMaxEventRows={3}
+      eventMaxStack={3}
+      slotEventOverlap={false}
       editable
       eventClick={onEventClick}
       eventContent={renderEventContent}
@@ -153,13 +153,9 @@ function CalendarSurface({
       nowIndicator
       plugins={CALENDAR_PLUGINS}
       ref={calendarRef}
-      selectable
-      select={onSelection}
-      selectMinDistance={1}
-      selectMirror
-      slotMaxTime="23:00:00"
+      slotMaxTime="24:00:00"
       slotLabelFormat={eventTimeFormat}
-      slotMinTime="07:00:00"
+      slotMinTime="00:00:00"
       weekNumbers
       weekNumberFormat={{ week: "numeric" }}
       weekends
@@ -221,7 +217,6 @@ function CalendarBoard(props: CalendarBoardProps) {
         onEventClick={props.onEventClick}
         onEventDrop={props.onEventDrop}
         onEventResize={props.onEventResize}
-        onSelection={props.onSelection}
         selectedDate={props.selectedDate}
         timeFormat={props.timeFormat}
       />

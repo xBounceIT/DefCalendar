@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 
-import type { DateSelectArg } from "@fullcalendar/core";
 import type { DateClickArg } from "@fullcalendar/interaction";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import React from "react";
 import App from "../src/renderer/src/app";
+import useUiStore from "../src/renderer/src/store";
+import { createDefaultSettings } from "../src/shared/schema-values";
 import type { CalendarApi } from "../src/shared/ipc";
 
 interface MockedCalendarModule {
@@ -24,7 +25,7 @@ vi.mock<MockedCalendarModule>(import("@fullcalendar/timegrid"), () => ({
 }));
 
 const signedInSelectedDate = "2026-03-27T09:00:00.000Z";
-let capturedCalendarProps: Record<string, unknown> | null = null;
+let capturedCalendarProps: null | Record<string, unknown> = null;
 const mockCalendarSurfaceDate = {
   current: new Date(signedInSelectedDate),
 };
@@ -81,6 +82,24 @@ const originalResizeObserverDescriptor = Object.getOwnPropertyDescriptor(
   "ResizeObserver",
 );
 
+function createRange(selectedDate: string): { rangeEnd: string; rangeStart: string } {
+  const seed = new Date(selectedDate);
+  const rangeStart = new Date(seed.getFullYear(), seed.getMonth() - 1, 1).toISOString();
+  const rangeEnd = new Date(seed.getFullYear(), seed.getMonth() + 2, 1).toISOString();
+  return { rangeEnd, rangeStart };
+}
+
+function resetUiStoreState(): void {
+  const defaults = createDefaultSettings();
+  useUiStore.setState({
+    activeView: defaults.activeView,
+    hydrated: false,
+    selectedDate: defaults.selectedDate,
+    selectedDayForTable: null,
+    ...createRange(defaults.selectedDate),
+  });
+}
+
 function restoreResizeObserver(): void {
   if (originalResizeObserverDescriptor) {
     Object.defineProperty(globalThis, "ResizeObserver", originalResizeObserverDescriptor);
@@ -112,6 +131,7 @@ function restoreCalendarApi(): void {
   capturedCalendarProps = null;
   mockCalendarSurfaceDate.current = new Date(signedInSelectedDate);
   mockCalendarSurfaceApi.view.type = "timeGridWeek";
+  resetUiStoreState();
 
   if (originalCalendarApiDescriptor) {
     Object.defineProperty(globalThis, "calendarApi", originalCalendarApiDescriptor);
@@ -139,10 +159,6 @@ function renderApp() {
 
 function getCalendarDateClickHandler(): (arg: DateClickArg) => void {
   return capturedCalendarProps?.dateClick as (arg: DateClickArg) => void;
-}
-
-function getCalendarSelectHandler(): (arg: DateSelectArg) => void {
-  return capturedCalendarProps?.select as (arg: DateSelectArg) => void;
 }
 
 function createCalendarApiMock(): CalendarApi {
@@ -642,7 +658,7 @@ describe("app startup", () => {
     }
   });
 
-  it("requires a double click to create a point event from the calendar surface", async () => {
+  it("dismisses the day events table when navigating to a new range", async () => {
     try {
       installResizeObserverMock();
       installCalendarApi(createSignedInCalendarApiMock());
@@ -651,50 +667,45 @@ describe("app startup", () => {
 
       await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
 
-      act(() => {
-        getCalendarDateClickHandler()({
-          allDay: true,
-          date: new Date("2026-03-30T00:00:00.000Z"),
-          jsEvent: { detail: 1 } as MouseEvent,
-        } as DateClickArg);
-      });
+      const dateClick = capturedCalendarProps?.dateClick as
+        | ((arg: { date: Date }) => void)
+        | undefined;
 
-      expect(screen.queryByRole("button", { name: "Create Event" })).toBeNull();
+      expect(dateClick).toBeInstanceOf(Function);
 
       act(() => {
-        getCalendarDateClickHandler()({
-          allDay: true,
-          date: new Date("2026-03-30T00:00:00.000Z"),
-          jsEvent: { detail: 2 } as MouseEvent,
-        } as DateClickArg);
+        dateClick?.({
+          date: new Date("2026-03-30T12:00:00.000Z"),
+        });
       });
 
-      await expect(screen.findByRole("button", { name: "Create Event" })).resolves.not.toBeNull();
-    } finally {
-      restoreCalendarApi();
-      restoreResizeObserver();
-    }
-  });
+      await expect(screen.findByText("No events on this day")).resolves.not.toBeNull();
 
-  it("still opens the create editor for drag selections", async () => {
-    try {
-      installResizeObserverMock();
-      installCalendarApi(createSignedInCalendarApiMock());
-
-      renderApp();
-
-      await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
+      const datesSet = capturedCalendarProps?.datesSet as
+        | ((arg: {
+            end: Date;
+            start: Date;
+            view: { calendar: { getDate: () => Date }; type: string };
+          }) => void)
+        | undefined;
+      expect(datesSet).toBeInstanceOf(Function);
 
       act(() => {
-        getCalendarSelectHandler()({
-          allDay: false,
-          end: new Date("2026-03-30T10:00:00.000Z"),
-          start: new Date("2026-03-30T09:00:00.000Z"),
-        } as DateSelectArg);
+        datesSet?.({
+          end: new Date("2030-02-01T00:00:00.000Z"),
+          start: new Date("2030-01-01T00:00:00.000Z"),
+          view: {
+            calendar: {
+              getDate: () => mockCalendarSurfaceDate.current,
+            },
+            type: "timeGridWeek",
+          },
+        });
       });
 
-      await expect(screen.findByRole("button", { name: "Create Event" })).resolves.not.toBeNull();
-      expect(mockCalendarSurfaceApi.unselect).toHaveBeenCalled();
+      await waitFor(() => {
+        expect(screen.queryByText("No events on this day")).toBeNull();
+      });
     } finally {
       restoreCalendarApi();
       restoreResizeObserver();
@@ -811,7 +822,7 @@ describe("app startup", () => {
       renderApp();
 
       expect(screen.getByText(/secure desktop bridge|ponte desktop sicuro/i)).not.toBeNull();
-      expect(screen.getByText(/Restart the app|Riavvia l’app/i)).not.toBeNull();
+      expect(screen.getByText(/restart the app|riavvia/i)).not.toBeNull();
     } finally {
       restoreCalendarApi();
       restoreResizeObserver();

@@ -1,16 +1,18 @@
 import { CALENDAR_VIEW_ORDER } from "@shared/calendar";
 import type {
-  DateSelectArg,
+  CalendarEvent,
+  DateClickArg,
   DatesSetArg,
   EventClickArg,
   EventDropArg,
   EventInput,
 } from "@fullcalendar/core";
 import type { CalendarView, UserSettings } from "@shared/schemas";
+import type { EventResizeDoneArg } from "@fullcalendar/interaction";
+import type FullCalendar from "@fullcalendar/react";
 
 import CalendarBoard from "./calendar-board";
-import type { DateClickArg, EventResizeDoneArg } from "@fullcalendar/interaction";
-import type FullCalendar from "@fullcalendar/react";
+import DayEventsTable from "./day-events-table";
 import React from "react";
 import { formatHeaderDate } from "../date-formatting";
 import { useTranslation } from "react-i18next";
@@ -21,7 +23,9 @@ interface WorkspacePanelProps {
   calendarEvents: EventInput[];
   calendarRef: React.RefObject<FullCalendar | null>;
   canCreateEvent: boolean;
+  events: CalendarEvent[];
   hasVisibleCalendars: boolean;
+  onClearDaySelection: () => void;
   onCreateEvent: () => void;
   onDateClick: (clickInfo: DateClickArg) => void;
   onDatesSet: (dates: DatesSetArg) => void;
@@ -30,10 +34,10 @@ interface WorkspacePanelProps {
   onEventResize: (changeInfo: EventResizeDoneArg) => void;
   onNext: () => void;
   onPrev: () => void;
-  onSelection: (selection: DateSelectArg) => void;
   onToday: () => void;
   onViewSelect: (view: CalendarView) => void;
   selectedDate: string;
+  selectedDayForTable: null | string;
   timeFormat: UserSettings["timeFormat"];
 }
 
@@ -226,6 +230,17 @@ function Banner({ message }: { message: null | string }) {
 }
 
 function WorkspacePanel(props: WorkspacePanelProps) {
+  const handleTableEventClick = (event: CalendarEvent) => {
+    props.onEventClick({
+      event: {
+        extendedProps: {
+          calendarId: event.calendarId,
+          eventId: event.id,
+        },
+      },
+    } as EventClickArg);
+  };
+
   return (
     <main className="workspace">
       <WorkspaceHeader
@@ -239,6 +254,13 @@ function WorkspacePanel(props: WorkspacePanelProps) {
         selectedDate={props.selectedDate}
       />
       <Banner message={props.bannerMessage} />
+      <DayEventsTable
+        events={props.events}
+        onClear={props.onClearDaySelection}
+        onEventClick={handleTableEventClick}
+        selectedDay={props.selectedDayForTable}
+        timeFormat={props.timeFormat}
+      />
       <CalendarBoard
         activeView={props.activeView}
         calendarEvents={props.calendarEvents}
@@ -249,7 +271,6 @@ function WorkspacePanel(props: WorkspacePanelProps) {
         onEventClick={props.onEventClick}
         onEventDrop={props.onEventDrop}
         onEventResize={props.onEventResize}
-        onSelection={props.onSelection}
         selectedDate={props.selectedDate}
         timeFormat={props.timeFormat}
       />

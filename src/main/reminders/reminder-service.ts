@@ -173,9 +173,7 @@ class ReminderService {
       }
 
       const reminderAt =
-        candidate.reminderType === "start"
-          ? eventStart
-          : eventStart - reminderMinutes * 60_000;
+        candidate.reminderType === "start" ? eventStart : eventStart - reminderMinutes * 60_000;
 
       const snoozedUntil = candidate.snoozedUntil
         ? new Date(candidate.snoozedUntil).getTime()

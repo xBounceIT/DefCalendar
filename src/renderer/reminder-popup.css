@@ -205,6 +205,9 @@ body {
 }
 
 .reminder-item-subject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 12px;
   font-weight: 500;
   color: var(--ink);

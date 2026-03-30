@@ -55,7 +55,7 @@ class ReminderWindowManager {
     );
   }
 
-  minimize():void {
+  minimize(): void {
     if (this.window && !this.window.isDestroyed()) {
       this.window.minimize();
     }

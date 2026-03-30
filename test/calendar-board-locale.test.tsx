@@ -7,7 +7,7 @@ import i18n from "i18next";
 import itTranslations from "../src/renderer/src/i18n/locales/it.json";
 import CalendarBoard from "../src/renderer/src/components/calendar-board";
 import type { CalendarView } from "../src/shared/schemas";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 
 let capturedCalendarProps: Record<string, unknown> | null = null;
 
@@ -57,7 +57,6 @@ async function renderBoard(language: "en" | "it") {
       onEventClick={vi.fn()}
       onEventDrop={vi.fn()}
       onEventResize={vi.fn()}
-      onSelection={vi.fn()}
       selectedDate="2026-03-29T00:00:00.000Z"
       timeFormat="system"
     />,
@@ -92,6 +91,10 @@ describe("calendar board locale", () => {
 
     expect(capturedCalendarProps?.locale).toBe("it");
     expect(capturedCalendarProps?.allDayText).toBe("Giornata intera");
+    expectTypeOf(capturedCalendarProps?.dateClick).toBeFunction();
+    expect(capturedCalendarProps?.selectable).toBeUndefined();
+    expect(capturedCalendarProps?.select).toBeUndefined();
+    expect(capturedCalendarProps?.selectMirror).toBeUndefined();
   });
 
   it("passes the English locale and translated all-day label", async () => {
@@ -101,12 +104,13 @@ describe("calendar board locale", () => {
     expect(capturedCalendarProps?.allDayText).toBe("All day");
   });
 
-  it("passes the double-click creation callbacks to FullCalendar", async () => {
+  it("passes the day click callback to FullCalendar", async () => {
     await renderBoard("en");
 
     expect(capturedCalendarProps?.dateClick).toEqual(expect.any(Function));
-    expect(capturedCalendarProps?.select).toEqual(expect.any(Function));
-    expect(capturedCalendarProps?.selectMinDistance).toBe(1);
+    expect(capturedCalendarProps?.selectable).toBeUndefined();
+    expect(capturedCalendarProps?.select).toBeUndefined();
+    expect(capturedCalendarProps?.selectMirror).toBeUndefined();
   });
 
   it("renders a bell icon for events with reminders", async () => {

@@ -90,6 +90,15 @@
     "noCalendarsHint": "Enable at least one Exchange calendar from the left sidebar to populate the view.",
     "moreEvents": "+{{count}}"
   },
+  "dayEventsTable": {
+    "title": "Title",
+    "start": "Start",
+    "end": "End",
+    "category": "Category",
+    "noEvents": "No events on this day",
+    "eventsCount_one": "{{count}} event",
+    "eventsCount_other": "{{count}} events"
+  },
   "eventEditor": {
     "newEventEyebrow": "New Exchange event",
     "newEventTitle": "Create event",

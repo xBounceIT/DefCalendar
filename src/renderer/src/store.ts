@@ -5,12 +5,15 @@ import { createDefaultSettings } from "@shared/schema-values";
 interface UiState {
   activeView: CalendarView;
   selectedDate: string;
-  rangeStart: string;
+  selectedDayForTable: null | string;
   rangeEnd: string;
+  rangeStart: string;
   hydrated: boolean;
+  clearSelectedDayForTable: () => void;
   hydrate: (settings: UserSettings) => void;
   setActiveView: (view: CalendarView) => void;
   setSelectedDate: (value: string) => void;
+  setSelectedDayForTable: (value: null | string) => void;
   setRange: (start: string, end: string) => void;
 }
 
@@ -26,8 +29,12 @@ function createRange(selectedDate: string) {
 const useUiStore = create<UiState>((set) => ({
   activeView: defaults.activeView,
   selectedDate: defaults.selectedDate,
+  selectedDayForTable: null,
   ...createRange(defaults.selectedDate),
   hydrated: false,
+  clearSelectedDayForTable: () => {
+    set({ selectedDayForTable: null });
+  },
   hydrate: (settings) => {
     set(() => ({
       activeView: settings.activeView,
@@ -54,13 +61,16 @@ const useUiStore = create<UiState>((set) => ({
       return { selectedDate };
     });
   },
+  setSelectedDayForTable: (selectedDayForTable) => {
+    set({ selectedDayForTable });
+  },
   setRange: (rangeStart, rangeEnd) => {
     set((state) => {
       if (state.rangeStart === rangeStart && state.rangeEnd === rangeEnd) {
         return state;
       }
 
-      return { rangeStart, rangeEnd };
+      return { rangeEnd, rangeStart };
     });
   },
 }));

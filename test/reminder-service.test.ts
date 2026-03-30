@@ -255,9 +255,7 @@ describe("reminder service", () => {
   it("shows a start-time reminder when the event starts", async () => {
     vi.setSystemTime(new Date("2026-03-30T10:00:00.000Z"));
     const fixture = createFixture({
-      candidates: [
-        createCandidate({ reminderType: "start" }),
-      ],
+      candidates: [createCandidate({ reminderType: "start" })],
     });
 
     await fixture.service.checkNow();
@@ -288,9 +286,7 @@ describe("reminder service", () => {
 
     expect(fixture.reminderManager.show).toHaveBeenCalledWith(
       expect.objectContaining({
-        items: [
-          expect.objectContaining({ reminderType: "pre" }),
-        ],
+        items: [expect.objectContaining({ reminderType: "pre" })],
       }),
       true,
     );

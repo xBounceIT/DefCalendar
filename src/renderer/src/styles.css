@@ -47,6 +47,7 @@
   /* Border styles */
   --border: 1px solid #e0e0e0;
   --border-strong: 1px solid #dadce0;
+  --day-events-header-height: 45px;
 
   font-family:
     "Segoe UI",
@@ -1326,6 +1327,135 @@ button {
   background: rgba(221, 107, 32, 0.1);
   color: #c05621;
   border-color: rgba(221, 107, 32, 0.3);
+}
+
+.day-events-table {
+  background: var(--surface);
+  border-bottom: var(--border);
+  max-height: 240px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.day-events-table__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-bottom: var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.day-events-table__header-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.day-events-table__date {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.day-events-table__count {
+  font-size: 12px;
+  color: var(--ink-secondary);
+}
+
+.day-events-table__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink-secondary);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.day-events-table__close:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+
+.day-events-table__table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.day-events-table__th {
+  text-align: left;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--surface);
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--ink-secondary);
+  position: sticky;
+  top: var(--day-events-header-height);
+  z-index: 1;
+  border-bottom: var(--border);
+}
+
+.day-events-table__th:hover {
+  background: var(--surface-hover);
+}
+
+.day-events-table__th-content {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.day-events-table__sort-arrow {
+  flex-shrink: 0;
+}
+
+.day-events-table__td {
+  padding: 8px 12px;
+  border-bottom: var(--border);
+  font-size: 13px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.day-events-table__row {
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+.day-events-table__row:hover {
+  background: var(--surface-hover);
+}
+
+.day-events-table__row:hover .day-events-table__td {
+  background: var(--surface-hover);
+}
+
+.day-events-table__empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--ink-tertiary);
+  font-size: 13px;
+}
+
+.day-events-table__category {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--accent-soft);
+  color: var(--ink);
 }
 
 .calendar-board {
