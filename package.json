@@ -48,7 +48,8 @@
       {
         "provider": "github",
         "owner": "xBounceIT",
-        "repo": "DefCalendar"
+        "repo": "DefCalendar",
+        "releaseType": "draft"
       }
     ],
     "nsis": {
