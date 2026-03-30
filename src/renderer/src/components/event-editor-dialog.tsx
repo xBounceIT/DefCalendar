@@ -686,6 +686,50 @@ function EventToolbar({
   );
 }
 
+function generateTimeOptions(): { label: string; value: string }[] {
+  const options: { label: string; value: string }[] = [];
+  for (let h = 0; h < 24; h++) {
+    for (const m of [0, 30]) {
+      const hour = h.toString().padStart(2, "0");
+      const minute = m.toString().padStart(2, "0");
+      const value = `${hour}:${minute}`;
+      options.push({ label: value, value });
+    }
+  }
+  return options;
+}
+
+function parseTimeToMinutes(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+}
+
+function minutesToTime(minutes: number): string {
+  const h = Math.floor(minutes / 60) % 24;
+  const m = minutes % 60;
+  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+}
+
+function formatDurationLabel(
+  startMinutes: number,
+  endMinutes: number,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): string {
+  const diff = endMinutes - startMinutes;
+  const hours = Math.floor(diff / 60);
+  const mins = diff % 60;
+
+  if (hours === 0) {
+    return `(+${t("reminder.minutes", { count: mins })})`;
+  }
+  if (mins === 0) {
+    return `(${t("reminder.hours", { count: hours })})`;
+  }
+  return `(${hours}h ${mins}min)`;
+}
+
+const TIME_OPTIONS = generateTimeOptions();
+
 function SchedulingSection({
   disabled,
   form,
@@ -713,7 +757,6 @@ function SchedulingSection({
   const extractTime = (input: string) => input.slice(11, 16);
   const combineDateTime = (date: string, time: string) => `${date}T${time}`;
 
-  // Close popup when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
@@ -729,6 +772,48 @@ function SchedulingSection({
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isExpanded]);
+
+  const startTimeMinutes = parseTimeToMinutes(extractTime(form.startInput));
+  const endTimeMinutes = parseTimeToMinutes(extractTime(form.endInput));
+  const endTimeOptions = useMemo(
+    () =>
+      TIME_OPTIONS.filter((opt) => {
+        const optMinutes = parseTimeToMinutes(opt.value);
+        return optMinutes >= startTimeMinutes + 30;
+      }).map((opt) => ({
+        ...opt,
+        label: `${opt.label} ${formatDurationLabel(startTimeMinutes, parseTimeToMinutes(opt.value), t)}`,
+      })),
+    [startTimeMinutes, t],
+  );
+
+  const handleStartTimeChange = (newTime: string) => {
+    const currentDate = extractDate(form.startInput);
+    const newStartMinutes = parseTimeToMinutes(newTime);
+    let newEndInput = form.endInput;
+
+    const currentEndMinutes = endTimeMinutes;
+    if (currentEndMinutes < newStartMinutes + 30) {
+      const adjustedEndMinutes = newStartMinutes + 30;
+      const adjustedEndTime = minutesToTime(adjustedEndMinutes);
+      newEndInput = combineDateTime(extractDate(form.endInput), adjustedEndTime);
+    }
+
+    onChange((current) =>
+      current
+        ? { ...current, startInput: combineDateTime(currentDate, newTime), endInput: newEndInput }
+        : current,
+    );
+  };
+
+  const handleEndTimeChange = (newTime: string) => {
+    const currentDate = extractDate(form.endInput);
+    onChange((current) =>
+      current
+        ? { ...current, endInput: combineDateTime(currentDate, newTime) }
+        : current,
+    );
+  };
 
   return (
     <div className="scheduling-section" ref={containerRef}>
@@ -768,35 +853,31 @@ function SchedulingSection({
             </label>
             <label className="field scheduling-field scheduling-field--time">
               <span>{t("eventEditor.startTime")}</span>
-              <input
+              <select
                 disabled={disabled || form.allDay}
-                onChange={(e) => {
-                  const currentDate = extractDate(form.startInput);
-                  onChange((current) =>
-                    current
-                      ? { ...current, startInput: combineDateTime(currentDate, e.target.value) }
-                      : current,
-                  );
-                }}
-                type="time"
-                value={extractTime(form.startInput)}
-              />
+                onChange={(e) => handleStartTimeChange(e.target.value)}
+                value={extractTime(form.startInput) || "00:00"}
+              >
+                {TIME_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
             </label>
-            <label className="field scheduling-field scheduling-field--time">
+            <label className="field scheduling-field scheduling-field--time scheduling-field--time-end">
               <span>{t("eventEditor.endTime")}</span>
-              <input
+              <select
                 disabled={disabled || form.allDay}
-                onChange={(e) => {
-                  const currentDate = extractDate(form.endInput);
-                  onChange((current) =>
-                    current
-                      ? { ...current, endInput: combineDateTime(currentDate, e.target.value) }
-                      : current,
-                  );
-                }}
-                type="time"
-                value={extractTime(form.endInput)}
-              />
+                onChange={(e) => handleEndTimeChange(e.target.value)}
+                value={extractTime(form.endInput) || "00:30"}
+              >
+                {endTimeOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
             </label>
           </div>
 
