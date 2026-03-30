@@ -1,5 +1,5 @@
 import type {
-  DateSelectArg,
+  DateClickArg,
   DatesSetArg,
   EventClickArg,
   EventDropArg,
@@ -22,10 +22,10 @@ interface CalendarBoardProps {
   calendarRef: React.RefObject<FullCalendar | null>;
   hasVisibleCalendars: boolean;
   onDatesSet: (dates: DatesSetArg) => void;
+  onDateClick: (clickInfo: DateClickArg) => void;
   onEventClick: (clickInfo: EventClickArg) => void;
   onEventDrop: (changeInfo: EventDropArg) => void;
   onEventResize: (changeInfo: EventResizeDoneArg) => void;
-  onSelection: (selection: DateSelectArg) => void;
   selectedDate: string;
   timeFormat: UserSettings["timeFormat"];
 }
@@ -64,10 +64,10 @@ function CalendarSurface({
   calendarEvents,
   calendarRef,
   onDatesSet,
+  onDateClick,
   onEventClick,
   onEventDrop,
   onEventResize,
-  onSelection,
   selectedDate,
   timeFormat,
 }: Omit<CalendarBoardProps, "hasVisibleCalendars">) {
@@ -79,6 +79,7 @@ function CalendarSurface({
     <FullCalendar
       allDayMaintainDuration
       allDayText={t("eventEditor.allDay")}
+      dateClick={onDateClick}
       datesSet={onDatesSet}
       dayMaxEvents={3}
       dayMaxEventRows={3}
@@ -103,9 +104,6 @@ function CalendarSurface({
       nowIndicator
       plugins={CALENDAR_PLUGINS}
       ref={calendarRef}
-      selectable
-      select={onSelection}
-      selectMirror
       slotMaxTime="24:00:00"
       slotLabelFormat={eventTimeFormat}
       slotMinTime="00:00:00"
@@ -166,10 +164,10 @@ function CalendarBoard(props: CalendarBoardProps) {
         calendarEvents={props.calendarEvents}
         calendarRef={props.calendarRef}
         onDatesSet={props.onDatesSet}
+        onDateClick={props.onDateClick}
         onEventClick={props.onEventClick}
         onEventDrop={props.onEventDrop}
         onEventResize={props.onEventResize}
-        onSelection={props.onSelection}
         selectedDate={props.selectedDate}
         timeFormat={props.timeFormat}
       />

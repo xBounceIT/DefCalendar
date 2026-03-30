@@ -1,5 +1,5 @@
 import type {
-  DateSelectArg,
+  DateClickArg,
   DatesSetArg,
   EventClickArg,
   EventDropArg,
@@ -427,9 +427,8 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     });
   }
 
-  function handleSelection(selection: DateSelectArg): void {
-    setSelectedDayForTable(selection.start.toISOString());
-    calendarRef.current?.getApi().unselect();
+  function handleDateClick(clickInfo: DateClickArg): void {
+    setSelectedDayForTable(clickInfo.date.toISOString());
   }
 
   function handleEventClick(clickInfo: EventClickArg): void {
@@ -735,6 +734,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         hasVisibleCalendars={visibleCalendarIds.length > 0}
         onClearDaySelection={clearSelectedDayForTable}
         onCreateEvent={openSelectedDateComposer}
+        onDateClick={handleDateClick}
         onDatesSet={handleDatesSet}
         onEventClick={handleEventClick}
         onEventDrop={(changeInfo) => {
@@ -745,7 +745,6 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         }}
         onNext={handleNext}
         onPrev={handlePrev}
-        onSelection={handleSelection}
         onToday={handleToday}
         onViewSelect={handleViewSelect}
         selectedDate={selectedDate}

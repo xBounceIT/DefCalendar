@@ -1,7 +1,7 @@
 import { CALENDAR_VIEW_ORDER } from "@shared/calendar";
 import type {
   CalendarEvent,
-  DateSelectArg,
+  DateClickArg,
   DatesSetArg,
   EventClickArg,
   EventDropArg,
@@ -27,13 +27,13 @@ interface WorkspacePanelProps {
   hasVisibleCalendars: boolean;
   onClearDaySelection: () => void;
   onCreateEvent: () => void;
+  onDateClick: (clickInfo: DateClickArg) => void;
   onDatesSet: (dates: DatesSetArg) => void;
   onEventClick: (clickInfo: EventClickArg) => void;
   onEventDrop: (changeInfo: EventDropArg) => void;
   onEventResize: (changeInfo: EventResizeDoneArg) => void;
   onNext: () => void;
   onPrev: () => void;
-  onSelection: (selection: DateSelectArg) => void;
   onToday: () => void;
   onViewSelect: (view: CalendarView) => void;
   selectedDate: string;
@@ -265,12 +265,12 @@ function WorkspacePanel(props: WorkspacePanelProps) {
         activeView={props.activeView}
         calendarEvents={props.calendarEvents}
         calendarRef={props.calendarRef}
+        onDateClick={props.onDateClick}
         hasVisibleCalendars={props.hasVisibleCalendars}
         onDatesSet={props.onDatesSet}
         onEventClick={props.onEventClick}
         onEventDrop={props.onEventDrop}
         onEventResize={props.onEventResize}
-        onSelection={props.onSelection}
         selectedDate={props.selectedDate}
         timeFormat={props.timeFormat}
       />

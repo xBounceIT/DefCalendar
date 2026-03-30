@@ -52,11 +52,11 @@ async function renderBoard(language: "en" | "it") {
       calendarEvents={events}
       calendarRef={calendarRef}
       hasVisibleCalendars
+      onDateClick={vi.fn()}
       onDatesSet={vi.fn()}
       onEventClick={vi.fn()}
       onEventDrop={vi.fn()}
       onEventResize={vi.fn()}
-      onSelection={vi.fn()}
       selectedDate="2026-03-29T00:00:00.000Z"
       timeFormat="system"
     />,
@@ -69,6 +69,10 @@ describe("calendar board locale", () => {
 
     expect(capturedCalendarProps?.locale).toBe("it");
     expect(capturedCalendarProps?.allDayText).toBe("Giornata intera");
+    expect(typeof capturedCalendarProps?.dateClick).toBe("function");
+    expect(capturedCalendarProps?.selectable).toBeUndefined();
+    expect(capturedCalendarProps?.select).toBeUndefined();
+    expect(capturedCalendarProps?.selectMirror).toBeUndefined();
   });
 
   it("passes the English locale and translated all-day label", async () => {
