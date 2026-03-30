@@ -87,6 +87,7 @@ function createFixture() {
     (event: { sender: unknown }, input?: unknown) => Promise<unknown>
   >();
   const mainWebContents = { send: vi.fn() };
+  const reminderWebContents = {};
   const mainWindow = {
     isDestroyed: vi.fn().mockReturnValue(false),
     webContents: mainWebContents,
@@ -141,7 +142,7 @@ function createFixture() {
     snooze: vi.fn(),
   };
   const reminderManager = {
-    ownsWebContents: vi.fn().mockReturnValue(false),
+    ownsWebContents: vi.fn((contents: unknown) => contents === reminderWebContents),
   };
   const settings = {
     getSettings: vi.fn().mockReturnValue({
@@ -177,6 +178,7 @@ function createFixture() {
     graph,
     handlers,
     mainWebContents,
+    reminderWebContents,
     reminders,
     sync,
   };
@@ -224,5 +226,27 @@ describe("register ipc", () => {
     expect(fixture.reminders.checkNow.mock.invocationCallOrder[3]).toBeLessThan(
       fixture.sync.syncAll.mock.invocationCallOrder[3],
     );
+  });
+
+  it("allows reminder windows to open external links", async () => {
+    const fixture = createFixture();
+    const url = "https://teams.microsoft.com/l/meetup-join/example";
+
+    await fixture.handlers.get(IPC_CHANNELS.eventsOpenWebLink)?.(
+      { sender: fixture.reminderWebContents },
+      url,
+    );
+
+    expect(shell.openExternal).toHaveBeenCalledWith(url);
+  });
+
+  it("rejects external link requests from untrusted senders", async () => {
+    const fixture = createFixture();
+    const url = "https://example.com";
+
+    await expect(
+      fixture.handlers.get(IPC_CHANNELS.eventsOpenWebLink)?.({ sender: {} }, url),
+    ).rejects.toThrow("Rejected IPC request from an untrusted sender.");
+    expect(shell.openExternal).not.toHaveBeenCalled();
   });
 });

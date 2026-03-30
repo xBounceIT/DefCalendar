@@ -300,7 +300,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsOpenWebLink, async (event, input) => {
-    validateMainSender(event);
+    validateReminderSender(event);
     const args = openExternalArgsSchema.parse({ url: input });
     await shell.openExternal(args.url);
   });
