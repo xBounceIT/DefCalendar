@@ -135,7 +135,11 @@ class ReminderService {
   private evaluate(now: number): ReminderEvaluation {
     const settings = this.settings.getSettings();
     const computation = settings.localReminderOverrideEnabled
-      ? this.evaluateWithLocalReminderRules(now, settings.visibleCalendarIds, settings.localReminderRules)
+      ? this.evaluateWithLocalReminderRules(
+          now,
+          settings.visibleCalendarIds,
+          settings.localReminderRules,
+        )
       : this.evaluateWithSyncedReminderSettings(now, settings.visibleCalendarIds);
 
     return this.toReminderEvaluation(now, computation, settings);

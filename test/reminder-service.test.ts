@@ -72,21 +72,23 @@ function createFixture(args?: {
       .mockImplementation((dedupeKey: string) => reminderStateByKey[dedupeKey] ?? null),
     listReminderEventsByStartRange: vi
       .fn()
-      .mockImplementation((visibleCalendarIds: string[], windowStart: string, windowEnd: string) => {
-        const windowStartTime = new Date(windowStart).getTime();
-        const windowEndTime = new Date(windowEnd).getTime();
+      .mockImplementation(
+        (visibleCalendarIds: string[], windowStart: string, windowEnd: string) => {
+          const windowStartTime = new Date(windowStart).getTime();
+          const windowEndTime = new Date(windowEnd).getTime();
 
-        return localEvents
-          .filter((event) => visibleCalendarIds.includes(event.calendarId))
-          .filter((event) => {
-            const eventStart = new Date(event.start).getTime();
-            return eventStart >= windowStartTime && eventStart <= windowEndTime;
-          })
-          .map((event) => ({
-            ...event,
-            onlineMeeting: null,
-          }));
-      }),
+          return localEvents
+            .filter((event) => visibleCalendarIds.includes(event.calendarId))
+            .filter((event) => {
+              const eventStart = new Date(event.start).getTime();
+              return eventStart >= windowStartTime && eventStart <= windowEndTime;
+            })
+            .map((event) => ({
+              ...event,
+              onlineMeeting: null,
+            }));
+        },
+      ),
     listReminderCandidates: vi
       .fn()
       .mockImplementation((visibleCalendarIds: string[]) =>

@@ -220,8 +220,7 @@ function NotificationsSection({
               <span>{t("settings.sections.notifications.ruleActions")}</span>
             </div>
             {localReminderRules.map((rule, index) => (
-              <div className="settings-notifications__rule" key={`local-reminder-rule-${index}`}
-              >
+              <div className="settings-notifications__rule" key={`local-reminder-rule-${index}`}>
                 <input
                   className="settings-notifications__time"
                   max={MAX_LOCAL_REMINDER_MINUTES}
@@ -282,10 +281,7 @@ function NotificationsSection({
                 }
 
                 onSave({
-                  localReminderRules: [
-                    ...localReminderRules,
-                    { ...DEFAULT_LOCAL_REMINDER_RULE },
-                  ],
+                  localReminderRules: [...localReminderRules, { ...DEFAULT_LOCAL_REMINDER_RULE }],
                 });
               }}
               type="button"
