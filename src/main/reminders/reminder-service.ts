@@ -222,16 +222,20 @@ class ReminderService {
       };
     }
 
+    let maxBeforeMinutes = 0;
     let maxAfterMinutes = 0;
     for (const rule of localReminderRules) {
       if (rule.when === "after") {
         maxAfterMinutes = Math.max(maxAfterMinutes, rule.minutes);
+      } else {
+        maxBeforeMinutes = Math.max(maxBeforeMinutes, rule.minutes);
       }
     }
 
+    const lookbackMinutes = maxBeforeMinutes > 0 ? MAX_REMINDER_MINUTES : maxAfterMinutes;
     const events = this.db.listReminderEventsByStartRange(
       visibleCalendarIds,
-      new Date(now - maxAfterMinutes * 60_000).toISOString(),
+      new Date(now - lookbackMinutes * 60_000).toISOString(),
       new Date(schedulingHorizon).toISOString(),
     );
 
