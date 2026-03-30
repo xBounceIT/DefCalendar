@@ -208,6 +208,7 @@
   },
   "reminder": {
     "title": "Reminder",
+    "minimize": "Minimize",
     "dismissAll": "Dismiss All",
     "snooze": "Snooze",
     "dismiss": "Dismiss",

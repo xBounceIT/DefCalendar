@@ -398,6 +398,11 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     dependencies.reminders.dismissAll();
   });
 
+  ipcMain.handle(IPC_CHANNELS.reminderWindowMinimize, async (event) => {
+    validateReminderSender(event);
+    dependencies.reminderManager.minimize();
+  });
+
   dependencies.sync.onStatus((status) => {
     broadcast(IPC_CHANNELS.syncStatusChanged, status);
   });

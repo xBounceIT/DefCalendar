@@ -208,6 +208,7 @@
   },
   "reminder": {
     "title": "Promemoria",
+    "minimize": "Riduci a icona",
     "dismissAll": "Ignora tutto",
     "snooze": "Rimanda",
     "dismiss": "Ignora",

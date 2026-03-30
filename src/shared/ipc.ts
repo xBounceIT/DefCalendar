@@ -59,6 +59,7 @@ export const IPC_CHANNELS = {
   reminderSnooze: "reminder:snooze",
   reminderDismiss: "reminder:dismiss",
   reminderDismissAll: "reminder:dismiss-all",
+  reminderWindowMinimize: "reminder:window-minimize",
   windowMinimize: "window:minimize",
   windowMaximize: "window:maximize",
   windowClose: "window:close",
@@ -119,6 +120,7 @@ interface CalendarApi {
     snooze: (dedupeKey: string, minutes: number) => Promise<void>;
     dismiss: (dedupeKey: string) => Promise<void>;
     dismissAll: () => Promise<void>;
+    minimizeWindow: () => Promise<void>;
   };
   window: {
     minimize: () => Promise<void>;
