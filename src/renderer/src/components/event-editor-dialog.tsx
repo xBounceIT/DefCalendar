@@ -578,7 +578,7 @@ function EventToolbar({
           onClick={() => setOpenDropdown(openDropdown === "categories" ? null : "categories")}
           title={t("eventEditor.categories")}
         >
-          <TagIconWithDot
+          <TagIconColored
             selectedCategories={selectedCategories}
             categoryOptions={categoryOptions}
           />
@@ -1429,13 +1429,13 @@ function TagIcon() {
 }
 
 function TagSwatchIcon({ color }: { color: string }) {
-  const fillColor = categoryColorToHex(color);
+  const strokeColor = categoryColorToHex(color);
   return (
     <svg
       aria-hidden="true"
       fill="none"
       height="18"
-      stroke="currentColor"
+      stroke={strokeColor}
       strokeLinecap="round"
       strokeLinejoin="round"
       strokeWidth="2"
@@ -1443,7 +1443,7 @@ function TagSwatchIcon({ color }: { color: string }) {
       width="18"
     >
       <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
-      <circle cx="7" cy="7" fill={fillColor} r="1.8" stroke="none" />
+      <line x1="7" x2="7.01" y1="7" y2="7" />
     </svg>
   );
 }
@@ -1616,7 +1616,7 @@ function ShowAsIcon() {
   );
 }
 
-function TagIconWithDot({
+function TagIconColored({
   selectedCategories,
   categoryOptions,
 }: {
@@ -1627,15 +1627,24 @@ function TagIconWithDot({
   const option = categoryOptions.find(
     (item) => item.displayName.toLocaleLowerCase() === firstCategory?.toLocaleLowerCase(),
   );
-  const dotColor = categoryColorToHex(option?.color);
+  const strokeColor =
+    selectedCategories.length > 0 ? categoryColorToHex(option?.color) : "currentColor";
 
   return (
-    <span className="icon-with-indicator">
-      <TagIcon />
-      {selectedCategories.length > 0 && (
-        <span className="icon-indicator-dot" style={{ backgroundColor: dotColor }} />
-      )}
-    </span>
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="18"
+      stroke={strokeColor}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="18"
+    >
+      <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" />
+      <line x1="7" x2="7.01" y1="7" y2="7" />
+    </svg>
   );
 }
 

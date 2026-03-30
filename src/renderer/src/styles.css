@@ -2486,21 +2486,6 @@ button {
   padding: 8px;
 }
 
-.icon-with-indicator {
-  position: relative;
-  display: inline-flex;
-}
-
-.icon-indicator-dot {
-  position: absolute;
-  top: -2px;
-  right: -2px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  border: 2px solid var(--surface);
-}
-
 .event-toolbar__dropdown-label {
   white-space: nowrap;
   overflow: hidden;
