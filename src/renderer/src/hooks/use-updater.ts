@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppUpdateStatus } from "@shared/schemas";
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 
 const QUERY_KEY = ["app-update-status"] as const;
 
@@ -42,12 +42,14 @@ export function useUpdater() {
     downloadMutation.mutate();
   }
 
+  const install = useCallback(() => {
+    void globalThis.calendarApi.updates.install();
+  }, []);
+
   return {
     check,
     download,
-    install: () => {
-      void globalThis.calendarApi.updates.install();
-    },
+    install,
     isChecking: checkMutation.isPending,
     isDownloading: downloadMutation.isPending,
     status: statusQuery.data ?? null,

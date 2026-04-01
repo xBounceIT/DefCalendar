@@ -353,5 +353,13 @@
         "install": "Riavvia per installare"
       }
     }
+  },
+  "updatePopup": {
+    "title": "Un nuovo aggiornamento è disponibile",
+    "description": "{{version}} pronta per l'installazione.",
+    "changelog": "Note di rilascio",
+    "downloadAndRestart": "Scarica e riavvia",
+    "downloading": "Download…",
+    "remindLater": "Ricordamelo più tardi"
   }
 }
