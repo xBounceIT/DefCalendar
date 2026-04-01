@@ -687,6 +687,89 @@ function EventToolbar({
   );
 }
 
+function TimeSelect({
+  disabled,
+  onChange,
+  options,
+  scrollToSelected,
+  value,
+}: {
+  disabled: boolean;
+  onChange: (value: string) => void;
+  options: { label: string; value: string }[];
+  scrollToSelected: boolean;
+  value: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (isOpen && listRef.current) {
+      if (scrollToSelected) {
+        const selectedOption = listRef.current.querySelector('[data-selected="true"]');
+        if (selectedOption && typeof selectedOption.scrollIntoView === "function") {
+          selectedOption.scrollIntoView({ block: "center" });
+        }
+      } else {
+        listRef.current.scrollTop = 0;
+      }
+    }
+  }, [isOpen, scrollToSelected]);
+
+  const selectedOption = options.find((opt) => opt.value === value);
+
+  return (
+    <div className="time-select" ref={containerRef}>
+      <button
+        className="time-select__trigger"
+        disabled={disabled}
+        onClick={() => setIsOpen(!isOpen)}
+        type="button"
+      >
+        <span>{selectedOption?.label || value}</span>
+        <ChevronDownIcon className={isOpen ? "expanded" : ""} />
+      </button>
+      {isOpen && (
+        <div className="time-select__dropdown">
+          <div className="time-select__list" ref={listRef}>
+            {options.map((opt) => (
+              <button
+                className={`time-select__option ${opt.value === value ? "time-select__option--selected" : ""}`}
+                data-selected={opt.value === value}
+                key={opt.value}
+                onClick={() => {
+                  onChange(opt.value);
+                  setIsOpen(false);
+                }}
+                type="button"
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function generateTimeOptions(): { label: string; value: string }[] {
   const options: { label: string; value: string }[] = [];
   for (let h = 0; h < 24; h++) {
@@ -747,9 +830,9 @@ function formatDurationLabel(
     return `(+${t("reminder.minutes", { count: mins })})`;
   }
   if (mins === 0) {
-    return `(${t("reminder.hours", { count: hours })})`;
+    return `(+${t("reminder.hours", { count: hours })})`;
   }
-  return `(${hours}h ${mins}min)`;
+  return `(+${hours}h ${mins}min)`;
 }
 
 const TIME_OPTIONS = generateTimeOptions();
@@ -801,19 +884,16 @@ function SchedulingSection({
   const endTime = extractTime(form.endInput) || "00:30";
   const startTimeMinutes = parseTimeToMinutes(startTime);
   const endTimeMinutes = parseTimeToMinutes(endTime);
-  const minimumEndMinutes = startTimeMinutes + 30;
+  const minimumEndMinutes = startTimeMinutes + 15;
   const endTimeOptions = useMemo(
     () =>
-      TIME_OPTIONS.map((opt) => {
-        let effectiveEndMinutes = parseTimeToMinutes(opt.value);
-        while (effectiveEndMinutes < minimumEndMinutes) {
-          effectiveEndMinutes += 24 * 60;
-        }
-        return { ...opt, effectiveEndMinutes };
-      })
-        .filter((opt) => opt.effectiveEndMinutes >= minimumEndMinutes)
+      TIME_OPTIONS.map((opt) => ({
+        ...opt,
+        minutes: parseTimeToMinutes(opt.value),
+      }))
+        .filter((opt) => opt.minutes >= minimumEndMinutes)
         .map((opt) => ({
-          label: `${opt.label} ${formatDurationLabel(startTimeMinutes, opt.effectiveEndMinutes, t)}`,
+          label: `${opt.label} ${formatDurationLabel(startTimeMinutes, opt.minutes, t)}`,
           value: opt.value,
         })),
     [minimumEndMinutes, startTimeMinutes, t],
@@ -832,33 +912,24 @@ function SchedulingSection({
     if (exists) {
       return endTimeOptions;
     }
-    const durationLabel = formatDurationLabel(
-      startTimeMinutes,
-      endTimeMinutes < startTimeMinutes ? endTimeMinutes + 24 * 60 : endTimeMinutes,
-      t,
-    );
+    const durationLabel = formatDurationLabel(startTimeMinutes, endTimeMinutes, t);
     return [{ label: `${endTime} ${durationLabel}`, value: endTime }, ...endTimeOptions];
   }, [endTime, endTimeOptions, startTimeMinutes, endTimeMinutes, t]);
 
   const handleStartTimeChange = (newTime: string) => {
     const currentDate = extractDate(form.startInput);
     const newStartMinutes = parseTimeToMinutes(newTime);
-    let newEndInput = form.endInput;
-
     const currentEndDayOffset = daysBetweenDateInputs(
       extractDate(form.startInput),
       extractDate(form.endInput),
     );
     const currentEndMinutes = endTimeMinutes + currentEndDayOffset * 24 * 60;
-    if (currentEndMinutes < newStartMinutes + 30) {
-      const adjustedEndMinutes = newStartMinutes + 30;
-      const adjustedEndDate = addDaysToDateInput(
-        currentDate,
-        Math.floor(adjustedEndMinutes / (24 * 60)),
-      );
-      const adjustedEndTime = minutesToTime(adjustedEndMinutes);
-      newEndInput = combineDateTime(adjustedEndDate, adjustedEndTime);
-    }
+    const duration = currentEndMinutes - startTimeMinutes;
+    const newEndMinutes = newStartMinutes + duration;
+    const daysToAdd = Math.floor(newEndMinutes / (24 * 60));
+    const adjustedEndDate = addDaysToDateInput(currentDate, daysToAdd);
+    const adjustedEndTime = minutesToTime(newEndMinutes % (24 * 60));
+    const newEndInput = combineDateTime(adjustedEndDate, adjustedEndTime);
 
     onChange((current) =>
       current
@@ -868,22 +939,13 @@ function SchedulingSection({
   };
 
   const handleEndTimeChange = (newTime: string) => {
-    let adjustedEndMinutes = parseTimeToMinutes(newTime);
-    while (adjustedEndMinutes < minimumEndMinutes) {
-      adjustedEndMinutes += 24 * 60;
-    }
     const existingDayOffset = daysBetweenDateInputs(
       extractDate(form.startInput),
       extractDate(form.endInput),
     );
-    const minimumDaysNeeded = Math.floor(adjustedEndMinutes / (24 * 60));
-    const endDate = addDaysToDateInput(
-      extractDate(form.startInput),
-      Math.max(existingDayOffset, minimumDaysNeeded),
-    );
-    const endTime = minutesToTime(adjustedEndMinutes);
+    const endDate = addDaysToDateInput(extractDate(form.startInput), existingDayOffset);
     onChange((current) =>
-      current ? { ...current, endInput: combineDateTime(endDate, endTime) } : current,
+      current ? { ...current, endInput: combineDateTime(endDate, newTime) } : current,
     );
   };
 
@@ -935,31 +997,23 @@ function SchedulingSection({
             </label>
             <label className="field scheduling-field scheduling-field--time">
               <span>{t("eventEditor.startTime")}</span>
-              <select
+              <TimeSelect
                 disabled={disabled || form.allDay}
-                onChange={(e) => handleStartTimeChange(e.target.value)}
+                onChange={handleStartTimeChange}
+                options={startTimeOptions}
+                scrollToSelected
                 value={startTime}
-              >
-                {startTimeOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
             <label className="field scheduling-field scheduling-field--time scheduling-field--time-end">
               <span>{t("eventEditor.endTime")}</span>
-              <select
+              <TimeSelect
                 disabled={disabled || form.allDay}
-                onChange={(e) => handleEndTimeChange(e.target.value)}
+                onChange={handleEndTimeChange}
+                options={endTimeOptionsWithCurrent}
+                scrollToSelected={false}
                 value={endTime}
-              >
-                {endTimeOptionsWithCurrent.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
           </div>
 

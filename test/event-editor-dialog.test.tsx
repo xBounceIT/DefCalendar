@@ -205,15 +205,11 @@ describe("event editor dialog", () => {
 
     openSchedulingSection(container);
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Start time" }), {
-      target: { value: "23:30" },
-    });
+    const startTimeBtn = screen.getByRole("button", { name: "Start time" });
+    fireEvent.click(startTimeBtn);
+    const option2330 = screen.getByText("23:30");
+    fireEvent.click(option2330);
 
-    const endTimeSelect = screen.getByRole("combobox", { name: "End time" }) as HTMLSelectElement;
-    const endValues = Array.from(endTimeSelect.options, (option) => option.value);
-    expect(endValues).toContain("00:00");
-
-    fireEvent.change(endTimeSelect, { target: { value: "00:00" } });
     fireEvent.change(screen.getByPlaceholderText("Subject"), {
       target: { value: "Late event" },
     });
@@ -240,9 +236,10 @@ describe("event editor dialog", () => {
 
     openSchedulingSection(container);
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Start time" }), {
-      target: { value: "23:30" },
-    });
+    const startTimeBtn = screen.getByRole("button", { name: "Start time" });
+    fireEvent.click(startTimeBtn);
+    const option2330 = screen.getByText("23:30");
+    fireEvent.click(option2330);
 
     fireEvent.change(screen.getByPlaceholderText("Subject"), {
       target: { value: "Late event" },

@@ -583,7 +583,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     const roundedStart = roundUpToNext15Minutes(now);
     openCreateDialog({
       allDay: false,
-      end: addMinutesToIso(roundedStart.toISOString(), 60),
+      end: addMinutesToIso(roundedStart.toISOString(), 30),
       start: roundedStart.toISOString(),
     });
   }
