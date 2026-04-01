@@ -38,6 +38,7 @@ import SettingsDialog from "./components/settings-dialog";
 import type { EditorState } from "./event-editor-state";
 import EventEditorDialog from "./components/event-editor-dialog";
 import TitleBar from "./components/title-bar";
+import UpdateAvailablePopup from "./components/update-available-popup";
 import WorkspacePanel from "./components/workspace-panel";
 import useUiStore from "./store";
 
@@ -865,6 +866,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         state={editorState}
         timeFormat={appSettings.timeFormat}
       />
+      <UpdateAvailablePopup />
     </div>
   );
 }
