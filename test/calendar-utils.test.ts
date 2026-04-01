@@ -2,6 +2,7 @@ import {
   addMinutesToIso,
   buildEventDayKeys,
   fromDateTimeInputValue,
+  getOutlookCategoryColor,
   isEventEditable,
   toDateTimeInputValue,
 } from "../src/shared/calendar";
@@ -110,5 +111,15 @@ describe("calendar utilities", () => {
     ]);
 
     expect([...dayKeys]).toStrictEqual(["2026-03-27"]);
+  });
+
+  it("maps Outlook category presets to hex colors", () => {
+    expect(getOutlookCategoryColor("preset7")).toBe("#2563eb");
+    expect(getOutlookCategoryColor("#2f9e44")).toBe("#2f9e44");
+  });
+
+  it("ignores empty or unrecognized Outlook category colors", () => {
+    expect(getOutlookCategoryColor("none")).toBeNull();
+    expect(getOutlookCategoryColor("unknown")).toBeNull();
   });
 });

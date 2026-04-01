@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import type { EventInput } from "@fullcalendar/core";
 import type { DateClickArg } from "@fullcalendar/interaction";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -9,6 +10,7 @@ import App from "../src/renderer/src/app";
 import useUiStore from "../src/renderer/src/store";
 import { createDefaultSettings } from "../src/shared/schema-values";
 import type { CalendarApi } from "../src/shared/ipc";
+import type { CalendarEvent } from "../src/shared/schemas";
 
 interface MockedCalendarModule {
   default: unknown;
@@ -87,6 +89,50 @@ function createRange(selectedDate: string): { rangeEnd: string; rangeStart: stri
   const rangeStart = new Date(seed.getFullYear(), seed.getMonth() - 1, 1).toISOString();
   const rangeEnd = new Date(seed.getFullYear(), seed.getMonth() + 2, 1).toISOString();
   return { rangeEnd, rangeStart };
+}
+
+function createCalendarEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
+  return {
+    allowNewTimeProposals: true,
+    attachments: [],
+    attendees: [],
+    body: null,
+    bodyContentType: "html",
+    bodyPreview: null,
+    calendarId: "calendar-1",
+    cancelled: false,
+    categories: [],
+    changeKey: null,
+    end: "2026-03-30T10:00:00.000Z",
+    etag: null,
+    hasAttachments: false,
+    id: "event-1",
+    isAllDay: false,
+    isOnlineMeeting: false,
+    isOrganizer: true,
+    isReminderOn: true,
+    lastModifiedDateTime: null,
+    location: null,
+    locations: [],
+    onlineMeeting: null,
+    onlineMeetingProvider: null,
+    organizer: null,
+    recurrence: null,
+    reminderMinutesBeforeStart: 0,
+    responseRequested: true,
+    responseStatus: null,
+    sensitivity: "normal",
+    showAs: "busy",
+    start: "2026-03-30T09:00:00.000Z",
+    subject: "Planning",
+    seriesMasterId: null,
+    occurrenceId: null,
+    timeZone: "UTC",
+    type: null,
+    unsupportedReason: null,
+    webLink: null,
+    ...overrides,
+  };
 }
 
 function resetUiStoreState(): void {
@@ -617,6 +663,62 @@ describe("app startup", () => {
           updated: true,
         });
       });
+    } finally {
+      restoreCalendarApi();
+      restoreResizeObserver();
+    }
+  });
+
+  it("loads categories on signed-in startup and colors events from the first category", async () => {
+    try {
+      installResizeObserverMock();
+      const calendarApi = createSignedInCalendarApiMock();
+      calendarApi.categories.list = vi.fn().mockResolvedValue([
+        { color: "preset7", displayName: "Blue category" },
+        { color: "preset0", displayName: "Red category" },
+      ]);
+      calendarApi.events.list = vi.fn().mockResolvedValue([
+        createCalendarEvent({
+          categories: ["Blue category", "Red category"],
+        }),
+        createCalendarEvent({
+          categories: ["Missing category", "Red category"],
+          id: "event-2",
+          subject: "Fallback event",
+        }),
+      ]);
+      installCalendarApi(calendarApi);
+
+      renderApp();
+
+      await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
+      await waitFor(() => {
+        expect(calendarApi.categories.list).toHaveBeenCalledWith({ homeAccountId: "account-1" });
+        const calendarEvents = (capturedCalendarProps?.events as EventInput[] | undefined) ?? [];
+        expect(calendarEvents.length).toBe(2);
+        expect(calendarEvents[0]?.backgroundColor).toBe("rgba(37, 99, 235, 0.2)");
+      });
+
+      const calendarEvents = capturedCalendarProps?.events as EventInput[];
+
+      expect(calendarEvents[0]).toEqual(
+        expect.objectContaining({
+          backgroundColor: "rgba(37, 99, 235, 0.2)",
+          borderColor: "#2563eb",
+          extendedProps: expect.objectContaining({
+            calendarColor: null,
+          }),
+        }),
+      );
+      expect(calendarEvents[1]).toEqual(
+        expect.objectContaining({
+          extendedProps: expect.objectContaining({
+            calendarColor: "#bde7f6",
+          }),
+        }),
+      );
+      expect(calendarEvents[1]?.backgroundColor).toBeUndefined();
+      expect(calendarEvents[1]?.borderColor).toBeUndefined();
     } finally {
       restoreCalendarApi();
       restoreResizeObserver();
