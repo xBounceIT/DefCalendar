@@ -34,6 +34,10 @@ function UpdateAvailablePopup(): null | React.ReactElement {
       install();
       initiatedDownloadRef.current = false;
     }
+
+    if (status?.state === "error") {
+      initiatedDownloadRef.current = false;
+    }
   }, [status?.state, install]);
 
   if (dismissed || !shouldShow) {
