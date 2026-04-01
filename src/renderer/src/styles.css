@@ -2554,12 +2554,16 @@ button {
   font-weight: 600;
 }
 
-.settings-updates__notes pre {
+.settings-updates__notes-body {
   margin: 8px 0 0;
-  white-space: pre-wrap;
   color: var(--ink);
-  font-family: inherit;
   font-size: 13px;
+  line-height: 1.5;
+  white-space: normal;
+}
+
+.settings-updates__notes-body > :last-child {
+  margin-bottom: 0;
 }
 
 .settings-updates__error {
@@ -3939,58 +3943,58 @@ button {
   white-space: normal;
 }
 
-.notes-textarea-wrapper .notes-html-view p,
-.notes-textarea-wrapper .notes-html-view div,
-.notes-textarea-wrapper .notes-html-view blockquote,
-.notes-textarea-wrapper .notes-html-view pre,
-.notes-textarea-wrapper .notes-html-view ul,
-.notes-textarea-wrapper .notes-html-view ol,
-.notes-textarea-wrapper .notes-html-view table {
+.notes-html-view p,
+.notes-html-view div,
+.notes-html-view blockquote,
+.notes-html-view pre,
+.notes-html-view ul,
+.notes-html-view ol,
+.notes-html-view table {
   margin: 0 0 10px;
 }
 
-.notes-textarea-wrapper .notes-html-view h1,
-.notes-textarea-wrapper .notes-html-view h2,
-.notes-textarea-wrapper .notes-html-view h3,
-.notes-textarea-wrapper .notes-html-view h4,
-.notes-textarea-wrapper .notes-html-view h5,
-.notes-textarea-wrapper .notes-html-view h6 {
+.notes-html-view h1,
+.notes-html-view h2,
+.notes-html-view h3,
+.notes-html-view h4,
+.notes-html-view h5,
+.notes-html-view h6 {
   color: var(--ink);
   margin: 0 0 10px;
   line-height: 1.25;
 }
 
-.notes-textarea-wrapper .notes-html-view h1 {
+.notes-html-view h1 {
   font-size: 20px;
 }
 
-.notes-textarea-wrapper .notes-html-view h2 {
+.notes-html-view h2 {
   font-size: 18px;
 }
 
-.notes-textarea-wrapper .notes-html-view h3 {
+.notes-html-view h3 {
   font-size: 16px;
 }
 
-.notes-textarea-wrapper .notes-html-view h4 {
+.notes-html-view h4 {
   font-size: 15px;
 }
 
-.notes-textarea-wrapper .notes-html-view h5,
-.notes-textarea-wrapper .notes-html-view h6 {
+.notes-html-view h5,
+.notes-html-view h6 {
   font-size: 14px;
 }
 
-.notes-textarea-wrapper .notes-html-view ul,
-.notes-textarea-wrapper .notes-html-view ol {
+.notes-html-view ul,
+.notes-html-view ol {
   padding-left: 20px;
 }
 
-.notes-textarea-wrapper .notes-html-view li {
+.notes-html-view li {
   margin-bottom: 4px;
 }
 
-.notes-textarea-wrapper .notes-html-view blockquote {
+.notes-html-view blockquote {
   border-left: 3px solid var(--accent);
   padding: 6px 10px;
   color: var(--ink-secondary);
@@ -3999,7 +4003,7 @@ button {
   margin: 0 0 10px;
 }
 
-.notes-textarea-wrapper .notes-html-view pre {
+.notes-html-view pre {
   background: var(--bg-secondary);
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -4009,7 +4013,7 @@ button {
   font-size: 13px;
 }
 
-.notes-textarea-wrapper .notes-html-view code {
+.notes-html-view code {
   font-family: Consolas, "Courier New", monospace;
   font-size: 13px;
   background: var(--bg-secondary);
@@ -4017,7 +4021,7 @@ button {
   border-radius: 3px;
 }
 
-.notes-textarea-wrapper .notes-html-view pre code {
+.notes-html-view pre code {
   background: transparent;
   padding: 0;
 }
@@ -4038,19 +4042,19 @@ button {
   overflow-x: auto;
 }
 
-.notes-textarea-wrapper .notes-html-view table {
+.notes-html-view table {
   width: 100%;
   border-collapse: collapse;
 }
 
-.notes-textarea-wrapper .notes-html-view th,
-.notes-textarea-wrapper .notes-html-view td {
+.notes-html-view th,
+.notes-html-view td {
   border: 1px solid var(--line);
   padding: 6px 8px;
   text-align: left;
 }
 
-.notes-textarea-wrapper .notes-html-view th {
+.notes-html-view th {
   background: var(--bg-secondary);
   font-weight: 600;
 }

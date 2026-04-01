@@ -11,6 +11,7 @@ import { faBell, faCalendar } from "@fortawesome/free-regular-svg-icons";
 import type { CalendarSummary, UpdateChannel, UserSettings } from "@shared/schemas";
 import { useUpdater } from "../hooks/use-updater";
 import { useVersion } from "../hooks/use-version";
+import SafeHtmlBody from "./safe-html-body";
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -609,7 +610,9 @@ function AboutSection({ onSave, settings }: AboutSectionProps) {
           {status?.releaseNotes && (
             <details className="settings-updates__notes">
               <summary>{t("settings.updates.releaseNotes")}</summary>
-              <pre>{status.releaseNotes}</pre>
+              <div className="notes-html-view settings-updates__notes-body" role="document">
+                <SafeHtmlBody html={status.releaseNotes} />
+              </div>
             </details>
           )}
           {(status?.error || statusError instanceof Error) && (
