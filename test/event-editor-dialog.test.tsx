@@ -300,7 +300,7 @@ describe("event editor dialog", () => {
     );
   });
 
-  it("saves attendees from the attendees row in create mode", () => {
+  it("saves required and optional attendees from separate rows in create mode", () => {
     const { onSave } = renderDialog({
       state: {
         allDay: false,
@@ -316,8 +316,11 @@ describe("event editor dialog", () => {
     fireEvent.change(screen.getByPlaceholderText("Subject"), {
       target: { value: "Planning" },
     });
-    fireEvent.change(screen.getByRole("textbox", { name: "Attendees" }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Required attendees" }), {
       target: { value: "alice@example.com, bob@example.com" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Optional attendees" }), {
+      target: { value: "carol@example.com" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
 
@@ -337,6 +340,13 @@ describe("event editor dialog", () => {
             response: null,
             status: null,
             type: "required",
+          },
+          {
+            email: "carol@example.com",
+            name: null,
+            response: null,
+            status: null,
+            type: "optional",
           },
         ],
       }),
@@ -388,8 +398,116 @@ describe("event editor dialog", () => {
       },
     });
 
-    expect(screen.getByRole("textbox", { name: "Attendees" })).toHaveValue(
-      "alice@example.com, bob@example.com",
+    expect(screen.getByRole("textbox", { name: "Required attendees" })).toHaveValue(
+      "alice@example.com",
+    );
+    expect(screen.getByRole("textbox", { name: "Optional attendees" })).toHaveValue(
+      "bob@example.com",
+    );
+  });
+
+  it("prefers required attendees when the same email is entered in both rows", () => {
+    const { onSave } = renderDialog({
+      state: {
+        allDay: false,
+        calendarId: "calendar-1",
+        end: "2026-03-30T10:00:00.000Z",
+        mode: "create",
+        start: "2026-03-30T09:00:00.000Z",
+      },
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Subject"), {
+      target: { value: "Planning" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Required attendees" }), {
+      target: { value: "alice@example.com" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: "Optional attendees" }), {
+      target: { value: "alice@example.com, bob@example.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attendees: [
+          {
+            email: "alice@example.com",
+            name: null,
+            response: null,
+            status: null,
+            type: "required",
+          },
+          {
+            email: "bob@example.com",
+            name: null,
+            response: null,
+            status: null,
+            type: "optional",
+          },
+        ],
+      }),
+    );
+  });
+
+  it("preserves resource attendees outside the required and optional rows", () => {
+    const { onSave } = renderDialog({
+      state: {
+        event: createEvent({
+          attendees: [
+            {
+              email: "room@example.com",
+              name: "Room 1",
+              response: null,
+              status: null,
+              type: "resource",
+            },
+            {
+              email: "alice@example.com",
+              name: "Alice",
+              response: null,
+              status: null,
+              type: "required",
+            },
+            {
+              email: "bob@example.com",
+              name: "Bob",
+              response: null,
+              status: null,
+              type: "optional",
+            },
+          ],
+        }),
+        mode: "edit",
+      },
+    });
+
+    expect(screen.getByRole("textbox", { name: "Required attendees" })).toHaveValue(
+      "alice@example.com",
+    );
+    expect(screen.getByRole("textbox", { name: "Optional attendees" })).toHaveValue(
+      "bob@example.com",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attendees: expect.arrayContaining([
+          expect.objectContaining({
+            email: "room@example.com",
+            type: "resource",
+          }),
+          expect.objectContaining({
+            email: "alice@example.com",
+            type: "required",
+          }),
+          expect.objectContaining({
+            email: "bob@example.com",
+            type: "optional",
+          }),
+        ]),
+      }),
     );
   });
 

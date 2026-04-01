@@ -146,6 +146,8 @@
     "attendeeTypeResource": "Resource",
     "removeAttendee": "Remove",
     "addAttendee": "Add attendee",
+    "requiredAttendees": "Required attendees",
+    "optionalAttendees": "Optional attendees",
     "teamsMeeting": "Microsoft Teams meeting",
     "noTeamsProvider": "No provider configured yet",
     "saveBeforeAttachments": "Save the event before adding attachments.",
