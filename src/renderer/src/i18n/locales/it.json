@@ -146,6 +146,8 @@
     "attendeeTypeResource": "Risorsa",
     "removeAttendee": "Rimuovi",
     "addAttendee": "Aggiungi partecipante",
+    "requiredAttendees": "Partecipanti obbligatori",
+    "optionalAttendees": "Partecipanti facoltativi",
     "teamsMeeting": "Riunione Microsoft Teams",
     "noTeamsProvider": "Nessun provider configurato",
     "saveBeforeAttachments": "Salva l'evento prima di aggiungere allegati.",

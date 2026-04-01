@@ -56,7 +56,6 @@ interface EditorFormState {
   allDay: boolean;
   allowNewTimeProposals: boolean;
   attendees: EventParticipant[];
-  attendeesInput: string;
   body: string;
   bodyContentType: BodyContentType;
   calendarId: string;
@@ -65,6 +64,7 @@ interface EditorFormState {
   isOnlineMeeting: boolean;
   isReminderOn: boolean;
   location: string;
+  optionalAttendeesInput: string;
   recurrenceDayOfMonth: string;
   recurrenceDaysOfWeek: string[];
   recurrenceEnabled: boolean;
@@ -74,6 +74,7 @@ interface EditorFormState {
   recurrenceRangeType: Recurrence["range"]["type"];
   recurrenceType: Recurrence["pattern"]["type"];
   reminderMinutesBeforeStart: string;
+  requiredAttendeesInput: string;
   responseComment: string;
   responseRequested: boolean;
   sensitivity: NonNullable<CalendarEvent["sensitivity"]>;
@@ -258,23 +259,54 @@ function EventEditorDialog(props: EventEditorDialogProps) {
             <div className="field-row">
               <AttendeesIcon />
               <input
-                aria-label={t("eventEditor.tabs.attendees")}
+                aria-label={t("eventEditor.requiredAttendees")}
                 className="field-input field-input--underline"
                 disabled={readOnlyForAttendee}
                 onChange={(event) => {
-                  const attendeesInput = event.target.value;
+                  const requiredAttendeesInput = event.target.value;
                   setForm((current) =>
                     current
                       ? {
                           ...current,
-                          ...buildAttendeesPatch(attendeesInput, current.attendees),
+                          ...buildAttendeesPatch(
+                            requiredAttendeesInput,
+                            current.optionalAttendeesInput,
+                            current.attendees,
+                          ),
                         }
                       : current,
                   );
                 }}
-                placeholder={t("eventEditor.tabs.attendees")}
+                placeholder={t("eventEditor.requiredAttendees")}
                 type="text"
-                value={form.attendeesInput}
+                value={form.requiredAttendeesInput}
+              />
+            </div>
+
+            <div className="field-row">
+              <AttendeesIcon />
+              <input
+                aria-label={t("eventEditor.optionalAttendees")}
+                className="field-input field-input--underline"
+                disabled={readOnlyForAttendee}
+                onChange={(event) => {
+                  const optionalAttendeesInput = event.target.value;
+                  setForm((current) =>
+                    current
+                      ? {
+                          ...current,
+                          ...buildAttendeesPatch(
+                            current.requiredAttendeesInput,
+                            optionalAttendeesInput,
+                            current.attendees,
+                          ),
+                        }
+                      : current,
+                  );
+                }}
+                placeholder={t("eventEditor.optionalAttendees")}
+                type="text"
+                value={form.optionalAttendeesInput}
               />
             </div>
 
@@ -2302,7 +2334,6 @@ function buildFormState(state: EventEditorDialogProps["state"]): EditorFormState
     allDay: createAllDay,
     allowNewTimeProposals: event?.allowNewTimeProposals ?? draft?.allowNewTimeProposals ?? true,
     attendees,
-    attendeesInput: formatAttendeesInput(attendees),
     body: event?.body ?? draft?.body ?? "",
     bodyContentType: event?.bodyContentType ?? draft?.bodyContentType ?? "text",
     calendarId: state.mode === "create" ? state.calendarId : event!.calendarId,
@@ -2311,6 +2342,7 @@ function buildFormState(state: EventEditorDialogProps["state"]): EditorFormState
     isOnlineMeeting: event?.isOnlineMeeting ?? draft?.isOnlineMeeting ?? false,
     isReminderOn: event?.isReminderOn ?? draft?.isReminderOn ?? true,
     location: event?.location ?? draft?.location ?? "",
+    optionalAttendeesInput: formatAttendeesInput(attendees, "optional"),
     recurrenceDayOfMonth: recurrence?.pattern.dayOfMonth?.toString() ?? "",
     recurrenceDaysOfWeek: recurrence?.pattern.daysOfWeek ?? [],
     recurrenceEnabled: Boolean(recurrence),
@@ -2324,6 +2356,7 @@ function buildFormState(state: EventEditorDialogProps["state"]): EditorFormState
       draft?.reminderMinutesBeforeStart ??
       15
     ).toString(),
+    requiredAttendeesInput: formatAttendeesInput(attendees, "required"),
     responseComment: "",
     responseRequested: event?.responseRequested ?? draft?.responseRequested ?? true,
     sensitivity: event?.sensitivity ?? draft?.sensitivity ?? "normal",
@@ -2366,7 +2399,11 @@ function buildDraft(form: EditorFormState, event: CalendarEvent | null): EventDr
   return {
     attachmentIdsToRemove: [],
     attachmentsToAdd: [],
-    attendees: buildAttendeesFromInput(form.attendeesInput, form.attendees),
+    attendees: buildAttendeesFromInputs(
+      form.requiredAttendeesInput,
+      form.optionalAttendeesInput,
+      form.attendees,
+    ),
     allowNewTimeProposals: form.allowNewTimeProposals,
     body: form.body.trim() || null,
     bodyContentType: form.bodyContentType,
@@ -2438,21 +2475,34 @@ function resolveEventId(event: CalendarEvent | null, form: EditorFormState): str
 }
 
 function buildAttendeesPatch(
-  attendeesInput: string,
+  requiredAttendeesInput: string,
+  optionalAttendeesInput: string,
   existingAttendees: EventParticipant[],
-): Pick<EditorFormState, "attendees" | "attendeesInput"> {
+): Pick<EditorFormState, "attendees" | "optionalAttendeesInput" | "requiredAttendeesInput"> {
   return {
-    attendees: buildAttendeesFromInput(attendeesInput, existingAttendees),
-    attendeesInput,
+    attendees: buildAttendeesFromInputs(
+      requiredAttendeesInput,
+      optionalAttendeesInput,
+      existingAttendees,
+    ),
+    optionalAttendeesInput,
+    requiredAttendeesInput,
   };
 }
 
-function buildAttendeesFromInput(
-  attendeesInput: string,
+function buildAttendeesFromInputs(
+  requiredAttendeesInput: string,
+  optionalAttendeesInput: string,
   existingAttendees: EventParticipant[],
 ): EventParticipant[] {
   const existingByEmail = new Map<string, EventParticipant>();
+  const resourceAttendees: EventParticipant[] = [];
   for (const attendee of existingAttendees) {
+    if (attendee.type === "resource") {
+      resourceAttendees.push(attendee);
+      continue;
+    }
+
     const normalizedEmail = normalizeAttendeeEmail(attendee.email);
     if (!normalizedEmail) {
       continue;
@@ -2460,25 +2510,56 @@ function buildAttendeesFromInput(
     existingByEmail.set(normalizedEmail, attendee);
   }
 
-  return parseAttendeeEmails(attendeesInput).map((email) => {
-    const normalizedEmail = normalizeAttendeeEmail(email);
-    const existingAttendee = normalizedEmail ? existingByEmail.get(normalizedEmail) : null;
-    if (existingAttendee) {
-      return { ...existingAttendee, email };
-    }
+  const nextAttendees: EventParticipant[] = [];
+  const seenEmails = new Set<string>();
 
-    return {
-      email,
-      name: null,
-      response: null,
-      status: null,
-      type: "required",
-    };
-  });
+  const appendAttendees = (emails: string[], type: "optional" | "required") => {
+    for (const email of emails) {
+      const normalizedEmail = normalizeAttendeeEmail(email);
+      if (!normalizedEmail || seenEmails.has(normalizedEmail)) {
+        continue;
+      }
+
+      seenEmails.add(normalizedEmail);
+      const existingAttendee = existingByEmail.get(normalizedEmail);
+      if (existingAttendee) {
+        nextAttendees.push({
+          ...existingAttendee,
+          email,
+          type:
+            type === "required"
+              ? "required"
+              : existingAttendee.type === "resource"
+                ? "resource"
+                : "optional",
+        });
+        continue;
+      }
+
+      nextAttendees.push({
+        email,
+        name: null,
+        response: null,
+        status: null,
+        type,
+      });
+    }
+  };
+
+  appendAttendees(parseAttendeeEmails(requiredAttendeesInput), "required");
+  appendAttendees(parseAttendeeEmails(optionalAttendeesInput), "optional");
+
+  return [...resourceAttendees, ...nextAttendees];
 }
 
-function formatAttendeesInput(attendees: EventParticipant[]): string {
+function formatAttendeesInput(
+  attendees: EventParticipant[],
+  type: "optional" | "required",
+): string {
   return attendees
+    .filter((attendee) =>
+      type === "required" ? attendee.type === "required" : attendee.type === "optional",
+    )
     .map((attendee) => attendee.email?.trim() ?? "")
     .filter(Boolean)
     .join(", ");
