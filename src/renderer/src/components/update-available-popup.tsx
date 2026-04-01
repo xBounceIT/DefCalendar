@@ -1,6 +1,6 @@
+import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useUpdater } from "../hooks/use-updater";
-import React, { useEffect, useRef, useState } from "react";
 
 const GITHUB_OWNER = "xBounceIT";
 const GITHUB_REPO = "DefCalendar";
