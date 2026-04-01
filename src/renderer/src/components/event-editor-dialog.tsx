@@ -14,7 +14,11 @@ import type {
   UserSettings,
 } from "@shared/schemas";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { fromDateTimeInputValue, toDateTimeInputValue } from "@shared/calendar";
+import {
+  fromDateTimeInputValue,
+  getOutlookCategoryColor,
+  toDateTimeInputValue,
+} from "@shared/calendar";
 import { useTranslation } from "react-i18next";
 
 import type { EditorState } from "../event-editor-state";
@@ -1925,41 +1929,7 @@ function getCategoryTriggerLabel(
 }
 
 function categoryColorToHex(color: null | string | undefined): string {
-  if (!color) {
-    return "var(--ink-tertiary)";
-  }
-
-  const normalized = color.toLowerCase();
-  const map: Record<string, string> = {
-    none: "var(--ink-tertiary)",
-    preset0: "#c73d3d",
-    preset1: "#d97706",
-    preset2: "#8b5a3c",
-    preset3: "#ca8a04",
-    preset4: "#2f9e44",
-    preset5: "#0f766e",
-    preset6: "#5f7c24",
-    preset7: "#2563eb",
-    preset8: "#7e22ce",
-    preset9: "#be185d",
-    preset10: "#3b82f6",
-    preset11: "#1d4ed8",
-    preset12: "#6b7280",
-    preset13: "#374151",
-    preset14: "#111827",
-    preset15: "#991b1b",
-    preset16: "#c2410c",
-    preset17: "#78350f",
-    preset18: "#854d0e",
-    preset19: "#166534",
-    preset20: "#0f766e",
-    preset21: "#3f6212",
-    preset22: "#1e3a8a",
-    preset23: "#581c87",
-    preset24: "#701a75",
-  };
-
-  return map[normalized] ?? "var(--ink-tertiary)";
+  return getOutlookCategoryColor(color) ?? "var(--ink-tertiary)";
 }
 
 function LockIcon() {

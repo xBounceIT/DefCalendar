@@ -62,6 +62,35 @@ const CALENDAR_COLORS: readonly { name: string; hex: string }[] = [
   { name: "yellow", hex: "#eab308" },
 ];
 
+const OUTLOOK_CATEGORY_COLORS: Readonly<Record<string, string>> = {
+  none: "",
+  preset0: "#c73d3d",
+  preset1: "#d97706",
+  preset2: "#8b5a3c",
+  preset3: "#ca8a04",
+  preset4: "#2f9e44",
+  preset5: "#0f766e",
+  preset6: "#5f7c24",
+  preset7: "#2563eb",
+  preset8: "#7e22ce",
+  preset9: "#be185d",
+  preset10: "#3b82f6",
+  preset11: "#1d4ed8",
+  preset12: "#6b7280",
+  preset13: "#374151",
+  preset14: "#111827",
+  preset15: "#991b1b",
+  preset16: "#c2410c",
+  preset17: "#78350f",
+  preset18: "#854d0e",
+  preset19: "#166534",
+  preset20: "#0f766e",
+  preset21: "#3f6212",
+  preset22: "#1e3a8a",
+  preset23: "#581c87",
+  preset24: "#701a75",
+};
+
 function getCalendarAccent(
   color: string | null | undefined,
   userColor: string | null | undefined,
@@ -82,6 +111,19 @@ function getCalendarColorName(color: string | null | undefined): string | null {
   }
   const match = CALENDAR_COLORS.find((c) => c.name === color || c.hex === color);
   return match?.name ?? null;
+}
+
+function getOutlookCategoryColor(color: string | null | undefined): null | string {
+  const normalized = color?.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (/^#[0-9a-f]{6}$/i.test(normalized)) {
+    return normalized;
+  }
+
+  return OUTLOOK_CATEGORY_COLORS[normalized] || null;
 }
 
 function toLocalDateKey(value: Date): string {
@@ -125,6 +167,7 @@ export {
   fromDateTimeInputValue,
   getCalendarAccent,
   getCalendarColorName,
+  getOutlookCategoryColor,
   isEventEditable,
   roundUpToNext15Minutes,
   toLocalDateKey,

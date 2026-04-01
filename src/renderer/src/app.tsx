@@ -6,6 +6,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   addMinutesToIso,
   buildEventDayKeys,
+  getOutlookCategoryColor,
   isEventEditable,
   roundUpToNext15Minutes,
 } from "@shared/calendar";
@@ -49,6 +50,7 @@ interface EditorSeed {
 }
 
 const EMPTY_CALENDARS: CalendarSummary[] = [];
+const EMPTY_CATEGORIES_BY_ACCOUNT: Record<string, OutlookCategory[]> = {};
 const EMPTY_EVENTS: CalendarEvent[] = [];
 const eventQueryKeys = {
   all: ["events"] as const,
@@ -156,7 +158,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   );
 
   const categoriesQuery = useQuery({
-    enabled: signedIn && editorState !== null && categoryAccountIds.length > 0,
+    enabled: signedIn && categoryAccountIds.length > 0,
     queryFn: async () => {
       const entries = await Promise.all(
         categoryAccountIds.map(async (homeAccountId) => {
@@ -169,6 +171,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     },
     queryKey: ["categories", ...categoryAccountIds],
   });
+  const availableCategoriesByAccount = categoriesQuery.data ?? EMPTY_CATEGORIES_BY_ACCOUNT;
 
   const visibleCalendarIds = useMemo(() => {
     const ids = calendars
@@ -408,6 +411,10 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     () => new Map(calendars.map((calendar) => [calendar.id, calendar])),
     [calendars],
   );
+  const categoryColorsByAccount = useMemo(
+    () => buildCategoryColorsByAccount(availableCategoriesByAccount),
+    [availableCategoriesByAccount],
+  );
 
   const editableCalendar = useMemo(
     () => getPreferredEditableCalendar(calendars, activeAccountId),
@@ -420,8 +427,8 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   );
 
   const calendarEvents = useMemo(
-    () => buildCalendarEvents(events, calendarMap),
-    [calendarMap, events],
+    () => buildCalendarEvents(events, calendarMap, categoryColorsByAccount),
+    [calendarMap, categoryColorsByAccount, events],
   );
   const miniCalendarEventDayKeys = useMemo(
     () => buildEventDayKeys(miniCalendarEventsQuery.data ?? EMPTY_EVENTS),
@@ -848,7 +855,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
       />
       <EventEditorDialog
         accounts={accounts}
-        availableCategoriesByAccount={categoriesQuery.data ?? {}}
+        availableCategoriesByAccount={availableCategoriesByAccount}
         onAddAttachment={addEventAttachment}
         onCancelMeeting={cancelMeeting}
         busy={busy}
@@ -897,9 +904,12 @@ function buildBannerMessage(args: {
 function buildCalendarEvents(
   events: CalendarEvent[],
   calendarMap: Map<string, CalendarSummary>,
+  categoryColorsByAccount: Map<string, Map<string, string>>,
 ): EventInput[] {
   return events.map((event) => {
     const calendar = calendarMap.get(event.calendarId);
+    const categoryColor = resolveFirstCategoryColor(event, calendar, categoryColorsByAccount);
+    const calendarColor = categoryColor ? null : (calendar?.userColor ?? calendar?.color ?? null);
     const supportsDirectManipulation = event.recurrence === null && !event.cancelled;
     const canEditEvent =
       Boolean(calendar?.canEdit) &&
@@ -913,14 +923,14 @@ function buildCalendarEvents(
       classNames = ["calendar-event--managed"];
     }
 
-    return {
+    const eventInput: EventInput = {
       allDay: event.isAllDay,
       classNames,
       durationEditable: canEditEvent,
       editable: canEditEvent,
       end: event.end,
       extendedProps: {
-        calendarColor: calendar?.userColor ?? calendar?.color ?? null,
+        calendarColor,
         calendarId: event.calendarId,
         eventData: event,
         eventId: event.id,
@@ -930,7 +940,65 @@ function buildCalendarEvents(
       startEditable: canEditEvent,
       title: event.subject,
     };
+
+    if (categoryColor) {
+      eventInput.backgroundColor = toEventBackgroundColor(categoryColor);
+      eventInput.borderColor = categoryColor;
+    }
+
+    return eventInput;
   });
+}
+
+function buildCategoryColorsByAccount(
+  availableCategoriesByAccount: Record<string, OutlookCategory[]>,
+): Map<string, Map<string, string>> {
+  const lookup = new Map<string, Map<string, string>>();
+
+  for (const [homeAccountId, categories] of Object.entries(availableCategoriesByAccount)) {
+    const colors = new Map<string, string>();
+
+    for (const category of categories) {
+      const color = getOutlookCategoryColor(category.color);
+      if (!color) {
+        continue;
+      }
+
+      colors.set(category.displayName.toLocaleLowerCase(), color);
+    }
+
+    lookup.set(homeAccountId, colors);
+  }
+
+  return lookup;
+}
+
+function resolveFirstCategoryColor(
+  event: Pick<CalendarEvent, "categories">,
+  calendar: CalendarSummary | undefined,
+  categoryColorsByAccount: Map<string, Map<string, string>>,
+): null | string {
+  const firstCategory = event.categories[0]?.trim();
+  if (!firstCategory || !calendar) {
+    return null;
+  }
+
+  return (
+    categoryColorsByAccount.get(calendar.homeAccountId)?.get(firstCategory.toLocaleLowerCase()) ??
+    null
+  );
+}
+
+function toEventBackgroundColor(color: string): string {
+  const normalized = color.replace(/^#/, "");
+  if (!/^[0-9a-f]{6}$/i.test(normalized)) {
+    return color;
+  }
+
+  const red = Number.parseInt(normalized.slice(0, 2), 16);
+  const green = Number.parseInt(normalized.slice(2, 4), 16);
+  const blue = Number.parseInt(normalized.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, 0.2)`;
 }
 
 function getPreferredEditableCalendar(
