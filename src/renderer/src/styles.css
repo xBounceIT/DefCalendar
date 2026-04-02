@@ -1649,7 +1649,7 @@ button {
   padding: 3px 6px;
   margin: 1px 3px;
   box-shadow: none;
-  border-left: 3px solid #5b7cfa;
+  border-left: 5px solid #5b7cfa;
   background: rgba(91, 124, 250, 0.12);
   color: var(--ink);
 }
@@ -1757,6 +1757,45 @@ button {
   background: var(--accent-bg);
   border-left-color: var(--accent);
   color: var(--ink);
+}
+
+.fc.fc-direction-ltr .fc-daygrid-block-event:not(.fc-event-start),
+.fc.fc-direction-rtl .fc-daygrid-block-event:not(.fc-event-end) {
+  border-left-width: 5px;
+}
+
+/* Override FullCalendar timegrid event border shorthand */
+.fc.fc-direction-ltr .fc-v-event,
+.fc.fc-direction-rtl .fc-v-event {
+  border-left-width: 5px;
+}
+
+.fc-event.calendar-event--tentative {
+  border-image: repeating-linear-gradient(
+      to bottom,
+      currentColor 0,
+      currentColor 4px,
+      transparent 4px,
+      transparent 8px
+    )
+    1;
+}
+
+.fc-event.calendar-event--needs-action {
+  border-left-width: 5px;
+  border-image: repeating-linear-gradient(
+      -45deg,
+      currentColor 0,
+      currentColor 3px,
+      transparent 3px,
+      transparent 6px
+    )
+    5;
+}
+
+.fc-event.calendar-event--declined {
+  background: transparent;
+  opacity: 0.5;
 }
 
 /* Readonly events */

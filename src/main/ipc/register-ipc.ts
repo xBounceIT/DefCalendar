@@ -1,4 +1,10 @@
 import type { BrowserWindow, IpcMainInvokeEvent } from "electron";
+import type {
+  CalendarEvent,
+  EventAttachment,
+  EventResponseAction,
+  ParticipantResponseStatus,
+} from "@shared/schemas";
 import {
   appUpdateStatusSchema,
   attachmentDeleteArgsSchema,
@@ -22,6 +28,7 @@ import {
   userSettingsPatchSchema,
 } from "@shared/schemas";
 import type AppDatabase from "@main/db/database";
+import { isMissingGraphItemError } from "@main/graph/calendar-service";
 import type GraphCalendarService from "@main/graph/calendar-service";
 import type MsalAuthService from "@main/auth/msal-auth-service";
 import type ReminderService from "@main/reminders/reminder-service";
@@ -62,6 +69,43 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     }
 
     return homeAccountId;
+  };
+
+  const toParticipantResponseStatus = (action: EventResponseAction): ParticipantResponseStatus => ({
+    response: action === "accept" ? "accepted" : action === "decline" ? "declined" : "tentative",
+    time: new Date().toISOString(),
+  });
+
+  const mergeCachedAttachments = (
+    event: CalendarEvent,
+    current: CalendarEvent | null,
+  ): CalendarEvent => {
+    if (!current || current.attachments.length === 0 || event.attachments.length > 0) {
+      return event;
+    }
+
+    return {
+      ...event,
+      attachments: current.attachments,
+      hasAttachments: event.hasAttachments || current.attachments.length > 0,
+    };
+  };
+
+  const applyResponseToEvent = (
+    event: CalendarEvent,
+    action: EventResponseAction,
+  ): CalendarEvent => ({
+    ...event,
+    isReminderOn: action === "decline" ? false : event.isReminderOn,
+    responseStatus: toParticipantResponseStatus(action),
+  });
+
+  const replaceStoredEvent = (current: CalendarEvent | null, nextEvent: CalendarEvent) => {
+    dependencies.db.upsertEvent(nextEvent);
+
+    if (current && current.id !== nextEvent.id) {
+      dependencies.db.deleteEvent(current.calendarId, current.id);
+    }
   };
 
   const broadcast = (channel: string, payload: unknown) => {
@@ -204,7 +248,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
 
     const homeAccountId = resolveCalendarHomeAccountId(draft.calendarId);
     const updated = await dependencies.graph.updateEvent(draft, homeAccountId);
-    dependencies.db.upsertEvent(updated);
+    replaceStoredEvent(current, mergeCachedAttachments(updated, current));
     await dependencies.reminders.checkNow();
     void dependencies.sync.syncAll("mutation", homeAccountId);
     return updated;
@@ -229,7 +273,28 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     validateMainSender(event);
     const args = respondToEventArgsSchema.parse(input);
     const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
+    const current = dependencies.db.getEvent(args.calendarId, args.eventId);
     await dependencies.graph.respondToEvent(args, homeAccountId);
+
+    let nextEvent = current;
+    try {
+      const refreshed = await dependencies.graph.getEvent(
+        args.calendarId,
+        args.eventId,
+        homeAccountId,
+      );
+      nextEvent = mergeCachedAttachments(refreshed, current);
+    } catch (error) {
+      if (!isMissingGraphItemError(error)) {
+        throw error;
+      }
+    }
+
+    if (nextEvent) {
+      replaceStoredEvent(current, applyResponseToEvent(nextEvent, args.action));
+    }
+
+    await dependencies.reminders.checkNow();
     void dependencies.sync.syncAll("mutation", homeAccountId);
   });
 
@@ -252,12 +317,23 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     validateMainSender(event);
     const args = eventReferenceArgsSchema.parse(input);
     const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
-    const attachments = await dependencies.graph.listAttachments(
-      args.calendarId,
-      args.eventId,
-      homeAccountId,
-    );
     const current = dependencies.db.getEvent(args.calendarId, args.eventId);
+
+    let attachments: EventAttachment[] = [];
+    try {
+      attachments = await dependencies.graph.listAttachments(
+        args.calendarId,
+        args.eventId,
+        homeAccountId,
+      );
+    } catch (error) {
+      if (!isMissingGraphItemError(error)) {
+        throw error;
+      }
+
+      return current?.attachments ?? [];
+    }
+
     if (current) {
       dependencies.db.upsertEvent({
         ...current,
@@ -272,6 +348,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     validateMainSender(event);
     const args = attachmentUploadArgsSchema.parse(input);
     const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
+    const current = dependencies.db.getEvent(args.calendarId, args.eventId);
     const attachments = await dependencies.graph.addAttachment(
       args.calendarId,
       args.eventId,
@@ -283,7 +360,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
       args.eventId,
       homeAccountId,
     );
-    dependencies.db.upsertEvent({
+    replaceStoredEvent(current, {
       ...refreshed,
       attachments,
       hasAttachments: attachments.length > 0,
@@ -296,6 +373,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     validateMainSender(event);
     const args = attachmentDeleteArgsSchema.parse(input);
     const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
+    const current = dependencies.db.getEvent(args.calendarId, args.eventId);
     const attachments = await dependencies.graph.removeAttachment(
       args.calendarId,
       args.eventId,
@@ -307,7 +385,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
       args.eventId,
       homeAccountId,
     );
-    dependencies.db.upsertEvent({
+    replaceStoredEvent(current, {
       ...refreshed,
       attachments,
       hasAttachments: attachments.length > 0,

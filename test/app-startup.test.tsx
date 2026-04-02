@@ -223,6 +223,7 @@ function createCalendarApiMock(): CalendarApi {
     },
     calendars: {
       list: vi.fn(),
+      setColor: vi.fn(),
       setVisibility: vi.fn(),
     },
     categories: {
@@ -294,6 +295,7 @@ function createCalendarApiMock(): CalendarApi {
       snooze: vi.fn(),
       dismiss: vi.fn(),
       dismissAll: vi.fn(),
+      minimizeWindow: vi.fn(),
     },
     window: {
       minimize: vi.fn(),
@@ -353,6 +355,7 @@ function createSignedInCalendarApiMock(): CalendarApi {
           ownerName: "Daniel D'Angeli",
         },
       ]),
+      setColor: vi.fn(),
       setVisibility: vi.fn(),
     },
     categories: {
@@ -427,6 +430,7 @@ function createSignedInCalendarApiMock(): CalendarApi {
       snooze: vi.fn(),
       dismiss: vi.fn(),
       dismissAll: vi.fn(),
+      minimizeWindow: vi.fn(),
     },
     window: {
       minimize: vi.fn(),
@@ -509,6 +513,7 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
           ownerName: "Daniel D'Angeli",
         },
       ]),
+      setColor: vi.fn(),
       setVisibility: vi.fn(),
     },
     categories: {
@@ -589,6 +594,7 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
       snooze: vi.fn(),
       dismiss: vi.fn(),
       dismissAll: vi.fn(),
+      minimizeWindow: vi.fn(),
     },
     window: {
       minimize: vi.fn(),
@@ -725,6 +731,48 @@ describe("app startup", () => {
     }
   });
 
+  it("normalizes attendee response values before assigning calendar event status classes", async () => {
+    try {
+      installResizeObserverMock();
+      const calendarApi = createSignedInCalendarApiMock();
+      calendarApi.events.list = vi.fn().mockResolvedValue([
+        createCalendarEvent({
+          id: "event-accepted",
+          isOrganizer: false,
+          responseStatus: {
+            response: " Accepted ",
+            time: null,
+          },
+        }),
+        createCalendarEvent({
+          id: "event-declined",
+          isOrganizer: false,
+          responseStatus: {
+            response: "DECLINED",
+            time: null,
+          },
+        }),
+      ]);
+      installCalendarApi(calendarApi);
+
+      renderApp();
+
+      await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
+      await waitFor(() => {
+        const calendarEvents = (capturedCalendarProps?.events as EventInput[] | undefined) ?? [];
+        expect(calendarEvents.length).toBe(2);
+      });
+
+      const calendarEvents = capturedCalendarProps?.events as EventInput[];
+
+      expect(calendarEvents[0]?.classNames).toContain("calendar-event--accepted");
+      expect(calendarEvents[1]?.classNames).toContain("calendar-event--declined");
+    } finally {
+      restoreCalendarApi();
+      restoreResizeObserver();
+    }
+  });
+
   it("refetches both board and mini-calendar events after refresh", async () => {
     try {
       installResizeObserverMock();
@@ -743,16 +791,18 @@ describe("app startup", () => {
 
       renderApp();
 
+      const listEventsMock = vi.mocked(calendarApi.events.list);
+
       await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
       await waitFor(() => {
-        expect(calendarApi.events.list.mock.calls.length).toBeGreaterThanOrEqual(2);
+        expect(listEventsMock.mock.calls.length).toBeGreaterThanOrEqual(2);
       });
 
       fireEvent.click(screen.getByTitle("Sync"));
 
       await waitFor(() => {
         expect(calendarApi.sync.refresh).toHaveBeenCalledOnce();
-        expect(calendarApi.events.list.mock.calls.length).toBeGreaterThanOrEqual(4);
+        expect(listEventsMock.mock.calls.length).toBeGreaterThanOrEqual(4);
       });
     } finally {
       restoreCalendarApi();
@@ -859,11 +909,12 @@ describe("app startup", () => {
       await waitFor(() => {
         expect(calendarApi.settings.update).toHaveBeenCalled();
       });
-      const settingsUpdateArg = calendarApi.settings.update.mock.calls.at(-1)?.[0];
+      const settingsUpdateArg = vi.mocked(calendarApi.settings.update).mock.calls.at(-1)?.[0];
       expect(settingsUpdateArg).toBeDefined();
       expect(settingsUpdateArg?.activeView).toBe("timeGridWeek");
-      expect(settingsUpdateArg?.selectedDate.slice(0, 10)).toBe(startupDateKey);
-      expect(settingsUpdateArg?.selectedDate.slice(0, 10)).not.toBe(
+      expect(settingsUpdateArg?.selectedDate).toBeDefined();
+      expect(settingsUpdateArg?.selectedDate?.slice(0, 10)).toBe(startupDateKey);
+      expect(settingsUpdateArg?.selectedDate?.slice(0, 10)).not.toBe(
         persistedSelectedDate.slice(0, 10),
       );
     } finally {

@@ -129,12 +129,17 @@ function createFixture() {
     upsertEvent: vi.fn(),
   };
   const graph = {
+    addAttachment: vi.fn().mockResolvedValue([]),
     cancelEvent: vi.fn().mockResolvedValue(undefined),
     createEvent: vi.fn().mockResolvedValue(storedEvent),
     deleteEvent: vi.fn().mockResolvedValue(undefined),
+    getEvent: vi.fn().mockResolvedValue(storedEvent),
+    listAttachments: vi.fn().mockResolvedValue([]),
     listOutlookCategories: vi
       .fn()
       .mockResolvedValue([{ color: "preset7", displayName: "Blue category" }]),
+    removeAttachment: vi.fn().mockResolvedValue([]),
+    respondToEvent: vi.fn().mockResolvedValue(undefined),
     updateEvent: vi.fn().mockResolvedValue(storedEvent),
   };
   const reminders = {
@@ -263,5 +268,84 @@ describe("register ipc", () => {
 
     expect(fixture.graph.listOutlookCategories).toHaveBeenCalledWith("account-1");
     expect(response).toStrictEqual([{ color: "preset7", displayName: "Blue category" }]);
+  });
+
+  it("keeps a declined attendee event locally when Graph can no longer fetch it", async () => {
+    const fixture = createFixture();
+    const invokeEvent = { sender: fixture.mainWebContents };
+    const attendeeEvent = {
+      ...createCalendarEvent(),
+      isOrganizer: false,
+    };
+
+    fixture.db.getEvent.mockReturnValue(attendeeEvent);
+    fixture.graph.getEvent.mockRejectedValueOnce(
+      new Error("The specified object was not found in the store."),
+    );
+
+    await fixture.handlers.get(IPC_CHANNELS.eventsRespond)?.(invokeEvent, {
+      action: "decline",
+      calendarId: "calendar-1",
+      comment: "",
+      eventId: "event-1",
+      sendResponse: false,
+    });
+
+    expect(fixture.graph.respondToEvent).toHaveBeenCalledWith(
+      {
+        action: "decline",
+        calendarId: "calendar-1",
+        comment: "",
+        eventId: "event-1",
+        sendResponse: false,
+      },
+      "account-1",
+    );
+    expect(fixture.db.upsertEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "event-1",
+        isReminderOn: false,
+        responseStatus: expect.objectContaining({
+          response: "declined",
+          time: expect.any(String),
+        }),
+      }),
+    );
+    expect(fixture.reminders.checkNow).toHaveBeenCalledOnce();
+    expect(fixture.sync.syncAll).toHaveBeenCalledWith("mutation", "account-1");
+    expect(fixture.reminders.checkNow.mock.invocationCallOrder[0]).toBeLessThan(
+      fixture.sync.syncAll.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("returns cached attachments when Graph reports the event is gone", async () => {
+    const fixture = createFixture();
+    const invokeEvent = { sender: fixture.mainWebContents };
+    const cachedAttachments = [
+      {
+        contentType: "text/plain",
+        id: "attachment-1",
+        isInline: false,
+        name: "agenda.txt",
+        size: 123,
+      },
+    ];
+
+    fixture.db.getEvent.mockReturnValue({
+      ...createCalendarEvent(),
+      attachments: cachedAttachments,
+      hasAttachments: true,
+    });
+    fixture.graph.listAttachments.mockRejectedValueOnce(
+      new Error("The process failed to get the correct properties."),
+    );
+
+    const response = await fixture.handlers.get(IPC_CHANNELS.eventsListAttachments)?.(invokeEvent, {
+      calendarId: "calendar-1",
+      eventId: "event-1",
+    });
+
+    expect(response).toStrictEqual(cachedAttachments);
+    expect(fixture.db.upsertEvent).not.toHaveBeenCalled();
   });
 });

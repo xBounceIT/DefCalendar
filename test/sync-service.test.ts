@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { SyncService } from "../src/main/sync/sync-service";
-import type { CalendarSummary, UserSettings } from "../src/shared/schemas";
+import type { CalendarEvent, CalendarSummary, UserSettings } from "../src/shared/schemas";
 
 interface SyncFixture {
   db: {
     getLatestSyncStatus: ReturnType<typeof vi.fn>;
     listCalendarIds: ReturnType<typeof vi.fn>;
+    listEvents: ReturnType<typeof vi.fn>;
     replaceEventsForCalendarRange: ReturnType<typeof vi.fn>;
     saveSyncState: ReturnType<typeof vi.fn>;
     upsertCalendars: ReturnType<typeof vi.fn>;
@@ -39,6 +40,50 @@ function createCalendar(id: string, homeAccountId = "account-1"): CalendarSummar
   };
 }
 
+function createEvent(overrides?: Partial<CalendarEvent>): CalendarEvent {
+  return {
+    allowNewTimeProposals: true,
+    attachments: [],
+    attendees: [],
+    body: null,
+    bodyContentType: "html",
+    bodyPreview: null,
+    calendarId: overrides?.calendarId ?? "calendar-a",
+    cancelled: false,
+    categories: [],
+    changeKey: null,
+    end: overrides?.end ?? "2026-03-30T11:00:00.000Z",
+    etag: null,
+    hasAttachments: false,
+    id: overrides?.id ?? "event-1",
+    isAllDay: false,
+    isOnlineMeeting: false,
+    isOrganizer: true,
+    isReminderOn: true,
+    lastModifiedDateTime: null,
+    location: null,
+    locations: [],
+    occurrenceId: null,
+    onlineMeeting: null,
+    onlineMeetingProvider: null,
+    organizer: null,
+    recurrence: null,
+    reminderMinutesBeforeStart: 15,
+    responseRequested: true,
+    responseStatus: null,
+    sensitivity: "normal",
+    seriesMasterId: null,
+    showAs: "busy",
+    start: overrides?.start ?? "2026-03-30T10:00:00.000Z",
+    subject: overrides?.subject ?? "Planning",
+    timeZone: "Europe/Rome",
+    type: null,
+    unsupportedReason: null,
+    webLink: null,
+    ...overrides,
+  };
+}
+
 function createFixture(args?: {
   accountIds?: string[];
   calendars?: CalendarSummary[];
@@ -59,6 +104,7 @@ function createFixture(args?: {
       state: "idle",
     }),
     listCalendarIds: vi.fn().mockReturnValue(args?.knownCalendarIds ?? []),
+    listEvents: vi.fn().mockReturnValue([]),
     replaceEventsForCalendarRange: vi.fn(),
     saveSyncState: vi.fn(),
     upsertCalendars: vi.fn(),
@@ -212,6 +258,65 @@ describe("sync service", () => {
     expect(fixture.db.replaceEventsForCalendarRange).toHaveBeenCalledTimes(2);
     expect(fixture.db.saveSyncState).toHaveBeenCalledTimes(2);
     expect(fixture.reminders.checkNow).toHaveBeenCalledOnce();
+  });
+
+  it("keeps locally declined attendee events when calendarView omits them", async () => {
+    const fixture = createFixture();
+    const declinedEvent = createEvent({
+      calendarId: "calendar-a",
+      id: "declined-event",
+      isOrganizer: false,
+      responseStatus: {
+        response: "declined",
+        time: "2026-03-29T12:00:00.000Z",
+      },
+    });
+
+    fixture.db.listEvents.mockReturnValue([declinedEvent]);
+
+    const status = await fixture.service.syncAll("manual");
+
+    expect(fixture.db.replaceEventsForCalendarRange).toHaveBeenCalledWith({
+      calendarId: "calendar-a",
+      events: [declinedEvent],
+      rangeEnd: expect.any(String),
+      rangeStart: expect.any(String),
+    });
+    expect(status.counts).toStrictEqual({ calendars: 1, events: 1 });
+  });
+
+  it("does not duplicate a declined event when Graph returns the same meeting under a new id", async () => {
+    const fixture = createFixture();
+    const localDeclinedEvent = createEvent({
+      calendarId: "calendar-a",
+      id: "old-id",
+      isOrganizer: false,
+      responseStatus: {
+        response: "declined",
+        time: "2026-03-29T12:00:00.000Z",
+      },
+    });
+    const syncedDeclinedEvent = createEvent({
+      calendarId: "calendar-a",
+      id: "new-id",
+      isOrganizer: false,
+      responseStatus: {
+        response: "declined",
+        time: "2026-03-29T12:05:00.000Z",
+      },
+    });
+
+    fixture.db.listEvents.mockReturnValue([localDeclinedEvent]);
+    fixture.graph.listCalendarView.mockResolvedValue([syncedDeclinedEvent]);
+
+    await fixture.service.syncAll("manual");
+
+    expect(fixture.db.replaceEventsForCalendarRange).toHaveBeenCalledWith({
+      calendarId: "calendar-a",
+      events: [syncedDeclinedEvent],
+      rangeEnd: expect.any(String),
+      rangeStart: expect.any(String),
+    });
   });
 
   it("returns an idle status when no calendars are selected", async () => {

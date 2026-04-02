@@ -93,6 +93,18 @@ interface GraphResponseStatus {
   time?: string;
 }
 
+class GraphRequestError extends Error {
+  readonly code: null | string;
+  readonly status: number;
+
+  constructor(message: string, status: number, code: null | string) {
+    super(message);
+    this.name = "GraphRequestError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
 interface GraphEvent {
   "@odata.etag"?: string;
   allowNewTimeProposals?: boolean;
@@ -243,7 +255,7 @@ class GraphCalendarService {
     }
 
     await this.requestJson(
-      `/me/calendars/${encodeURIComponent(draft.calendarId)}/events/${encodeURIComponent(draft.id)}`,
+      `/me/events/${encodeURIComponent(draft.id)}`,
       {
         body: JSON.stringify(this.toGraphEventPayload(draft, "update")),
         headers,
@@ -267,7 +279,7 @@ class GraphCalendarService {
 
     const response = parseGraphEvent(
       await this.requestJson(
-        `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}?${query.toString()}`,
+        `/me/events/${encodeURIComponent(eventId)}?${query.toString()}`,
         {},
         homeAccountId,
       ),
@@ -288,7 +300,7 @@ class GraphCalendarService {
     }
 
     await this.requestNoContent(
-      `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+      `/me/events/${encodeURIComponent(eventId)}`,
       {
         headers,
         method: "DELETE",
@@ -304,7 +316,7 @@ class GraphCalendarService {
     comment = "",
   ): Promise<void> {
     await this.requestNoContent(
-      `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}/cancel`,
+      `/me/events/${encodeURIComponent(eventId)}/cancel`,
       {
         body: JSON.stringify({ Comment: comment }),
         headers: {
@@ -318,7 +330,7 @@ class GraphCalendarService {
 
   async respondToEvent(args: RespondToEventArgs, homeAccountId: string): Promise<void> {
     await this.requestNoContent(
-      `/me/calendars/${encodeURIComponent(args.calendarId)}/events/${encodeURIComponent(args.eventId)}/${args.action}`,
+      `/me/events/${encodeURIComponent(args.eventId)}/${args.action}`,
       {
         body: JSON.stringify({
           comment: args.comment,
@@ -343,7 +355,7 @@ class GraphCalendarService {
     });
     const response = parseGraphCollection(
       await this.requestJson(
-        `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}/attachments?${query.toString()}`,
+        `/me/events/${encodeURIComponent(eventId)}/attachments?${query.toString()}`,
         {},
         homeAccountId,
       ),
@@ -359,7 +371,7 @@ class GraphCalendarService {
     homeAccountId: string,
   ): Promise<EventAttachment[]> {
     await this.requestJson(
-      `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}/attachments`,
+      `/me/events/${encodeURIComponent(eventId)}/attachments`,
       {
         body: JSON.stringify({
           "@odata.type": "#microsoft.graph.fileAttachment",
@@ -385,7 +397,7 @@ class GraphCalendarService {
     homeAccountId: string,
   ): Promise<EventAttachment[]> {
     await this.requestNoContent(
-      `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}/attachments/${encodeURIComponent(attachmentId)}`,
+      `/me/events/${encodeURIComponent(eventId)}/attachments/${encodeURIComponent(attachmentId)}`,
       {
         method: "DELETE",
       },
@@ -434,7 +446,7 @@ class GraphCalendarService {
   ): Promise<unknown> {
     const response = await this.sendRequest({ homeAccountId, init, pathOrUrl });
     if (!response.ok) {
-      throw new Error(await this.getErrorMessage(response));
+      throw await this.createRequestError(response);
     }
 
     return response.json();
@@ -447,7 +459,7 @@ class GraphCalendarService {
   ): Promise<void> {
     const response = await this.sendRequest({ homeAccountId, init, pathOrUrl });
     if (!response.ok) {
-      throw new Error(await this.getErrorMessage(response));
+      throw await this.createRequestError(response);
     }
 
     if (response.status !== 204 && response.status !== 202) {
@@ -463,7 +475,7 @@ class GraphCalendarService {
       ? await this.auth.getAccessTokenForAccount(homeAccountId, forceRefresh)
       : await this.auth.getAccessToken(forceRefresh);
     headers.set("Authorization", `Bearer ${accessToken}`);
-    headers.set("Prefer", `outlook.timezone="${this.config.timeZone}"`);
+    headers.set("Prefer", buildPreferHeader(headers.get("Prefer"), this.config.timeZone));
 
     let requestUrl = `${this.baseUrl}${pathOrUrl}`;
     if (pathOrUrl.startsWith("http")) {
@@ -500,23 +512,45 @@ class GraphCalendarService {
     return response;
   }
 
-  private async getErrorMessage(response: Response): Promise<string> {
-    const defaultMessage = `Microsoft Graph request failed with ${response.status}.`;
+  private async createRequestError(response: Response): Promise<GraphRequestError> {
+    const { code, message } = await this.getErrorDetails(response);
+    return new GraphRequestError(message, response.status, code);
+  }
 
-    try {
-      const body = await response.json();
-      const graphMessage = readGraphErrorMessage(body);
-      if (graphMessage) {
-        return graphMessage;
-      }
-    } catch {
-      const text = await response.text();
-      if (text) {
-        return text;
-      }
+  private async getErrorDetails(response: Response): Promise<{
+    code: null | string;
+    message: string;
+  }> {
+    const defaultMessage = `Microsoft Graph request failed with ${response.status}.`;
+    const text = await response.text();
+
+    if (!text) {
+      return {
+        code: null,
+        message: defaultMessage,
+      };
     }
 
-    return defaultMessage;
+    try {
+      const body = JSON.parse(text);
+      const graphError = readGraphErrorDetails(body);
+      if (graphError.message) {
+        return {
+          code: graphError.code,
+          message: graphError.message,
+        };
+      }
+    } catch {
+      return {
+        code: null,
+        message: text,
+      };
+    }
+
+    return {
+      code: null,
+      message: defaultMessage,
+    };
   }
 
   private getRetryDelay(retryAfter: null | string, retryCount: number): number {
@@ -1118,17 +1152,64 @@ function parseShowAs(value?: string): CalendarEvent["showAs"] {
   return null;
 }
 
-function readGraphErrorMessage(value: unknown): null | string {
+function buildPreferHeader(existingPrefer: null | string, timeZone: string): string {
+  const preferences = new Set<string>();
+
+  for (const value of (existingPrefer ?? "").split(",")) {
+    const normalized = value.trim();
+    if (normalized) {
+      preferences.add(normalized);
+    }
+  }
+
+  preferences.add(`outlook.timezone="${timeZone}"`);
+  preferences.add('IdType="ImmutableId"');
+
+  return [...preferences].join(", ");
+}
+
+function readGraphErrorDetails(value: unknown): {
+  code: null | string;
+  message: null | string;
+} {
   if (!isRecord(value)) {
-    return null;
+    return {
+      code: null,
+      message: null,
+    };
   }
 
   const error = readOptionalRecord(value, "error");
   if (!error) {
-    return null;
+    return {
+      code: null,
+      message: null,
+    };
   }
 
-  return readOptionalString(error, "message") ?? null;
+  return {
+    code: readOptionalString(error, "code") ?? null,
+    message: readOptionalString(error, "message") ?? null,
+  };
+}
+
+function isMissingGraphItemError(value: unknown): boolean {
+  if (value instanceof GraphRequestError) {
+    return (
+      value.status === 404 || value.code === "ErrorItemNotFound" || value.code === "itemNotFound"
+    );
+  }
+
+  if (!(value instanceof Error)) {
+    return false;
+  }
+
+  const message = value.message.toLowerCase();
+  return (
+    message.includes("specified object was not found in the store") ||
+    message.includes("process failed to get the correct properties") ||
+    message.includes("item not found")
+  );
 }
 
 function readOptionalArray(value: Record<string, unknown>, key: string): unknown[] | undefined {
@@ -1325,5 +1406,5 @@ function isString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
-export { extractPlainTextFromGraphHtml, normalizeGraphResponseValue };
+export { extractPlainTextFromGraphHtml, isMissingGraphItemError, normalizeGraphResponseValue };
 export default GraphCalendarService;

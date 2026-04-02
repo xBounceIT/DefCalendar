@@ -1,8 +1,60 @@
-import { describe, expect, it } from "vitest";
-import {
+import { afterEach, describe, expect, it, vi } from "vitest";
+import GraphCalendarService, {
   extractPlainTextFromGraphHtml,
+  isMissingGraphItemError,
   normalizeGraphResponseValue,
 } from "../src/main/graph/calendar-service";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+function createGraphEvent(overrides?: Record<string, unknown>) {
+  return {
+    attendees: [],
+    body: {
+      content: "",
+      contentType: "HTML",
+    },
+    end: {
+      dateTime: "2026-03-30T11:00:00.0000000",
+      timeZone: "UTC",
+    },
+    hasAttachments: false,
+    id: "event-1",
+    isAllDay: false,
+    isOrganizer: false,
+    isReminderOn: true,
+    organizer: {
+      emailAddress: {
+        address: "organizer@example.com",
+        name: "Organizer",
+      },
+    },
+    start: {
+      dateTime: "2026-03-30T10:00:00.0000000",
+      timeZone: "UTC",
+    },
+    subject: "Planning",
+    ...overrides,
+  };
+}
+
+function createService() {
+  const auth = {
+    getAccessToken: vi.fn().mockResolvedValue("token"),
+    getAccessTokenForAccount: vi.fn().mockResolvedValue("token"),
+    getAccountUsername: vi.fn().mockReturnValue("attendee@example.com"),
+  };
+
+  return new GraphCalendarService(
+    auth as never,
+    {
+      timeZone: "Europe/Rome",
+    } as never,
+  );
+}
 
 describe("graph calendar service body conversion", () => {
   it("returns null for empty input", () => {
@@ -57,5 +109,44 @@ describe("graph calendar service response normalization", () => {
     expect(normalizeGraphResponseValue(null)).toBeNull();
     expect(normalizeGraphResponseValue(undefined)).toBeNull();
     expect(normalizeGraphResponseValue("   ")).toBeNull();
+  });
+});
+
+describe("graph calendar service request handling", () => {
+  it("uses immutable ids and mailbox-wide event paths for item lookups", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ value: [] }))
+      .mockResolvedValueOnce(Response.json(createGraphEvent()))
+      .mockResolvedValueOnce(Response.json({ value: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const service = createService();
+
+    await service.listCalendarView(
+      "calendar-1",
+      "2026-03-30T00:00:00.000Z",
+      "2026-03-31T00:00:00.000Z",
+      "account-1",
+    );
+    await service.getEvent("calendar-1", "event-1", "account-1");
+    await service.listAttachments("calendar-1", "event-1", "account-1");
+
+    expect(String(fetchMock.mock.calls[1][0])).toContain("/me/events/event-1?");
+    expect(String(fetchMock.mock.calls[2][0])).toContain("/me/events/event-1/attachments?");
+
+    const preferHeader = new Headers(fetchMock.mock.calls[0][1]?.headers).get("Prefer");
+    expect(preferHeader).toContain('outlook.timezone="Europe/Rome"');
+    expect(preferHeader).toContain('IdType="ImmutableId"');
+  });
+
+  it("recognizes missing-store item errors", () => {
+    expect({
+      matches: isMissingGraphItemError(
+        new Error(
+          "The specified object was not found in the store. The process failed to get the correct properties.",
+        ),
+      ),
+    }).toMatchObject({ matches: true });
   });
 });
