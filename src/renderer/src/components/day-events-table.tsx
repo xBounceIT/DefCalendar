@@ -337,6 +337,7 @@ function DayEventsTable({
                 </div>
                 <div
                   className="day-events-table__resize-handle"
+                  onClick={(e) => e.stopPropagation()}
                   onMouseDown={(e) => handleMouseDown(e, "title", "start")}
                   role="separator"
                 />
