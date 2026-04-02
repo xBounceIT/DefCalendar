@@ -148,10 +148,18 @@ function useResizableColumns() {
   } | null>(null);
 
   const tableRef = React.useRef<HTMLTableElement | null>(null);
+  const suppressSortClickRef = React.useRef(false);
+  const suppressSortResetTimeoutRef = React.useRef<null | number>(null);
 
   const handleMouseDown = React.useCallback(
     (e: React.MouseEvent, column: string, nextColumn: string | null) => {
       e.preventDefault();
+      e.stopPropagation();
+      if (suppressSortResetTimeoutRef.current !== null) {
+        globalThis.clearTimeout(suppressSortResetTimeoutRef.current);
+        suppressSortResetTimeoutRef.current = null;
+      }
+      suppressSortClickRef.current = true;
       const startWidth = widths[column] ?? 15;
       const nextStartWidth = nextColumn ? (widths[nextColumn] ?? 15) : 0;
       setResizing({ column, startX: e.clientX, startWidth, nextColumn, nextStartWidth });
@@ -207,6 +215,13 @@ function useResizableColumns() {
 
     const handleMouseUp = () => {
       setResizing(null);
+      if (suppressSortResetTimeoutRef.current !== null) {
+        globalThis.clearTimeout(suppressSortResetTimeoutRef.current);
+      }
+      suppressSortResetTimeoutRef.current = globalThis.setTimeout(() => {
+        suppressSortClickRef.current = false;
+        suppressSortResetTimeoutRef.current = null;
+      }, 0);
     };
 
     document.addEventListener("mousemove", handleMouseMove);
@@ -218,7 +233,35 @@ function useResizableColumns() {
     };
   }, [resizing]);
 
-  return { widths, handleMouseDown, tableRef, isResizing: resizing !== null };
+  React.useEffect(
+    () => () => {
+      if (suppressSortResetTimeoutRef.current !== null) {
+        globalThis.clearTimeout(suppressSortResetTimeoutRef.current);
+      }
+    },
+    [],
+  );
+
+  const consumeSortSuppression = React.useCallback(() => {
+    if (!suppressSortClickRef.current) {
+      return false;
+    }
+
+    suppressSortClickRef.current = false;
+    if (suppressSortResetTimeoutRef.current !== null) {
+      globalThis.clearTimeout(suppressSortResetTimeoutRef.current);
+      suppressSortResetTimeoutRef.current = null;
+    }
+    return true;
+  }, []);
+
+  return {
+    consumeSortSuppression,
+    widths,
+    handleMouseDown,
+    tableRef,
+    isResizing: resizing !== null,
+  };
 }
 
 function DayEventsTable({
@@ -234,7 +277,8 @@ function DayEventsTable({
     column: "start",
     direction: "asc",
   });
-  const { widths, handleMouseDown, tableRef, isResizing } = useResizableColumns();
+  const { widths, handleMouseDown, tableRef, isResizing, consumeSortSuppression } =
+    useResizableColumns();
 
   const filteredEvents = React.useMemo(() => {
     if (!selectedDay) {
@@ -273,6 +317,10 @@ function DayEventsTable({
   );
 
   const handleSort = (column: SortColumn) => {
+    if (consumeSortSuppression()) {
+      return;
+    }
+
     setSort((current) => {
       if (current.column === column) {
         return {
@@ -337,7 +385,6 @@ function DayEventsTable({
                 </div>
                 <div
                   className="day-events-table__resize-handle"
-                  onClick={(e) => e.stopPropagation()}
                   onMouseDown={(e) => handleMouseDown(e, "title", "start")}
                   role="separator"
                 />
