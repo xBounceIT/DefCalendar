@@ -516,6 +516,13 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     });
   }
 
+  function handleJoinMeeting(event: CalendarEvent): void {
+    const joinUrl = event.onlineMeeting?.joinUrl;
+    if (joinUrl) {
+      window.open(joinUrl, "_blank", "noopener,noreferrer");
+    }
+  }
+
   async function handleEventMove(changeInfo: EventDropArg | EventResizeDoneArg): Promise<void> {
     const { calendarId, eventId } = changeInfo.event.extendedProps;
     const source = eventLookup.get(`${calendarId}:${eventId}`);
@@ -825,6 +832,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         onEventResize={(changeInfo) => {
           void handleEventMove(changeInfo);
         }}
+        onJoinMeeting={handleJoinMeeting}
         onNext={handleNext}
         onPrev={handlePrev}
         onToday={handleToday}

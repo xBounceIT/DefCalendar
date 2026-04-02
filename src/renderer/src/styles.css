@@ -1451,10 +1451,9 @@ button {
   font-weight: 500;
   font-size: 12px;
   color: var(--ink-secondary);
-  position: sticky;
-  top: var(--day-events-header-height);
-  z-index: 1;
   border-bottom: var(--border);
+  position: relative;
+  overflow: hidden;
 }
 
 .day-events-table__th:hover {
@@ -1469,6 +1468,27 @@ button {
 
 .day-events-table__sort-arrow {
   flex-shrink: 0;
+}
+
+.day-events-table__resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  background: transparent;
+}
+
+.day-events-table__resize-handle:hover,
+.day-events-table__resize-handle:active {
+  background: var(--accent);
+  opacity: 0.5;
+}
+
+.day-events-table--resizing {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .day-events-table__td {
@@ -1508,6 +1528,44 @@ button {
   font-size: 12px;
   background: var(--accent-soft);
   color: var(--ink);
+}
+
+.day-events-table__th--action {
+  cursor: default;
+}
+
+.day-events-table__td--action {
+  text-align: left;
+  padding-right: 16px;
+}
+
+.day-events-table__join-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px 4px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-secondary);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: pointer;
+  transition:
+    background 0.1s ease,
+    border-color 0.1s ease,
+    color 0.1s ease;
+}
+
+.day-events-table__join-btn:hover {
+  background: var(--surface-hover);
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.day-events-table__join-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .calendar-board {
@@ -1569,7 +1627,7 @@ button {
   --fc-event-bg-color: rgba(91, 124, 250, 0.15);
   --fc-event-border-color: #5b7cfa;
   --fc-event-text-color: var(--ink);
-  --fc-today-bg-color: rgba(91, 124, 250, 0.06);
+  --fc-today-bg-color: transparent;
 }
 
 .fc .fc-view-harness,
@@ -1606,10 +1664,6 @@ button {
   font-weight: 500;
 }
 
-.fc .fc-daygrid-day.fc-day-today {
-  background: var(--today-bg);
-}
-
 .fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
   background: var(--accent);
   color: white;
@@ -1620,6 +1674,11 @@ button {
   align-items: center;
   justify-content: center;
   margin: 4px;
+}
+
+.fc .fc-daygrid-day.fc-daygrid-day-selected,
+.fc .fc-daygrid-day.fc-day-today.fc-daygrid-day-selected {
+  background: var(--today-bg);
 }
 
 .fc .fc-day-other .fc-daygrid-day-number {
@@ -1800,7 +1859,7 @@ button {
 }
 
 .fc .fc-timegrid-col.fc-day-today {
-  background: var(--today-bg);
+  background: transparent;
 }
 
 .fc .fc-timegrid-now-indicator-line {

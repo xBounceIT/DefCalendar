@@ -73,6 +73,7 @@ function renderTable(args?: {
 
   const onClear = vi.fn();
   const onEventClick = vi.fn();
+  const onJoinMeeting = vi.fn();
 
   render(
     <I18nextProvider i18n={i18n}>
@@ -80,13 +81,14 @@ function renderTable(args?: {
         events={args?.events ?? []}
         onClear={onClear}
         onEventClick={onEventClick}
+        onJoinMeeting={onJoinMeeting}
         selectedDay={args?.selectedDay ?? "2026-03-30T00:00:00.000Z"}
         timeFormat="system"
       />
     </I18nextProvider>,
   );
 
-  return { onClear, onEventClick };
+  return { onClear, onEventClick, onJoinMeeting };
 }
 
 describe("day events table", () => {
@@ -114,13 +116,33 @@ describe("day events table", () => {
     expect(screen.getByText("Multi-day timed event")).toBeInTheDocument();
   });
 
-  it("opens event and clears table on row click", () => {
+  it("opens event on row click without clearing table", () => {
     const event = createEvent({ subject: "Clickable" });
     const { onClear, onEventClick } = renderTable({ events: [event] });
 
     fireEvent.click(screen.getByText("Clickable"));
 
     expect(onEventClick).toHaveBeenCalledWith(event);
-    expect(onClear).toHaveBeenCalledOnce();
+    expect(onClear).not.toHaveBeenCalled();
+  });
+
+  it("shows join button and calls onJoinMeeting when clicked", () => {
+    const event = createEvent({
+      subject: "Online Meeting Event",
+      onlineMeeting: {
+        joinUrl: "https://teams.example.com/meeting",
+        conferenceId: null,
+        phones: [],
+        provider: "Teams",
+      },
+    });
+    const { onJoinMeeting } = renderTable({ events: [event] });
+
+    const joinButton = screen.getByRole("button", { name: "Join meeting" });
+    expect(joinButton).toBeInTheDocument();
+
+    fireEvent.click(joinButton);
+
+    expect(onJoinMeeting).toHaveBeenCalledWith(event);
   });
 });

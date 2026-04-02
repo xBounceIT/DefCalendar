@@ -96,6 +96,7 @@
     "start": "Start",
     "end": "End",
     "category": "Category",
+    "action": "Action",
     "noEvents": "No events on this day",
     "eventsCount_one": "{{count}} event",
     "eventsCount_other": "{{count}} events"
