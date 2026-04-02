@@ -255,7 +255,7 @@ describe("reminder service", () => {
   it("shows a start-time reminder when the event starts", async () => {
     vi.setSystemTime(new Date("2026-03-30T10:00:00.000Z"));
     const fixture = createFixture({
-      candidates: [createCandidate({ reminderType: "start" })],
+      candidates: [createCandidate({ reminderMinutesBeforeStart: 0, reminderType: "start" })],
     });
 
     await fixture.service.checkNow();
@@ -265,6 +265,7 @@ describe("reminder service", () => {
         items: [
           expect.objectContaining({
             dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z:start",
+            reminderMinutesBeforeStart: 0,
             reminderType: "start",
           }),
         ],
@@ -273,20 +274,33 @@ describe("reminder service", () => {
     );
   });
 
-  it("snoozes start-time reminders independently from pre-event reminders", async () => {
+  it("keeps snoozed start-time reminders hidden until the snooze time expires", async () => {
     vi.setSystemTime(new Date("2026-03-30T10:00:00.000Z"));
     const fixture = createFixture({
       candidates: [
-        createCandidate({ reminderType: "pre" }),
-        createCandidate({ reminderType: "start", snoozedUntil: "2026-03-30T10:05:00.000Z" }),
+        createCandidate({
+          reminderMinutesBeforeStart: 0,
+          reminderType: "start",
+          snoozedUntil: "2026-03-30T10:05:00.000Z",
+        }),
       ],
     });
 
     await fixture.service.checkNow();
 
+    expect(fixture.reminderManager.show).not.toHaveBeenCalled();
+
+    vi.setSystemTime(new Date("2026-03-30T10:05:00.000Z"));
+    await fixture.service.checkNow();
+
     expect(fixture.reminderManager.show).toHaveBeenCalledWith(
       expect.objectContaining({
-        items: [expect.objectContaining({ reminderType: "pre" })],
+        items: [
+          expect.objectContaining({
+            reminderMinutesBeforeStart: 0,
+            reminderType: "start",
+          }),
+        ],
       }),
       true,
     );
