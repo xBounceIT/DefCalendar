@@ -108,7 +108,16 @@
         "test/**/*.ts"
       ],
       "rules": {
-        "no-console": "off"
+        "no-console": "off",
+        "vitest/require-mock-type-parameters": "off"
+      }
+    },
+    {
+      "files": [
+        "test/**/*.tsx"
+      ],
+      "rules": {
+        "vitest/require-mock-type-parameters": "off"
       }
     },
     {
