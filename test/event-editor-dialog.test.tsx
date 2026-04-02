@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createInstance } from "i18next";
 import React from "react";
 import { I18nextProvider, initReactI18next } from "react-i18next";
@@ -311,17 +311,22 @@ describe("event editor dialog", () => {
       },
     });
 
-    expect(screen.queryByRole("button", { name: "Add attendee" })).toBeNull();
-
     fireEvent.change(screen.getByPlaceholderText("Subject"), {
       target: { value: "Planning" },
     });
-    fireEvent.change(screen.getByRole("textbox", { name: "Required attendees" }), {
+    const requiredInput = screen.getByRole("textbox", { name: "Required attendees" });
+    const optionalInput = screen.getByRole("textbox", { name: "Optional attendees" });
+
+    fireEvent.change(requiredInput, {
       target: { value: "alice@example.com, bob@example.com" },
     });
-    fireEvent.change(screen.getByRole("textbox", { name: "Optional attendees" }), {
+    fireEvent.keyDown(requiredInput, { key: "Enter" });
+
+    fireEvent.change(optionalInput, {
       target: { value: "carol@example.com" },
     });
+    fireEvent.keyDown(optionalInput, { key: "Enter" });
+
     fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
 
     expect(onSave).toHaveBeenCalledWith(
@@ -373,7 +378,7 @@ describe("event editor dialog", () => {
     );
   });
 
-  it("prefills attendees row from existing attendees", () => {
+  it("prefills attendee pills in the matching rows", () => {
     renderDialog({
       state: {
         event: createEvent({
@@ -398,12 +403,17 @@ describe("event editor dialog", () => {
       },
     });
 
-    expect(screen.getByRole("textbox", { name: "Required attendees" })).toHaveValue(
-      "alice@example.com",
-    );
-    expect(screen.getByRole("textbox", { name: "Optional attendees" })).toHaveValue(
-      "bob@example.com",
-    );
+    const requiredRow = screen
+      .getByRole("textbox", { name: "Required attendees" })
+      .closest(".attendee-pills-wrapper");
+    const optionalRow = screen
+      .getByRole("textbox", { name: "Optional attendees" })
+      .closest(".attendee-pills-wrapper");
+
+    expect(requiredRow).toBeInstanceOf(HTMLElement);
+    expect(optionalRow).toBeInstanceOf(HTMLElement);
+    expect(within(requiredRow as HTMLElement).getByText("alice@example.com")).toBeInTheDocument();
+    expect(within(optionalRow as HTMLElement).getByText("bob@example.com")).toBeInTheDocument();
   });
 
   it("prefers required attendees when the same email is entered in both rows", () => {
@@ -420,12 +430,19 @@ describe("event editor dialog", () => {
     fireEvent.change(screen.getByPlaceholderText("Subject"), {
       target: { value: "Planning" },
     });
-    fireEvent.change(screen.getByRole("textbox", { name: "Required attendees" }), {
+    const requiredInput = screen.getByRole("textbox", { name: "Required attendees" });
+    const optionalInput = screen.getByRole("textbox", { name: "Optional attendees" });
+
+    fireEvent.change(requiredInput, {
       target: { value: "alice@example.com" },
     });
-    fireEvent.change(screen.getByRole("textbox", { name: "Optional attendees" }), {
+    fireEvent.keyDown(requiredInput, { key: "Enter" });
+
+    fireEvent.change(optionalInput, {
       target: { value: "alice@example.com, bob@example.com" },
     });
+    fireEvent.keyDown(optionalInput, { key: "Enter" });
+
     fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
 
     expect(onSave).toHaveBeenCalledWith(
@@ -450,7 +467,7 @@ describe("event editor dialog", () => {
     );
   });
 
-  it("preserves resource attendees outside the required and optional rows", () => {
+  it("preserves resource attendees outside the required and optional pill rows", () => {
     const { onSave } = renderDialog({
       state: {
         event: createEvent({
@@ -482,12 +499,17 @@ describe("event editor dialog", () => {
       },
     });
 
-    expect(screen.getByRole("textbox", { name: "Required attendees" })).toHaveValue(
-      "alice@example.com",
-    );
-    expect(screen.getByRole("textbox", { name: "Optional attendees" })).toHaveValue(
-      "bob@example.com",
-    );
+    const requiredRow = screen
+      .getByRole("textbox", { name: "Required attendees" })
+      .closest(".attendee-pills-wrapper");
+    const optionalRow = screen
+      .getByRole("textbox", { name: "Optional attendees" })
+      .closest(".attendee-pills-wrapper");
+
+    expect(requiredRow).toBeInstanceOf(HTMLElement);
+    expect(optionalRow).toBeInstanceOf(HTMLElement);
+    expect(within(requiredRow as HTMLElement).getByText("alice@example.com")).toBeInTheDocument();
+    expect(within(optionalRow as HTMLElement).getByText("bob@example.com")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
 
