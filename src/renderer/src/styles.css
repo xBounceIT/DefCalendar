@@ -3032,6 +3032,16 @@ button {
   padding: 8px;
 }
 
+.event-toolbar__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-size: 16px;
+  color: currentColor;
+}
+
 .event-toolbar__dropdown-label {
   white-space: nowrap;
   overflow: hidden;
