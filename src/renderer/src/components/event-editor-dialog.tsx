@@ -20,6 +20,8 @@ import {
   toDateTimeInputValue,
 } from "@shared/calendar";
 import { useTranslation } from "react-i18next";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faUser } from "@fortawesome/free-regular-svg-icons";
 
 import type { EditorState } from "../event-editor-state";
 import { formatHeaderDate, formatLocalizedDate } from "../date-formatting";
@@ -1953,20 +1955,9 @@ function LockIcon() {
 
 function ShowAsIcon() {
   return (
-    <svg
-      aria-hidden="true"
-      fill="none"
-      height="18"
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth="2"
-      viewBox="0 0 24 24"
-      width="18"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <polyline points="12 6 12 12 16 14" />
-    </svg>
+    <span className="event-toolbar__icon">
+      <FontAwesomeIcon icon={faUser} />
+    </span>
   );
 }
 
