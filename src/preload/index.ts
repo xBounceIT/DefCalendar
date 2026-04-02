@@ -33,6 +33,9 @@ const calendarApi: CalendarApi = {
   categories: {
     list: (args) => ipcRenderer.invoke(IPC_CHANNELS.categoriesList, args),
   },
+  contacts: {
+    search: (args) => ipcRenderer.invoke(IPC_CHANNELS.contactsSearch, args),
+  },
   events: {
     list: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsList, args),
     create: (draft) => ipcRenderer.invoke(IPC_CHANNELS.eventsCreate, draft),

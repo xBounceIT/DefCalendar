@@ -112,6 +112,7 @@ function renderDialog(props?: Partial<React.ComponentProps<typeof EventEditorDia
   });
 
   const onSave = props?.onSave ?? vi.fn().mockResolvedValue(undefined);
+  const onSearchContacts = props?.onSearchContacts ?? vi.fn().mockResolvedValue([]);
   const state: EditorState = props?.state ?? {
     event: createEvent(),
     mode: "edit",
@@ -149,6 +150,7 @@ function renderDialog(props?: Partial<React.ComponentProps<typeof EventEditorDia
         onOpenInOutlook={vi.fn().mockResolvedValue(undefined)}
         onRemoveAttachment={vi.fn().mockResolvedValue([])}
         onRespond={vi.fn().mockResolvedValue(undefined)}
+        onSearchContacts={onSearchContacts}
         onSave={onSave}
         state={state}
         timeFormat="system"
@@ -157,7 +159,7 @@ function renderDialog(props?: Partial<React.ComponentProps<typeof EventEditorDia
     </I18nextProvider>,
   );
 
-  return { ...view, onSave };
+  return { ...view, onSave, onSearchContacts };
 }
 
 function openSchedulingSection(container: HTMLElement) {
@@ -389,7 +391,54 @@ describe("event editor dialog", () => {
     });
 
     expect(screen.getByRole("textbox", { name: "Attendees" })).toHaveValue(
-      "alice@example.com, bob@example.com",
+      "Alice <alice@example.com>, Bob <bob@example.com>",
+    );
+  });
+
+  it("inserts a selected contact as Name <email> from the attendees popup", async () => {
+    const onSearchContacts = vi
+      .fn()
+      .mockResolvedValue([{ email: "john.doe@example.com", name: "Doe, John" }]);
+    const { onSave } = renderDialog({
+      onSearchContacts,
+      state: {
+        allDay: false,
+        calendarId: "calendar-1",
+        end: "2026-03-30T10:00:00.000Z",
+        mode: "create",
+        start: "2026-03-30T09:00:00.000Z",
+      },
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Subject"), {
+      target: { value: "Planning" },
+    });
+
+    const attendeesInput = screen.getByRole("textbox", { name: "Attendees" });
+    fireEvent.focus(attendeesInput);
+    fireEvent.change(attendeesInput, {
+      target: { value: '"Doe, J' },
+    });
+
+    await screen.findByRole("option", { name: /Doe, John/i });
+    fireEvent.click(screen.getByRole("option", { name: /Doe, John/i }));
+
+    expect(attendeesInput).toHaveValue('"Doe, John" <john.doe@example.com>, ');
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attendees: [
+          {
+            email: "john.doe@example.com",
+            name: "Doe, John",
+            response: null,
+            status: null,
+            type: "required",
+          },
+        ],
+      }),
     );
   });
 

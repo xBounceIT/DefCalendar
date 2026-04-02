@@ -6,6 +6,7 @@ interface SyncFixture {
   db: {
     getLatestSyncStatus: ReturnType<typeof vi.fn>;
     listCalendarIds: ReturnType<typeof vi.fn>;
+    replaceContactsForAccount: ReturnType<typeof vi.fn>;
     replaceEventsForCalendarRange: ReturnType<typeof vi.fn>;
     saveSyncState: ReturnType<typeof vi.fn>;
     upsertCalendars: ReturnType<typeof vi.fn>;
@@ -13,6 +14,7 @@ interface SyncFixture {
   graph: {
     listCalendarView: ReturnType<typeof vi.fn>;
     listCalendars: ReturnType<typeof vi.fn>;
+    listContacts: ReturnType<typeof vi.fn>;
   };
   reminders: {
     checkNow: ReturnType<typeof vi.fn>;
@@ -59,6 +61,7 @@ function createFixture(args?: {
       state: "idle",
     }),
     listCalendarIds: vi.fn().mockReturnValue(args?.knownCalendarIds ?? []),
+    replaceContactsForAccount: vi.fn(),
     replaceEventsForCalendarRange: vi.fn(),
     saveSyncState: vi.fn(),
     upsertCalendars: vi.fn(),
@@ -67,6 +70,7 @@ function createFixture(args?: {
   const graph = {
     listCalendarView: vi.fn().mockResolvedValue([]),
     listCalendars: vi.fn().mockResolvedValue(calendars),
+    listContacts: vi.fn().mockResolvedValue([]),
   };
 
   const reminders = {
@@ -152,6 +156,8 @@ describe("sync service", () => {
       [createCalendar("calendar-a"), createCalendar("calendar-b")],
       "account-1",
     );
+    expect(fixture.graph.listContacts).toHaveBeenCalledOnce();
+    expect(fixture.db.replaceContactsForAccount).toHaveBeenCalledWith([], "account-1");
     expect(fixture.settings.syncVisibleCalendars).toHaveBeenCalledWith({
       calendarIds: ["calendar-a", "calendar-b"],
       knownCalendarIds: [],
@@ -179,6 +185,7 @@ describe("sync service", () => {
 
     expect(status.counts).toStrictEqual({ calendars: 2, events: 0 });
     expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(2);
+    expect(fixture.graph.listContacts).toHaveBeenCalledTimes(2);
     expect(fixture.graph.listCalendars.mock.calls.map(([accountId]) => accountId)).toStrictEqual([
       "account-1",
       "account-2",
@@ -232,6 +239,29 @@ describe("sync service", () => {
     expect(fixture.graph.listCalendarView).toHaveBeenCalledTimes(0);
     expect(fixture.db.replaceEventsForCalendarRange).toHaveBeenCalledTimes(0);
     expect(fixture.reminders.checkNow).toHaveBeenCalledTimes(0);
+  });
+
+  it("keeps calendar discovery working when contacts sync fails", async () => {
+    const fixture = createFixture({
+      calendars: [createCalendar("calendar-a"), createCalendar("calendar-b")],
+    });
+
+    fixture.graph.listContacts.mockRejectedValue(new Error("Contacts unavailable"));
+
+    const status = await fixture.service.syncAll("sign-in");
+
+    expect(status).toStrictEqual({
+      lastSyncedAt: null,
+      message: "Choose calendars to sync.",
+      messageKey: "sync.chooseCalendars",
+      counts: null,
+      state: "idle",
+    });
+    expect(fixture.db.upsertCalendars).toHaveBeenCalledWith(
+      [createCalendar("calendar-a"), createCalendar("calendar-b")],
+      "account-1",
+    );
+    expect(fixture.db.replaceContactsForAccount).not.toHaveBeenCalled();
   });
 
   it("uses the saved interval for automatic sync", async () => {

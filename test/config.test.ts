@@ -16,12 +16,13 @@ describe("app config", () => {
       "User.Read",
       "Calendars.ReadWrite",
       "MailboxSettings.Read",
+      "Contacts.Read",
     ]);
   });
 
   it("supports optional development overrides for auth configuration", () => {
     const env: NodeJS.ProcessEnv = {
-      GRAPH_SCOPES: "User.Read Calendars.ReadWrite MailboxSettings.Read",
+      GRAPH_SCOPES: "User.Read Calendars.ReadWrite MailboxSettings.Read Contacts.Read",
       MSAL_AUTHORITY: "https://login.microsoftonline.com/example.onmicrosoft.com",
       MSAL_CLIENT_ID: "11111111-1111-1111-1111-111111111111",
     };
@@ -33,6 +34,7 @@ describe("app config", () => {
       "User.Read",
       "Calendars.ReadWrite",
       "MailboxSettings.Read",
+      "Contacts.Read",
     ]);
   });
 

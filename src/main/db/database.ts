@@ -1,7 +1,9 @@
 import type {
   CalendarEvent,
   CalendarSummary,
+  ContactSuggestion,
   EventListArgs,
+  SearchContactsArgs,
   StoredAccount,
   SyncStatus,
   UserSettings,
@@ -9,6 +11,7 @@ import type {
 import {
   calendarEventSchema,
   calendarSummarySchema,
+  contactSuggestionSchema,
   createDefaultSettings,
   storedAccountSchema,
   userSettingsSchema,
@@ -129,6 +132,115 @@ class AppDatabase {
     }
 
     return readStringProperty(row, "home_account_id");
+  }
+
+  replaceContactsForAccount(contacts: ContactSuggestion[], homeAccountId: string): void {
+    const insert = this.db.prepare(`
+      INSERT INTO contacts (
+        home_account_id,
+        email,
+        normalized_email,
+        name,
+        normalized_name,
+        search_text,
+        updated_at
+      ) VALUES (
+        @home_account_id,
+        @email,
+        @normalized_email,
+        @name,
+        @normalized_name,
+        @search_text,
+        @updated_at
+      )
+    `);
+
+    const deduped = new Map<string, ContactSuggestion>();
+    for (const contact of contacts) {
+      const normalizedEmail = normalizeContactEmail(contact.email);
+      if (!normalizedEmail) {
+        continue;
+      }
+
+      const name = normalizeContactName(contact.name);
+      const existing = deduped.get(normalizedEmail);
+      if (existing && existing.name) {
+        continue;
+      }
+
+      deduped.set(normalizedEmail, {
+        email: normalizedEmail,
+        name: name ?? existing?.name ?? null,
+      });
+    }
+
+    const transaction = this.db.transaction((items: ContactSuggestion[]) => {
+      this.db.prepare("DELETE FROM contacts WHERE home_account_id = ?").run(homeAccountId);
+
+      const updatedAt = new Date().toISOString();
+      for (const contact of items) {
+        const normalizedEmail = normalizeContactEmail(contact.email);
+        if (!normalizedEmail) {
+          continue;
+        }
+
+        const normalizedName = normalizeContactSearchValue(contact.name);
+        insert.run({
+          email: normalizedEmail,
+          home_account_id: homeAccountId,
+          name: normalizeContactName(contact.name),
+          normalized_email: normalizedEmail,
+          normalized_name: normalizedName,
+          search_text: [normalizedName, normalizedEmail].filter(Boolean).join(" "),
+          updated_at: updatedAt,
+        });
+      }
+    });
+
+    transaction([...deduped.values()]);
+  }
+
+  searchContacts(args: SearchContactsArgs): ContactSuggestion[] {
+    const normalizedQuery = normalizeContactSearchValue(args.query);
+    if (!normalizedQuery) {
+      return [];
+    }
+
+    const rows = this.db
+      .prepare(
+        String.raw`
+          SELECT email, name
+          FROM contacts
+          WHERE home_account_id = @home_account_id
+            AND search_text LIKE @contains ESCAPE '\'
+          ORDER BY
+            CASE
+              WHEN normalized_email = @exact THEN 0
+              WHEN normalized_name = @exact THEN 1
+              WHEN normalized_email LIKE @prefix ESCAPE '\' THEN 2
+              WHEN normalized_name LIKE @prefix ESCAPE '\' THEN 3
+              ELSE 4
+            END,
+            CASE WHEN name IS NULL THEN 1 ELSE 0 END,
+            name COLLATE NOCASE ASC,
+            email COLLATE NOCASE ASC
+          LIMIT @limit
+        `,
+      )
+      .all({
+        contains: `%${escapeLikePattern(normalizedQuery)}%`,
+        exact: normalizedQuery,
+        home_account_id: args.homeAccountId,
+        limit: args.limit,
+        prefix: `${escapeLikePattern(normalizedQuery)}%`,
+      });
+
+    return rows.map((row) =>
+      contactSuggestionSchema.parse({
+        email: readStringProperty(row, "email"),
+        name: readNullableStringProperty(row, "name"),
+      }),
+    );
   }
 
   setCalendarColor(calendarId: string, color: string): CalendarSummary | null {
@@ -710,6 +822,7 @@ class AppDatabase {
             "DELETE FROM events WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
           )
           .run(accountId);
+        this.db.prepare("DELETE FROM contacts WHERE home_account_id = ?").run(accountId);
         this.db.prepare("DELETE FROM calendars WHERE home_account_id = ?").run(accountId);
         this.db.prepare("DELETE FROM accounts WHERE home_account_id = ?").run(accountId);
       });
@@ -722,6 +835,7 @@ class AppDatabase {
       DELETE FROM notification_state;
       DELETE FROM sync_state;
       DELETE FROM events;
+      DELETE FROM contacts;
       DELETE FROM calendars;
       DELETE FROM settings;
       DELETE FROM accounts;
@@ -786,6 +900,7 @@ class AppDatabase {
   }
 
   removeAccount(homeAccountId: string): void {
+    this.db.prepare("DELETE FROM contacts WHERE home_account_id = ?").run(homeAccountId);
     this.db.prepare("DELETE FROM accounts WHERE home_account_id = ?").run(homeAccountId);
   }
 
@@ -825,6 +940,20 @@ class AppDatabase {
       );
 
       CREATE INDEX IF NOT EXISTS idx_events_range ON events (calendar_id, start_sort, end_sort);
+
+      CREATE TABLE IF NOT EXISTS contacts (
+        home_account_id TEXT NOT NULL,
+        email TEXT NOT NULL,
+        normalized_email TEXT NOT NULL,
+        name TEXT,
+        normalized_name TEXT NOT NULL,
+        search_text TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (home_account_id, normalized_email)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_contacts_search
+        ON contacts (home_account_id, normalized_name, normalized_email);
 
       CREATE TABLE IF NOT EXISTS sync_state (
         calendar_id TEXT PRIMARY KEY,
@@ -1006,6 +1135,26 @@ function escapeLikePattern(value: string): string {
     .replaceAll("\\", String.raw`\\`)
     .replaceAll("%", String.raw`\%`)
     .replaceAll("_", String.raw`\_`);
+}
+
+function normalizeContactEmail(value: null | string | undefined): null | string {
+  const normalized = value?.trim().toLowerCase();
+  return normalized || null;
+}
+
+function normalizeContactName(value: null | string | undefined): null | string {
+  const normalized = value?.trim();
+  return normalized || null;
+}
+
+function normalizeContactSearchValue(value: null | string | undefined): string {
+  return (
+    value
+      ?.toLowerCase()
+      .replace(/["'<>(),;:]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim() ?? ""
+  );
 }
 
 function toSqliteBoolean(value: boolean): 0 | 1 {

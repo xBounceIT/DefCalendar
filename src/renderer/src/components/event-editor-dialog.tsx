@@ -5,12 +5,14 @@ import type {
   BodyContentType,
   CalendarEvent,
   CalendarSummary,
+  ContactSuggestion,
   EventAttachment,
   EventDraft,
   EventParticipant,
   EventResponseAction,
   OutlookCategory,
   Recurrence,
+  SearchContactsArgs,
   UserSettings,
 } from "@shared/schemas";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -47,6 +49,7 @@ interface EventEditorDialogProps {
     comment: string,
     sendResponse: boolean,
   ) => Promise<void>;
+  onSearchContacts: (args: SearchContactsArgs) => Promise<ContactSuggestion[]>;
   onSave: (draft: EventDraft) => Promise<void>;
   state: EditorState | null;
   timeFormat: UserSettings["timeFormat"];
@@ -257,12 +260,10 @@ function EventEditorDialog(props: EventEditorDialogProps) {
 
             <div className="field-row">
               <AttendeesIcon />
-              <input
-                aria-label={t("eventEditor.tabs.attendees")}
-                className="field-input field-input--underline"
+              <AttendeesInputField
                 disabled={readOnlyForAttendee}
-                onChange={(event) => {
-                  const attendeesInput = event.target.value;
+                homeAccountId={selectedCalendar?.homeAccountId ?? null}
+                onChange={(attendeesInput) =>
                   setForm((current) =>
                     current
                       ? {
@@ -270,10 +271,10 @@ function EventEditorDialog(props: EventEditorDialogProps) {
                           ...buildAttendeesPatch(attendeesInput, current.attendees),
                         }
                       : current,
-                  );
-                }}
-                placeholder={t("eventEditor.tabs.attendees")}
-                type="text"
+                  )
+                }
+                onSearchContacts={props.onSearchContacts}
+                selectedAttendees={form.attendees}
                 value={form.attendeesInput}
               />
             </div>
@@ -1160,6 +1161,234 @@ function AttendeesSection({
       >
         {t("eventEditor.addAttendee")}
       </button>
+    </div>
+  );
+}
+
+function AttendeesInputField({
+  disabled,
+  homeAccountId,
+  onChange,
+  onSearchContacts,
+  selectedAttendees,
+  value,
+}: {
+  disabled: boolean;
+  homeAccountId: null | string;
+  onChange: (value: string) => void;
+  onSearchContacts: (args: SearchContactsArgs) => Promise<ContactSuggestion[]>;
+  selectedAttendees: EventParticipant[];
+  value: string;
+}) {
+  const { t } = useTranslation();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const pendingSelectionRef = useRef<null | number>(null);
+  const [cursorPosition, setCursorPosition] = useState(value.length);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const [isFocused, setIsFocused] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const [suggestions, setSuggestions] = useState<ContactSuggestion[]>([]);
+
+  useEffect(() => {
+    function handleClickOutside(clickEvent: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(clickEvent.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (pendingSelectionRef.current === null || !inputRef.current) {
+      return;
+    }
+
+    const nextPosition = Math.min(pendingSelectionRef.current, value.length);
+    inputRef.current.setSelectionRange(nextPosition, nextPosition);
+    pendingSelectionRef.current = null;
+  }, [value]);
+
+  useEffect(() => {
+    if (disabled || !homeAccountId || !isFocused) {
+      setIsLoading(false);
+      setIsOpen(false);
+      setSuggestions([]);
+      return;
+    }
+
+    const activeToken = getAttendeeTokenAtPosition(value, cursorPosition);
+    const query = activeToken.text.trim();
+    if (query.length === 0) {
+      setIsLoading(false);
+      setIsOpen(false);
+      setSuggestions([]);
+      return;
+    }
+
+    const currentToken = parseAttendeeToken(query);
+    const selectedEmails = new Set(
+      selectedAttendees
+        .map((attendee) => normalizeAttendeeEmail(attendee.email))
+        .filter((email): email is string => Boolean(email)),
+    );
+    if (currentToken) {
+      selectedEmails.delete(normalizeAttendeeEmail(currentToken.email)!);
+    }
+
+    let cancelled = false;
+    const timeoutId = globalThis.setTimeout(() => {
+      setIsLoading(true);
+      void onSearchContacts({ homeAccountId, limit: 8, query })
+        .then((results) => {
+          if (cancelled) {
+            return;
+          }
+
+          const filtered = results.filter(
+            (contact) => !selectedEmails.has(normalizeAttendeeEmail(contact.email)!),
+          );
+          setSuggestions(filtered);
+          setHighlightedIndex(0);
+          setIsOpen(filtered.length > 0);
+          setIsLoading(false);
+        })
+        .catch(() => {
+          if (cancelled) {
+            return;
+          }
+
+          setSuggestions([]);
+          setIsOpen(false);
+          setIsLoading(false);
+        });
+    }, 180);
+
+    return () => {
+      cancelled = true;
+      globalThis.clearTimeout(timeoutId);
+    };
+  }, [
+    cursorPosition,
+    disabled,
+    homeAccountId,
+    isFocused,
+    onSearchContacts,
+    selectedAttendees,
+    value,
+  ]);
+
+  const updateCursorPosition = () => {
+    setCursorPosition(inputRef.current?.selectionStart ?? value.length);
+  };
+
+  const selectSuggestion = (contact: ContactSuggestion) => {
+    const selectionPosition = inputRef.current?.selectionStart ?? cursorPosition;
+    const nextValue = replaceAttendeeToken(value, selectionPosition, contact);
+    pendingSelectionRef.current = nextValue.cursorPosition;
+    setCursorPosition(nextValue.cursorPosition);
+    setHighlightedIndex(0);
+    setIsOpen(false);
+    setSuggestions([]);
+    onChange(nextValue.value);
+    inputRef.current?.focus();
+  };
+
+  return (
+    <div className="attendee-field" ref={containerRef}>
+      <input
+        aria-autocomplete="list"
+        aria-haspopup="listbox"
+        aria-label={t("eventEditor.tabs.attendees")}
+        className="field-input field-input--underline attendee-field__input"
+        disabled={disabled}
+        onChange={(event) => {
+          setCursorPosition(event.target.selectionStart ?? event.target.value.length);
+          onChange(event.target.value);
+        }}
+        onClick={updateCursorPosition}
+        onBlur={() => {
+          setIsFocused(false);
+          setIsOpen(false);
+        }}
+        onFocus={() => {
+          setIsFocused(true);
+          updateCursorPosition();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            setIsOpen(false);
+            return;
+          }
+
+          if (!isOpen || suggestions.length === 0) {
+            return;
+          }
+
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setHighlightedIndex((current) => (current + 1) % suggestions.length);
+            return;
+          }
+
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            setHighlightedIndex((current) =>
+              current === 0 ? suggestions.length - 1 : current - 1,
+            );
+            return;
+          }
+
+          if (event.key === "Enter") {
+            event.preventDefault();
+            const selectedSuggestion = suggestions[highlightedIndex];
+            if (selectedSuggestion) {
+              selectSuggestion(selectedSuggestion);
+            }
+          }
+        }}
+        onKeyUp={updateCursorPosition}
+        onSelect={updateCursorPosition}
+        placeholder={t("eventEditor.tabs.attendees")}
+        ref={inputRef}
+        type="text"
+        value={value}
+      />
+      {(isLoading || isOpen) && (
+        <div className="event-toolbar__dropdown attendee-field__dropdown" role="listbox">
+          {isLoading && <div className="event-toolbar__dropdown-note">{t("common.loading")}</div>}
+          {!isLoading &&
+            suggestions.map((contact, index) => {
+              const displayName = formatAttendeeInputToken(contact);
+              const selected = index === highlightedIndex;
+              return (
+                <button
+                  key={`${contact.email}-${index}`}
+                  className={`event-toolbar__dropdown-item attendee-field__suggestion ${selected ? "event-toolbar__dropdown-item--selected" : ""}`}
+                  onClick={() => selectSuggestion(contact)}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => setHighlightedIndex(index)}
+                  aria-selected={selected}
+                  role="option"
+                  type="button"
+                >
+                  <span className="attendee-field__suggestion-name">{displayName}</span>
+                  {contact.name && (
+                    <span className="attendee-field__suggestion-email">{contact.email}</span>
+                  )}
+                </button>
+              );
+            })}
+        </div>
+      )}
     </div>
   );
 }
@@ -2460,16 +2689,20 @@ function buildAttendeesFromInput(
     existingByEmail.set(normalizedEmail, attendee);
   }
 
-  return parseAttendeeEmails(attendeesInput).map((email) => {
-    const normalizedEmail = normalizeAttendeeEmail(email);
+  return parseAttendeeEntries(attendeesInput).map((entry) => {
+    const normalizedEmail = normalizeAttendeeEmail(entry.email);
     const existingAttendee = normalizedEmail ? existingByEmail.get(normalizedEmail) : null;
     if (existingAttendee) {
-      return { ...existingAttendee, email };
+      return {
+        ...existingAttendee,
+        email: entry.email,
+        name: entry.name ?? existingAttendee.name ?? null,
+      };
     }
 
     return {
-      email,
-      name: null,
+      email: entry.email,
+      name: entry.name,
       response: null,
       status: null,
       type: "required",
@@ -2479,23 +2712,191 @@ function buildAttendeesFromInput(
 
 function formatAttendeesInput(attendees: EventParticipant[]): string {
   return attendees
-    .map((attendee) => attendee.email?.trim() ?? "")
+    .map((attendee) => formatAttendeeInputToken(attendee))
     .filter(Boolean)
     .join(", ");
 }
 
-function parseAttendeeEmails(value: string): string[] {
-  const uniqueEmails = new Map<string, string>();
-  for (const part of value.split(/[\n,;]+/)) {
-    const email = part.trim();
-    const normalizedEmail = normalizeAttendeeEmail(email);
+function parseAttendeeEntries(value: string): { email: string; name: null | string }[] {
+  const uniqueEmails = new Map<string, { email: string; name: null | string }>();
+  for (const token of splitAttendeeInputTokens(value)) {
+    const attendee = parseAttendeeToken(token.text);
+    if (!attendee) {
+      continue;
+    }
+
+    const normalizedEmail = normalizeAttendeeEmail(attendee.email);
     if (!normalizedEmail || uniqueEmails.has(normalizedEmail)) {
       continue;
     }
-    uniqueEmails.set(normalizedEmail, email);
+
+    uniqueEmails.set(normalizedEmail, attendee);
   }
 
   return [...uniqueEmails.values()];
+}
+
+function parseAttendeeToken(value: string): { email: string; name: null | string } | null {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    return null;
+  }
+
+  if (trimmedValue.endsWith(">")) {
+    const openIndex = trimmedValue.lastIndexOf("<");
+    if (openIndex > 0) {
+      const email = trimmedValue.slice(openIndex + 1, -1).trim();
+      if (email) {
+        return {
+          email,
+          name: parseAttendeeName(trimmedValue.slice(0, openIndex)),
+        };
+      }
+    }
+  }
+
+  return {
+    email: trimmedValue,
+    name: null,
+  };
+}
+
+function parseAttendeeName(value: string): null | string {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    return null;
+  }
+
+  if (trimmedValue.startsWith('"') && trimmedValue.endsWith('"') && trimmedValue.length >= 2) {
+    const unescapedValue = trimmedValue
+      .slice(1, -1)
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, "\\")
+      .trim();
+    return unescapedValue || null;
+  }
+
+  return trimmedValue;
+}
+
+function splitAttendeeInputTokens(value: string): { end: number; start: number; text: string }[] {
+  const tokens: { end: number; start: number; text: string }[] = [];
+  let tokenStart = 0;
+  let inAngleBrackets = false;
+  let inQuotes = false;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (character === '"' && !inAngleBrackets && !isEscapedAttendeeCharacter(value, index)) {
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (!inQuotes && character === "<") {
+      inAngleBrackets = true;
+      continue;
+    }
+
+    if (!inQuotes && character === ">") {
+      inAngleBrackets = false;
+      continue;
+    }
+
+    if (!inQuotes && !inAngleBrackets && isAttendeeSeparator(character)) {
+      tokens.push({ end: index, start: tokenStart, text: value.slice(tokenStart, index) });
+      tokenStart = index + 1;
+    }
+  }
+
+  tokens.push({ end: value.length, start: tokenStart, text: value.slice(tokenStart) });
+  return tokens;
+}
+
+function getAttendeeTokenAtPosition(
+  value: string,
+  position: number,
+): { end: number; start: number; text: string } {
+  const tokens = splitAttendeeInputTokens(value);
+  const clampedPosition = Math.min(Math.max(position, 0), value.length);
+
+  for (const token of tokens) {
+    if (clampedPosition >= token.start && clampedPosition <= token.end) {
+      return token;
+    }
+  }
+
+  return tokens[tokens.length - 1] ?? { end: 0, start: 0, text: "" };
+}
+
+function replaceAttendeeToken(
+  value: string,
+  position: number,
+  contact: ContactSuggestion,
+): { cursorPosition: number; value: string } {
+  const tokens = splitAttendeeInputTokens(value);
+  const activeToken = getAttendeeTokenAtPosition(value, position);
+  const activeIndex = tokens.findIndex(
+    (token) => token.start === activeToken.start && token.end === activeToken.end,
+  );
+  const beforeParts = tokens
+    .slice(0, Math.max(activeIndex, 0))
+    .map((token) => token.text.trim())
+    .filter(Boolean);
+  const afterParts = tokens
+    .slice(Math.max(activeIndex + 1, 0))
+    .map((token) => token.text.trim())
+    .filter(Boolean);
+  const currentPart = formatAttendeeInputToken(contact);
+
+  if (afterParts.length === 0) {
+    const nextValue = [...beforeParts, currentPart].join(", ");
+    const valueWithSeparator = nextValue ? `${nextValue}, ` : "";
+    return {
+      cursorPosition: valueWithSeparator.length,
+      value: valueWithSeparator,
+    };
+  }
+
+  const valueBeforeCursor = [...beforeParts, currentPart].join(", ");
+  return {
+    cursorPosition: valueBeforeCursor.length,
+    value: [...beforeParts, currentPart, ...afterParts].join(", "),
+  };
+}
+
+function formatAttendeeInputToken(value: { email: string | null; name: null | string }): string {
+  const email = value.email?.trim();
+  if (!email) {
+    return "";
+  }
+
+  const name = value.name?.trim();
+  if (!name) {
+    return email;
+  }
+
+  return `${formatAttendeeName(name)} <${email}>`;
+}
+
+function formatAttendeeName(value: string): string {
+  if (!/[",;<>\n]/.test(value)) {
+    return value;
+  }
+
+  return `"${value.replaceAll("\\", String.raw`\\`).replaceAll('"', String.raw`\"`)}"`;
+}
+
+function isAttendeeSeparator(value: string): boolean {
+  return value === "," || value === ";" || value === "\n";
+}
+
+function isEscapedAttendeeCharacter(value: string, index: number): boolean {
+  let slashCount = 0;
+  for (let cursor = index - 1; cursor >= 0 && value[cursor] === "\\"; cursor -= 1) {
+    slashCount += 1;
+  }
+
+  return slashCount % 2 === 1;
 }
 
 function normalizeAttendeeEmail(value: null | string | undefined): null | string {

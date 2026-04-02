@@ -228,6 +228,9 @@ function createCalendarApiMock(): CalendarApi {
     categories: {
       list: vi.fn().mockResolvedValue([]),
     },
+    contacts: {
+      search: vi.fn().mockResolvedValue([]),
+    },
     events: {
       addAttachment: vi.fn(),
       cancel: vi.fn(),
@@ -357,6 +360,9 @@ function createSignedInCalendarApiMock(): CalendarApi {
     },
     categories: {
       list: vi.fn().mockResolvedValue([]),
+    },
+    contacts: {
+      search: vi.fn().mockResolvedValue([]),
     },
     events: {
       addAttachment: vi.fn(),
@@ -514,6 +520,9 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
     categories: {
       list: vi.fn().mockResolvedValue([]),
     },
+    contacts: {
+      search: vi.fn().mockResolvedValue([]),
+    },
     events: {
       create: vi.fn(),
       delete: vi.fn(),
@@ -599,6 +608,57 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
   };
 }
 
+function createDelayedAuthRefreshCalendarApiMock(): CalendarApi {
+  const base = createCalendarApiMock();
+  const signedInState = {
+    status: "signed_in" as const,
+    account: {
+      homeAccountId: "account-1",
+      username: "daniel.dangeli@syncsecurity.it",
+      name: "Daniel D'Angeli",
+      tenantId: "tenant-1",
+      color: "#5b7cfa",
+    },
+    accounts: [
+      {
+        homeAccountId: "account-1",
+        username: "daniel.dangeli@syncsecurity.it",
+        name: "Daniel D'Angeli",
+        tenantId: "tenant-1",
+        color: "#5b7cfa",
+        lastSignedInAt: "2026-03-27T08:00:00.000Z",
+      },
+    ],
+    activeAccountId: "account-1",
+  };
+
+  return {
+    ...base,
+    auth: {
+      ...base.auth,
+      getState: vi.fn().mockResolvedValue({ status: "signed_out", accounts: [] }),
+      signInWithExchange365: vi.fn().mockResolvedValue(signedInState),
+    },
+    calendars: {
+      list: vi.fn().mockResolvedValue([
+        {
+          id: "calendar-1",
+          homeAccountId: "account-1",
+          name: "Calendar One",
+          color: "#5b7cfa",
+          canEdit: true,
+          canShare: false,
+          isDefaultCalendar: true,
+          isVisible: true,
+          ownerAddress: "daniel.dangeli@syncsecurity.it",
+          ownerName: "Daniel D'Angeli",
+        },
+      ]),
+      setVisibility: vi.fn(),
+    },
+  };
+}
+
 describe("app startup", () => {
   it("renders the Exchange auth screen when the preload bridge is available", async () => {
     try {
@@ -634,6 +694,26 @@ describe("app startup", () => {
       expect(screen.getByRole("button", { name: "Start syncing" })).not.toBeNull();
       expect(screen.getByText("Calendar One")).not.toBeNull();
       expect(screen.queryByText("Calendar Two")).toBeNull();
+    } finally {
+      restoreCalendarApi();
+      restoreResizeObserver();
+    }
+  });
+
+  it("uses the returned sign-in state before auth refetch completes", async () => {
+    try {
+      installResizeObserverMock();
+      installCalendarApi(createDelayedAuthRefreshCalendarApiMock());
+
+      renderApp();
+
+      await expect(
+        screen.findByRole("button", { name: "Sync Microsoft 365" }),
+      ).resolves.not.toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Sync Microsoft 365" }));
+
+      await expect(screen.findByText("Choose calendars to sync")).resolves.not.toBeNull();
+      expect(screen.getByText("Calendar One")).not.toBeNull();
     } finally {
       restoreCalendarApi();
       restoreResizeObserver();

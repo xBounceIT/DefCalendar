@@ -64,6 +64,11 @@ const outlookCategorySchema = z.object({
   displayName: z.string(),
 });
 
+const contactSuggestionSchema = z.object({
+  email: z.string().email(),
+  name: z.string().nullable(),
+});
+
 const attendeeTypeSchema = z.enum(["required", "optional", "resource"]);
 
 const participantResponseStatusSchema = z.object({
@@ -297,6 +302,12 @@ const listOutlookCategoriesArgsSchema = z.object({
   homeAccountId: z.string(),
 });
 
+const searchContactsArgsSchema = z.object({
+  homeAccountId: z.string(),
+  limit: z.number().int().min(1).max(25).default(8),
+  query: z.string().trim().min(1).max(200),
+});
+
 const deleteEventArgsSchema = z.object({
   calendarId: z.string(),
   eventId: z.string(),
@@ -468,6 +479,7 @@ type AuthSignInMode = z.infer<typeof authSignInModeSchema>;
 type AuthSignInRequest = z.infer<typeof authSignInRequestSchema>;
 type CalendarSummary = z.infer<typeof calendarSummarySchema>;
 type OutlookCategory = z.infer<typeof outlookCategorySchema>;
+type ContactSuggestion = z.infer<typeof contactSuggestionSchema>;
 type AttendeeType = z.infer<typeof attendeeTypeSchema>;
 type ParticipantResponseStatus = z.infer<typeof participantResponseStatusSchema>;
 type EventParticipant = z.infer<typeof eventParticipantSchema>;
@@ -486,6 +498,7 @@ type EventListArgs = z.infer<typeof eventListArgsSchema>;
 type SetCalendarVisibilityArgs = z.infer<typeof setCalendarVisibilityArgsSchema>;
 type SetCalendarColorArgs = z.infer<typeof setCalendarColorArgsSchema>;
 type ListOutlookCategoriesArgs = z.infer<typeof listOutlookCategoriesArgsSchema>;
+type SearchContactsArgs = z.infer<typeof searchContactsArgsSchema>;
 type DeleteEventArgs = z.infer<typeof deleteEventArgsSchema>;
 type EventReferenceArgs = z.infer<typeof eventReferenceArgsSchema>;
 type RespondToEventArgs = z.infer<typeof respondToEventArgsSchema>;
@@ -529,6 +542,7 @@ export {
   calendarEventSchema,
   calendarSummarySchema,
   outlookCategorySchema,
+  contactSuggestionSchema,
   calendarViewSchema,
   cancelEventArgsSchema,
   createDefaultSettings,
@@ -559,6 +573,7 @@ export {
   recurrenceSchema,
   respondToEventArgsSchema,
   listOutlookCategoriesArgsSchema,
+  searchContactsArgsSchema,
   setCalendarVisibilityArgsSchema,
   setCalendarColorArgsSchema,
   sensitivitySchema,
@@ -584,9 +599,11 @@ export {
   type CalendarSummary,
   type CalendarView,
   type CancelEventArgs,
+  type ContactSuggestion,
   type DeleteEventArgs,
   type EventAttachment,
   type ListOutlookCategoriesArgs,
+  type SearchContactsArgs,
   type LocalReminderRule,
   type LocalReminderWhen,
   type ReminderDismissArgs,

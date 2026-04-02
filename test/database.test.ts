@@ -48,6 +48,7 @@ describe("database", () => {
       String.raw`DELETE FROM notification_state WHERE dedupe_key LIKE ? ESCAPE '\'`,
       "DELETE FROM sync_state WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
       "DELETE FROM events WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
+      "DELETE FROM contacts WHERE home_account_id = ?",
       "DELETE FROM calendars WHERE home_account_id = ?",
       "DELETE FROM accounts WHERE home_account_id = ?",
     ]);
@@ -71,6 +72,9 @@ describe("database", () => {
         "DELETE FROM events WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
       ),
     ).toHaveBeenCalledWith(targetAccountId);
+    expect(runs.get("DELETE FROM contacts WHERE home_account_id = ?")).toHaveBeenCalledWith(
+      targetAccountId,
+    );
     expect(runs.get("DELETE FROM calendars WHERE home_account_id = ?")).toHaveBeenCalledWith(
       targetAccountId,
     );
@@ -132,6 +136,41 @@ describe("database", () => {
         userColor: null,
       },
     ]);
+  });
+
+  it("searches contacts with normalized attendee input", () => {
+    const all = vi.fn().mockReturnValue([
+      { email: "john@example.com", name: "Doe, John" },
+      { email: "jane@example.com", name: null },
+    ]);
+    const prepare = vi.fn((sql: string) => {
+      if (!sql.includes("FROM contacts")) {
+        throw new Error(`Unexpected SQL: ${sql}`);
+      }
+
+      return { all };
+    });
+
+    const db = Object.create(AppDatabase.prototype) as AppDatabase;
+    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+
+    expect(
+      db.searchContacts({
+        homeAccountId: "account-1",
+        limit: 5,
+        query: '"Doe, Jo" <jo',
+      }),
+    ).toStrictEqual([
+      { email: "john@example.com", name: "Doe, John" },
+      { email: "jane@example.com", name: null },
+    ]);
+    expect(all).toHaveBeenCalledWith({
+      contains: "%doe jo jo%",
+      exact: "doe jo jo",
+      home_account_id: "account-1",
+      limit: 5,
+      prefix: "doe jo jo%",
+    });
   });
 
   it("backfills past-due reminders when reminder_state is created during migration", () => {

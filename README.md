@@ -30,7 +30,7 @@ Desktop calendar app for Microsoft 365 Exchange Online built with Electron.
 5. Under `Authentication > Add a platform`, add `Mobile and desktop applications` with the redirect URI `http://localhost`.
 6. Grant delegated Microsoft Graph permissions:
    - `openid`, `profile`, `offline_access`
-   - `User.Read`, `Calendars.ReadWrite`, `MailboxSettings.Read`
+   - `User.Read`, `Calendars.ReadWrite`, `MailboxSettings.Read`, `Contacts.Read`
 7. Use `.env.example` for optional development overrides; packaged end users should use the bundled app registration.
 8. For tenant-specific development, override `MSAL_AUTHORITY`.
 

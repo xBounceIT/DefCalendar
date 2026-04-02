@@ -26,6 +26,7 @@ import type {
   OutlookCategory,
   EventResponseAction,
   RespondToEventArgs,
+  SearchContactsArgs,
   SyncStatus,
 } from "@shared/schemas";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -218,13 +219,14 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     onError: (error) => {
       setBannerError(toErrorMessage(error));
     },
-    onSuccess: async () => {
+    onSuccess: async (state) => {
       setBannerError(null);
       setShowAuthScreen(false);
-      setShowCalendarSelection(true);
+      setShowCalendarSelection(state.status === "signed_in");
+      queryClient.setQueryData(["auth"], state);
       queryClient.setQueryData(["calendars"], EMPTY_CALENDARS);
       queryClient.removeQueries({ queryKey: eventQueryKeys.all });
-      await invalidateCalendarData(queryClient);
+      await invalidateWorkspaceData(queryClient);
     },
   });
 
@@ -332,8 +334,9 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
       }
     });
 
-    const unsubscribeAuth = calendarApi.auth.onState(() => {
-      void invalidateCalendarData(queryClient);
+    const unsubscribeAuth = calendarApi.auth.onState((state) => {
+      queryClient.setQueryData(["auth"], state);
+      void invalidateWorkspaceData(queryClient);
     });
 
     return () => {
@@ -869,6 +872,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         onOpenInOutlook={openExternalEvent}
         onRemoveAttachment={removeEventAttachment}
         onRespond={respondToMeeting}
+        onSearchContacts={searchContacts}
         onSave={saveDraft}
         state={editorState}
         timeFormat={appSettings.timeFormat}
@@ -1037,6 +1041,14 @@ async function invalidateCalendarData(
 ): Promise<void> {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: ["auth"] }),
+    invalidateWorkspaceData(queryClient),
+  ]);
+}
+
+async function invalidateWorkspaceData(
+  queryClient: ReturnType<typeof useQueryClient>,
+): Promise<void> {
+  await Promise.all([
     queryClient.invalidateQueries({ queryKey: ["settings"] }),
     queryClient.invalidateQueries({ queryKey: ["calendars"] }),
     queryClient.invalidateQueries({ queryKey: ["categories"] }),
@@ -1059,6 +1071,10 @@ function invalidateEventQueries(queryClient: ReturnType<typeof useQueryClient>):
 
 async function openExternalEvent(url: string): Promise<void> {
   await globalThis.calendarApi.events.openWebLink(url);
+}
+
+async function searchContacts(args: SearchContactsArgs) {
+  return globalThis.calendarApi.contacts.search(args);
 }
 
 function resetEditor(
