@@ -58,6 +58,7 @@ async function renderBoard(language: "en" | "it") {
       onEventDrop={vi.fn()}
       onEventResize={vi.fn()}
       selectedDate="2026-03-29T00:00:00.000Z"
+      selectedDayForTable={null}
       timeFormat="system"
     />,
   );
@@ -108,6 +109,7 @@ describe("calendar board locale", () => {
     await renderBoard("en");
 
     expect(capturedCalendarProps?.dateClick).toEqual(expect.any(Function));
+    expect(capturedCalendarProps?.dayCellClassNames).toEqual(expect.any(Function));
     expect(capturedCalendarProps?.selectable).toBeUndefined();
     expect(capturedCalendarProps?.select).toBeUndefined();
     expect(capturedCalendarProps?.selectMirror).toBeUndefined();

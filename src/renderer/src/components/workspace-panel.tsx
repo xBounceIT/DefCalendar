@@ -32,6 +32,7 @@ interface WorkspacePanelProps {
   onEventClick: (clickInfo: EventClickArg) => void;
   onEventDrop: (changeInfo: EventDropArg) => void;
   onEventResize: (changeInfo: EventResizeDoneArg) => void;
+  onJoinMeeting: (event: CalendarEvent) => void;
   onNext: () => void;
   onPrev: () => void;
   onToday: () => void;
@@ -258,6 +259,7 @@ function WorkspacePanel(props: WorkspacePanelProps) {
         events={props.events}
         onClear={props.onClearDaySelection}
         onEventClick={handleTableEventClick}
+        onJoinMeeting={props.onJoinMeeting}
         selectedDay={props.selectedDayForTable}
         timeFormat={props.timeFormat}
       />
@@ -272,6 +274,7 @@ function WorkspacePanel(props: WorkspacePanelProps) {
         onEventDrop={props.onEventDrop}
         onEventResize={props.onEventResize}
         selectedDate={props.selectedDate}
+        selectedDayForTable={props.selectedDayForTable}
         timeFormat={props.timeFormat}
       />
     </main>
