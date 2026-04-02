@@ -1452,7 +1452,9 @@ button {
   font-size: 12px;
   color: var(--ink-secondary);
   border-bottom: var(--border);
-  position: relative;
+  position: sticky;
+  top: var(--day-events-header-height);
+  z-index: 1;
   overflow: hidden;
 }
 
