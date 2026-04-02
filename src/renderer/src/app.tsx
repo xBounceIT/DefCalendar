@@ -519,7 +519,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   function handleJoinMeeting(event: CalendarEvent): void {
     const joinUrl = event.onlineMeeting?.joinUrl;
     if (joinUrl) {
-      window.open(joinUrl, "_blank", "noopener,noreferrer");
+      void openExternalEvent(joinUrl);
     }
   }
 
