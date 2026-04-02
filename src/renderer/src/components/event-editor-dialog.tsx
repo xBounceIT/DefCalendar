@@ -258,57 +258,65 @@ function EventEditorDialog(props: EventEditorDialogProps) {
               />
             </div>
 
-            <div className="field-row">
+            <div className="field-row field-row--attendees">
               <AttendeesIcon />
-              <input
-                aria-label={t("eventEditor.requiredAttendees")}
-                className="field-input field-input--underline"
+              <AttendeePillsInput
+                attendees={getAttendeesByType(form.attendees, "required")}
                 disabled={readOnlyForAttendee}
-                onChange={(event) => {
-                  const requiredAttendeesInput = event.target.value;
+                inputValue={form.requiredAttendeesInput}
+                label={t("eventEditor.requiredAttendees")}
+                onCommit={(value) => commitAttendeeInput(setForm, value, "required")}
+                onInputChange={(requiredAttendeesInput) =>
+                  updateForm(setForm, { requiredAttendeesInput })
+                }
+                onRemove={(index) =>
                   setForm((current) =>
                     current
                       ? {
                           ...current,
-                          ...buildAttendeesPatch(
-                            requiredAttendeesInput,
-                            current.optionalAttendeesInput,
+                          attendees: replaceAttendeesByType(
                             current.attendees,
+                            "required",
+                            getAttendeesByType(current.attendees, "required").filter(
+                              (_, attendeeIndex) => attendeeIndex !== index,
+                            ),
                           ),
                         }
                       : current,
-                  );
-                }}
-                placeholder={t("eventEditor.requiredAttendees")}
-                type="text"
-                value={form.requiredAttendeesInput}
+                  )
+                }
+                removeLabel={t("eventEditor.removeAttendee")}
               />
             </div>
 
-            <div className="field-row">
+            <div className="field-row field-row--attendees">
               <AttendeesIcon />
-              <input
-                aria-label={t("eventEditor.optionalAttendees")}
-                className="field-input field-input--underline"
+              <AttendeePillsInput
+                attendees={getAttendeesByType(form.attendees, "optional")}
                 disabled={readOnlyForAttendee}
-                onChange={(event) => {
-                  const optionalAttendeesInput = event.target.value;
+                inputValue={form.optionalAttendeesInput}
+                label={t("eventEditor.optionalAttendees")}
+                onCommit={(value) => commitAttendeeInput(setForm, value, "optional")}
+                onInputChange={(optionalAttendeesInput) =>
+                  updateForm(setForm, { optionalAttendeesInput })
+                }
+                onRemove={(index) =>
                   setForm((current) =>
                     current
                       ? {
                           ...current,
-                          ...buildAttendeesPatch(
-                            current.requiredAttendeesInput,
-                            optionalAttendeesInput,
+                          attendees: replaceAttendeesByType(
                             current.attendees,
+                            "optional",
+                            getAttendeesByType(current.attendees, "optional").filter(
+                              (_, attendeeIndex) => attendeeIndex !== index,
+                            ),
                           ),
                         }
                       : current,
-                  );
-                }}
-                placeholder={t("eventEditor.optionalAttendees")}
-                type="text"
-                value={form.optionalAttendeesInput}
+                  )
+                }
+                removeLabel={t("eventEditor.removeAttendee")}
               />
             </div>
 
@@ -1744,6 +1752,103 @@ function AttendeesIcon() {
   );
 }
 
+function AttendeePillsInput({
+  attendees,
+  disabled,
+  inputValue,
+  label,
+  onCommit,
+  onInputChange,
+  onRemove,
+  removeLabel,
+}: {
+  attendees: EventParticipant[];
+  disabled: boolean;
+  inputValue: string;
+  label: string;
+  onCommit: (value: string) => void;
+  onInputChange: (value: string) => void;
+  onRemove: (index: number) => void;
+  removeLabel: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const commitInputValue = (value: string) => {
+    if (!value.trim()) {
+      return;
+    }
+
+    onCommit(value);
+  };
+
+  return (
+    <div className="attendee-pills-wrapper">
+      <div
+        className={`attendee-pills-container ${disabled ? "attendee-pills-container--disabled" : ""}`}
+        onClick={() => inputRef.current?.focus()}
+        onKeyDown={() => inputRef.current?.focus()}
+        role="group"
+      >
+        {attendees.map((attendee, index) => (
+          <span className="attendee-pill" key={`${attendee.email ?? "attendee"}-${index}`}>
+            <span className="attendee-pill__email">{attendee.email}</span>
+            {!disabled && (
+              <button
+                aria-label={removeLabel}
+                className="attendee-pill__remove"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRemove(index);
+                }}
+                type="button"
+              >
+                <CloseIcon />
+              </button>
+            )}
+          </span>
+        ))}
+        <input
+          aria-label={label}
+          className="attendee-pills-input"
+          disabled={disabled}
+          onChange={(event) => onInputChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (
+              (event.key === "Enter" ||
+                event.key === "Tab" ||
+                event.key === "," ||
+                event.key === ";") &&
+              inputValue.trim()
+            ) {
+              event.preventDefault();
+              commitInputValue(inputValue);
+              return;
+            }
+
+            if (event.key === "Backspace" && !inputValue && attendees.length > 0) {
+              event.preventDefault();
+              onRemove(attendees.length - 1);
+            }
+          }}
+          onPaste={(event) => {
+            const pastedText = event.clipboardData.getData("text");
+            if (parseAttendeeEmails(pastedText).length === 0) {
+              return;
+            }
+
+            event.preventDefault();
+            commitInputValue(pastedText);
+          }}
+          placeholder={attendees.length === 0 ? label : ""}
+          ref={inputRef}
+          type="text"
+          value={inputValue}
+        />
+      </div>
+    </div>
+  );
+}
+
 function CalendarSelectIcon() {
   return (
     <svg
@@ -2339,7 +2444,7 @@ function buildFormState(state: EventEditorDialogProps["state"]): EditorFormState
     isOnlineMeeting: event?.isOnlineMeeting ?? draft?.isOnlineMeeting ?? false,
     isReminderOn: event?.isReminderOn ?? draft?.isReminderOn ?? true,
     location: event?.location ?? draft?.location ?? "",
-    optionalAttendeesInput: formatAttendeesInput(attendees, "optional"),
+    optionalAttendeesInput: "",
     recurrenceDayOfMonth: recurrence?.pattern.dayOfMonth?.toString() ?? "",
     recurrenceDaysOfWeek: recurrence?.pattern.daysOfWeek ?? [],
     recurrenceEnabled: Boolean(recurrence),
@@ -2353,7 +2458,7 @@ function buildFormState(state: EventEditorDialogProps["state"]): EditorFormState
       draft?.reminderMinutesBeforeStart ??
       15
     ).toString(),
-    requiredAttendeesInput: formatAttendeesInput(attendees, "required"),
+    requiredAttendeesInput: "",
     responseComment: "",
     responseRequested: event?.responseRequested ?? draft?.responseRequested ?? true,
     sensitivity: event?.sensitivity ?? draft?.sensitivity ?? "normal",
@@ -2393,14 +2498,21 @@ function buildDraft(form: EditorFormState, event: CalendarEvent | null): EventDr
     end = addDays(fromDateTimeInputValue(form.endInput, true), 1);
   }
 
+  const attendeesWithPendingRequired = mergeAttendeesWithInput(
+    form.attendees,
+    form.requiredAttendeesInput,
+    "required",
+  );
+  const attendees = mergeAttendeesWithInput(
+    attendeesWithPendingRequired,
+    form.optionalAttendeesInput,
+    "optional",
+  );
+
   return {
     attachmentIdsToRemove: [],
     attachmentsToAdd: [],
-    attendees: buildAttendeesFromInputs(
-      form.requiredAttendeesInput,
-      form.optionalAttendeesInput,
-      form.attendees,
-    ),
+    attendees,
     allowNewTimeProposals: form.allowNewTimeProposals,
     body: form.body.trim() || null,
     bodyContentType: form.bodyContentType,
@@ -2471,95 +2583,122 @@ function resolveEventId(event: CalendarEvent | null, form: EditorFormState): str
   return event.id;
 }
 
-function buildAttendeesPatch(
-  requiredAttendeesInput: string,
-  optionalAttendeesInput: string,
-  existingAttendees: EventParticipant[],
-): Pick<EditorFormState, "attendees" | "optionalAttendeesInput" | "requiredAttendeesInput"> {
+function getAttendeesByType(
+  attendees: EventParticipant[],
+  type: "optional" | "required",
+): EventParticipant[] {
+  return attendees.filter((attendee) => attendee.type === type);
+}
+
+function createAttendee(email: string, type: "optional" | "required"): EventParticipant {
   return {
-    attendees: buildAttendeesFromInputs(
-      requiredAttendeesInput,
-      optionalAttendeesInput,
-      existingAttendees,
-    ),
-    optionalAttendeesInput,
-    requiredAttendeesInput,
+    email,
+    name: null,
+    response: null,
+    status: null,
+    type,
   };
 }
 
-function buildAttendeesFromInputs(
-  requiredAttendeesInput: string,
-  optionalAttendeesInput: string,
-  existingAttendees: EventParticipant[],
+function replaceAttendeesByType(
+  attendees: EventParticipant[],
+  type: "optional" | "required",
+  nextTypeAttendees: EventParticipant[],
 ): EventParticipant[] {
-  const existingByEmail = new Map<string, EventParticipant>();
-  const resourceAttendees: EventParticipant[] = [];
-  for (const attendee of existingAttendees) {
-    if (attendee.type === "resource") {
-      resourceAttendees.push(attendee);
-      continue;
-    }
+  const resourceAttendees = attendees.filter((attendee) => attendee.type === "resource");
+  const requiredAttendees =
+    type === "required" ? nextTypeAttendees : getAttendeesByType(attendees, "required");
+  const optionalAttendees =
+    type === "optional" ? nextTypeAttendees : getAttendeesByType(attendees, "optional");
 
-    const normalizedEmail = normalizeAttendeeEmail(attendee.email);
+  return [...resourceAttendees, ...requiredAttendees, ...optionalAttendees];
+}
+
+function mergeAttendeesWithInput(
+  attendees: EventParticipant[],
+  inputValue: string,
+  type: "optional" | "required",
+): EventParticipant[] {
+  const emails = parseAttendeeEmails(inputValue);
+  if (emails.length === 0) {
+    return attendees;
+  }
+
+  const resourceAttendees = attendees.filter((attendee) => attendee.type === "resource");
+  let requiredAttendees = getAttendeesByType(attendees, "required");
+  let optionalAttendees = getAttendeesByType(attendees, "optional");
+
+  for (const email of emails) {
+    const normalizedEmail = normalizeAttendeeEmail(email);
     if (!normalizedEmail) {
       continue;
     }
-    existingByEmail.set(normalizedEmail, attendee);
+
+    if (
+      resourceAttendees.some(
+        (attendee) => normalizeAttendeeEmail(attendee.email) === normalizedEmail,
+      )
+    ) {
+      continue;
+    }
+
+    if (type === "required") {
+      const existingRequired = requiredAttendees.some(
+        (attendee) => normalizeAttendeeEmail(attendee.email) === normalizedEmail,
+      );
+      if (existingRequired) {
+        continue;
+      }
+
+      const optionalIndex = optionalAttendees.findIndex(
+        (attendee) => normalizeAttendeeEmail(attendee.email) === normalizedEmail,
+      );
+      if (optionalIndex !== -1) {
+        const [existingOptional] = optionalAttendees.splice(optionalIndex, 1);
+        requiredAttendees = [
+          ...requiredAttendees,
+          { ...existingOptional!, email, type: "required" },
+        ];
+        continue;
+      }
+
+      requiredAttendees = [...requiredAttendees, createAttendee(email, "required")];
+      continue;
+    }
+
+    const existingRequired = requiredAttendees.some(
+      (attendee) => normalizeAttendeeEmail(attendee.email) === normalizedEmail,
+    );
+    const existingOptional = optionalAttendees.some(
+      (attendee) => normalizeAttendeeEmail(attendee.email) === normalizedEmail,
+    );
+    if (existingRequired || existingOptional) {
+      continue;
+    }
+
+    optionalAttendees = [...optionalAttendees, createAttendee(email, "optional")];
   }
 
-  const nextAttendees: EventParticipant[] = [];
-  const seenEmails = new Set<string>();
-
-  const appendAttendees = (emails: string[], type: "optional" | "required") => {
-    for (const email of emails) {
-      const normalizedEmail = normalizeAttendeeEmail(email);
-      if (!normalizedEmail || seenEmails.has(normalizedEmail)) {
-        continue;
-      }
-
-      seenEmails.add(normalizedEmail);
-      const existingAttendee = existingByEmail.get(normalizedEmail);
-      if (existingAttendee) {
-        nextAttendees.push({
-          ...existingAttendee,
-          email,
-          type:
-            type === "required"
-              ? "required"
-              : existingAttendee.type === "resource"
-                ? "resource"
-                : "optional",
-        });
-        continue;
-      }
-
-      nextAttendees.push({
-        email,
-        name: null,
-        response: null,
-        status: null,
-        type,
-      });
-    }
-  };
-
-  appendAttendees(parseAttendeeEmails(requiredAttendeesInput), "required");
-  appendAttendees(parseAttendeeEmails(optionalAttendeesInput), "optional");
-
-  return [...resourceAttendees, ...nextAttendees];
+  return [...resourceAttendees, ...requiredAttendees, ...optionalAttendees];
 }
 
-function formatAttendeesInput(
-  attendees: EventParticipant[],
+function commitAttendeeInput(
+  setForm: React.Dispatch<React.SetStateAction<EditorFormState | null>>,
+  value: string,
   type: "optional" | "required",
-): string {
-  return attendees
-    .filter((attendee) =>
-      type === "required" ? attendee.type === "required" : attendee.type === "optional",
-    )
-    .map((attendee) => attendee.email?.trim() ?? "")
-    .filter(Boolean)
-    .join(", ");
+): void {
+  setForm((current) => {
+    if (!current) {
+      return current;
+    }
+
+    return {
+      ...current,
+      attendees: mergeAttendeesWithInput(current.attendees, value, type),
+      optionalAttendeesInput: type === "optional" ? "" : current.optionalAttendeesInput,
+      requiredAttendeesInput: type === "required" ? "" : current.requiredAttendeesInput,
+    };
+  });
 }
 
 function parseAttendeeEmails(value: string): string[] {
