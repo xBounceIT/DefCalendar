@@ -2778,11 +2778,11 @@ button {
 .slide-panel {
   position: relative;
   z-index: 1001;
-  width: min(880px, calc(100vw - 48px));
+  width: min(1100px, calc(100vw - 48px));
   min-width: 600px;
   max-height: calc(100vh - 48px);
   display: grid;
-  grid-template-columns: 1fr 320px;
+  grid-template-columns: 1fr 360px;
   grid-template-rows: auto auto 1fr auto;
   grid-template-areas:
     "header header"
@@ -2925,6 +2925,7 @@ button {
   position: sticky;
   top: 0;
   z-index: 10;
+  justify-content: space-between;
 }
 
 .event-toolbar__group {
@@ -2965,11 +2966,20 @@ button {
   margin: 0 4px;
 }
 
+.event-toolbar__button svg {
+  flex-shrink: 0;
+  display: block;
+  width: 15px;
+  height: 15px;
+  transform: translateY(1px);
+}
+
 .event-toolbar__button {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
+  gap: 6px;
+  padding: 8px 14px;
   height: 36px;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -2977,6 +2987,9 @@ button {
   color: var(--ink-secondary);
   cursor: pointer;
   transition: all 0.15s ease;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .event-toolbar__button:hover {
@@ -3007,14 +3020,23 @@ button {
   justify-content: space-between;
   gap: 6px;
   padding: 8px 12px;
+  height: 38px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--surface);
   color: var(--ink);
   font-size: 13px;
+  line-height: 1.2;
   cursor: pointer;
   transition: all 0.15s ease;
   width: 100%;
+}
+
+.event-toolbar__dropdown-trigger svg {
+  flex-shrink: 0;
+  display: block;
+  width: 15px;
+  height: 15px;
 }
 
 .event-toolbar__dropdown-trigger:hover {
@@ -3028,7 +3050,6 @@ button {
 }
 
 .event-toolbar__dropdown-trigger--icon-only {
-  width: auto;
   padding: 8px;
 }
 

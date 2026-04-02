@@ -555,6 +555,7 @@ function EventToolbar({
             title={t("common.delete")}
           >
             <TrashIcon />
+            <span>{t("common.delete")}</span>
           </button>
           <div className="event-toolbar__separator" />
         </>
@@ -567,18 +568,20 @@ function EventToolbar({
         title={t("eventEditor.duplicate")}
       >
         <CopyIcon />
+        <span>{t("eventEditor.duplicate")}</span>
       </button>
 
       <div className="event-toolbar__separator" />
 
-      <div className="event-toolbar__dropdown-container event-toolbar__dropdown-container--icon-only">
+      <div className="event-toolbar__dropdown-container">
         <button
           type="button"
-          className={`event-toolbar__dropdown-trigger event-toolbar__dropdown-trigger--icon-only ${openDropdown === "showAs" ? "event-toolbar__dropdown-trigger--open" : ""}`}
+          className={`event-toolbar__dropdown-trigger ${openDropdown === "showAs" ? "event-toolbar__dropdown-trigger--open" : ""}`}
           onClick={() => setOpenDropdown(openDropdown === "showAs" ? null : "showAs")}
           title={getShowAsLabel()}
         >
           <ShowAsIcon />
+          <span className="event-toolbar__dropdown-label">{getShowAsLabel()}</span>
           <ChevronDownIcon
             className={`event-toolbar__dropdown-arrow ${openDropdown === "showAs" ? "expanded" : ""}`}
           />
@@ -602,14 +605,15 @@ function EventToolbar({
         )}
       </div>
 
-      <div className="event-toolbar__dropdown-container event-toolbar__dropdown-container--icon-only">
+      <div className="event-toolbar__dropdown-container">
         <button
           type="button"
-          className={`event-toolbar__dropdown-trigger event-toolbar__dropdown-trigger--icon-only ${openDropdown === "reminder" ? "event-toolbar__dropdown-trigger--open" : ""}`}
+          className={`event-toolbar__dropdown-trigger ${openDropdown === "reminder" ? "event-toolbar__dropdown-trigger--open" : ""}`}
           onClick={() => setOpenDropdown(openDropdown === "reminder" ? null : "reminder")}
           title={getReminderLabel()}
         >
           <BellIcon />
+          <span className="event-toolbar__dropdown-label">{getReminderLabel()}</span>
           <ChevronDownIcon
             className={`event-toolbar__dropdown-arrow ${openDropdown === "reminder" ? "expanded" : ""}`}
           />
@@ -643,10 +647,10 @@ function EventToolbar({
         )}
       </div>
 
-      <div className="event-toolbar__dropdown-container event-toolbar__dropdown-container--icon-only">
+      <div className="event-toolbar__dropdown-container">
         <button
           type="button"
-          className={`event-toolbar__dropdown-trigger event-toolbar__dropdown-trigger--icon-only ${openDropdown === "categories" ? "event-toolbar__dropdown-trigger--open" : ""}`}
+          className={`event-toolbar__dropdown-trigger ${openDropdown === "categories" ? "event-toolbar__dropdown-trigger--open" : ""}`}
           onClick={() => setOpenDropdown(openDropdown === "categories" ? null : "categories")}
           title={t("eventEditor.categories")}
         >
@@ -654,6 +658,7 @@ function EventToolbar({
             selectedCategories={selectedCategories}
             categoryOptions={categoryOptions}
           />
+          <span className="event-toolbar__dropdown-label">{categoryTriggerLabel}</span>
           <ChevronDownIcon
             className={`event-toolbar__dropdown-arrow ${openDropdown === "categories" ? "expanded" : ""}`}
           />
@@ -689,14 +694,15 @@ function EventToolbar({
         )}
       </div>
 
-      <div className="event-toolbar__dropdown-container event-toolbar__dropdown-container--icon-only">
+      <div className="event-toolbar__dropdown-container">
         <button
           type="button"
-          className={`event-toolbar__dropdown-trigger event-toolbar__dropdown-trigger--icon-only ${openDropdown === "sensitivity" ? "event-toolbar__dropdown-trigger--open" : ""}`}
+          className={`event-toolbar__dropdown-trigger ${openDropdown === "sensitivity" ? "event-toolbar__dropdown-trigger--open" : ""}`}
           onClick={() => setOpenDropdown(openDropdown === "sensitivity" ? null : "sensitivity")}
           title={getSensitivityLabel()}
         >
           <LockIcon />
+          <span className="event-toolbar__dropdown-label">{getSensitivityLabel()}</span>
           <ChevronDownIcon
             className={`event-toolbar__dropdown-arrow ${openDropdown === "sensitivity" ? "expanded" : ""}`}
           />
