@@ -4,12 +4,15 @@ import type {
   EventClickArg,
   EventContentArg,
   EventDropArg,
+  EventHoveringArg,
   EventInput,
+  EventMountArg,
 } from "@fullcalendar/core";
 import itLocale from "@fullcalendar/core/locales/it";
 import type { DateClickArg, EventResizeDoneArg } from "@fullcalendar/interaction";
 import FullCalendar from "@fullcalendar/react";
 import React from "react";
+import { createPortal } from "react-dom";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import { useTranslation } from "react-i18next";
@@ -34,10 +37,65 @@ interface CalendarBoardProps {
 }
 
 const CALENDAR_PLUGINS = [dayGridPlugin, timeGridPlugin, interactionPlugin];
+const TOOLTIP_SHOW_DELAY_MS = 500;
 
 interface CalendarEventExtendedProps {
   calendarColor?: string | null;
-  eventData?: Pick<CalendarEvent, "isReminderOn">;
+  eventData?: Pick<CalendarEvent, "isOrganizer" | "isReminderOn" | "responseStatus">;
+}
+
+function normalizeResponseValue(response: null | string | undefined): null | string {
+  const normalized = response?.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized === "accepted" || normalized === "declined" || normalized === "tentative") {
+    return normalized;
+  }
+
+  if (normalized === "tentativelyaccepted") {
+    return "tentative";
+  }
+
+  if (normalized === "none" || normalized === "notresponded" || normalized === "organizer") {
+    return "none";
+  }
+
+  return normalized;
+}
+
+function getResponseStatusLabel(
+  t: ReturnType<typeof useTranslation>["t"],
+  response: null | string | undefined,
+): string {
+  const normalizedResponse = normalizeResponseValue(response);
+  if (normalizedResponse === "accepted") {
+    return t("eventEditor.responseAccepted");
+  }
+
+  if (normalizedResponse === "declined") {
+    return t("eventEditor.responseDeclined");
+  }
+
+  if (normalizedResponse === "tentative") {
+    return t("eventEditor.responseTentative");
+  }
+
+  return t("eventEditor.responseUnknown");
+}
+
+function getEventTooltip(
+  t: ReturnType<typeof useTranslation>["t"],
+  eventData: CalendarEventExtendedProps["eventData"],
+): string {
+  if (eventData?.isOrganizer) {
+    return t("calendarBoard.ownerTooltip");
+  }
+
+  return t("eventEditor.yourResponse", {
+    response: getResponseStatusLabel(t, eventData?.responseStatus?.response),
+  });
 }
 
 const CALENDAR_COLOR_CLASS_NAMES: Record<string, string> = {
@@ -92,6 +150,14 @@ function renderEventContent(info: EventContentArg) {
       {hasReminder ? <BellIcon /> : null}
     </div>
   );
+}
+
+function removeTitleAttributes(rootElement: HTMLElement): void {
+  rootElement.removeAttribute("title");
+  const titledElements = rootElement.querySelectorAll<HTMLElement>("[title]");
+  for (const element of titledElements) {
+    element.removeAttribute("title");
+  }
 }
 
 function resolveCalendarColorClassName(color: string | null | undefined): null | string {
@@ -154,8 +220,67 @@ function CalendarSurface({
   timeFormat,
 }: Omit<CalendarBoardProps, "hasVisibleCalendars">) {
   const { t, i18n } = useTranslation();
+  const tooltipShowTimeoutRef = React.useRef<null | ReturnType<typeof globalThis.setTimeout>>(null);
+  const [hoverTooltip, setHoverTooltip] = React.useState<null | {
+    text: string;
+    x: number;
+    y: number;
+  }>(null);
   const locale = React.useMemo(() => (i18n.language === "it" ? "it" : "en"), [i18n.language]);
   const eventTimeFormat = React.useMemo(() => buildEventTimeFormat(timeFormat), [timeFormat]);
+  const handleEventDidMount = React.useCallback((arg: EventMountArg) => {
+    removeTitleAttributes(arg.el);
+  }, []);
+  const clearTooltipShowTimeout = React.useCallback(() => {
+    if (tooltipShowTimeoutRef.current === null) {
+      return;
+    }
+
+    globalThis.clearTimeout(tooltipShowTimeoutRef.current);
+    tooltipShowTimeoutRef.current = null;
+  }, []);
+  const handleEventMouseEnter = React.useCallback(
+    (arg: EventHoveringArg) => {
+      const { eventData } = arg.event.extendedProps as CalendarEventExtendedProps;
+      const nextTooltip = {
+        text: getEventTooltip(t, eventData),
+        x: arg.jsEvent.clientX + 12,
+        y: arg.jsEvent.clientY + 12,
+      };
+
+      clearTooltipShowTimeout();
+      tooltipShowTimeoutRef.current = globalThis.setTimeout(() => {
+        setHoverTooltip(nextTooltip);
+        tooltipShowTimeoutRef.current = null;
+      }, TOOLTIP_SHOW_DELAY_MS);
+    },
+    [clearTooltipShowTimeout, t],
+  );
+  const handleEventMouseLeave = React.useCallback(() => {
+    clearTooltipShowTimeout();
+    setHoverTooltip(null);
+  }, [clearTooltipShowTimeout]);
+
+  React.useEffect(
+    () => () => {
+      clearTooltipShowTimeout();
+    },
+    [clearTooltipShowTimeout],
+  );
+
+  const renderedTooltip = hoverTooltip
+    ? createPortal(
+        <div
+          aria-live="polite"
+          className="calendar-event-tooltip"
+          role="tooltip"
+          style={{ left: `${hoverTooltip.x}px`, top: `${hoverTooltip.y}px` }}
+        >
+          {hoverTooltip.text}
+        </div>,
+        document.body,
+      )
+    : null;
 
   const handleDayCellClassNames = React.useCallback(
     (arg: DayCellArg) => {
@@ -169,43 +294,49 @@ function CalendarSurface({
   );
 
   return (
-    <FullCalendar
-      allDayMaintainDuration
-      allDayText={t("eventEditor.allDay")}
-      dateClick={onDateClick}
-      datesSet={onDatesSet}
-      dayCellClassNames={handleDayCellClassNames}
-      dayMaxEvents={3}
-      dayMaxEventRows={3}
-      eventMaxStack={3}
-      slotEventOverlap={false}
-      editable
-      eventClick={onEventClick}
-      eventClassNames={handleEventClassNames}
-      eventContent={renderEventContent}
-      eventDisplay="block"
-      eventDrop={onEventDrop}
-      eventResize={onEventResize}
-      eventTimeFormat={eventTimeFormat}
-      events={calendarEvents}
-      firstDay={1}
-      headerToolbar={false}
-      height="100%"
-      locale={locale}
-      locales={[itLocale]}
-      initialDate={selectedDate}
-      initialView={activeView}
-      moreLinkText={(count) => t("calendarBoard.moreEvents", { count })}
-      nowIndicator
-      plugins={CALENDAR_PLUGINS}
-      ref={calendarRef}
-      slotMaxTime="24:00:00"
-      slotLabelFormat={eventTimeFormat}
-      slotMinTime="00:00:00"
-      weekNumbers
-      weekNumberFormat={{ week: "numeric" }}
-      weekends
-    />
+    <>
+      <FullCalendar
+        allDayMaintainDuration
+        allDayText={t("eventEditor.allDay")}
+        dateClick={onDateClick}
+        datesSet={onDatesSet}
+        dayCellClassNames={handleDayCellClassNames}
+        dayMaxEvents={3}
+        dayMaxEventRows={3}
+        eventMaxStack={3}
+        slotEventOverlap={false}
+        editable
+        eventClick={onEventClick}
+        eventClassNames={handleEventClassNames}
+        eventContent={renderEventContent}
+        eventDidMount={handleEventDidMount}
+        eventDisplay="block"
+        eventDrop={onEventDrop}
+        eventMouseEnter={handleEventMouseEnter}
+        eventMouseLeave={handleEventMouseLeave}
+        eventResize={onEventResize}
+        eventTimeFormat={eventTimeFormat}
+        events={calendarEvents}
+        firstDay={1}
+        headerToolbar={false}
+        height="100%"
+        locale={locale}
+        locales={[itLocale]}
+        initialDate={selectedDate}
+        initialView={activeView}
+        moreLinkText={(count) => t("calendarBoard.moreEvents", { count })}
+        nowIndicator
+        plugins={CALENDAR_PLUGINS}
+        ref={calendarRef}
+        slotMaxTime="24:00:00"
+        slotLabelFormat={eventTimeFormat}
+        slotMinTime="00:00:00"
+        weekNumbers
+        weekNumberFormat={{ week: "numeric" }}
+        weekends
+      />
+      {renderedTooltip}
+    </>
   );
 }
 

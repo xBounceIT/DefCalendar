@@ -89,7 +89,8 @@
   "calendarBoard": {
     "noCalendars": "Nessun calendario selezionato",
     "noCalendarsHint": "Abilita almeno un calendario Exchange dalla barra laterale sinistra per popolare la vista.",
-    "moreEvents": "+{{count}}"
+    "moreEvents": "+{{count}}",
+    "ownerTooltip": "Sei il proprietario"
   },
   "dayEventsTable": {
     "title": "Titolo",

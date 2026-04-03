@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 import type { EventContentArg, EventInput } from "@fullcalendar/core";
 import React from "react";
 import i18n from "i18next";
@@ -64,26 +64,75 @@ async function renderBoard(language: "en" | "it") {
   );
 }
 
-function renderCalendarEventContent(isReminderOn: boolean) {
+function renderCalendarEvent(options?: {
+  isOrganizer?: boolean;
+  isReminderOn?: boolean;
+  response?: null | string;
+}) {
+  const isOrganizer = options?.isOrganizer ?? false;
+  const isReminderOn = options?.isReminderOn ?? false;
+  const response = options?.response ?? null;
   const eventContent = capturedCalendarProps?.eventContent as (
     info: EventContentArg,
   ) => React.ReactNode;
+  const eventDidMount = capturedCalendarProps?.eventDidMount as
+    | ((info: { event: EventContentArg["event"]; el: HTMLElement }) => void)
+    | undefined;
+  const eventMouseEnter = capturedCalendarProps?.eventMouseEnter as
+    | ((info: { event: EventContentArg["event"]; el: HTMLElement; jsEvent: MouseEvent }) => void)
+    | undefined;
+  const eventMouseLeave = capturedCalendarProps?.eventMouseLeave as (() => void) | undefined;
 
-  return render(
+  const event = {
+    title: "Focus time",
+    extendedProps: {
+      eventData: {
+        isOrganizer,
+        isReminderOn,
+        responseStatus: response
+          ? {
+              response,
+              time: null,
+            }
+          : null,
+      },
+    },
+  } as EventContentArg["event"];
+
+  const rendered = render(
     <>
       {eventContent({
-        event: {
-          title: "Focus time",
-          extendedProps: {
-            eventData: {
-              isReminderOn,
-            },
-          },
-        } as EventContentArg["event"],
+        event,
         timeText: "9:00",
       } as EventContentArg)}
     </>,
   );
+
+  const container = rendered.container.querySelector(".calendar-event-content");
+  if (container instanceof HTMLElement) {
+    act(() => {
+      eventDidMount?.({
+        el: container,
+        event,
+      });
+      eventMouseEnter?.({
+        el: container,
+        event,
+        jsEvent: new MouseEvent("mouseenter", {
+          bubbles: true,
+          clientX: 120,
+          clientY: 80,
+        }),
+      });
+    });
+  }
+
+  return {
+    ...rendered,
+    hideTooltip: () => {
+      eventMouseLeave?.();
+    },
+  };
 }
 
 describe("calendar board locale", () => {
@@ -110,6 +159,8 @@ describe("calendar board locale", () => {
 
     expect(capturedCalendarProps?.dateClick).toEqual(expect.any(Function));
     expect(capturedCalendarProps?.dayCellClassNames).toEqual(expect.any(Function));
+    expect(capturedCalendarProps?.eventMouseEnter).toEqual(expect.any(Function));
+    expect(capturedCalendarProps?.eventMouseLeave).toEqual(expect.any(Function));
     expect(capturedCalendarProps?.selectable).toBeUndefined();
     expect(capturedCalendarProps?.select).toBeUndefined();
     expect(capturedCalendarProps?.selectMirror).toBeUndefined();
@@ -118,7 +169,7 @@ describe("calendar board locale", () => {
   it("renders a bell icon for events with reminders", async () => {
     await renderBoard("en");
 
-    const { container, getByText } = renderCalendarEventContent(true);
+    const { container, getByText } = renderCalendarEvent({ isReminderOn: true });
 
     getByText("9:00");
     getByText("Focus time");
@@ -128,8 +179,65 @@ describe("calendar board locale", () => {
   it("does not render a bell icon for events without reminders", async () => {
     await renderBoard("en");
 
-    const { container } = renderCalendarEventContent(false);
+    const { container } = renderCalendarEvent({ isReminderOn: false });
 
     expect(container.querySelector(".calendar-event-content__icon")).toBeNull();
+  });
+
+  it("renders attendee response tooltip text", async () => {
+    await renderBoard("en");
+
+    const { queryByTitle } = renderCalendarEvent({ response: " Accepted " });
+
+    expect(queryByTitle("Your response: Accepted")).toBeNull();
+    await waitFor(() => {
+      expect(document.querySelector(".calendar-event-tooltip")?.textContent).toBe(
+        "Your response: Accepted",
+      );
+    });
+  });
+
+  it("renders organizer ownership tooltip text", async () => {
+    await renderBoard("en");
+
+    const { queryByTitle } = renderCalendarEvent({ isOrganizer: true });
+
+    expect(queryByTitle("You're the owner")).toBeNull();
+    await waitFor(() => {
+      expect(document.querySelector(".calendar-event-tooltip")?.textContent).toBe(
+        "You're the owner",
+      );
+    });
+  });
+
+  it("renders organizer ownership tooltip text in Italian", async () => {
+    await renderBoard("it");
+
+    const { queryByTitle } = renderCalendarEvent({ isOrganizer: true });
+
+    expect(queryByTitle("Sei il proprietario")).toBeNull();
+    await waitFor(() => {
+      expect(document.querySelector(".calendar-event-tooltip")?.textContent).toBe(
+        "Sei il proprietario",
+      );
+    });
+  });
+
+  it("hides the custom tooltip on mouse leave", async () => {
+    await renderBoard("en");
+
+    const { hideTooltip } = renderCalendarEvent({ response: "accepted" });
+
+    await waitFor(() => {
+      expect(document.querySelector(".calendar-event-tooltip")).not.toBeNull();
+    });
+
+    act(() => {
+      hideTooltip();
+    });
+
+    await waitFor(() => {
+      expect(document.querySelector(".calendar-event-tooltip")).toBeNull();
+    });
   });
 });
