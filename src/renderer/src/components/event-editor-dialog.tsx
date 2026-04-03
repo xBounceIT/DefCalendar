@@ -2937,7 +2937,7 @@ function parseAttendeeToken(value: string): { email: string; name: null | string
 
   if (trimmedValue.endsWith(">")) {
     const openIndex = trimmedValue.lastIndexOf("<");
-    if (openIndex > 0) {
+    if (openIndex >= 0) {
       const email = trimmedValue.slice(openIndex + 1, -1).trim();
       if (email) {
         return {
