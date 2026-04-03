@@ -327,6 +327,13 @@ const respondToEventArgsSchema = z.object({
   sendResponse: z.boolean().default(true),
 });
 
+const forwardEventArgsSchema = z.object({
+  calendarId: z.string(),
+  comment: z.string().default(""),
+  eventId: z.string(),
+  toRecipients: z.array(contactSuggestionSchema).min(1),
+});
+
 const cancelEventArgsSchema = z.object({
   calendarId: z.string(),
   comment: z.string().default(""),
@@ -503,6 +510,7 @@ type SearchContactsArgs = z.infer<typeof searchContactsArgsSchema>;
 type DeleteEventArgs = z.infer<typeof deleteEventArgsSchema>;
 type EventReferenceArgs = z.infer<typeof eventReferenceArgsSchema>;
 type RespondToEventArgs = z.infer<typeof respondToEventArgsSchema>;
+type ForwardEventArgs = z.infer<typeof forwardEventArgsSchema>;
 type CancelEventArgs = z.infer<typeof cancelEventArgsSchema>;
 type AttachmentUploadArgs = z.infer<typeof attachmentUploadArgsSchema>;
 type AttachmentDeleteArgs = z.infer<typeof attachmentDeleteArgsSchema>;
@@ -573,6 +581,7 @@ export {
   recurrenceRangeTypeSchema,
   recurrenceSchema,
   respondToEventArgsSchema,
+  forwardEventArgsSchema,
   listOutlookCategoriesArgsSchema,
   searchContactsArgsSchema,
   setCalendarVisibilityArgsSchema,
@@ -603,6 +612,7 @@ export {
   type ContactSuggestion,
   type DeleteEventArgs,
   type EventAttachment,
+  type ForwardEventArgs,
   type ListOutlookCategoriesArgs,
   type SearchContactsArgs,
   type LocalReminderRule,

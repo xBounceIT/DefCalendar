@@ -6,6 +6,7 @@ import type {
   EventAttachment,
   EventDraft,
   EventParticipant,
+  ForwardEventArgs,
   OnlineMeetingInfo,
   OutlookCategory,
   ParticipantResponseStatus,
@@ -388,6 +389,28 @@ class GraphCalendarService {
         body: JSON.stringify({
           comment: args.comment,
           sendResponse: args.sendResponse,
+        }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      },
+      homeAccountId,
+    );
+  }
+
+  async forwardEvent(args: ForwardEventArgs, homeAccountId: string): Promise<void> {
+    await this.requestNoContent(
+      `/me/events/${encodeURIComponent(args.eventId)}/forward`,
+      {
+        body: JSON.stringify({
+          comment: args.comment,
+          toRecipients: args.toRecipients.map((recipient) => ({
+            emailAddress: {
+              address: recipient.email,
+              name: recipient.name,
+            },
+          })),
         }),
         headers: {
           "Content-Type": "application/json",

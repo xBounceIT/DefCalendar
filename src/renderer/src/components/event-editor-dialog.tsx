@@ -10,6 +10,7 @@ import type {
   EventDraft,
   EventParticipant,
   EventResponseAction,
+  ForwardEventArgs,
   OutlookCategory,
   Recurrence,
   SearchContactsArgs,
@@ -23,7 +24,7 @@ import {
 } from "@shared/calendar";
 import { useTranslation } from "react-i18next";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faUser } from "@fortawesome/free-regular-svg-icons";
+import { faClock, faPaperPlane, faUser } from "@fortawesome/free-regular-svg-icons";
 
 import type { EditorState } from "../event-editor-state";
 import { formatHeaderDate, formatLocalizedDate } from "../date-formatting";
@@ -42,6 +43,7 @@ interface EventEditorDialogProps {
   onDelete: (event: CalendarEvent) => Promise<void>;
   onDismiss: () => void;
   onDuplicate: (draft: EventDraft) => void;
+  onForward: (args: ForwardEventArgs) => Promise<void>;
   onListAttachments: (event: CalendarEvent) => Promise<EventAttachment[]>;
   onOpenInOutlook: (url: string) => Promise<void>;
   onRemoveAttachment: (args: AttachmentDeleteArgs) => Promise<EventAttachment[]>;
@@ -212,9 +214,11 @@ function EventEditorDialog(props: EventEditorDialogProps) {
 
         <EventToolbar
           availableCategories={availableCategories}
+          busy={props.busy}
           categoriesLoading={props.categoriesLoading}
           editedEvent={editedEvent}
           form={form}
+          homeAccountId={selectedCalendar?.homeAccountId ?? null}
           onChange={setForm}
           onDelete={
             editedEvent && editedEvent.isOrganizer && editedEvent.attendees.length === 0
@@ -226,6 +230,8 @@ function EventEditorDialog(props: EventEditorDialogProps) {
           onDuplicate={() => {
             void props.onDuplicate(buildDraft(form, editedEvent));
           }}
+          onForward={props.onForward}
+          onSearchContacts={props.onSearchContacts}
         />
 
         <div className="slide-panel__body">
@@ -429,6 +435,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
 }
 
 function EventToolbar({
+  busy,
   availableCategories,
   categoriesLoading,
   editedEvent,
@@ -436,34 +443,53 @@ function EventToolbar({
   onChange,
   onDelete,
   onDuplicate,
+  onForward,
+  onSearchContacts,
+  homeAccountId,
 }: {
+  busy: boolean;
   availableCategories: OutlookCategory[];
   categoriesLoading: boolean;
   editedEvent: CalendarEvent | null;
   form: EditorFormState;
+  homeAccountId: null | string;
   onChange: React.Dispatch<React.SetStateAction<EditorFormState | null>>;
   onDelete?: () => void;
   onDuplicate: () => void;
+  onForward: (args: ForwardEventArgs) => Promise<void>;
+  onSearchContacts: (args: SearchContactsArgs) => Promise<ContactSuggestion[]>;
 }) {
   const { t } = useTranslation();
+  const [forwardComment, setForwardComment] = useState("");
+  const [forwardRecipients, setForwardRecipients] = useState<EventParticipant[]>([]);
+  const [forwardRecipientsInput, setForwardRecipientsInput] = useState("");
+  const [isForwardPopupOpen, setIsForwardPopupOpen] = useState(false);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setForwardComment("");
+    setForwardRecipients([]);
+    setForwardRecipientsInput("");
+    setIsForwardPopupOpen(false);
+  }, [editedEvent?.calendarId, editedEvent?.id]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setOpenDropdown(null);
+        setIsForwardPopupOpen(false);
       }
     }
 
-    if (openDropdown) {
+    if (openDropdown || isForwardPopupOpen) {
       document.addEventListener("mousedown", handleClickOutside);
     }
 
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [openDropdown]);
+  }, [isForwardPopupOpen, openDropdown]);
 
   const reminderOptions = [
     { value: "0", label: t("reminder.zeroMinutes") },
@@ -515,6 +541,9 @@ function EventToolbar({
     return option?.label || form.sensitivity;
   };
 
+  const getRecurrenceLabel = () =>
+    form.recurrenceEnabled ? t("eventEditor.recurring") : t("eventEditor.tabs.event");
+
   const selectedCategories = form.categories;
 
   const categoryOptions = useMemo(
@@ -526,6 +555,45 @@ function EventToolbar({
     () => getCategoryTriggerLabel(selectedCategories, t),
     [selectedCategories, t],
   );
+
+  const resolvedForwardRecipients = mergeAttendeesWithInput(
+    forwardRecipients,
+    forwardRecipientsInput,
+    "required",
+  );
+
+  const sendForward = () => {
+    if (!editedEvent) {
+      return;
+    }
+
+    const toRecipients = resolvedForwardRecipients
+      .map((recipient) => ({
+        email: recipient.email,
+        name: recipient.name,
+      }))
+      .filter((recipient): recipient is ForwardEventArgs["toRecipients"][number] =>
+        Boolean(recipient.email),
+      );
+
+    if (toRecipients.length === 0) {
+      return;
+    }
+
+    void onForward({
+      calendarId: editedEvent.calendarId,
+      comment: forwardComment.trim(),
+      eventId: editedEvent.id,
+      toRecipients,
+    })
+      .then(() => {
+        setForwardComment("");
+        setForwardRecipients([]);
+        setForwardRecipientsInput("");
+        setIsForwardPopupOpen(false);
+      })
+      .catch(() => undefined);
+  };
 
   const toggleCategory = (displayName: string) => {
     const normalized = displayName.toLocaleLowerCase();
@@ -544,48 +612,146 @@ function EventToolbar({
 
   return (
     <div className="event-toolbar" ref={containerRef}>
-      <div className="event-toolbar__group">
+      <div className="event-toolbar__dropdown-container">
         <button
           type="button"
-          className={`event-toolbar__toggle ${!form.recurrenceEnabled ? "event-toolbar__toggle--active" : ""}`}
-          onClick={() => updateForm(onChange, { recurrenceEnabled: false })}
+          className={`event-toolbar__dropdown-trigger ${openDropdown === "recurrence" ? "event-toolbar__dropdown-trigger--open" : ""}`}
+          onClick={() => {
+            setIsForwardPopupOpen(false);
+            setOpenDropdown(openDropdown === "recurrence" ? null : "recurrence");
+          }}
+          title={getRecurrenceLabel()}
         >
-          {t("eventEditor.tabs.details")}
+          <span className="event-toolbar__dropdown-label">{getRecurrenceLabel()}</span>
+          <ChevronDownIcon
+            className={`event-toolbar__dropdown-arrow ${openDropdown === "recurrence" ? "expanded" : ""}`}
+          />
         </button>
-        <button
-          type="button"
-          className={`event-toolbar__toggle ${form.recurrenceEnabled ? "event-toolbar__toggle--active" : ""}`}
-          onClick={() => updateForm(onChange, { recurrenceEnabled: true })}
-        >
-          {t("eventEditor.recurring")}
-        </button>
+        {openDropdown === "recurrence" && (
+          <div className="event-toolbar__dropdown">
+            <button
+              type="button"
+              className={`event-toolbar__dropdown-item ${!form.recurrenceEnabled ? "event-toolbar__dropdown-item--selected" : ""}`}
+              onClick={() => {
+                updateForm(onChange, { recurrenceEnabled: false });
+                setOpenDropdown(null);
+              }}
+            >
+              {t("eventEditor.tabs.event")}
+            </button>
+            <button
+              type="button"
+              className={`event-toolbar__dropdown-item ${form.recurrenceEnabled ? "event-toolbar__dropdown-item--selected" : ""}`}
+              onClick={() => {
+                updateForm(onChange, { recurrenceEnabled: true });
+                setOpenDropdown(null);
+              }}
+            >
+              {t("eventEditor.recurring")}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="event-toolbar__separator" />
 
-      {onDelete && (
+      {editedEvent && (
         <>
-          <button
-            type="button"
-            className="event-toolbar__button event-toolbar__button--danger"
-            onClick={onDelete}
-            title={t("common.delete")}
-          >
-            <TrashIcon />
-            <span>{t("common.delete")}</span>
-          </button>
-          <div className="event-toolbar__separator" />
+          <div className="event-toolbar__action-container">
+            <button
+              type="button"
+              aria-expanded={isForwardPopupOpen}
+              className={`event-toolbar__button ${isForwardPopupOpen ? "event-toolbar__button--open" : ""}`}
+              disabled={busy}
+              onClick={() => {
+                setOpenDropdown(null);
+                setIsForwardPopupOpen((current) => !current);
+              }}
+              title={t("eventEditor.forward")}
+            >
+              <ForwardIcon />
+              <span>{t("eventEditor.forward")}</span>
+            </button>
+            {isForwardPopupOpen && (
+              <div className="event-toolbar__dropdown event-toolbar__popup">
+                <label className="field field--full event-toolbar__popup-field">
+                  <span>{t("eventEditor.forwardRecipients")}</span>
+                  <AttendeePillsInput
+                    attendees={forwardRecipients}
+                    disabled={busy}
+                    homeAccountId={homeAccountId}
+                    inputValue={forwardRecipientsInput}
+                    label={t("eventEditor.forwardRecipients")}
+                    onCommit={(value) => {
+                      setForwardRecipients((current) =>
+                        mergeAttendeesWithInput(current, value, "required"),
+                      );
+                      setForwardRecipientsInput("");
+                    }}
+                    onInputChange={setForwardRecipientsInput}
+                    onRemove={(index) =>
+                      setForwardRecipients((current) =>
+                        current.filter((_, recipientIndex) => recipientIndex !== index),
+                      )
+                    }
+                    onSearchContacts={onSearchContacts}
+                    removeLabel={t("eventEditor.removeAttendee")}
+                    selectedAttendees={forwardRecipients}
+                  />
+                </label>
+                <label className="field field--full event-toolbar__popup-field">
+                  <span>{t("eventEditor.comment")}</span>
+                  <textarea
+                    disabled={busy}
+                    onChange={(event) => setForwardComment(event.target.value)}
+                    rows={4}
+                    value={forwardComment}
+                  />
+                </label>
+                <div className="event-toolbar__popup-actions">
+                  <button
+                    className="ghost-button"
+                    disabled={busy}
+                    onClick={() => setIsForwardPopupOpen(false)}
+                    type="button"
+                  >
+                    {t("common.cancel")}
+                  </button>
+                  <button
+                    className="primary-button"
+                    disabled={busy || resolvedForwardRecipients.length === 0}
+                    onClick={sendForward}
+                    type="button"
+                  >
+                    {t("eventEditor.sendForward")}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </>
+      )}
+
+      {onDelete && (
+        <button
+          type="button"
+          className="event-toolbar__button event-toolbar__button--danger"
+          onClick={onDelete}
+          title={t("common.delete")}
+        >
+          <TrashIcon />
+          <span>{t("common.delete")}</span>
+        </button>
       )}
 
       <button
         type="button"
         className="event-toolbar__button"
         onClick={onDuplicate}
-        title={t("eventEditor.duplicate")}
+        title={t("eventEditor.clone")}
       >
         <CopyIcon />
-        <span>{t("eventEditor.duplicate")}</span>
+        <span>{t("eventEditor.clone")}</span>
       </button>
 
       <div className="event-toolbar__separator" />
@@ -594,7 +760,10 @@ function EventToolbar({
         <button
           type="button"
           className={`event-toolbar__dropdown-trigger ${openDropdown === "showAs" ? "event-toolbar__dropdown-trigger--open" : ""}`}
-          onClick={() => setOpenDropdown(openDropdown === "showAs" ? null : "showAs")}
+          onClick={() => {
+            setIsForwardPopupOpen(false);
+            setOpenDropdown(openDropdown === "showAs" ? null : "showAs");
+          }}
           title={getShowAsLabel()}
         >
           <ShowAsIcon />
@@ -626,7 +795,10 @@ function EventToolbar({
         <button
           type="button"
           className={`event-toolbar__dropdown-trigger ${openDropdown === "reminder" ? "event-toolbar__dropdown-trigger--open" : ""}`}
-          onClick={() => setOpenDropdown(openDropdown === "reminder" ? null : "reminder")}
+          onClick={() => {
+            setIsForwardPopupOpen(false);
+            setOpenDropdown(openDropdown === "reminder" ? null : "reminder");
+          }}
           title={getReminderLabel()}
         >
           <BellIcon />
@@ -668,7 +840,10 @@ function EventToolbar({
         <button
           type="button"
           className={`event-toolbar__dropdown-trigger ${openDropdown === "categories" ? "event-toolbar__dropdown-trigger--open" : ""}`}
-          onClick={() => setOpenDropdown(openDropdown === "categories" ? null : "categories")}
+          onClick={() => {
+            setIsForwardPopupOpen(false);
+            setOpenDropdown(openDropdown === "categories" ? null : "categories");
+          }}
           title={t("eventEditor.categories")}
         >
           <TagIconColored
@@ -715,7 +890,10 @@ function EventToolbar({
         <button
           type="button"
           className={`event-toolbar__dropdown-trigger ${openDropdown === "sensitivity" ? "event-toolbar__dropdown-trigger--open" : ""}`}
-          onClick={() => setOpenDropdown(openDropdown === "sensitivity" ? null : "sensitivity")}
+          onClick={() => {
+            setIsForwardPopupOpen(false);
+            setOpenDropdown(openDropdown === "sensitivity" ? null : "sensitivity");
+          }}
           title={getSensitivityLabel()}
         >
           <LockIcon />
@@ -2118,23 +2296,12 @@ function CopyIcon() {
   );
 }
 
+function ForwardIcon() {
+  return <FontAwesomeIcon icon={faPaperPlane} />;
+}
+
 function BellIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      fill="none"
-      height="18"
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth="2"
-      viewBox="0 0 24 24"
-      width="18"
-    >
-      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-    </svg>
-  );
+  return <FontAwesomeIcon icon={faClock} />;
 }
 
 function TagIcon() {

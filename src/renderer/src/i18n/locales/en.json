@@ -166,7 +166,10 @@
     "yourResponse": "Your response: {{response}}",
     "comment": "Comment",
     "cancelMeeting": "Cancel meeting",
-    "duplicate": "Duplicate event",
+    "clone": "Clone",
+    "forward": "Forward",
+    "forwardRecipients": "Forward to",
+    "sendForward": "Send forward",
     "recurringEvent": "Recurring event",
     "recurring": "Recurring",
     "recurrencePattern": "Pattern",
@@ -192,7 +195,7 @@
     "organizerRole": "Organizer",
     "attendeeRole": "Attendee",
     "tabs": {
-      "details": "Details",
+      "event": "Event",
       "scheduling": "Scheduling",
       "attendees": "Attendees",
       "teams": "Teams"

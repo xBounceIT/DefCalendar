@@ -140,6 +140,40 @@ describe("graph calendar service request handling", () => {
     expect(preferHeader).toContain('IdType="ImmutableId"');
   });
 
+  it("posts forward requests with Graph recipients payload", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const service = createService();
+
+    await service.forwardEvent(
+      {
+        calendarId: "calendar-1",
+        comment: "Please cover this one",
+        eventId: "event-1",
+        toRecipients: [{ email: "dana@example.com", name: "Dana Swope" }],
+      },
+      "account-1",
+    );
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/me/events/event-1/forward");
+    expect(fetchMock.mock.calls[0][1]?.method).toBe("POST");
+    expect(new Headers(fetchMock.mock.calls[0][1]?.headers).get("Content-Type")).toBe(
+      "application/json",
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toStrictEqual({
+      comment: "Please cover this one",
+      toRecipients: [
+        {
+          emailAddress: {
+            address: "dana@example.com",
+            name: "Dana Swope",
+          },
+        },
+      ],
+    });
+  });
+
   it("recognizes missing-store item errors", () => {
     expect({
       matches: isMissingGraphItemError(
