@@ -5,12 +5,14 @@ import type {
   BodyContentType,
   CalendarEvent,
   CalendarSummary,
+  ContactSuggestion,
   EventAttachment,
   EventDraft,
   EventParticipant,
   EventResponseAction,
   OutlookCategory,
   Recurrence,
+  SearchContactsArgs,
   UserSettings,
 } from "@shared/schemas";
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -49,6 +51,7 @@ interface EventEditorDialogProps {
     comment: string,
     sendResponse: boolean,
   ) => Promise<void>;
+  onSearchContacts: (args: SearchContactsArgs) => Promise<ContactSuggestion[]>;
   onSave: (draft: EventDraft) => Promise<void>;
   state: EditorState | null;
   timeFormat: UserSettings["timeFormat"];
@@ -263,12 +266,14 @@ function EventEditorDialog(props: EventEditorDialogProps) {
               <AttendeePillsInput
                 attendees={getAttendeesByType(form.attendees, "required")}
                 disabled={readOnlyForAttendee}
+                homeAccountId={selectedCalendar?.homeAccountId ?? null}
                 inputValue={form.requiredAttendeesInput}
                 label={t("eventEditor.requiredAttendees")}
                 onCommit={(value) => commitAttendeeInput(setForm, value, "required")}
                 onInputChange={(requiredAttendeesInput) =>
                   updateForm(setForm, { requiredAttendeesInput })
                 }
+                onSearchContacts={props.onSearchContacts}
                 onRemove={(index) =>
                   setForm((current) =>
                     current
@@ -285,6 +290,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
                       : current,
                   )
                 }
+                selectedAttendees={form.attendees}
                 removeLabel={t("eventEditor.removeAttendee")}
               />
             </div>
@@ -294,12 +300,14 @@ function EventEditorDialog(props: EventEditorDialogProps) {
               <AttendeePillsInput
                 attendees={getAttendeesByType(form.attendees, "optional")}
                 disabled={readOnlyForAttendee}
+                homeAccountId={selectedCalendar?.homeAccountId ?? null}
                 inputValue={form.optionalAttendeesInput}
                 label={t("eventEditor.optionalAttendees")}
                 onCommit={(value) => commitAttendeeInput(setForm, value, "optional")}
                 onInputChange={(optionalAttendeesInput) =>
                   updateForm(setForm, { optionalAttendeesInput })
                 }
+                onSearchContacts={props.onSearchContacts}
                 onRemove={(index) =>
                   setForm((current) =>
                     current
@@ -316,6 +324,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
                       : current,
                   )
                 }
+                selectedAttendees={form.attendees}
                 removeLabel={t("eventEditor.removeAttendee")}
               />
             </div>
@@ -1755,34 +1764,128 @@ function AttendeesIcon() {
 function AttendeePillsInput({
   attendees,
   disabled,
+  homeAccountId,
   inputValue,
   label,
   onCommit,
   onInputChange,
+  onSearchContacts,
   onRemove,
+  selectedAttendees,
   removeLabel,
 }: {
   attendees: EventParticipant[];
   disabled: boolean;
+  homeAccountId: null | string;
   inputValue: string;
   label: string;
   onCommit: (value: string) => void;
   onInputChange: (value: string) => void;
+  onSearchContacts: (args: SearchContactsArgs) => Promise<ContactSuggestion[]>;
   onRemove: (index: number) => void;
+  selectedAttendees: EventParticipant[];
   removeLabel: string;
 }) {
+  const { t } = useTranslation();
+  const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const [isFocused, setIsFocused] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const [suggestions, setSuggestions] = useState<ContactSuggestion[]>([]);
+
+  useEffect(() => {
+    function handleClickOutside(clickEvent: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(clickEvent.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (disabled || !homeAccountId || !isFocused) {
+      setIsLoading(false);
+      setIsOpen(false);
+      setSuggestions([]);
+      return;
+    }
+
+    const query = inputValue.trim();
+    if (!query) {
+      setIsLoading(false);
+      setIsOpen(false);
+      setSuggestions([]);
+      return;
+    }
+
+    const selectedEmails = new Set(
+      selectedAttendees
+        .map((attendee) => normalizeAttendeeEmail(attendee.email))
+        .filter((email): email is string => Boolean(email)),
+    );
+
+    let cancelled = false;
+    const timeoutId = globalThis.setTimeout(() => {
+      setIsLoading(true);
+      void onSearchContacts({ homeAccountId, limit: 8, query })
+        .then((results) => {
+          if (cancelled) {
+            return;
+          }
+
+          const filtered = results.filter(
+            (contact) => !selectedEmails.has(normalizeAttendeeEmail(contact.email)!),
+          );
+          setSuggestions(filtered);
+          setHighlightedIndex(0);
+          setIsOpen(filtered.length > 0);
+          setIsLoading(false);
+        })
+        .catch(() => {
+          if (cancelled) {
+            return;
+          }
+
+          setSuggestions([]);
+          setIsOpen(false);
+          setIsLoading(false);
+        });
+    }, 180);
+
+    return () => {
+      cancelled = true;
+      globalThis.clearTimeout(timeoutId);
+    };
+  }, [disabled, homeAccountId, inputValue, isFocused, onSearchContacts, selectedAttendees]);
 
   const commitInputValue = (value: string) => {
     if (!value.trim()) {
       return;
     }
 
+    setHighlightedIndex(0);
+    setIsLoading(false);
+    setIsOpen(false);
+    setSuggestions([]);
     onCommit(value);
   };
 
+  const selectSuggestion = (contact: ContactSuggestion) => {
+    commitInputValue(formatAttendeeInputToken(contact));
+    inputRef.current?.focus();
+  };
+
   return (
-    <div className="attendee-pills-wrapper">
+    <div className="attendee-pills-wrapper attendee-field" ref={containerRef}>
       <div
         className={`attendee-pills-container ${disabled ? "attendee-pills-container--disabled" : ""}`}
         onClick={() => inputRef.current?.focus()}
@@ -1808,11 +1911,50 @@ function AttendeePillsInput({
           </span>
         ))}
         <input
+          aria-autocomplete="list"
+          aria-haspopup="listbox"
           aria-label={label}
           className="attendee-pills-input"
           disabled={disabled}
           onChange={(event) => onInputChange(event.target.value)}
+          onBlur={() => {
+            setIsFocused(false);
+            setIsOpen(false);
+          }}
+          onFocus={() => {
+            setIsFocused(true);
+          }}
           onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              setIsOpen(false);
+              return;
+            }
+
+            if (isOpen && suggestions.length > 0) {
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setHighlightedIndex((current) => (current + 1) % suggestions.length);
+                return;
+              }
+
+              if (event.key === "ArrowUp") {
+                event.preventDefault();
+                setHighlightedIndex((current) =>
+                  current === 0 ? suggestions.length - 1 : current - 1,
+                );
+                return;
+              }
+
+              if (event.key === "Enter" || event.key === "Tab") {
+                event.preventDefault();
+                const selectedSuggestion = suggestions[highlightedIndex];
+                if (selectedSuggestion) {
+                  selectSuggestion(selectedSuggestion);
+                }
+                return;
+              }
+            }
+
             if (
               (event.key === "Enter" ||
                 event.key === "Tab" ||
@@ -1832,7 +1974,7 @@ function AttendeePillsInput({
           }}
           onPaste={(event) => {
             const pastedText = event.clipboardData.getData("text");
-            if (parseAttendeeEmails(pastedText).length === 0) {
+            if (parseAttendeeEntries(pastedText).length === 0) {
               return;
             }
 
@@ -1845,6 +1987,34 @@ function AttendeePillsInput({
           value={inputValue}
         />
       </div>
+      {(isLoading || isOpen) && (
+        <div className="event-toolbar__dropdown attendee-field__dropdown" role="listbox">
+          {isLoading && <div className="event-toolbar__dropdown-note">{t("common.loading")}</div>}
+          {!isLoading &&
+            suggestions.map((contact, index) => {
+              const selected = index === highlightedIndex;
+              return (
+                <button
+                  key={contact.email}
+                  className={`event-toolbar__dropdown-item attendee-field__suggestion ${selected ? "event-toolbar__dropdown-item--selected" : ""}`}
+                  onClick={() => selectSuggestion(contact)}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => setHighlightedIndex(index)}
+                  aria-selected={selected}
+                  role="option"
+                  type="button"
+                >
+                  <span className="attendee-field__suggestion-name">
+                    {contact.name ?? contact.email}
+                  </span>
+                  {contact.name && (
+                    <span className="attendee-field__suggestion-email">{contact.email}</span>
+                  )}
+                </button>
+              );
+            })}
+        </div>
+      )}
     </div>
   );
 }
@@ -2590,10 +2760,13 @@ function getAttendeesByType(
   return attendees.filter((attendee) => attendee.type === type);
 }
 
-function createAttendee(email: string, type: "optional" | "required"): EventParticipant {
+function createAttendee(
+  entry: { email: string; name: null | string },
+  type: "optional" | "required",
+): EventParticipant {
   return {
-    email,
-    name: null,
+    email: entry.email,
+    name: entry.name,
     response: null,
     status: null,
     type,
@@ -2619,8 +2792,8 @@ function mergeAttendeesWithInput(
   inputValue: string,
   type: "optional" | "required",
 ): EventParticipant[] {
-  const emails = parseAttendeeEmails(inputValue);
-  if (emails.length === 0) {
+  const entries = parseAttendeeEntries(inputValue);
+  if (entries.length === 0) {
     return attendees;
   }
 
@@ -2628,8 +2801,8 @@ function mergeAttendeesWithInput(
   let requiredAttendees = getAttendeesByType(attendees, "required");
   let optionalAttendees = getAttendeesByType(attendees, "optional");
 
-  for (const email of emails) {
-    const normalizedEmail = normalizeAttendeeEmail(email);
+  for (const entry of entries) {
+    const normalizedEmail = normalizeAttendeeEmail(entry.email);
     if (!normalizedEmail) {
       continue;
     }
@@ -2643,10 +2816,19 @@ function mergeAttendeesWithInput(
     }
 
     if (type === "required") {
-      const existingRequired = requiredAttendees.some(
+      const existingRequiredIndex = requiredAttendees.findIndex(
         (attendee) => normalizeAttendeeEmail(attendee.email) === normalizedEmail,
       );
-      if (existingRequired) {
+      if (existingRequiredIndex !== -1) {
+        requiredAttendees = requiredAttendees.map((attendee, attendeeIndex) =>
+          attendeeIndex === existingRequiredIndex
+            ? {
+                ...attendee,
+                email: entry.email,
+                name: entry.name ?? attendee.name ?? null,
+              }
+            : attendee,
+        );
         continue;
       }
 
@@ -2657,26 +2839,53 @@ function mergeAttendeesWithInput(
         const [existingOptional] = optionalAttendees.splice(optionalIndex, 1);
         requiredAttendees = [
           ...requiredAttendees,
-          { ...existingOptional!, email, type: "required" },
+          {
+            ...existingOptional!,
+            email: entry.email,
+            name: entry.name ?? existingOptional!.name ?? null,
+            type: "required",
+          },
         ];
         continue;
       }
 
-      requiredAttendees = [...requiredAttendees, createAttendee(email, "required")];
+      requiredAttendees = [...requiredAttendees, createAttendee(entry, "required")];
       continue;
     }
 
-    const existingRequired = requiredAttendees.some(
+    const existingRequiredIndex = requiredAttendees.findIndex(
       (attendee) => normalizeAttendeeEmail(attendee.email) === normalizedEmail,
     );
-    const existingOptional = optionalAttendees.some(
-      (attendee) => normalizeAttendeeEmail(attendee.email) === normalizedEmail,
-    );
-    if (existingRequired || existingOptional) {
+    if (existingRequiredIndex !== -1) {
+      requiredAttendees = requiredAttendees.map((attendee, attendeeIndex) =>
+        attendeeIndex === existingRequiredIndex
+          ? {
+              ...attendee,
+              email: entry.email,
+              name: entry.name ?? attendee.name ?? null,
+            }
+          : attendee,
+      );
       continue;
     }
 
-    optionalAttendees = [...optionalAttendees, createAttendee(email, "optional")];
+    const existingOptionalIndex = optionalAttendees.findIndex(
+      (attendee) => normalizeAttendeeEmail(attendee.email) === normalizedEmail,
+    );
+    if (existingOptionalIndex !== -1) {
+      optionalAttendees = optionalAttendees.map((attendee, attendeeIndex) =>
+        attendeeIndex === existingOptionalIndex
+          ? {
+              ...attendee,
+              email: entry.email,
+              name: entry.name ?? attendee.name ?? null,
+            }
+          : attendee,
+      );
+      continue;
+    }
+
+    optionalAttendees = [...optionalAttendees, createAttendee(entry, "optional")];
   }
 
   return [...resourceAttendees, ...requiredAttendees, ...optionalAttendees];
@@ -2701,18 +2910,134 @@ function commitAttendeeInput(
   });
 }
 
-function parseAttendeeEmails(value: string): string[] {
-  const uniqueEmails = new Map<string, string>();
-  for (const part of value.split(/[\n,;]+/)) {
-    const email = part.trim();
-    const normalizedEmail = normalizeAttendeeEmail(email);
+function parseAttendeeEntries(value: string): { email: string; name: null | string }[] {
+  const uniqueEmails = new Map<string, { email: string; name: null | string }>();
+  for (const token of splitAttendeeInputTokens(value)) {
+    const attendee = parseAttendeeToken(token.text);
+    if (!attendee) {
+      continue;
+    }
+
+    const normalizedEmail = normalizeAttendeeEmail(attendee.email);
     if (!normalizedEmail || uniqueEmails.has(normalizedEmail)) {
       continue;
     }
-    uniqueEmails.set(normalizedEmail, email);
+
+    uniqueEmails.set(normalizedEmail, attendee);
   }
 
   return [...uniqueEmails.values()];
+}
+
+function parseAttendeeToken(value: string): { email: string; name: null | string } | null {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    return null;
+  }
+
+  if (trimmedValue.endsWith(">")) {
+    const openIndex = trimmedValue.lastIndexOf("<");
+    if (openIndex !== -1) {
+      const email = trimmedValue.slice(openIndex + 1, -1).trim();
+      if (email) {
+        return {
+          email,
+          name: parseAttendeeName(trimmedValue.slice(0, openIndex)),
+        };
+      }
+    }
+  }
+
+  return {
+    email: trimmedValue,
+    name: null,
+  };
+}
+
+function parseAttendeeName(value: string): null | string {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    return null;
+  }
+
+  if (trimmedValue.startsWith('"') && trimmedValue.endsWith('"') && trimmedValue.length >= 2) {
+    const unescapedValue = trimmedValue
+      .slice(1, -1)
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, "\\")
+      .trim();
+    return unescapedValue || null;
+  }
+
+  return trimmedValue;
+}
+
+function splitAttendeeInputTokens(value: string): { end: number; start: number; text: string }[] {
+  const tokens: { end: number; start: number; text: string }[] = [];
+  let tokenStart = 0;
+  let inAngleBrackets = false;
+  let inQuotes = false;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (character === '"' && !inAngleBrackets && !isEscapedAttendeeCharacter(value, index)) {
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (!inQuotes && character === "<") {
+      inAngleBrackets = true;
+      continue;
+    }
+
+    if (!inQuotes && character === ">") {
+      inAngleBrackets = false;
+      continue;
+    }
+
+    if (!inQuotes && !inAngleBrackets && isAttendeeSeparator(character)) {
+      tokens.push({ end: index, start: tokenStart, text: value.slice(tokenStart, index) });
+      tokenStart = index + 1;
+    }
+  }
+
+  tokens.push({ end: value.length, start: tokenStart, text: value.slice(tokenStart) });
+  return tokens;
+}
+
+function formatAttendeeInputToken(value: { email: string | null; name: null | string }): string {
+  const email = value.email?.trim();
+  if (!email) {
+    return "";
+  }
+
+  const name = value.name?.trim();
+  if (!name) {
+    return email;
+  }
+
+  return `${formatAttendeeName(name)} <${email}>`;
+}
+
+function formatAttendeeName(value: string): string {
+  if (!/[",;<>\n]/.test(value)) {
+    return value;
+  }
+
+  return `"${value.replaceAll("\\", String.raw`\\`).replaceAll('"', String.raw`\"`)}"`;
+}
+
+function isAttendeeSeparator(value: string): boolean {
+  return value === "," || value === ";" || value === "\n";
+}
+
+function isEscapedAttendeeCharacter(value: string, index: number): boolean {
+  let slashCount = 0;
+  for (let cursor = index - 1; cursor >= 0 && value[cursor] === "\\"; cursor -= 1) {
+    slashCount += 1;
+  }
+
+  return slashCount % 2 === 1;
 }
 
 function normalizeAttendeeEmail(value: null | string | undefined): null | string {

@@ -202,6 +202,11 @@ class SyncService {
           knownCalendarIds,
         });
         calendars.push(...accountCalendars);
+
+        try {
+          const accountContacts = await this.dependencies.graph.listContacts(accountId);
+          this.dependencies.db.replaceContactsForAccount(accountContacts, accountId);
+        } catch {}
       }
 
       if (reason === "sign-in") {

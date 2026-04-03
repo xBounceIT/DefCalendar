@@ -7,6 +7,7 @@ import type {
   CalendarEvent,
   CalendarSummary,
   CancelEventArgs,
+  ContactSuggestion,
   DeleteEventArgs,
   EventAttachment,
   EventDraft,
@@ -15,6 +16,7 @@ import type {
   ListOutlookCategoriesArgs,
   OutlookCategory,
   RespondToEventArgs,
+  SearchContactsArgs,
   SetCalendarColorArgs,
   SetCalendarVisibilityArgs,
   SyncStatus,
@@ -36,6 +38,7 @@ export const IPC_CHANNELS = {
   calendarsSetColor: "calendars:set-color",
   calendarsSetVisibility: "calendars:set-visibility",
   categoriesList: "categories:list",
+  contactsSearch: "contacts:search",
   eventsList: "events:list",
   eventsCreate: "events:create",
   eventsUpdate: "events:update",
@@ -88,6 +91,9 @@ interface CalendarApi {
   };
   categories: {
     list: (args: ListOutlookCategoriesArgs) => Promise<OutlookCategory[]>;
+  };
+  contacts: {
+    search: (args: SearchContactsArgs) => Promise<ContactSuggestion[]>;
   };
   events: {
     list: (args: EventListArgs) => Promise<CalendarEvent[]>;

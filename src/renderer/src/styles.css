@@ -3357,6 +3357,45 @@ button {
   outline: none;
 }
 
+.attendee-field {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+.attendee-field__input {
+  width: 100%;
+}
+
+.attendee-field__dropdown {
+  left: 0;
+  width: clamp(220px, 50%, 360px);
+  max-width: 100%;
+}
+
+.attendee-field__suggestion {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.attendee-field__suggestion-name,
+.attendee-field__suggestion-email {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attendee-field__suggestion-email {
+  color: var(--ink-secondary);
+  font-size: 12px;
+}
+
+.event-toolbar__dropdown-item--selected .attendee-field__suggestion-email {
+  color: currentColor;
+}
+
 .field-select {
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");

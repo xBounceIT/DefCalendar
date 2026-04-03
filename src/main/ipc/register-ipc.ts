@@ -11,6 +11,7 @@ import {
   attachmentUploadArgsSchema,
   authSignInRequestSchema,
   cancelEventArgsSchema,
+  contactSuggestionSchema,
   deleteEventArgsSchema,
   eventDraftSchema,
   eventListArgsSchema,
@@ -22,6 +23,7 @@ import {
   reminderDismissArgsSchema,
   reminderSnoozeArgsSchema,
   respondToEventArgsSchema,
+  searchContactsArgsSchema,
   setCalendarColorArgsSchema,
   setCalendarVisibilityArgsSchema,
   syncStatusSchema,
@@ -154,9 +156,8 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     validateMainSender(event);
     const args = authSignInRequestSchema.parse(input ?? {});
     const state = await dependencies.auth.signIn(args.mode);
-    await dependencies.sync.syncAll("sign-in");
+    void dependencies.sync.syncAll("sign-in");
     broadcast(IPC_CHANNELS.authStateChanged, state);
-    broadcast(IPC_CHANNELS.syncStatusChanged, dependencies.sync.getStatus());
     return state;
   });
 
@@ -215,6 +216,14 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     const args = listOutlookCategoriesArgsSchema.parse(input);
     const categories = await dependencies.graph.listOutlookCategories(args.homeAccountId);
     return categories.map((category) => outlookCategorySchema.parse(category));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.contactsSearch, async (event, input) => {
+    validateMainSender(event);
+    const args = searchContactsArgsSchema.parse(input);
+    return dependencies.db
+      .searchContacts(args)
+      .map((contact) => contactSuggestionSchema.parse(contact));
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsList, async (event, input) => {

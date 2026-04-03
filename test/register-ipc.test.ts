@@ -81,6 +81,18 @@ function createEventDraft(overrides?: { id?: string }) {
   };
 }
 
+function createDeferred<T>() {
+  let resolveDeferred: (value: T | PromiseLike<T>) => void = () => undefined;
+  const promise = new Promise<T>((resolve) => {
+    resolveDeferred = resolve;
+  });
+
+  return {
+    promise,
+    resolve: resolveDeferred,
+  };
+}
+
 function createFixture() {
   const handlers = new Map<
     string,
@@ -126,6 +138,10 @@ function createFixture() {
     getEvent: vi.fn().mockReturnValue(storedEvent),
     listCalendars: vi.fn().mockReturnValue([]),
     listEvents: vi.fn(),
+    searchContacts: vi.fn().mockReturnValue([
+      { email: "alice@example.com", name: "Alice Example" },
+      { email: "bob@example.com", name: null },
+    ]),
     upsertEvent: vi.fn(),
   };
   const graph = {
@@ -133,6 +149,7 @@ function createFixture() {
     cancelEvent: vi.fn().mockResolvedValue(undefined),
     createEvent: vi.fn().mockResolvedValue(storedEvent),
     deleteEvent: vi.fn().mockResolvedValue(undefined),
+    listContacts: vi.fn().mockResolvedValue([]),
     getEvent: vi.fn().mockResolvedValue(storedEvent),
     listAttachments: vi.fn().mockResolvedValue([]),
     listOutlookCategories: vi
@@ -182,6 +199,7 @@ function createFixture() {
   });
 
   return {
+    auth,
     db,
     graph,
     handlers,
@@ -268,6 +286,66 @@ describe("register ipc", () => {
 
     expect(fixture.graph.listOutlookCategories).toHaveBeenCalledWith("account-1");
     expect(response).toStrictEqual([{ color: "preset7", displayName: "Blue category" }]);
+  });
+
+  it("returns the signed-in auth state without waiting for sign-in sync", async () => {
+    const fixture = createFixture();
+    const invokeEvent = { sender: fixture.mainWebContents };
+    const handler = fixture.handlers.get(IPC_CHANNELS.authSignIn);
+    const state = {
+      account: {
+        color: "#5b7cfa",
+        homeAccountId: "account-1",
+        name: "Daniel D'Angeli",
+        tenantId: "tenant-1",
+        username: "daniel.dangeli@syncsecurity.it",
+      },
+      accounts: [],
+      activeAccountId: "account-1",
+      status: "signed_in" as const,
+    };
+    const deferredSync = createDeferred<unknown>();
+
+    fixture.auth.signIn.mockResolvedValue(state);
+    fixture.sync.syncAll.mockReturnValue(deferredSync.promise);
+
+    let resolvedState: null | typeof state = null;
+    if (!handler) {
+      throw new Error("Auth sign-in handler was not registered.");
+    }
+
+    void handler(invokeEvent, { mode: "user" }).then((value) => {
+      resolvedState = value as typeof state;
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(resolvedState).toStrictEqual(state);
+    expect(fixture.sync.syncAll).toHaveBeenCalledWith("sign-in");
+    expect(fixture.mainWebContents.send).toHaveBeenCalledWith(IPC_CHANNELS.authStateChanged, state);
+
+    deferredSync.resolve(fixture.sync.getStatus());
+  });
+
+  it("searches cached contacts for an account", async () => {
+    const fixture = createFixture();
+    const invokeEvent = { sender: fixture.mainWebContents };
+
+    const response = await fixture.handlers.get(IPC_CHANNELS.contactsSearch)?.(invokeEvent, {
+      homeAccountId: "account-1",
+      limit: 5,
+      query: "ali",
+    });
+
+    expect(fixture.db.searchContacts).toHaveBeenCalledWith({
+      homeAccountId: "account-1",
+      limit: 5,
+      query: "ali",
+    });
+    expect(response).toStrictEqual([
+      { email: "alice@example.com", name: "Alice Example" },
+      { email: "bob@example.com", name: null },
+    ]);
   });
 
   it("keeps a declined attendee event locally when Graph can no longer fetch it", async () => {

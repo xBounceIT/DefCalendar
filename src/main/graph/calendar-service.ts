@@ -2,6 +2,7 @@ import type {
   AttachmentUpload,
   CalendarEvent,
   CalendarSummary,
+  ContactSuggestion,
   EventAttachment,
   EventDraft,
   EventParticipant,
@@ -44,6 +45,11 @@ interface GraphRecipient {
     address?: string;
     name?: string;
   };
+}
+
+interface GraphEmailAddress {
+  address?: string;
+  name?: string;
 }
 
 interface GraphAttendee extends GraphRecipient {
@@ -141,6 +147,18 @@ interface GraphEvent {
   webLink?: string;
 }
 
+interface GraphContact {
+  displayName?: string;
+  emailAddresses?: GraphEmailAddress[];
+  fileAs?: string;
+  givenName?: string;
+  id: string;
+  primaryEmailAddress?: GraphEmailAddress;
+  secondaryEmailAddress?: GraphEmailAddress;
+  surname?: string;
+  tertiaryEmailAddress?: GraphEmailAddress;
+}
+
 interface SendRequestArgs {
   forceRefresh?: boolean;
   homeAccountId?: string;
@@ -198,6 +216,41 @@ class GraphCalendarService {
     );
 
     return categories.toSorted((left, right) => left.displayName.localeCompare(right.displayName));
+  }
+
+  async listContacts(homeAccountId: string): Promise<ContactSuggestion[]> {
+    const query = new URLSearchParams({
+      $select:
+        "id,displayName,fileAs,givenName,surname,emailAddresses,primaryEmailAddress,secondaryEmailAddress,tertiaryEmailAddress",
+      $top: "250",
+    });
+
+    const contacts = await this.paginate(
+      `/me/contacts?${query.toString()}`,
+      parseGraphContact,
+      homeAccountId,
+    );
+    const suggestions = new Map<string, ContactSuggestion>();
+
+    for (const contact of contacts) {
+      for (const emailAddress of listGraphContactEmailAddresses(contact)) {
+        const email = trimOrNull(emailAddress.address)?.toLowerCase();
+        if (!email || suggestions.has(email)) {
+          continue;
+        }
+
+        suggestions.set(email, {
+          email,
+          name: trimOrNull(emailAddress.name) ?? getGraphContactDisplayName(contact),
+        });
+      }
+    }
+
+    return [...suggestions.values()].toSorted((left, right) => {
+      const leftValue = left.name ?? left.email;
+      const rightValue = right.name ?? right.email;
+      return leftValue.localeCompare(rightValue);
+    });
   }
 
   async listCalendarView(
@@ -855,6 +908,26 @@ function parseGraphOutlookCategory(value: unknown): OutlookCategory {
   };
 }
 
+function parseGraphContact(value: unknown): GraphContact {
+  if (!isRecord(value)) {
+    throw new Error("Unexpected Microsoft Graph contact payload.");
+  }
+
+  return {
+    displayName: readOptionalString(value, "displayName"),
+    emailAddresses: parseGraphEmailAddresses(readOptionalArray(value, "emailAddresses")),
+    fileAs: readOptionalString(value, "fileAs"),
+    givenName: readOptionalString(value, "givenName"),
+    id: readRequiredString(value, "id"),
+    primaryEmailAddress: parseGraphEmailAddress(readOptionalRecord(value, "primaryEmailAddress")),
+    secondaryEmailAddress: parseGraphEmailAddress(
+      readOptionalRecord(value, "secondaryEmailAddress"),
+    ),
+    surname: readOptionalString(value, "surname"),
+    tertiaryEmailAddress: parseGraphEmailAddress(readOptionalRecord(value, "tertiaryEmailAddress")),
+  };
+}
+
 function parseGraphCollection(value: unknown): ParsedGraphCollection {
   if (!isRecord(value) || !Array.isArray(value.value)) {
     throw new Error("Unexpected Microsoft Graph collection payload.");
@@ -880,6 +953,27 @@ function parseGraphDateTime(value?: Record<string, unknown>): GraphDateTimeTimeZ
     dateTime,
     timeZone: readOptionalString(value, "timeZone"),
   };
+}
+
+function parseGraphEmailAddress(value?: Record<string, unknown>): GraphEmailAddress | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  return {
+    address: readOptionalString(value, "address"),
+    name: readOptionalString(value, "name"),
+  };
+}
+
+function parseGraphEmailAddresses(values?: unknown[]): GraphEmailAddress[] | undefined {
+  if (!values) {
+    return undefined;
+  }
+
+  return values
+    .map((entry) => (isRecord(entry) ? parseGraphEmailAddress(entry) : undefined))
+    .filter((entry): entry is GraphEmailAddress => Boolean(entry));
 }
 
 function parseGraphEvent(value: unknown): GraphEvent {
@@ -1090,6 +1184,36 @@ function parseRecurrence(value?: GraphRecurrence): null | Recurrence {
       type: normalizeRangeType(value.range.type),
     },
   };
+}
+
+function listGraphContactEmailAddresses(contact: GraphContact): GraphEmailAddress[] {
+  const addresses = [
+    ...(contact.emailAddresses ?? []),
+    contact.primaryEmailAddress,
+    contact.secondaryEmailAddress,
+    contact.tertiaryEmailAddress,
+  ].filter((entry): entry is GraphEmailAddress => Boolean(entry));
+
+  const deduped = new Map<string, GraphEmailAddress>();
+  for (const entry of addresses) {
+    const normalizedEmail = trimOrNull(entry.address)?.toLowerCase();
+    if (!normalizedEmail || deduped.has(normalizedEmail)) {
+      continue;
+    }
+
+    deduped.set(normalizedEmail, entry);
+  }
+
+  return [...deduped.values()];
+}
+
+function getGraphContactDisplayName(contact: GraphContact): null | string {
+  const preferred =
+    trimOrNull(contact.displayName) ??
+    trimOrNull([contact.givenName, contact.surname].filter(Boolean).join(" ")) ??
+    trimOrNull(contact.fileAs);
+
+  return preferred;
 }
 
 function normalizeGraphResponseValue(value: null | string | undefined): null | string {
