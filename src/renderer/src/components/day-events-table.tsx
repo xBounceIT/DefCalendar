@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 
 type SortColumn = "start" | "end" | "title" | "category";
 type SortDirection = "asc" | "desc";
+type EventResponseState = "accepted" | "declined" | "owner" | "pending" | "tentative";
 
 interface SortState {
   column: SortColumn;
@@ -80,6 +81,67 @@ function formatEventTime(isoString: string, timeFormat: UserSettings["timeFormat
   );
 }
 
+function normalizeResponseValue(response: null | string | undefined): null | string {
+  const normalized = response?.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized === "accepted" || normalized === "declined" || normalized === "tentative") {
+    return normalized;
+  }
+
+  if (normalized === "tentativelyaccepted") {
+    return "tentative";
+  }
+
+  if (normalized === "none" || normalized === "notresponded" || normalized === "organizer") {
+    return "none";
+  }
+
+  return normalized;
+}
+
+function getEventResponseState(event: CalendarEvent): EventResponseState {
+  if (event.isOrganizer) {
+    return "owner";
+  }
+
+  const normalizedResponse = normalizeResponseValue(event.responseStatus?.response);
+  if (
+    normalizedResponse === "accepted" ||
+    normalizedResponse === "declined" ||
+    normalizedResponse === "tentative"
+  ) {
+    return normalizedResponse;
+  }
+
+  return "pending";
+}
+
+function getEventResponseLabel(
+  t: ReturnType<typeof useTranslation>["t"],
+  responseState: EventResponseState,
+): string {
+  if (responseState === "accepted") {
+    return t("dayEventsTable.responseAccepted");
+  }
+
+  if (responseState === "declined") {
+    return t("dayEventsTable.responseDeclined");
+  }
+
+  if (responseState === "tentative") {
+    return t("dayEventsTable.responseTentative");
+  }
+
+  if (responseState === "owner") {
+    return t("dayEventsTable.responseOwner");
+  }
+
+  return t("dayEventsTable.responsePending");
+}
+
 function sortEvents(
   events: CalendarEvent[],
   sort: SortState,
@@ -124,19 +186,21 @@ function sortEvents(
 
 function useResizableColumns() {
   const [widths, setWidths] = React.useState<Record<string, number>>({
-    title: 35,
-    start: 15,
-    end: 15,
-    category: 15,
-    action: 20,
+    title: 24,
+    start: 13,
+    end: 13,
+    category: 12,
+    action: 22,
+    meeting: 16,
   });
 
   const minWidths: Record<string, number> = {
     title: 8,
-    start: 12,
-    end: 12,
+    start: 8,
+    end: 8,
     category: 8,
-    action: 20,
+    action: 16,
+    meeting: 12,
   };
 
   const [resizing, setResizing] = React.useState<{
@@ -439,53 +503,75 @@ function DayEventsTable({
                 style={{ width: `${widths.action}%` }}
               >
                 <span>{t("dayEventsTable.action")}</span>
+                <div
+                  className="day-events-table__resize-handle"
+                  onMouseDown={(e) => handleMouseDown(e, "action", "meeting")}
+                  role="separator"
+                />
+              </th>
+              <th
+                className="day-events-table__th day-events-table__th--meeting"
+                style={{ width: `${widths.meeting}%` }}
+              >
+                <span>{t("dayEventsTable.meeting")}</span>
               </th>
             </tr>
           </thead>
           <tbody>
-            {sortedEvents.map((event) => (
-              <tr
-                className="day-events-table__row"
-                key={`${event.calendarId}:${event.id}`}
-                onClick={() => handleRowClick(event)}
-              >
-                <td className="day-events-table__td">
-                  {event.subject || t("reminder.untitledEvent")}
-                </td>
-                <td className="day-events-table__td">
-                  {event.isAllDay
-                    ? t("eventEditor.allDay")
-                    : formatEventTime(event.start, timeFormat)}
-                </td>
-                <td className="day-events-table__td">
-                  {event.isAllDay
-                    ? t("eventEditor.allDay")
-                    : formatEventTime(event.end, timeFormat)}
-                </td>
-                <td className="day-events-table__td">
-                  {event.categories.length > 0 ? (
-                    <span className="day-events-table__category">{event.categories[0]}</span>
-                  ) : (
-                    ""
-                  )}
-                </td>
-                <td className="day-events-table__td day-events-table__td--action">
-                  {event.onlineMeeting?.joinUrl && (
-                    <button
-                      className="day-events-table__join-btn"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onJoinMeeting?.(event);
-                      }}
-                      type="button"
+            {sortedEvents.map((event) => {
+              const responseState = getEventResponseState(event);
+
+              return (
+                <tr
+                  className="day-events-table__row"
+                  key={`${event.calendarId}:${event.id}`}
+                  onClick={() => handleRowClick(event)}
+                >
+                  <td className="day-events-table__td">
+                    {event.subject || t("reminder.untitledEvent")}
+                  </td>
+                  <td className="day-events-table__td">
+                    {event.isAllDay
+                      ? t("eventEditor.allDay")
+                      : formatEventTime(event.start, timeFormat)}
+                  </td>
+                  <td className="day-events-table__td">
+                    {event.isAllDay
+                      ? t("eventEditor.allDay")
+                      : formatEventTime(event.end, timeFormat)}
+                  </td>
+                  <td className="day-events-table__td">
+                    {event.categories.length > 0 ? (
+                      <span className="day-events-table__category">{event.categories[0]}</span>
+                    ) : (
+                      ""
+                    )}
+                  </td>
+                  <td className="day-events-table__td day-events-table__td--action">
+                    <span
+                      className={`day-events-table__response day-events-table__response--${responseState}`}
                     >
-                      <MeetingIcon url={event.onlineMeeting.joinUrl} />
-                      <span>{t("eventEditor.joinMeeting")}</span>
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
+                      {getEventResponseLabel(t, responseState)}
+                    </span>
+                  </td>
+                  <td className="day-events-table__td day-events-table__td--meeting">
+                    {event.onlineMeeting?.joinUrl && (
+                      <button
+                        className="day-events-table__join-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onJoinMeeting?.(event);
+                        }}
+                        type="button"
+                      >
+                        <MeetingIcon url={event.onlineMeeting.joinUrl} />
+                        <span>{t("eventEditor.joinMeeting")}</span>
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}

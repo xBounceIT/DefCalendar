@@ -96,7 +96,13 @@
     "start": "Inizio",
     "end": "Fine",
     "category": "Categoria",
+    "meeting": "Riunione",
     "action": "Azione",
+    "responseAccepted": "Accettata",
+    "responseDeclined": "Rifiutata",
+    "responseTentative": "Provvisoria",
+    "responsePending": "In attesa di risposta",
+    "responseOwner": "Sei tu il proprietario",
     "noEvents": "Nessun evento in questo giorno",
     "eventsCount_one": "{{count}} evento",
     "eventsCount_other": "{{count}} eventi"
