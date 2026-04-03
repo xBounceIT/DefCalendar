@@ -1384,7 +1384,7 @@ button {
 .day-events-table {
   background: var(--surface);
   border-bottom: var(--border);
-  max-height: 240px;
+  height: 240px;
   overflow-y: auto;
   flex-shrink: 0;
 }
