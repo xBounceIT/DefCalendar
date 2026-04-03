@@ -2,6 +2,51 @@ import { describe, expect, it, vi } from "vitest";
 
 import AppDatabase from "../src/main/db/database";
 
+function createStoredReminderEvent(overrides?: {
+  calendarId?: string;
+  id?: string;
+  reminderMinutesBeforeStart?: number;
+  start?: string;
+}) {
+  return {
+    allowNewTimeProposals: null,
+    attendees: [],
+    attachments: [],
+    body: null,
+    bodyContentType: "html",
+    bodyPreview: null,
+    calendarId: overrides?.calendarId ?? "calendar-1",
+    cancelled: false,
+    categories: [],
+    changeKey: null,
+    end: "2026-03-30T10:30:00.000Z",
+    etag: null,
+    hasAttachments: false,
+    id: overrides?.id ?? "event-1",
+    isAllDay: false,
+    isOnlineMeeting: false,
+    isOrganizer: true,
+    isReminderOn: true,
+    lastModifiedDateTime: null,
+    location: "Room 3",
+    locations: [],
+    occurrenceId: null,
+    onlineMeeting: null,
+    organizer: null,
+    recurrence: null,
+    reminderMinutesBeforeStart: overrides?.reminderMinutesBeforeStart ?? 15,
+    responseRequested: null,
+    responseStatus: null,
+    seriesMasterId: null,
+    start: overrides?.start ?? "2026-03-30T10:00:00.000Z",
+    subject: "Planning",
+    timeZone: "UTC",
+    type: null,
+    unsupportedReason: null,
+    webLink: null,
+  };
+}
+
 describe("database", () => {
   it("clears only the signed-out account data with parameterized statements", () => {
     const targetAccountId = "account-1'; DELETE FROM settings; --";
@@ -136,6 +181,54 @@ describe("database", () => {
         userColor: null,
       },
     ]);
+  });
+
+  it("returns only the effective synced reminder candidate for each event", () => {
+    const all = vi.fn().mockReturnValue([
+      {
+        base_key: "calendar-1:event-1:2026-03-30T10:00:00.000Z",
+        dismissed_at_pre: null,
+        dismissed_at_start: "2026-03-30T10:00:00.000Z",
+        payload_json: JSON.stringify(createStoredReminderEvent()),
+        snoozed_until_pre: "2026-03-30T09:50:00.000Z",
+        snoozed_until_start: null,
+      },
+      {
+        base_key: "calendar-1:event-2:2026-03-30T11:00:00.000Z",
+        dismissed_at_pre: "2026-03-30T11:00:00.000Z",
+        dismissed_at_start: null,
+        payload_json: JSON.stringify(
+          createStoredReminderEvent({
+            id: "event-2",
+            reminderMinutesBeforeStart: 0,
+            start: "2026-03-30T11:00:00.000Z",
+          }),
+        ),
+        snoozed_until_pre: null,
+        snoozed_until_start: "2026-03-30T11:05:00.000Z",
+      },
+    ]);
+    const prepare = vi.fn(() => ({ all }));
+
+    const db = Object.create(AppDatabase.prototype) as AppDatabase;
+    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+
+    expect(db.listReminderCandidates(["calendar-1"], "2026-03-30T12:00:00.000Z")).toEqual([
+      expect.objectContaining({
+        dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z:pre",
+        dismissedAt: null,
+        reminderType: "pre",
+        snoozedUntil: "2026-03-30T09:50:00.000Z",
+      }),
+      expect.objectContaining({
+        dedupeKey: "calendar-1:event-2:2026-03-30T11:00:00.000Z:start",
+        dismissedAt: null,
+        reminderType: "start",
+        snoozedUntil: "2026-03-30T11:05:00.000Z",
+      }),
+    ]);
+
+    expect(all).toHaveBeenCalledWith("2026-03-30T12:00:00.000Z", "calendar-1");
   });
 
   it("searches contacts with normalized attendee input", () => {

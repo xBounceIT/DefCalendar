@@ -1,6 +1,7 @@
 import type { CalendarEvent, UserSettings } from "@shared/schemas";
 import React from "react";
 import { formatLocalizedDate } from "../date-formatting";
+import { MeetingIcon } from "./meeting-icon";
 import { useTranslation } from "react-i18next";
 
 type SortColumn = "start" | "end" | "title" | "category";
@@ -15,6 +16,7 @@ interface DayEventsTableProps {
   events: CalendarEvent[];
   onClear: () => void;
   onEventClick: (event: CalendarEvent) => void;
+  onJoinMeeting?: (event: CalendarEvent) => void;
   selectedDay: null | string;
   timeFormat: UserSettings["timeFormat"];
 }
@@ -120,10 +122,153 @@ function sortEvents(
   return sorted;
 }
 
+function useResizableColumns() {
+  const [widths, setWidths] = React.useState<Record<string, number>>({
+    title: 35,
+    start: 15,
+    end: 15,
+    category: 15,
+    action: 20,
+  });
+
+  const minWidths: Record<string, number> = {
+    title: 8,
+    start: 12,
+    end: 12,
+    category: 8,
+    action: 20,
+  };
+
+  const [resizing, setResizing] = React.useState<{
+    column: string;
+    startX: number;
+    startWidth: number;
+    nextColumn: string | null;
+    nextStartWidth: number;
+  } | null>(null);
+
+  const tableRef = React.useRef<HTMLTableElement | null>(null);
+  const suppressSortClickRef = React.useRef(false);
+  const suppressSortResetTimeoutRef = React.useRef<null | number>(null);
+
+  const handleMouseDown = React.useCallback(
+    (e: React.MouseEvent, column: string, nextColumn: string | null) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (suppressSortResetTimeoutRef.current !== null) {
+        globalThis.clearTimeout(suppressSortResetTimeoutRef.current);
+        suppressSortResetTimeoutRef.current = null;
+      }
+      suppressSortClickRef.current = true;
+      const startWidth = widths[column] ?? 15;
+      const nextStartWidth = nextColumn ? (widths[nextColumn] ?? 15) : 0;
+      setResizing({ column, startX: e.clientX, startWidth, nextColumn, nextStartWidth });
+    },
+    [widths],
+  );
+
+  React.useEffect(() => {
+    if (!resizing) {
+      return;
+    }
+
+    const table = tableRef.current;
+    if (!table) {
+      return;
+    }
+
+    const tableWidth = table.getBoundingClientRect().width;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const delta = e.clientX - resizing.startX;
+      const deltaPercent = (delta / tableWidth) * 100;
+
+      if (resizing.nextColumn) {
+        const totalWidth = resizing.startWidth + resizing.nextStartWidth;
+        const minCurrent = minWidths[resizing.column] ?? 8;
+        const minNext = minWidths[resizing.nextColumn] ?? 8;
+
+        let newWidth = resizing.startWidth + deltaPercent;
+        let newNextWidth = resizing.nextStartWidth - deltaPercent;
+
+        if (newWidth < minCurrent) {
+          newWidth = minCurrent;
+          newNextWidth = totalWidth - minCurrent;
+        }
+
+        if (newNextWidth < minNext) {
+          newNextWidth = minNext;
+          newWidth = totalWidth - minNext;
+        }
+
+        setWidths((prev) => ({
+          ...prev,
+          [resizing.column]: newWidth,
+          [resizing.nextColumn!]: newNextWidth,
+        }));
+      } else {
+        const minCurrent = minWidths[resizing.column] ?? 8;
+        const newWidth = Math.max(minCurrent, resizing.startWidth + deltaPercent);
+        setWidths((prev) => ({ ...prev, [resizing.column]: newWidth }));
+      }
+    };
+
+    const handleMouseUp = () => {
+      setResizing(null);
+      if (suppressSortResetTimeoutRef.current !== null) {
+        globalThis.clearTimeout(suppressSortResetTimeoutRef.current);
+      }
+      suppressSortResetTimeoutRef.current = globalThis.setTimeout(() => {
+        suppressSortClickRef.current = false;
+        suppressSortResetTimeoutRef.current = null;
+      }, 0);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [resizing]);
+
+  React.useEffect(
+    () => () => {
+      if (suppressSortResetTimeoutRef.current !== null) {
+        globalThis.clearTimeout(suppressSortResetTimeoutRef.current);
+      }
+    },
+    [],
+  );
+
+  const consumeSortSuppression = React.useCallback(() => {
+    if (!suppressSortClickRef.current) {
+      return false;
+    }
+
+    suppressSortClickRef.current = false;
+    if (suppressSortResetTimeoutRef.current !== null) {
+      globalThis.clearTimeout(suppressSortResetTimeoutRef.current);
+      suppressSortResetTimeoutRef.current = null;
+    }
+    return true;
+  }, []);
+
+  return {
+    consumeSortSuppression,
+    widths,
+    handleMouseDown,
+    tableRef,
+    isResizing: resizing !== null,
+  };
+}
+
 function DayEventsTable({
   events,
   onClear,
   onEventClick,
+  onJoinMeeting,
   selectedDay,
   timeFormat,
 }: DayEventsTableProps) {
@@ -132,6 +277,8 @@ function DayEventsTable({
     column: "start",
     direction: "asc",
   });
+  const { widths, handleMouseDown, tableRef, isResizing, consumeSortSuppression } =
+    useResizableColumns();
 
   const filteredEvents = React.useMemo(() => {
     if (!selectedDay) {
@@ -170,6 +317,10 @@ function DayEventsTable({
   );
 
   const handleSort = (column: SortColumn) => {
+    if (consumeSortSuppression()) {
+      return;
+    }
+
     setSort((current) => {
       if (current.column === column) {
         return {
@@ -184,7 +335,6 @@ function DayEventsTable({
 
   const handleRowClick = (event: CalendarEvent) => {
     onEventClick(event);
-    onClear();
   };
 
   if (!selectedDay) {
@@ -218,32 +368,77 @@ function DayEventsTable({
       {sortedEvents.length === 0 ? (
         <div className="day-events-table__empty">{t("dayEventsTable.noEvents")}</div>
       ) : (
-        <table className="day-events-table__table">
+        <table
+          className={`day-events-table__table${isResizing ? " day-events-table--resizing" : ""}`}
+          ref={tableRef}
+        >
           <thead>
             <tr>
-              <th className="day-events-table__th" onClick={() => handleSort("title")}>
+              <th
+                className="day-events-table__th"
+                style={{ width: `${widths.title}%` }}
+                onClick={() => handleSort("title")}
+              >
                 <div className="day-events-table__th-content">
                   <span>{t("dayEventsTable.title")}</span>
                   {sort.column === "title" && <SortArrow direction={sort.direction} />}
                 </div>
+                <div
+                  className="day-events-table__resize-handle"
+                  onMouseDown={(e) => handleMouseDown(e, "title", "start")}
+                  role="separator"
+                />
               </th>
-              <th className="day-events-table__th" onClick={() => handleSort("start")}>
+              <th
+                className="day-events-table__th"
+                style={{ width: `${widths.start}%` }}
+                onClick={() => handleSort("start")}
+              >
                 <div className="day-events-table__th-content">
                   <span>{t("dayEventsTable.start")}</span>
                   {sort.column === "start" && <SortArrow direction={sort.direction} />}
                 </div>
+                <div
+                  className="day-events-table__resize-handle"
+                  onMouseDown={(e) => handleMouseDown(e, "start", "end")}
+                  role="separator"
+                />
               </th>
-              <th className="day-events-table__th" onClick={() => handleSort("end")}>
+              <th
+                className="day-events-table__th"
+                style={{ width: `${widths.end}%` }}
+                onClick={() => handleSort("end")}
+              >
                 <div className="day-events-table__th-content">
                   <span>{t("dayEventsTable.end")}</span>
                   {sort.column === "end" && <SortArrow direction={sort.direction} />}
                 </div>
+                <div
+                  className="day-events-table__resize-handle"
+                  onMouseDown={(e) => handleMouseDown(e, "end", "category")}
+                  role="separator"
+                />
               </th>
-              <th className="day-events-table__th" onClick={() => handleSort("category")}>
+              <th
+                className="day-events-table__th"
+                style={{ width: `${widths.category}%` }}
+                onClick={() => handleSort("category")}
+              >
                 <div className="day-events-table__th-content">
                   <span>{t("dayEventsTable.category")}</span>
                   {sort.column === "category" && <SortArrow direction={sort.direction} />}
                 </div>
+                <div
+                  className="day-events-table__resize-handle"
+                  onMouseDown={(e) => handleMouseDown(e, "category", "action")}
+                  role="separator"
+                />
+              </th>
+              <th
+                className="day-events-table__th day-events-table__th--action"
+                style={{ width: `${widths.action}%` }}
+              >
+                <span>{t("dayEventsTable.action")}</span>
               </th>
             </tr>
           </thead>
@@ -272,6 +467,21 @@ function DayEventsTable({
                     <span className="day-events-table__category">{event.categories[0]}</span>
                   ) : (
                     ""
+                  )}
+                </td>
+                <td className="day-events-table__td day-events-table__td--action">
+                  {event.onlineMeeting?.joinUrl && (
+                    <button
+                      className="day-events-table__join-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onJoinMeeting?.(event);
+                      }}
+                      type="button"
+                    >
+                      <MeetingIcon url={event.onlineMeeting.joinUrl} />
+                      <span>{t("eventEditor.joinMeeting")}</span>
+                    </button>
                   )}
                 </td>
               </tr>

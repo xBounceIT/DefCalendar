@@ -1,4 +1,5 @@
 import type {
+  DayCellArg,
   DatesSetArg,
   EventClickArg,
   EventContentArg,
@@ -28,6 +29,7 @@ interface CalendarBoardProps {
   onEventDrop: (changeInfo: EventDropArg) => void;
   onEventResize: (changeInfo: EventResizeDoneArg) => void;
   selectedDate: string;
+  selectedDayForTable: null | string;
   timeFormat: UserSettings["timeFormat"];
 }
 
@@ -110,6 +112,23 @@ function handleEventClassNames(info: EventContentArg): string[] {
   return [className];
 }
 
+function isSameLocalDay(left: Date, rightIso: null | string): boolean {
+  if (!rightIso) {
+    return false;
+  }
+
+  const right = new Date(rightIso);
+  if (Number.isNaN(right.getTime())) {
+    return false;
+  }
+
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
+}
+
 function EmptyState() {
   const { t, i18n } = useTranslation();
 
@@ -131,11 +150,23 @@ function CalendarSurface({
   onEventDrop,
   onEventResize,
   selectedDate,
+  selectedDayForTable,
   timeFormat,
 }: Omit<CalendarBoardProps, "hasVisibleCalendars">) {
   const { t, i18n } = useTranslation();
   const locale = React.useMemo(() => (i18n.language === "it" ? "it" : "en"), [i18n.language]);
   const eventTimeFormat = React.useMemo(() => buildEventTimeFormat(timeFormat), [timeFormat]);
+
+  const handleDayCellClassNames = React.useCallback(
+    (arg: DayCellArg) => {
+      if (!isSameLocalDay(arg.date, selectedDayForTable)) {
+        return [];
+      }
+
+      return ["fc-daygrid-day-selected"];
+    },
+    [selectedDayForTable],
+  );
 
   return (
     <FullCalendar
@@ -143,6 +174,7 @@ function CalendarSurface({
       allDayText={t("eventEditor.allDay")}
       dateClick={onDateClick}
       datesSet={onDatesSet}
+      dayCellClassNames={handleDayCellClassNames}
       dayMaxEvents={3}
       dayMaxEventRows={3}
       eventMaxStack={3}
@@ -232,6 +264,7 @@ function CalendarBoard(props: CalendarBoardProps) {
         onEventDrop={props.onEventDrop}
         onEventResize={props.onEventResize}
         selectedDate={props.selectedDate}
+        selectedDayForTable={props.selectedDayForTable}
         timeFormat={props.timeFormat}
       />
     </div>

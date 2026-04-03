@@ -569,7 +569,11 @@ class AppDatabase {
       const baseKey = readStringProperty(row, "base_key");
       const reminderMinutes = event.reminderMinutesBeforeStart;
 
-      if (reminderMinutes !== null && reminderMinutes > 0) {
+      if (reminderMinutes === null) {
+        continue;
+      }
+
+      if (reminderMinutes > 0) {
         candidates.push({
           dedupeKey: `${baseKey}:pre`,
           dismissedAt: readNullableStringProperty(row, "dismissed_at_pre"),
@@ -577,6 +581,7 @@ class AppDatabase {
           reminderType: "pre",
           snoozedUntil: readNullableStringProperty(row, "snoozed_until_pre"),
         });
+        continue;
       }
 
       candidates.push({

@@ -96,6 +96,7 @@
     "start": "Start",
     "end": "End",
     "category": "Category",
+    "action": "Action",
     "noEvents": "No events on this day",
     "eventsCount_one": "{{count}} event",
     "eventsCount_other": "{{count}} events"
@@ -146,6 +147,8 @@
     "attendeeTypeResource": "Resource",
     "removeAttendee": "Remove",
     "addAttendee": "Add attendee",
+    "requiredAttendees": "Required attendees",
+    "optionalAttendees": "Optional attendees",
     "teamsMeeting": "Microsoft Teams meeting",
     "noTeamsProvider": "No provider configured yet",
     "saveBeforeAttachments": "Save the event before adding attachments.",

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createInstance } from "i18next";
 import React from "react";
 import { I18nextProvider, initReactI18next } from "react-i18next";
@@ -302,7 +302,7 @@ describe("event editor dialog", () => {
     );
   });
 
-  it("saves attendees from the attendees row in create mode", () => {
+  it("saves required and optional attendees from separate rows in create mode", () => {
     const { onSave } = renderDialog({
       state: {
         allDay: false,
@@ -313,14 +313,22 @@ describe("event editor dialog", () => {
       },
     });
 
-    expect(screen.queryByRole("button", { name: "Add attendee" })).toBeNull();
-
     fireEvent.change(screen.getByPlaceholderText("Subject"), {
       target: { value: "Planning" },
     });
-    fireEvent.change(screen.getByRole("textbox", { name: "Attendees" }), {
+    const requiredInput = screen.getByRole("textbox", { name: "Required attendees" });
+    const optionalInput = screen.getByRole("textbox", { name: "Optional attendees" });
+
+    fireEvent.change(requiredInput, {
       target: { value: "alice@example.com, bob@example.com" },
     });
+    fireEvent.keyDown(requiredInput, { key: "Enter" });
+
+    fireEvent.change(optionalInput, {
+      target: { value: "carol@example.com" },
+    });
+    fireEvent.keyDown(optionalInput, { key: "Enter" });
+
     fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
 
     expect(onSave).toHaveBeenCalledWith(
@@ -339,6 +347,13 @@ describe("event editor dialog", () => {
             response: null,
             status: null,
             type: "required",
+          },
+          {
+            email: "carol@example.com",
+            name: null,
+            response: null,
+            status: null,
+            type: "optional",
           },
         ],
       }),
@@ -365,7 +380,7 @@ describe("event editor dialog", () => {
     );
   });
 
-  it("prefills attendees row from existing attendees", () => {
+  it("prefills attendee pills in the matching rows", () => {
     renderDialog({
       state: {
         event: createEvent({
@@ -390,12 +405,20 @@ describe("event editor dialog", () => {
       },
     });
 
-    expect(screen.getByRole("textbox", { name: "Attendees" })).toHaveValue(
-      "Alice <alice@example.com>, Bob <bob@example.com>",
-    );
+    const requiredRow = screen
+      .getByRole("textbox", { name: "Required attendees" })
+      .closest(".attendee-pills-wrapper");
+    const optionalRow = screen
+      .getByRole("textbox", { name: "Optional attendees" })
+      .closest(".attendee-pills-wrapper");
+
+    expect(requiredRow).toBeInstanceOf(HTMLElement);
+    expect(optionalRow).toBeInstanceOf(HTMLElement);
+    expect(within(requiredRow as HTMLElement).getByText("alice@example.com")).toBeInTheDocument();
+    expect(within(optionalRow as HTMLElement).getByText("bob@example.com")).toBeInTheDocument();
   });
 
-  it("inserts a selected contact as Name <email> from the attendees popup", async () => {
+  it("inserts a selected contact from the attendee popup", async () => {
     const onSearchContacts = vi
       .fn()
       .mockResolvedValue([{ email: "john.doe@example.com", name: "Doe, John" }]);
@@ -414,16 +437,21 @@ describe("event editor dialog", () => {
       target: { value: "Planning" },
     });
 
-    const attendeesInput = screen.getByRole("textbox", { name: "Attendees" });
-    fireEvent.focus(attendeesInput);
-    fireEvent.change(attendeesInput, {
+    const requiredInput = screen.getByRole("textbox", { name: "Required attendees" });
+    fireEvent.focus(requiredInput);
+    fireEvent.change(requiredInput, {
       target: { value: '"Doe, J' },
     });
 
     await screen.findByRole("option", { name: /Doe, John/i });
     fireEvent.click(screen.getByRole("option", { name: /Doe, John/i }));
 
-    expect(attendeesInput).toHaveValue('"Doe, John" <john.doe@example.com>, ');
+    const requiredRow = requiredInput.closest(".attendee-pills-wrapper");
+    expect(requiredInput).toHaveValue("");
+    expect(requiredRow).toBeInstanceOf(HTMLElement);
+    expect(
+      within(requiredRow as HTMLElement).getByText("john.doe@example.com"),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
 
@@ -438,6 +466,123 @@ describe("event editor dialog", () => {
             type: "required",
           },
         ],
+      }),
+    );
+  });
+
+  it("prefers required attendees when the same email is entered in both rows", () => {
+    const { onSave } = renderDialog({
+      state: {
+        allDay: false,
+        calendarId: "calendar-1",
+        end: "2026-03-30T10:00:00.000Z",
+        mode: "create",
+        start: "2026-03-30T09:00:00.000Z",
+      },
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Subject"), {
+      target: { value: "Planning" },
+    });
+    const requiredInput = screen.getByRole("textbox", { name: "Required attendees" });
+    const optionalInput = screen.getByRole("textbox", { name: "Optional attendees" });
+
+    fireEvent.change(requiredInput, {
+      target: { value: "alice@example.com" },
+    });
+    fireEvent.keyDown(requiredInput, { key: "Enter" });
+
+    fireEvent.change(optionalInput, {
+      target: { value: "alice@example.com, bob@example.com" },
+    });
+    fireEvent.keyDown(optionalInput, { key: "Enter" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attendees: [
+          {
+            email: "alice@example.com",
+            name: null,
+            response: null,
+            status: null,
+            type: "required",
+          },
+          {
+            email: "bob@example.com",
+            name: null,
+            response: null,
+            status: null,
+            type: "optional",
+          },
+        ],
+      }),
+    );
+  });
+
+  it("preserves resource attendees outside the required and optional pill rows", () => {
+    const { onSave } = renderDialog({
+      state: {
+        event: createEvent({
+          attendees: [
+            {
+              email: "room@example.com",
+              name: "Room 1",
+              response: null,
+              status: null,
+              type: "resource",
+            },
+            {
+              email: "alice@example.com",
+              name: "Alice",
+              response: null,
+              status: null,
+              type: "required",
+            },
+            {
+              email: "bob@example.com",
+              name: "Bob",
+              response: null,
+              status: null,
+              type: "optional",
+            },
+          ],
+        }),
+        mode: "edit",
+      },
+    });
+
+    const requiredRow = screen
+      .getByRole("textbox", { name: "Required attendees" })
+      .closest(".attendee-pills-wrapper");
+    const optionalRow = screen
+      .getByRole("textbox", { name: "Optional attendees" })
+      .closest(".attendee-pills-wrapper");
+
+    expect(requiredRow).toBeInstanceOf(HTMLElement);
+    expect(optionalRow).toBeInstanceOf(HTMLElement);
+    expect(within(requiredRow as HTMLElement).getByText("alice@example.com")).toBeInTheDocument();
+    expect(within(optionalRow as HTMLElement).getByText("bob@example.com")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attendees: expect.arrayContaining([
+          expect.objectContaining({
+            email: "room@example.com",
+            type: "resource",
+          }),
+          expect.objectContaining({
+            email: "alice@example.com",
+            type: "required",
+          }),
+          expect.objectContaining({
+            email: "bob@example.com",
+            type: "optional",
+          }),
+        ]),
       }),
     );
   });

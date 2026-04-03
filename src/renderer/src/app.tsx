@@ -519,6 +519,13 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     });
   }
 
+  function handleJoinMeeting(event: CalendarEvent): void {
+    const joinUrl = event.onlineMeeting?.joinUrl;
+    if (joinUrl) {
+      void openExternalEvent(joinUrl);
+    }
+  }
+
   async function handleEventMove(changeInfo: EventDropArg | EventResizeDoneArg): Promise<void> {
     const { calendarId, eventId } = changeInfo.event.extendedProps;
     const source = eventLookup.get(`${calendarId}:${eventId}`);
@@ -828,6 +835,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         onEventResize={(changeInfo) => {
           void handleEventMove(changeInfo);
         }}
+        onJoinMeeting={handleJoinMeeting}
         onNext={handleNext}
         onPrev={handlePrev}
         onToday={handleToday}
@@ -927,6 +935,19 @@ function buildCalendarEvents(
       classNames = ["calendar-event--managed"];
     }
 
+    if (!event.isOrganizer) {
+      const response = normalizeEventResponseValue(event.responseStatus?.response);
+      if (response === "accepted") {
+        classNames.push("calendar-event--accepted");
+      } else if (response === "declined") {
+        classNames.push("calendar-event--declined");
+      } else if (response === "tentative") {
+        classNames.push("calendar-event--tentative");
+      } else {
+        classNames.push("calendar-event--needs-action");
+      }
+    }
+
     const eventInput: EventInput = {
       allDay: event.isAllDay,
       classNames,
@@ -1003,6 +1024,27 @@ function toEventBackgroundColor(color: string): string {
   const green = Number.parseInt(normalized.slice(2, 4), 16);
   const blue = Number.parseInt(normalized.slice(4, 6), 16);
   return `rgba(${red}, ${green}, ${blue}, 0.2)`;
+}
+
+function normalizeEventResponseValue(response: null | string | undefined): null | string {
+  const normalized = response?.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  if (normalized === "accepted" || normalized === "declined" || normalized === "tentative") {
+    return normalized;
+  }
+
+  if (normalized === "tentativelyaccepted") {
+    return "tentative";
+  }
+
+  if (normalized === "none" || normalized === "notresponded" || normalized === "organizer") {
+    return "none";
+  }
+
+  return normalized;
 }
 
 function getPreferredEditableCalendar(

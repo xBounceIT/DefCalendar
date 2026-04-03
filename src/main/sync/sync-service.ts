@@ -4,7 +4,7 @@ import type GraphCalendarService from "@main/graph/calendar-service";
 import type MsalAuthService from "@main/auth/msal-auth-service";
 import type ReminderService from "@main/reminders/reminder-service";
 import type SettingsService from "@main/settings/settings-service";
-import type { CalendarSummary, SyncStatus } from "@shared/schemas";
+import type { CalendarEvent, CalendarSummary, SyncStatus } from "@shared/schemas";
 
 type SyncReason = "startup" | "sign-in" | "switch-account" | "manual" | "interval" | "mutation";
 
@@ -255,7 +255,17 @@ class SyncService {
         })),
       );
 
-      for (const syncedCalendar of syncedCalendars) {
+      const calendarsToStore = syncedCalendars.map((syncedCalendar) => ({
+        calendarId: syncedCalendar.calendarId,
+        events: this.mergePersistedDeclinedEvents(
+          syncedCalendar.calendarId,
+          syncedCalendar.events,
+          rangeStart,
+          rangeEnd,
+        ),
+      }));
+
+      for (const syncedCalendar of calendarsToStore) {
         this.dependencies.db.replaceEventsForCalendarRange({
           calendarId: syncedCalendar.calendarId,
           events: syncedCalendar.events,
@@ -273,7 +283,7 @@ class SyncService {
 
       await this.dependencies.reminders.checkNow();
 
-      const totalEvents = syncedCalendars.reduce((sum, sc) => sum + sc.events.length, 0);
+      const totalEvents = calendarsToStore.reduce((sum, sc) => sum + sc.events.length, 0);
 
       let calendarSuffix = "s";
       if (calendarsToSync.length === 1) {
@@ -331,6 +341,36 @@ class SyncService {
     return this.dependencies.auth.getAccountIds();
   }
 
+  private mergePersistedDeclinedEvents(
+    calendarId: string,
+    syncedEvents: CalendarEvent[],
+    rangeStart: string,
+    rangeEnd: string,
+  ): CalendarEvent[] {
+    const persistedEvents = this.dependencies.db.listEvents({
+      calendarIds: [calendarId],
+      end: rangeEnd,
+      start: rangeStart,
+    });
+    if (persistedEvents.length === 0) {
+      return syncedEvents;
+    }
+
+    const syncedIds = new Set(syncedEvents.map((event) => event.id));
+    const syncedKeys = new Set(syncedEvents.map(buildEventIdentityKey));
+    const preservedEvents = persistedEvents.filter(
+      (event) =>
+        shouldPreserveDeclinedEvent(event) &&
+        !syncedIds.has(event.id) &&
+        !syncedKeys.has(buildEventIdentityKey(event)),
+    );
+    if (preservedEvents.length === 0) {
+      return syncedEvents;
+    }
+
+    return [...syncedEvents, ...preservedEvents].toSorted(compareCalendarEvents);
+  }
+
   private getIntervalMs(): number {
     const syncIntervalMinutes =
       this.dependencies.settings.getSettings().syncIntervalMinutes ??
@@ -346,6 +386,42 @@ class SyncService {
       listener(status);
     }
   }
+}
+
+function buildEventIdentityKey(
+  event: Pick<
+    CalendarEvent,
+    "end" | "location" | "occurrenceId" | "organizer" | "start" | "subject"
+  >,
+): string {
+  if (event.occurrenceId) {
+    return `occurrence:${event.occurrenceId}`;
+  }
+
+  return [
+    event.subject.trim().toLowerCase(),
+    event.start,
+    event.end,
+    event.organizer?.email?.trim().toLowerCase() ?? "",
+    event.location?.trim().toLowerCase() ?? "",
+  ].join("|");
+}
+
+function compareCalendarEvents(
+  left: Pick<CalendarEvent, "id" | "start" | "subject">,
+  right: Pick<CalendarEvent, "id" | "start" | "subject">,
+): number {
+  return (
+    left.start.localeCompare(right.start) ||
+    left.subject.localeCompare(right.subject) ||
+    left.id.localeCompare(right.id)
+  );
+}
+
+function shouldPreserveDeclinedEvent(
+  event: Pick<CalendarEvent, "cancelled" | "isOrganizer" | "responseStatus">,
+): boolean {
+  return !event.cancelled && !event.isOrganizer && event.responseStatus?.response === "declined";
 }
 
 export { SyncService, type SyncReason };

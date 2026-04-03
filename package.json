@@ -1,6 +1,6 @@
 {
   "name": "defcalendar",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Desktop calendar app for Microsoft 365 Exchange Online built with Electron.",
   "author": "Daniel",
   "main": "out/main/index.cjs",
@@ -36,7 +36,9 @@
       {
         "from": "resources",
         "to": ".",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {
@@ -58,7 +60,7 @@
     }
   },
   "dependencies": {
-    "@azure/msal-node": "^5.1.1",
+    "@azure/msal-node": "^5.1.2",
     "@fortawesome/fontawesome-svg-core": "^7.2.0",
     "@fortawesome/free-regular-svg-icons": "^7.2.0",
     "@fortawesome/free-solid-svg-icons": "^7.2.0",
@@ -68,19 +70,19 @@
     "@fullcalendar/interaction": "^6.1.20",
     "@fullcalendar/react": "^6.1.20",
     "@fullcalendar/timegrid": "^6.1.20",
-    "@tanstack/react-query": "^5.95.2",
+    "@tanstack/react-query": "^5.96.1",
     "better-sqlite3": "^12.8.0",
     "date-fns": "^4.1.0",
     "delay": "^7.0.0",
-    "dotenv": "^17.3.1",
+    "dotenv": "^17.4.0",
     "electron-updater": "^6.8.3",
     "fs-extra": "^11.3.4",
     "html-to-text": "^9.0.5",
-    "i18next": "^25.10.10",
+    "i18next": "^26.0.3",
     "pathe": "^2.0.3",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-i18next": "^17.0.0",
+    "react-i18next": "^17.0.2",
     "zod": "^4.3.6",
     "zustand": "^5.0.12"
   },
@@ -93,13 +95,13 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
-    "electron": "^41.1.0",
+    "electron": "^41.1.1",
     "electron-builder": "^26.8.2",
     "electron-vite": "^5.0.0",
     "husky": "^9.1.7",
     "jsdom": "^29.0.1",
-    "oxfmt": "^0.42.0",
-    "oxlint": "^1.57.0",
+    "oxfmt": "^0.43.0",
+    "oxlint": "^1.58.0",
     "typescript": "^6.0.2",
     "vite": "^7.3.1",
     "vitest": "^4.1.2"

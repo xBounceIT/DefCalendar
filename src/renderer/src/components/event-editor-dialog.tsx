@@ -22,6 +22,8 @@ import {
   toDateTimeInputValue,
 } from "@shared/calendar";
 import { useTranslation } from "react-i18next";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faUser } from "@fortawesome/free-regular-svg-icons";
 
 import type { EditorState } from "../event-editor-state";
 import { formatHeaderDate, formatLocalizedDate } from "../date-formatting";
@@ -59,7 +61,6 @@ interface EditorFormState {
   allDay: boolean;
   allowNewTimeProposals: boolean;
   attendees: EventParticipant[];
-  attendeesInput: string;
   body: string;
   bodyContentType: BodyContentType;
   calendarId: string;
@@ -68,6 +69,7 @@ interface EditorFormState {
   isOnlineMeeting: boolean;
   isReminderOn: boolean;
   location: string;
+  optionalAttendeesInput: string;
   recurrenceDayOfMonth: string;
   recurrenceDaysOfWeek: string[];
   recurrenceEnabled: boolean;
@@ -77,6 +79,7 @@ interface EditorFormState {
   recurrenceRangeType: Recurrence["range"]["type"];
   recurrenceType: Recurrence["pattern"]["type"];
   reminderMinutesBeforeStart: string;
+  requiredAttendeesInput: string;
   responseComment: string;
   responseRequested: boolean;
   sensitivity: NonNullable<CalendarEvent["sensitivity"]>;
@@ -258,24 +261,71 @@ function EventEditorDialog(props: EventEditorDialogProps) {
               />
             </div>
 
-            <div className="field-row">
+            <div className="field-row field-row--attendees">
               <AttendeesIcon />
-              <AttendeesInputField
+              <AttendeePillsInput
+                attendees={getAttendeesByType(form.attendees, "required")}
                 disabled={readOnlyForAttendee}
                 homeAccountId={selectedCalendar?.homeAccountId ?? null}
-                onChange={(attendeesInput) =>
+                inputValue={form.requiredAttendeesInput}
+                label={t("eventEditor.requiredAttendees")}
+                onCommit={(value) => commitAttendeeInput(setForm, value, "required")}
+                onInputChange={(requiredAttendeesInput) =>
+                  updateForm(setForm, { requiredAttendeesInput })
+                }
+                onSearchContacts={props.onSearchContacts}
+                onRemove={(index) =>
                   setForm((current) =>
                     current
                       ? {
                           ...current,
-                          ...buildAttendeesPatch(attendeesInput, current.attendees),
+                          attendees: replaceAttendeesByType(
+                            current.attendees,
+                            "required",
+                            getAttendeesByType(current.attendees, "required").filter(
+                              (_, attendeeIndex) => attendeeIndex !== index,
+                            ),
+                          ),
                         }
                       : current,
                   )
                 }
-                onSearchContacts={props.onSearchContacts}
                 selectedAttendees={form.attendees}
-                value={form.attendeesInput}
+                removeLabel={t("eventEditor.removeAttendee")}
+              />
+            </div>
+
+            <div className="field-row field-row--attendees">
+              <AttendeesIcon />
+              <AttendeePillsInput
+                attendees={getAttendeesByType(form.attendees, "optional")}
+                disabled={readOnlyForAttendee}
+                homeAccountId={selectedCalendar?.homeAccountId ?? null}
+                inputValue={form.optionalAttendeesInput}
+                label={t("eventEditor.optionalAttendees")}
+                onCommit={(value) => commitAttendeeInput(setForm, value, "optional")}
+                onInputChange={(optionalAttendeesInput) =>
+                  updateForm(setForm, { optionalAttendeesInput })
+                }
+                onSearchContacts={props.onSearchContacts}
+                onRemove={(index) =>
+                  setForm((current) =>
+                    current
+                      ? {
+                          ...current,
+                          attendees: replaceAttendeesByType(
+                            current.attendees,
+                            "optional",
+                            getAttendeesByType(current.attendees, "optional").filter(
+                              (_, attendeeIndex) => attendeeIndex !== index,
+                            ),
+                          ),
+                        }
+                      : current,
+                  )
+                }
+                selectedAttendees={form.attendees}
+                removeLabel={t("eventEditor.removeAttendee")}
               />
             </div>
 
@@ -522,6 +572,7 @@ function EventToolbar({
             title={t("common.delete")}
           >
             <TrashIcon />
+            <span>{t("common.delete")}</span>
           </button>
           <div className="event-toolbar__separator" />
         </>
@@ -534,18 +585,20 @@ function EventToolbar({
         title={t("eventEditor.duplicate")}
       >
         <CopyIcon />
+        <span>{t("eventEditor.duplicate")}</span>
       </button>
 
       <div className="event-toolbar__separator" />
 
-      <div className="event-toolbar__dropdown-container event-toolbar__dropdown-container--icon-only">
+      <div className="event-toolbar__dropdown-container">
         <button
           type="button"
-          className={`event-toolbar__dropdown-trigger event-toolbar__dropdown-trigger--icon-only ${openDropdown === "showAs" ? "event-toolbar__dropdown-trigger--open" : ""}`}
+          className={`event-toolbar__dropdown-trigger ${openDropdown === "showAs" ? "event-toolbar__dropdown-trigger--open" : ""}`}
           onClick={() => setOpenDropdown(openDropdown === "showAs" ? null : "showAs")}
           title={getShowAsLabel()}
         >
           <ShowAsIcon />
+          <span className="event-toolbar__dropdown-label">{getShowAsLabel()}</span>
           <ChevronDownIcon
             className={`event-toolbar__dropdown-arrow ${openDropdown === "showAs" ? "expanded" : ""}`}
           />
@@ -569,14 +622,15 @@ function EventToolbar({
         )}
       </div>
 
-      <div className="event-toolbar__dropdown-container event-toolbar__dropdown-container--icon-only">
+      <div className="event-toolbar__dropdown-container">
         <button
           type="button"
-          className={`event-toolbar__dropdown-trigger event-toolbar__dropdown-trigger--icon-only ${openDropdown === "reminder" ? "event-toolbar__dropdown-trigger--open" : ""}`}
+          className={`event-toolbar__dropdown-trigger ${openDropdown === "reminder" ? "event-toolbar__dropdown-trigger--open" : ""}`}
           onClick={() => setOpenDropdown(openDropdown === "reminder" ? null : "reminder")}
           title={getReminderLabel()}
         >
           <BellIcon />
+          <span className="event-toolbar__dropdown-label">{getReminderLabel()}</span>
           <ChevronDownIcon
             className={`event-toolbar__dropdown-arrow ${openDropdown === "reminder" ? "expanded" : ""}`}
           />
@@ -610,10 +664,10 @@ function EventToolbar({
         )}
       </div>
 
-      <div className="event-toolbar__dropdown-container event-toolbar__dropdown-container--icon-only">
+      <div className="event-toolbar__dropdown-container">
         <button
           type="button"
-          className={`event-toolbar__dropdown-trigger event-toolbar__dropdown-trigger--icon-only ${openDropdown === "categories" ? "event-toolbar__dropdown-trigger--open" : ""}`}
+          className={`event-toolbar__dropdown-trigger ${openDropdown === "categories" ? "event-toolbar__dropdown-trigger--open" : ""}`}
           onClick={() => setOpenDropdown(openDropdown === "categories" ? null : "categories")}
           title={t("eventEditor.categories")}
         >
@@ -621,6 +675,7 @@ function EventToolbar({
             selectedCategories={selectedCategories}
             categoryOptions={categoryOptions}
           />
+          <span className="event-toolbar__dropdown-label">{categoryTriggerLabel}</span>
           <ChevronDownIcon
             className={`event-toolbar__dropdown-arrow ${openDropdown === "categories" ? "expanded" : ""}`}
           />
@@ -656,14 +711,15 @@ function EventToolbar({
         )}
       </div>
 
-      <div className="event-toolbar__dropdown-container event-toolbar__dropdown-container--icon-only">
+      <div className="event-toolbar__dropdown-container">
         <button
           type="button"
-          className={`event-toolbar__dropdown-trigger event-toolbar__dropdown-trigger--icon-only ${openDropdown === "sensitivity" ? "event-toolbar__dropdown-trigger--open" : ""}`}
+          className={`event-toolbar__dropdown-trigger ${openDropdown === "sensitivity" ? "event-toolbar__dropdown-trigger--open" : ""}`}
           onClick={() => setOpenDropdown(openDropdown === "sensitivity" ? null : "sensitivity")}
           title={getSensitivityLabel()}
         >
           <LockIcon />
+          <span className="event-toolbar__dropdown-label">{getSensitivityLabel()}</span>
           <ChevronDownIcon
             className={`event-toolbar__dropdown-arrow ${openDropdown === "sensitivity" ? "expanded" : ""}`}
           />
@@ -1161,234 +1217,6 @@ function AttendeesSection({
       >
         {t("eventEditor.addAttendee")}
       </button>
-    </div>
-  );
-}
-
-function AttendeesInputField({
-  disabled,
-  homeAccountId,
-  onChange,
-  onSearchContacts,
-  selectedAttendees,
-  value,
-}: {
-  disabled: boolean;
-  homeAccountId: null | string;
-  onChange: (value: string) => void;
-  onSearchContacts: (args: SearchContactsArgs) => Promise<ContactSuggestion[]>;
-  selectedAttendees: EventParticipant[];
-  value: string;
-}) {
-  const { t } = useTranslation();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const pendingSelectionRef = useRef<null | number>(null);
-  const [cursorPosition, setCursorPosition] = useState(value.length);
-  const [highlightedIndex, setHighlightedIndex] = useState(0);
-  const [isFocused, setIsFocused] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
-  const [suggestions, setSuggestions] = useState<ContactSuggestion[]>([]);
-
-  useEffect(() => {
-    function handleClickOutside(clickEvent: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(clickEvent.target as Node)) {
-        setIsOpen(false);
-      }
-    }
-
-    if (isOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (pendingSelectionRef.current === null || !inputRef.current) {
-      return;
-    }
-
-    const nextPosition = Math.min(pendingSelectionRef.current, value.length);
-    inputRef.current.setSelectionRange(nextPosition, nextPosition);
-    pendingSelectionRef.current = null;
-  }, [value]);
-
-  useEffect(() => {
-    if (disabled || !homeAccountId || !isFocused) {
-      setIsLoading(false);
-      setIsOpen(false);
-      setSuggestions([]);
-      return;
-    }
-
-    const activeToken = getAttendeeTokenAtPosition(value, cursorPosition);
-    const query = activeToken.text.trim();
-    if (query.length === 0) {
-      setIsLoading(false);
-      setIsOpen(false);
-      setSuggestions([]);
-      return;
-    }
-
-    const currentToken = parseAttendeeToken(query);
-    const selectedEmails = new Set(
-      selectedAttendees
-        .map((attendee) => normalizeAttendeeEmail(attendee.email))
-        .filter((email): email is string => Boolean(email)),
-    );
-    if (currentToken) {
-      selectedEmails.delete(normalizeAttendeeEmail(currentToken.email)!);
-    }
-
-    let cancelled = false;
-    const timeoutId = globalThis.setTimeout(() => {
-      setIsLoading(true);
-      void onSearchContacts({ homeAccountId, limit: 8, query })
-        .then((results) => {
-          if (cancelled) {
-            return;
-          }
-
-          const filtered = results.filter(
-            (contact) => !selectedEmails.has(normalizeAttendeeEmail(contact.email)!),
-          );
-          setSuggestions(filtered);
-          setHighlightedIndex(0);
-          setIsOpen(filtered.length > 0);
-          setIsLoading(false);
-        })
-        .catch(() => {
-          if (cancelled) {
-            return;
-          }
-
-          setSuggestions([]);
-          setIsOpen(false);
-          setIsLoading(false);
-        });
-    }, 180);
-
-    return () => {
-      cancelled = true;
-      globalThis.clearTimeout(timeoutId);
-    };
-  }, [
-    cursorPosition,
-    disabled,
-    homeAccountId,
-    isFocused,
-    onSearchContacts,
-    selectedAttendees,
-    value,
-  ]);
-
-  const updateCursorPosition = () => {
-    setCursorPosition(inputRef.current?.selectionStart ?? value.length);
-  };
-
-  const selectSuggestion = (contact: ContactSuggestion) => {
-    const selectionPosition = inputRef.current?.selectionStart ?? cursorPosition;
-    const nextValue = replaceAttendeeToken(value, selectionPosition, contact);
-    pendingSelectionRef.current = nextValue.cursorPosition;
-    setCursorPosition(nextValue.cursorPosition);
-    setHighlightedIndex(0);
-    setIsOpen(false);
-    setSuggestions([]);
-    onChange(nextValue.value);
-    inputRef.current?.focus();
-  };
-
-  return (
-    <div className="attendee-field" ref={containerRef}>
-      <input
-        aria-autocomplete="list"
-        aria-haspopup="listbox"
-        aria-label={t("eventEditor.tabs.attendees")}
-        className="field-input field-input--underline attendee-field__input"
-        disabled={disabled}
-        onChange={(event) => {
-          setCursorPosition(event.target.selectionStart ?? event.target.value.length);
-          onChange(event.target.value);
-        }}
-        onClick={updateCursorPosition}
-        onBlur={() => {
-          setIsFocused(false);
-          setIsOpen(false);
-        }}
-        onFocus={() => {
-          setIsFocused(true);
-          updateCursorPosition();
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            setIsOpen(false);
-            return;
-          }
-
-          if (!isOpen || suggestions.length === 0) {
-            return;
-          }
-
-          if (event.key === "ArrowDown") {
-            event.preventDefault();
-            setHighlightedIndex((current) => (current + 1) % suggestions.length);
-            return;
-          }
-
-          if (event.key === "ArrowUp") {
-            event.preventDefault();
-            setHighlightedIndex((current) =>
-              current === 0 ? suggestions.length - 1 : current - 1,
-            );
-            return;
-          }
-
-          if (event.key === "Enter") {
-            event.preventDefault();
-            const selectedSuggestion = suggestions[highlightedIndex];
-            if (selectedSuggestion) {
-              selectSuggestion(selectedSuggestion);
-            }
-          }
-        }}
-        onKeyUp={updateCursorPosition}
-        onSelect={updateCursorPosition}
-        placeholder={t("eventEditor.tabs.attendees")}
-        ref={inputRef}
-        type="text"
-        value={value}
-      />
-      {(isLoading || isOpen) && (
-        <div className="event-toolbar__dropdown attendee-field__dropdown" role="listbox">
-          {isLoading && <div className="event-toolbar__dropdown-note">{t("common.loading")}</div>}
-          {!isLoading &&
-            suggestions.map((contact, index) => {
-              const displayName = formatAttendeeInputToken(contact);
-              const selected = index === highlightedIndex;
-              return (
-                <button
-                  key={`${contact.email}-${index}`}
-                  className={`event-toolbar__dropdown-item attendee-field__suggestion ${selected ? "event-toolbar__dropdown-item--selected" : ""}`}
-                  onClick={() => selectSuggestion(contact)}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onMouseEnter={() => setHighlightedIndex(index)}
-                  aria-selected={selected}
-                  role="option"
-                  type="button"
-                >
-                  <span className="attendee-field__suggestion-name">{displayName}</span>
-                  {contact.name && (
-                    <span className="attendee-field__suggestion-email">{contact.email}</span>
-                  )}
-                </button>
-              );
-            })}
-        </div>
-      )}
     </div>
   );
 }
@@ -1933,6 +1761,264 @@ function AttendeesIcon() {
   );
 }
 
+function AttendeePillsInput({
+  attendees,
+  disabled,
+  homeAccountId,
+  inputValue,
+  label,
+  onCommit,
+  onInputChange,
+  onSearchContacts,
+  onRemove,
+  selectedAttendees,
+  removeLabel,
+}: {
+  attendees: EventParticipant[];
+  disabled: boolean;
+  homeAccountId: null | string;
+  inputValue: string;
+  label: string;
+  onCommit: (value: string) => void;
+  onInputChange: (value: string) => void;
+  onSearchContacts: (args: SearchContactsArgs) => Promise<ContactSuggestion[]>;
+  onRemove: (index: number) => void;
+  selectedAttendees: EventParticipant[];
+  removeLabel: string;
+}) {
+  const { t } = useTranslation();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const [isFocused, setIsFocused] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const [suggestions, setSuggestions] = useState<ContactSuggestion[]>([]);
+
+  useEffect(() => {
+    function handleClickOutside(clickEvent: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(clickEvent.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (disabled || !homeAccountId || !isFocused) {
+      setIsLoading(false);
+      setIsOpen(false);
+      setSuggestions([]);
+      return;
+    }
+
+    const query = inputValue.trim();
+    if (!query) {
+      setIsLoading(false);
+      setIsOpen(false);
+      setSuggestions([]);
+      return;
+    }
+
+    const selectedEmails = new Set(
+      selectedAttendees
+        .map((attendee) => normalizeAttendeeEmail(attendee.email))
+        .filter((email): email is string => Boolean(email)),
+    );
+
+    let cancelled = false;
+    const timeoutId = globalThis.setTimeout(() => {
+      setIsLoading(true);
+      void onSearchContacts({ homeAccountId, limit: 8, query })
+        .then((results) => {
+          if (cancelled) {
+            return;
+          }
+
+          const filtered = results.filter(
+            (contact) => !selectedEmails.has(normalizeAttendeeEmail(contact.email)!),
+          );
+          setSuggestions(filtered);
+          setHighlightedIndex(0);
+          setIsOpen(filtered.length > 0);
+          setIsLoading(false);
+        })
+        .catch(() => {
+          if (cancelled) {
+            return;
+          }
+
+          setSuggestions([]);
+          setIsOpen(false);
+          setIsLoading(false);
+        });
+    }, 180);
+
+    return () => {
+      cancelled = true;
+      globalThis.clearTimeout(timeoutId);
+    };
+  }, [disabled, homeAccountId, inputValue, isFocused, onSearchContacts, selectedAttendees]);
+
+  const commitInputValue = (value: string) => {
+    if (!value.trim()) {
+      return;
+    }
+
+    setHighlightedIndex(0);
+    setIsLoading(false);
+    setIsOpen(false);
+    setSuggestions([]);
+    onCommit(value);
+  };
+
+  const selectSuggestion = (contact: ContactSuggestion) => {
+    commitInputValue(formatAttendeeInputToken(contact));
+    inputRef.current?.focus();
+  };
+
+  return (
+    <div className="attendee-pills-wrapper attendee-field" ref={containerRef}>
+      <div
+        className={`attendee-pills-container ${disabled ? "attendee-pills-container--disabled" : ""}`}
+        onClick={() => inputRef.current?.focus()}
+        onKeyDown={() => inputRef.current?.focus()}
+        role="group"
+      >
+        {attendees.map((attendee, index) => (
+          <span className="attendee-pill" key={`${attendee.email ?? "attendee"}-${index}`}>
+            <span className="attendee-pill__email">{attendee.email}</span>
+            {!disabled && (
+              <button
+                aria-label={removeLabel}
+                className="attendee-pill__remove"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRemove(index);
+                }}
+                type="button"
+              >
+                <CloseIcon />
+              </button>
+            )}
+          </span>
+        ))}
+        <input
+          aria-autocomplete="list"
+          aria-haspopup="listbox"
+          aria-label={label}
+          className="attendee-pills-input"
+          disabled={disabled}
+          onChange={(event) => onInputChange(event.target.value)}
+          onBlur={() => {
+            setIsFocused(false);
+            setIsOpen(false);
+          }}
+          onFocus={() => {
+            setIsFocused(true);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              setIsOpen(false);
+              return;
+            }
+
+            if (isOpen && suggestions.length > 0) {
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setHighlightedIndex((current) => (current + 1) % suggestions.length);
+                return;
+              }
+
+              if (event.key === "ArrowUp") {
+                event.preventDefault();
+                setHighlightedIndex((current) =>
+                  current === 0 ? suggestions.length - 1 : current - 1,
+                );
+                return;
+              }
+
+              if (event.key === "Enter" || event.key === "Tab") {
+                event.preventDefault();
+                const selectedSuggestion = suggestions[highlightedIndex];
+                if (selectedSuggestion) {
+                  selectSuggestion(selectedSuggestion);
+                }
+                return;
+              }
+            }
+
+            if (
+              (event.key === "Enter" ||
+                event.key === "Tab" ||
+                event.key === "," ||
+                event.key === ";") &&
+              inputValue.trim()
+            ) {
+              event.preventDefault();
+              commitInputValue(inputValue);
+              return;
+            }
+
+            if (event.key === "Backspace" && !inputValue && attendees.length > 0) {
+              event.preventDefault();
+              onRemove(attendees.length - 1);
+            }
+          }}
+          onPaste={(event) => {
+            const pastedText = event.clipboardData.getData("text");
+            if (parseAttendeeEntries(pastedText).length === 0) {
+              return;
+            }
+
+            event.preventDefault();
+            commitInputValue(pastedText);
+          }}
+          placeholder={attendees.length === 0 ? label : ""}
+          ref={inputRef}
+          type="text"
+          value={inputValue}
+        />
+      </div>
+      {(isLoading || isOpen) && (
+        <div className="event-toolbar__dropdown attendee-field__dropdown" role="listbox">
+          {isLoading && <div className="event-toolbar__dropdown-note">{t("common.loading")}</div>}
+          {!isLoading &&
+            suggestions.map((contact, index) => {
+              const selected = index === highlightedIndex;
+              return (
+                <button
+                  key={contact.email}
+                  className={`event-toolbar__dropdown-item attendee-field__suggestion ${selected ? "event-toolbar__dropdown-item--selected" : ""}`}
+                  onClick={() => selectSuggestion(contact)}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onMouseEnter={() => setHighlightedIndex(index)}
+                  aria-selected={selected}
+                  role="option"
+                  type="button"
+                >
+                  <span className="attendee-field__suggestion-name">
+                    {contact.name ?? contact.email}
+                  </span>
+                  {contact.name && (
+                    <span className="attendee-field__suggestion-email">{contact.email}</span>
+                  )}
+                </button>
+              );
+            })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CalendarSelectIcon() {
   return (
     <svg
@@ -2182,20 +2268,9 @@ function LockIcon() {
 
 function ShowAsIcon() {
   return (
-    <svg
-      aria-hidden="true"
-      fill="none"
-      height="18"
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth="2"
-      viewBox="0 0 24 24"
-      width="18"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <polyline points="12 6 12 12 16 14" />
-    </svg>
+    <span className="event-toolbar__icon">
+      <FontAwesomeIcon icon={faUser} />
+    </span>
   );
 }
 
@@ -2531,7 +2606,6 @@ function buildFormState(state: EventEditorDialogProps["state"]): EditorFormState
     allDay: createAllDay,
     allowNewTimeProposals: event?.allowNewTimeProposals ?? draft?.allowNewTimeProposals ?? true,
     attendees,
-    attendeesInput: formatAttendeesInput(attendees),
     body: event?.body ?? draft?.body ?? "",
     bodyContentType: event?.bodyContentType ?? draft?.bodyContentType ?? "text",
     calendarId: state.mode === "create" ? state.calendarId : event!.calendarId,
@@ -2540,6 +2614,7 @@ function buildFormState(state: EventEditorDialogProps["state"]): EditorFormState
     isOnlineMeeting: event?.isOnlineMeeting ?? draft?.isOnlineMeeting ?? false,
     isReminderOn: event?.isReminderOn ?? draft?.isReminderOn ?? true,
     location: event?.location ?? draft?.location ?? "",
+    optionalAttendeesInput: "",
     recurrenceDayOfMonth: recurrence?.pattern.dayOfMonth?.toString() ?? "",
     recurrenceDaysOfWeek: recurrence?.pattern.daysOfWeek ?? [],
     recurrenceEnabled: Boolean(recurrence),
@@ -2553,6 +2628,7 @@ function buildFormState(state: EventEditorDialogProps["state"]): EditorFormState
       draft?.reminderMinutesBeforeStart ??
       15
     ).toString(),
+    requiredAttendeesInput: "",
     responseComment: "",
     responseRequested: event?.responseRequested ?? draft?.responseRequested ?? true,
     sensitivity: event?.sensitivity ?? draft?.sensitivity ?? "normal",
@@ -2592,10 +2668,21 @@ function buildDraft(form: EditorFormState, event: CalendarEvent | null): EventDr
     end = addDays(fromDateTimeInputValue(form.endInput, true), 1);
   }
 
+  const attendeesWithPendingRequired = mergeAttendeesWithInput(
+    form.attendees,
+    form.requiredAttendeesInput,
+    "required",
+  );
+  const attendees = mergeAttendeesWithInput(
+    attendeesWithPendingRequired,
+    form.optionalAttendeesInput,
+    "optional",
+  );
+
   return {
     attachmentIdsToRemove: [],
     attachmentsToAdd: [],
-    attendees: buildAttendeesFromInput(form.attendeesInput, form.attendees),
+    attendees,
     allowNewTimeProposals: form.allowNewTimeProposals,
     body: form.body.trim() || null,
     bodyContentType: form.bodyContentType,
@@ -2666,55 +2753,161 @@ function resolveEventId(event: CalendarEvent | null, form: EditorFormState): str
   return event.id;
 }
 
-function buildAttendeesPatch(
-  attendeesInput: string,
-  existingAttendees: EventParticipant[],
-): Pick<EditorFormState, "attendees" | "attendeesInput"> {
+function getAttendeesByType(
+  attendees: EventParticipant[],
+  type: "optional" | "required",
+): EventParticipant[] {
+  return attendees.filter((attendee) => attendee.type === type);
+}
+
+function createAttendee(
+  entry: { email: string; name: null | string },
+  type: "optional" | "required",
+): EventParticipant {
   return {
-    attendees: buildAttendeesFromInput(attendeesInput, existingAttendees),
-    attendeesInput,
+    email: entry.email,
+    name: entry.name,
+    response: null,
+    status: null,
+    type,
   };
 }
 
-function buildAttendeesFromInput(
-  attendeesInput: string,
-  existingAttendees: EventParticipant[],
+function replaceAttendeesByType(
+  attendees: EventParticipant[],
+  type: "optional" | "required",
+  nextTypeAttendees: EventParticipant[],
 ): EventParticipant[] {
-  const existingByEmail = new Map<string, EventParticipant>();
-  for (const attendee of existingAttendees) {
-    const normalizedEmail = normalizeAttendeeEmail(attendee.email);
+  const resourceAttendees = attendees.filter((attendee) => attendee.type === "resource");
+  const requiredAttendees =
+    type === "required" ? nextTypeAttendees : getAttendeesByType(attendees, "required");
+  const optionalAttendees =
+    type === "optional" ? nextTypeAttendees : getAttendeesByType(attendees, "optional");
+
+  return [...resourceAttendees, ...requiredAttendees, ...optionalAttendees];
+}
+
+function mergeAttendeesWithInput(
+  attendees: EventParticipant[],
+  inputValue: string,
+  type: "optional" | "required",
+): EventParticipant[] {
+  const entries = parseAttendeeEntries(inputValue);
+  if (entries.length === 0) {
+    return attendees;
+  }
+
+  const resourceAttendees = attendees.filter((attendee) => attendee.type === "resource");
+  let requiredAttendees = getAttendeesByType(attendees, "required");
+  let optionalAttendees = getAttendeesByType(attendees, "optional");
+
+  for (const entry of entries) {
+    const normalizedEmail = normalizeAttendeeEmail(entry.email);
     if (!normalizedEmail) {
       continue;
     }
-    existingByEmail.set(normalizedEmail, attendee);
+
+    if (
+      resourceAttendees.some(
+        (attendee) => normalizeAttendeeEmail(attendee.email) === normalizedEmail,
+      )
+    ) {
+      continue;
+    }
+
+    if (type === "required") {
+      const existingRequiredIndex = requiredAttendees.findIndex(
+        (attendee) => normalizeAttendeeEmail(attendee.email) === normalizedEmail,
+      );
+      if (existingRequiredIndex !== -1) {
+        requiredAttendees = requiredAttendees.map((attendee, attendeeIndex) =>
+          attendeeIndex === existingRequiredIndex
+            ? {
+                ...attendee,
+                email: entry.email,
+                name: entry.name ?? attendee.name ?? null,
+              }
+            : attendee,
+        );
+        continue;
+      }
+
+      const optionalIndex = optionalAttendees.findIndex(
+        (attendee) => normalizeAttendeeEmail(attendee.email) === normalizedEmail,
+      );
+      if (optionalIndex !== -1) {
+        const [existingOptional] = optionalAttendees.splice(optionalIndex, 1);
+        requiredAttendees = [
+          ...requiredAttendees,
+          {
+            ...existingOptional!,
+            email: entry.email,
+            name: entry.name ?? existingOptional!.name ?? null,
+            type: "required",
+          },
+        ];
+        continue;
+      }
+
+      requiredAttendees = [...requiredAttendees, createAttendee(entry, "required")];
+      continue;
+    }
+
+    const existingRequiredIndex = requiredAttendees.findIndex(
+      (attendee) => normalizeAttendeeEmail(attendee.email) === normalizedEmail,
+    );
+    if (existingRequiredIndex !== -1) {
+      requiredAttendees = requiredAttendees.map((attendee, attendeeIndex) =>
+        attendeeIndex === existingRequiredIndex
+          ? {
+              ...attendee,
+              email: entry.email,
+              name: entry.name ?? attendee.name ?? null,
+            }
+          : attendee,
+      );
+      continue;
+    }
+
+    const existingOptionalIndex = optionalAttendees.findIndex(
+      (attendee) => normalizeAttendeeEmail(attendee.email) === normalizedEmail,
+    );
+    if (existingOptionalIndex !== -1) {
+      optionalAttendees = optionalAttendees.map((attendee, attendeeIndex) =>
+        attendeeIndex === existingOptionalIndex
+          ? {
+              ...attendee,
+              email: entry.email,
+              name: entry.name ?? attendee.name ?? null,
+            }
+          : attendee,
+      );
+      continue;
+    }
+
+    optionalAttendees = [...optionalAttendees, createAttendee(entry, "optional")];
   }
 
-  return parseAttendeeEntries(attendeesInput).map((entry) => {
-    const normalizedEmail = normalizeAttendeeEmail(entry.email);
-    const existingAttendee = normalizedEmail ? existingByEmail.get(normalizedEmail) : null;
-    if (existingAttendee) {
-      return {
-        ...existingAttendee,
-        email: entry.email,
-        name: entry.name ?? existingAttendee.name ?? null,
-      };
+  return [...resourceAttendees, ...requiredAttendees, ...optionalAttendees];
+}
+
+function commitAttendeeInput(
+  setForm: React.Dispatch<React.SetStateAction<EditorFormState | null>>,
+  value: string,
+  type: "optional" | "required",
+): void {
+  setForm((current) => {
+    if (!current) {
+      return current;
     }
 
     return {
-      email: entry.email,
-      name: entry.name,
-      response: null,
-      status: null,
-      type: "required",
+      ...current,
+      attendees: mergeAttendeesWithInput(current.attendees, value, type),
+      optionalAttendeesInput: type === "optional" ? "" : current.optionalAttendeesInput,
+      requiredAttendeesInput: type === "required" ? "" : current.requiredAttendeesInput,
     };
   });
-}
-
-function formatAttendeesInput(attendees: EventParticipant[]): string {
-  return attendees
-    .map((attendee) => formatAttendeeInputToken(attendee))
-    .filter(Boolean)
-    .join(", ");
 }
 
 function parseAttendeeEntries(value: string): { email: string; name: null | string }[] {
@@ -2810,58 +3003,6 @@ function splitAttendeeInputTokens(value: string): { end: number; start: number; 
 
   tokens.push({ end: value.length, start: tokenStart, text: value.slice(tokenStart) });
   return tokens;
-}
-
-function getAttendeeTokenAtPosition(
-  value: string,
-  position: number,
-): { end: number; start: number; text: string } {
-  const tokens = splitAttendeeInputTokens(value);
-  const clampedPosition = Math.min(Math.max(position, 0), value.length);
-
-  for (const token of tokens) {
-    if (clampedPosition >= token.start && clampedPosition <= token.end) {
-      return token;
-    }
-  }
-
-  return tokens[tokens.length - 1] ?? { end: 0, start: 0, text: "" };
-}
-
-function replaceAttendeeToken(
-  value: string,
-  position: number,
-  contact: ContactSuggestion,
-): { cursorPosition: number; value: string } {
-  const tokens = splitAttendeeInputTokens(value);
-  const activeToken = getAttendeeTokenAtPosition(value, position);
-  const activeIndex = tokens.findIndex(
-    (token) => token.start === activeToken.start && token.end === activeToken.end,
-  );
-  const beforeParts = tokens
-    .slice(0, Math.max(activeIndex, 0))
-    .map((token) => token.text.trim())
-    .filter(Boolean);
-  const afterParts = tokens
-    .slice(Math.max(activeIndex + 1, 0))
-    .map((token) => token.text.trim())
-    .filter(Boolean);
-  const currentPart = formatAttendeeInputToken(contact);
-
-  if (afterParts.length === 0) {
-    const nextValue = [...beforeParts, currentPart].join(", ");
-    const valueWithSeparator = nextValue ? `${nextValue}, ` : "";
-    return {
-      cursorPosition: valueWithSeparator.length,
-      value: valueWithSeparator,
-    };
-  }
-
-  const valueBeforeCursor = [...beforeParts, currentPart].join(", ");
-  return {
-    cursorPosition: valueBeforeCursor.length,
-    value: [...beforeParts, currentPart, ...afterParts].join(", "),
-  };
 }
 
 function formatAttendeeInputToken(value: { email: string | null; name: null | string }): string {
