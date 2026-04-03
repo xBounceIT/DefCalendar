@@ -403,6 +403,7 @@ const localReminderRuleSchema = z.object({
   when: localReminderWhenSchema,
 });
 const syncIntervalMinutesSettingSchema = z.union([
+  z.literal(1),
   z.literal(5),
   z.literal(10),
   z.literal(15),
@@ -422,7 +423,7 @@ const timeFormatPreferenceSchema = z.preprocess(
 
 const syncIntervalMinutesPreferenceSchema = z.preprocess(
   (value) => (value === null ? undefined : value),
-  syncIntervalMinutesSettingSchema.default(5),
+  syncIntervalMinutesSettingSchema.default(1),
 );
 
 const localReminderOverrideEnabledPreferenceSchema = z.preprocess(
@@ -513,7 +514,7 @@ function createDefaultSettings(): UserSettings {
     selectedDate: new Date().toISOString(),
     language: "system",
     timeFormat: "system",
-    syncIntervalMinutes: 5,
+    syncIntervalMinutes: 1,
     localReminderOverrideEnabled: false,
     localReminderRules: [{ minutes: 15, when: "before" }],
     updateChannel: "stable",

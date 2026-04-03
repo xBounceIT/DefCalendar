@@ -44,7 +44,7 @@ describe("shared schemas", () => {
     expect(defaults.activeView).toBe("timeGridWeek");
     expect(defaults.language).toBe("system");
     expect(defaults.timeFormat).toBe("system");
-    expect(defaults.syncIntervalMinutes).toBe(5);
+    expect(defaults.syncIntervalMinutes).toBe(1);
     expect(defaults).toMatchObject({ localReminderOverrideEnabled: false });
     expect(defaults.localReminderRules).toEqual([{ minutes: 15, when: "before" }]);
     expect(defaults.visibleCalendarIds).toEqual([]);
