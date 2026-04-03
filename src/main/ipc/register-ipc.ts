@@ -110,6 +110,9 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     }
   };
 
+  const targetsDifferentEvent = (eventId: string, targetEventId?: string) =>
+    Boolean(targetEventId && targetEventId !== eventId);
+
   const broadcast = (channel: string, payload: unknown) => {
     const window = dependencies.getMainWindow();
     if (window && !window.isDestroyed()) {
@@ -272,9 +275,25 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     }
 
     const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
-    await dependencies.graph.deleteEvent(args.calendarId, args.eventId, homeAccountId, args.etag);
-    dependencies.db.deleteEvent(args.calendarId, args.eventId);
+    const isSeriesTarget = targetsDifferentEvent(args.eventId, args.targetEventId);
+    await dependencies.graph.deleteEvent(
+      args.calendarId,
+      args.eventId,
+      homeAccountId,
+      args.etag,
+      args.targetEventId,
+    );
+
+    if (!isSeriesTarget) {
+      dependencies.db.deleteEvent(args.calendarId, args.eventId);
+    }
+
     await dependencies.reminders.checkNow();
+    if (isSeriesTarget) {
+      await dependencies.sync.syncAll("mutation", homeAccountId);
+      return;
+    }
+
     void dependencies.sync.syncAll("mutation", homeAccountId);
   });
 
@@ -283,7 +302,14 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     const args = respondToEventArgsSchema.parse(input);
     const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
     const current = dependencies.db.getEvent(args.calendarId, args.eventId);
+    const isSeriesTarget = targetsDifferentEvent(args.eventId, args.targetEventId);
     await dependencies.graph.respondToEvent(args, homeAccountId);
+
+    if (isSeriesTarget) {
+      await dependencies.reminders.checkNow();
+      await dependencies.sync.syncAll("mutation", homeAccountId);
+      return;
+    }
 
     let nextEvent = current;
     try {

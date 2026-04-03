@@ -672,6 +672,25 @@ describe("event editor dialog", () => {
     expect(onRespond).toHaveBeenCalledWith(attendeeEvent, "accept", "", true);
   });
 
+  it("accepts recurring events for the whole series from the sidebar", () => {
+    const attendeeEvent = createAttendeeEvent({
+      seriesMasterId: "series-1",
+    });
+    const onRespond = vi.fn().mockResolvedValue(undefined);
+
+    renderDialog({
+      onRespond,
+      state: {
+        event: attendeeEvent,
+        mode: "edit",
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+
+    expect(onRespond).toHaveBeenCalledWith(attendeeEvent, "accept", "", true, "series-1");
+  });
+
   it("sends refuse immediately from the sidebar", () => {
     const attendeeEvent = createAttendeeEvent();
     const onRespond = vi.fn().mockResolvedValue(undefined);
@@ -687,6 +706,64 @@ describe("event editor dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Refuse" }));
 
     expect(onRespond).toHaveBeenCalledWith(attendeeEvent, "decline", "", true);
+  });
+
+  it("shows recurring refuse scope options from the sidebar", () => {
+    const attendeeEvent = createAttendeeEvent({
+      seriesMasterId: "series-1",
+    });
+
+    renderDialog({
+      state: {
+        event: attendeeEvent,
+        mode: "edit",
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Refuse" }));
+
+    expect(screen.getByRole("button", { name: "Deny only current" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete current and future" })).toBeInTheDocument();
+  });
+
+  it("declines only the current recurring event from the sidebar dropdown", () => {
+    const attendeeEvent = createAttendeeEvent({
+      seriesMasterId: "series-1",
+    });
+    const onRespond = vi.fn().mockResolvedValue(undefined);
+
+    renderDialog({
+      onRespond,
+      state: {
+        event: attendeeEvent,
+        mode: "edit",
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Refuse" }));
+    fireEvent.click(screen.getByRole("button", { name: "Deny only current" }));
+
+    expect(onRespond).toHaveBeenCalledWith(attendeeEvent, "decline", "", true);
+  });
+
+  it("deletes current and future recurring events from the sidebar dropdown", () => {
+    const attendeeEvent = createAttendeeEvent({
+      seriesMasterId: "series-1",
+    });
+    const onDelete = vi.fn().mockResolvedValue(undefined);
+
+    renderDialog({
+      onDelete,
+      state: {
+        event: attendeeEvent,
+        mode: "edit",
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Refuse" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete current and future" }));
+
+    expect(onDelete).toHaveBeenCalledWith(attendeeEvent, "series-1");
   });
 
   it("supports tentative responses with a comment from the other popup", () => {

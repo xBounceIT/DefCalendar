@@ -22,9 +22,10 @@ import type {
   CalendarEvent,
   CalendarSummary,
   CancelEventArgs,
+  DeleteEventArgs,
   EventDraft,
-  OutlookCategory,
   EventResponseAction,
+  OutlookCategory,
   RespondToEventArgs,
   SearchContactsArgs,
   SyncStatus,
@@ -279,11 +280,9 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   });
 
   const deleteEventMutation = useMutation({
-    mutationFn: (event: CalendarEvent) =>
+    mutationFn: (args: DeleteEventArgs) =>
       calendarApi.events.delete({
-        calendarId: event.calendarId,
-        etag: event.etag,
-        eventId: event.id,
+        ...args,
       }),
     onError: (error) => {
       setDialogError(toErrorMessage(error));
@@ -614,8 +613,13 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     await createEventMutation.mutateAsync(draft);
   }
 
-  async function deleteDraft(event: CalendarEvent): Promise<void> {
-    await deleteEventMutation.mutateAsync(event);
+  async function deleteDraft(event: CalendarEvent, targetEventId?: string): Promise<void> {
+    await deleteEventMutation.mutateAsync({
+      calendarId: event.calendarId,
+      etag: targetEventId && targetEventId !== event.id ? undefined : event.etag,
+      eventId: event.id,
+      targetEventId,
+    });
   }
 
   async function cancelMeeting(event: CalendarEvent, comment: string): Promise<void> {
@@ -632,6 +636,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     action: EventResponseAction,
     comment: string,
     sendResponse: boolean,
+    targetEventId?: string,
   ): Promise<void> {
     await respondToEventMutation.mutateAsync({
       action,
@@ -639,6 +644,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
       comment,
       eventId: event.id,
       sendResponse,
+      targetEventId,
     });
   }
 
