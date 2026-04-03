@@ -13,6 +13,7 @@ import type {
   EventDraft,
   EventListArgs,
   EventReferenceArgs,
+  ForwardEventArgs,
   ListOutlookCategoriesArgs,
   OutlookCategory,
   RespondToEventArgs,
@@ -44,6 +45,7 @@ export const IPC_CHANNELS = {
   eventsUpdate: "events:update",
   eventsDelete: "events:delete",
   eventsRespond: "events:respond",
+  eventsForward: "events:forward",
   eventsCancel: "events:cancel",
   eventsListAttachments: "events:list-attachments",
   eventsAddAttachment: "events:add-attachment",
@@ -101,6 +103,7 @@ interface CalendarApi {
     update: (draft: EventDraft) => Promise<CalendarEvent>;
     delete: (args: DeleteEventArgs) => Promise<void>;
     respond: (args: RespondToEventArgs) => Promise<void>;
+    forward: (args: ForwardEventArgs) => Promise<void>;
     cancel: (args: CancelEventArgs) => Promise<void>;
     listAttachments: (args: EventReferenceArgs) => Promise<EventAttachment[]>;
     addAttachment: (args: AttachmentUploadArgs) => Promise<EventAttachment[]>;

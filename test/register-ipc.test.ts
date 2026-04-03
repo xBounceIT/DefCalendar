@@ -149,6 +149,7 @@ function createFixture() {
     cancelEvent: vi.fn().mockResolvedValue(undefined),
     createEvent: vi.fn().mockResolvedValue(storedEvent),
     deleteEvent: vi.fn().mockResolvedValue(undefined),
+    forwardEvent: vi.fn().mockResolvedValue(undefined),
     listContacts: vi.fn().mockResolvedValue([]),
     getEvent: vi.fn().mockResolvedValue(storedEvent),
     listAttachments: vi.fn().mockResolvedValue([]),
@@ -394,6 +395,30 @@ describe("register ipc", () => {
     expect(fixture.reminders.checkNow.mock.invocationCallOrder[0]).toBeLessThan(
       fixture.sync.syncAll.mock.invocationCallOrder[0],
     );
+  });
+
+  it("forwards an event and triggers a background sync", async () => {
+    const fixture = createFixture();
+    const invokeEvent = { sender: fixture.mainWebContents };
+
+    await fixture.handlers.get(IPC_CHANNELS.eventsForward)?.(invokeEvent, {
+      calendarId: "calendar-1",
+      comment: "Please join in my place",
+      eventId: "event-1",
+      toRecipients: [{ email: "alice@example.com", name: "Alice Example" }],
+    });
+
+    expect(fixture.graph.forwardEvent).toHaveBeenCalledWith(
+      {
+        calendarId: "calendar-1",
+        comment: "Please join in my place",
+        eventId: "event-1",
+        toRecipients: [{ email: "alice@example.com", name: "Alice Example" }],
+      },
+      "account-1",
+    );
+    expect(fixture.reminders.checkNow).not.toHaveBeenCalled();
+    expect(fixture.sync.syncAll).toHaveBeenCalledWith("mutation", "account-1");
   });
 
   it("returns cached attachments when Graph reports the event is gone", async () => {

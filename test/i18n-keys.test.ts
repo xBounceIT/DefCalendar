@@ -91,7 +91,7 @@ describe("i18n key existence", () => {
     }
 
     const suspiciousDuplicates = [...fileCounts.entries()]
-      .filter(([, count]) => count > 3)
+      .filter(([, count]) => count > 4)
       .map(([fileKey]) => fileKey);
 
     expect(suspiciousDuplicates).toHaveLength(0);

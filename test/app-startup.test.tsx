@@ -237,6 +237,7 @@ function createCalendarApiMock(): CalendarApi {
       cancel: vi.fn(),
       create: vi.fn(),
       delete: vi.fn(),
+      forward: vi.fn(),
       list: vi.fn(),
       listAttachments: vi.fn(),
       openWebLink: vi.fn(),
@@ -372,6 +373,7 @@ function createSignedInCalendarApiMock(): CalendarApi {
       cancel: vi.fn(),
       create: vi.fn(),
       delete: vi.fn(),
+      forward: vi.fn(),
       list: vi.fn().mockResolvedValue([]),
       listAttachments: vi.fn(),
       openWebLink: vi.fn(),
@@ -531,6 +533,7 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
     events: {
       create: vi.fn(),
       delete: vi.fn(),
+      forward: vi.fn(),
       list: vi.fn().mockResolvedValue([]),
       openWebLink: vi.fn(),
       update: vi.fn(),
