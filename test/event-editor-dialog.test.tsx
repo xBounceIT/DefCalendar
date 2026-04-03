@@ -146,6 +146,7 @@ function renderDialog(props?: Partial<React.ComponentProps<typeof EventEditorDia
         onDelete={vi.fn().mockResolvedValue(undefined)}
         onDismiss={vi.fn()}
         onDuplicate={vi.fn()}
+        onForward={vi.fn().mockResolvedValue(undefined)}
         onListAttachments={vi.fn().mockResolvedValue([])}
         onOpenInOutlook={vi.fn().mockResolvedValue(undefined)}
         onRemoveAttachment={vi.fn().mockResolvedValue([])}
@@ -603,6 +604,38 @@ describe("event editor dialog", () => {
     expect(screen.getByRole("button", { name: "Other" })).toBeInTheDocument();
     expect(screen.queryByText("Response actions")).toBeNull();
     expect(organizerHeading.compareDocumentPosition(responsesHeading)).toBeGreaterThan(0);
+  });
+
+  it("shows the forward action for existing events", () => {
+    renderDialog();
+
+    expect(screen.getByRole("button", { name: "Forward" })).toBeInTheDocument();
+  });
+
+  it("forwards an event with recipients and a comment from the toolbar", () => {
+    const onForward = vi.fn().mockResolvedValue(undefined);
+
+    renderDialog({ onForward });
+
+    fireEvent.click(screen.getByRole("button", { name: "Forward" }));
+
+    const popup = screen.getByText("Forward to").closest(".event-toolbar__popup");
+    expect(popup).toBeInstanceOf(HTMLElement);
+
+    fireEvent.change(within(popup as HTMLElement).getByRole("textbox", { name: "Forward to" }), {
+      target: { value: "Dana Swope <dana@example.com>" },
+    });
+    fireEvent.change(within(popup as HTMLElement).getByLabelText("Comment"), {
+      target: { value: "Please cover this meeting" },
+    });
+    fireEvent.click(within(popup as HTMLElement).getByRole("button", { name: "Send forward" }));
+
+    expect(onForward).toHaveBeenCalledWith({
+      calendarId: "calendar-1",
+      comment: "Please cover this meeting",
+      eventId: "event-1",
+      toRecipients: [{ email: "dana@example.com", name: "Dana Swope" }],
+    });
   });
 
   it("shows notResponded attendees in the no response group", () => {

@@ -25,6 +25,7 @@ import type {
   DeleteEventArgs,
   EventDraft,
   EventResponseAction,
+  ForwardEventArgs,
   OutlookCategory,
   RespondToEventArgs,
   SearchContactsArgs,
@@ -304,6 +305,17 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     },
   });
 
+  const forwardEventMutation = useMutation({
+    mutationFn: (args: ForwardEventArgs) => calendarApi.events.forward(args),
+    onError: (error) => {
+      setDialogError(toErrorMessage(error));
+    },
+    onSuccess: async () => {
+      setDialogError(null);
+      await invalidateEventQueries(queryClient);
+    },
+  });
+
   const cancelEventMutation = useMutation({
     mutationFn: (args: CancelEventArgs) => calendarApi.events.cancel(args),
     onError: (error) => {
@@ -445,6 +457,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     updateEventMutation.isPending ||
     deleteEventMutation.isPending ||
     respondToEventMutation.isPending ||
+    forwardEventMutation.isPending ||
     cancelEventMutation.isPending;
 
   async function handleCalendarToggle(calendar: CalendarSummary): Promise<void> {
@@ -646,6 +659,10 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
       sendResponse,
       targetEventId,
     });
+  }
+
+  async function forwardEvent(args: ForwardEventArgs): Promise<void> {
+    await forwardEventMutation.mutateAsync(args);
   }
 
   async function listEventAttachments(event: CalendarEvent) {
@@ -883,6 +900,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         onDelete={deleteDraft}
         onDismiss={dismissEditor}
         onDuplicate={handleDuplicate}
+        onForward={forwardEvent}
         onOpenInOutlook={openExternalEvent}
         onRemoveAttachment={removeEventAttachment}
         onRespond={respondToMeeting}

@@ -16,6 +16,7 @@ import {
   eventDraftSchema,
   eventListArgsSchema,
   eventReferenceArgsSchema,
+  forwardEventArgsSchema,
   listOutlookCategoriesArgsSchema,
   outlookCategorySchema,
   openExternalArgsSchema,
@@ -330,6 +331,14 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     }
 
     await dependencies.reminders.checkNow();
+    void dependencies.sync.syncAll("mutation", homeAccountId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.eventsForward, async (event, input) => {
+    validateMainSender(event);
+    const args = forwardEventArgsSchema.parse(input);
+    const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
+    await dependencies.graph.forwardEvent(args, homeAccountId);
     void dependencies.sync.syncAll("mutation", homeAccountId);
   });
 
