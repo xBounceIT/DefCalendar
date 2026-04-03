@@ -126,8 +126,8 @@ function NavigationGroup({
   );
 }
 
-function DateDisplay({ selectedDate }: { selectedDate: string }) {
-  const formattedDate = formatHeaderDate(selectedDate);
+function DateDisplay({ selectedDate, view }: { selectedDate: string; view: CalendarView }) {
+  const formattedDate = formatHeaderDate(selectedDate, view);
 
   return <h2 className="date-display">{formattedDate}</h2>;
 }
@@ -212,7 +212,7 @@ function WorkspaceHeader(
     <header className="workspace-header">
       <div className="workspace-header-left">
         <NavigationGroup onNext={props.onNext} onPrev={props.onPrev} onToday={props.onToday} />
-        <DateDisplay selectedDate={props.selectedDate} />
+        <DateDisplay selectedDate={props.selectedDate} view={props.activeView} />
       </div>
       <div className="workspace-header-right">
         <ViewSelector activeView={props.activeView} onViewSelect={props.onViewSelect} />

@@ -89,17 +89,18 @@ function formatLocalizedDate(
   return new Intl.DateTimeFormat(getLocale(), applyTimeFormat(options, timeFormat)).format(date);
 }
 
-function formatHeaderDate(value: string): string {
+function formatHeaderDate(value: string, view?: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return i18n.t("dateFormatting.fallbackCalendar");
   }
 
-  return new Intl.DateTimeFormat(getLocale(), {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(date);
+  const options: Intl.DateTimeFormatOptions =
+    view === "dayGridMonth"
+      ? { month: "long", year: "numeric" }
+      : { day: "numeric", month: "long", year: "numeric" };
+
+  return new Intl.DateTimeFormat(getLocale(), options).format(date);
 }
 
 function formatSyncTimestamp(value: null | string, timeFormat: TimeFormatSetting): string {
