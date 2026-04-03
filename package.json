@@ -1,6 +1,6 @@
 {
   "name": "defcalendar",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Desktop calendar app for Microsoft 365 Exchange Online built with Electron.",
   "author": "Daniel",
   "main": "out/main/index.cjs",
