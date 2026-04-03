@@ -89,7 +89,8 @@
   "calendarBoard": {
     "noCalendars": "No calendars selected",
     "noCalendarsHint": "Enable at least one Exchange calendar from the left sidebar to populate the view.",
-    "moreEvents": "+{{count}}"
+    "moreEvents": "+{{count}}",
+    "ownerTooltip": "You're the owner"
   },
   "dayEventsTable": {
     "title": "Title",
