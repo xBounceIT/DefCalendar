@@ -40,7 +40,7 @@ interface EventEditorDialogProps {
   errorMessage: null | string;
   onAddAttachment: (args: AttachmentUploadArgs) => Promise<EventAttachment[]>;
   onCancelMeeting: (event: CalendarEvent, comment: string) => Promise<void>;
-  onDelete: (event: CalendarEvent) => Promise<void>;
+  onDelete: (event: CalendarEvent, targetEventId?: string) => Promise<void>;
   onDismiss: () => void;
   onDuplicate: (draft: EventDraft) => void;
   onForward: (args: ForwardEventArgs) => Promise<void>;
@@ -52,6 +52,7 @@ interface EventEditorDialogProps {
     action: EventResponseAction,
     comment: string,
     sendResponse: boolean,
+    targetEventId?: string,
   ) => Promise<void>;
   onSearchContacts: (args: SearchContactsArgs) => Promise<ContactSuggestion[]>;
   onSave: (draft: EventDraft) => Promise<void>;
@@ -396,6 +397,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
             event={editedEvent}
             attendees={form.attendees}
             form={form}
+            onDelete={props.onDelete}
             organizer={organizer}
             onRespond={props.onRespond}
             onResponseCommentChange={(responseComment) =>
@@ -1435,6 +1437,7 @@ function AttendeesSidebar({
   event,
   attendees,
   form,
+  onDelete,
   organizer,
   onRespond,
   onResponseCommentChange,
@@ -1444,12 +1447,14 @@ function AttendeesSidebar({
   event: CalendarEvent | null;
   attendees: EventParticipant[];
   form: EditorFormState;
+  onDelete: (event: CalendarEvent, targetEventId?: string) => Promise<void>;
   organizer: EventParticipant | null;
   onRespond: (
     event: CalendarEvent,
     action: EventResponseAction,
     comment: string,
     sendResponse: boolean,
+    targetEventId?: string,
   ) => Promise<void>;
   onResponseCommentChange: (value: string) => void;
   timeFormat: UserSettings["timeFormat"];
@@ -1461,7 +1466,7 @@ function AttendeesSidebar({
     declined: false,
     pending: true,
   });
-  const [isResponsePopupOpen, setIsResponsePopupOpen] = useState(false);
+  const [openResponseMenu, setOpenResponseMenu] = useState<"decline" | "other" | null>(null);
   const responseActionsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1470,18 +1475,18 @@ function AttendeesSidebar({
         responseActionsRef.current &&
         !responseActionsRef.current.contains(clickEvent.target as Node)
       ) {
-        setIsResponsePopupOpen(false);
+        setOpenResponseMenu(null);
       }
     }
 
-    if (isResponsePopupOpen) {
+    if (openResponseMenu) {
       document.addEventListener("mousedown", handleClickOutside);
     }
 
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [isResponsePopupOpen]);
+  }, [openResponseMenu]);
 
   const toggleGroup = (group: string) => {
     setExpandedGroups((prev) => ({ ...prev, [group]: !prev[group] }));
@@ -1572,6 +1577,7 @@ function AttendeesSidebar({
   };
 
   const displayOrganizer = event?.organizer ?? organizer;
+  const isRecurringAttendeeEvent = Boolean(event?.seriesMasterId);
   const showResponseActions = Boolean(event && !event.isOrganizer);
   const advancedResponseOptions: {
     action: EventResponseAction;
@@ -1600,13 +1606,36 @@ function AttendeesSidebar({
     },
   ];
 
-  const submitResponse = (action: EventResponseAction, sendResponse: boolean, comment: string) => {
+  const submitResponse = (
+    action: EventResponseAction,
+    sendResponse: boolean,
+    comment: string,
+    targetEventId?: string,
+  ) => {
     if (!event) {
       return;
     }
 
-    void onRespond(event, action, sendResponse ? comment : "", sendResponse);
-    setIsResponsePopupOpen(false);
+    const nextTargetEventId =
+      targetEventId ??
+      (action === "accept" && isRecurringAttendeeEvent ? event.seriesMasterId : undefined);
+
+    if (nextTargetEventId) {
+      void onRespond(event, action, sendResponse ? comment : "", sendResponse, nextTargetEventId);
+    } else {
+      void onRespond(event, action, sendResponse ? comment : "", sendResponse);
+    }
+
+    setOpenResponseMenu(null);
+  };
+
+  const submitDelete = () => {
+    if (!event?.seriesMasterId) {
+      return;
+    }
+
+    void onDelete(event, event.seriesMasterId);
+    setOpenResponseMenu(null);
   };
 
   return (
@@ -1654,28 +1683,67 @@ function AttendeesSidebar({
                 <span>{t("eventEditor.responseActions.accept")}</span>
               </button>
               <button
-                className="attendees-sidebar__response-button attendees-sidebar__response-button--refuse"
+                aria-expanded={
+                  isRecurringAttendeeEvent ? openResponseMenu === "decline" : undefined
+                }
+                className={`attendees-sidebar__response-button attendees-sidebar__response-button--refuse ${openResponseMenu === "decline" ? "attendees-sidebar__response-button--open" : ""}`}
                 disabled={busy}
-                onClick={() => submitResponse("decline", true, "")}
+                onClick={() => {
+                  if (!isRecurringAttendeeEvent) {
+                    submitResponse("decline", true, "");
+                    return;
+                  }
+
+                  setOpenResponseMenu((current) => (current === "decline" ? null : "decline"));
+                }}
                 type="button"
               >
                 <CloseIcon />
                 <span>{t("eventEditor.responseActions.decline")}</span>
+                {isRecurringAttendeeEvent && (
+                  <ChevronDownIcon
+                    className={`attendees-sidebar__response-arrow ${openResponseMenu === "decline" ? "expanded" : ""}`}
+                  />
+                )}
               </button>
               <button
-                aria-expanded={isResponsePopupOpen}
-                className={`attendees-sidebar__response-button attendees-sidebar__response-button--other ${isResponsePopupOpen ? "attendees-sidebar__response-button--open" : ""}`}
+                aria-expanded={openResponseMenu === "other"}
+                className={`attendees-sidebar__response-button attendees-sidebar__response-button--other ${openResponseMenu === "other" ? "attendees-sidebar__response-button--open" : ""}`}
                 disabled={busy}
-                onClick={() => setIsResponsePopupOpen((current) => !current)}
+                onClick={() =>
+                  setOpenResponseMenu((current) => (current === "other" ? null : "other"))
+                }
                 type="button"
               >
                 <span>{t("eventEditor.responseActions.other")}</span>
                 <ChevronDownIcon
-                  className={`attendees-sidebar__response-arrow ${isResponsePopupOpen ? "expanded" : ""}`}
+                  className={`attendees-sidebar__response-arrow ${openResponseMenu === "other" ? "expanded" : ""}`}
                 />
               </button>
             </div>
-            {isResponsePopupOpen && (
+            {openResponseMenu === "decline" && (
+              <div className="attendees-sidebar__response-popup">
+                <div className="attendees-sidebar__response-popup-actions">
+                  <button
+                    className="attendees-sidebar__response-popup-button"
+                    disabled={busy}
+                    onClick={() => submitResponse("decline", true, "")}
+                    type="button"
+                  >
+                    {t("eventEditor.responseActions.declineCurrent")}
+                  </button>
+                  <button
+                    className="attendees-sidebar__response-popup-button"
+                    disabled={busy}
+                    onClick={submitDelete}
+                    type="button"
+                  >
+                    {t("eventEditor.responseActions.deleteCurrentAndFuture")}
+                  </button>
+                </div>
+              </div>
+            )}
+            {openResponseMenu === "other" && (
               <div className="attendees-sidebar__response-popup">
                 <label className="field field--full attendees-sidebar__response-comment">
                   <span>{t("eventEditor.comment")}</span>

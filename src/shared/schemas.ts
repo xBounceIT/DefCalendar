@@ -312,6 +312,7 @@ const deleteEventArgsSchema = z.object({
   calendarId: z.string(),
   eventId: z.string(),
   etag: z.string().nullable().optional(),
+  targetEventId: z.string().optional(),
 });
 
 const eventReferenceArgsSchema = z.object({
@@ -325,6 +326,7 @@ const respondToEventArgsSchema = z.object({
   comment: z.string().default(""),
   eventId: z.string(),
   sendResponse: z.boolean().default(true),
+  targetEventId: z.string().optional(),
 });
 
 const forwardEventArgsSchema = z.object({

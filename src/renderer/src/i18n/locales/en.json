@@ -203,6 +203,8 @@
     "responseActions": {
       "accept": "Accept",
       "acceptWithoutResponse": "Accept without sending",
+      "declineCurrent": "Deny only current",
+      "deleteCurrentAndFuture": "Delete current and future",
       "other": "Other",
       "refuseWithoutResponse": "Refuse without sending",
       "tentative": "Tentative",

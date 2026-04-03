@@ -397,6 +397,62 @@ describe("register ipc", () => {
     );
   });
 
+  it("waits for sync when deleting a recurring series from an occurrence", async () => {
+    const fixture = createFixture();
+    const invokeEvent = { sender: fixture.mainWebContents };
+
+    await fixture.handlers.get(IPC_CHANNELS.eventsDelete)?.(invokeEvent, {
+      calendarId: "calendar-1",
+      eventId: "event-1",
+      targetEventId: "series-1",
+    });
+
+    expect(fixture.graph.deleteEvent).toHaveBeenCalledWith(
+      "calendar-1",
+      "event-1",
+      "account-1",
+      undefined,
+      "series-1",
+    );
+    expect(fixture.db.deleteEvent).not.toHaveBeenCalled();
+    expect(fixture.sync.syncAll).toHaveBeenCalledWith("mutation", "account-1");
+    expect(fixture.reminders.checkNow.mock.invocationCallOrder[0]).toBeLessThan(
+      fixture.sync.syncAll.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("waits for sync when accepting a recurring series from an occurrence", async () => {
+    const fixture = createFixture();
+    const invokeEvent = { sender: fixture.mainWebContents };
+
+    await fixture.handlers.get(IPC_CHANNELS.eventsRespond)?.(invokeEvent, {
+      action: "accept",
+      calendarId: "calendar-1",
+      comment: "",
+      eventId: "event-1",
+      sendResponse: true,
+      targetEventId: "series-1",
+    });
+
+    expect(fixture.graph.respondToEvent).toHaveBeenCalledWith(
+      {
+        action: "accept",
+        calendarId: "calendar-1",
+        comment: "",
+        eventId: "event-1",
+        sendResponse: true,
+        targetEventId: "series-1",
+      },
+      "account-1",
+    );
+    expect(fixture.graph.getEvent).not.toHaveBeenCalled();
+    expect(fixture.db.upsertEvent).not.toHaveBeenCalled();
+    expect(fixture.sync.syncAll).toHaveBeenCalledWith("mutation", "account-1");
+    expect(fixture.reminders.checkNow.mock.invocationCallOrder[0]).toBeLessThan(
+      fixture.sync.syncAll.mock.invocationCallOrder[0],
+    );
+  });
+
   it("forwards an event and triggers a background sync", async () => {
     const fixture = createFixture();
     const invokeEvent = { sender: fixture.mainWebContents };

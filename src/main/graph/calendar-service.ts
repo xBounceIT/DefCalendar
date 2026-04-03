@@ -347,14 +347,16 @@ class GraphCalendarService {
     eventId: string,
     homeAccountId: string,
     etag?: null | string,
+    targetEventId?: string,
   ): Promise<void> {
+    const graphEventId = targetEventId ?? eventId;
     const headers: Record<string, string> = {};
-    if (etag) {
+    if (etag && graphEventId === eventId) {
       headers["If-Match"] = etag;
     }
 
     await this.requestNoContent(
-      `/me/events/${encodeURIComponent(eventId)}`,
+      `/me/events/${encodeURIComponent(graphEventId)}`,
       {
         headers,
         method: "DELETE",
@@ -383,8 +385,9 @@ class GraphCalendarService {
   }
 
   async respondToEvent(args: RespondToEventArgs, homeAccountId: string): Promise<void> {
+    const graphEventId = args.targetEventId ?? args.eventId;
     await this.requestNoContent(
-      `/me/events/${encodeURIComponent(args.eventId)}/${args.action}`,
+      `/me/events/${encodeURIComponent(graphEventId)}/${args.action}`,
       {
         body: JSON.stringify({
           comment: args.comment,
