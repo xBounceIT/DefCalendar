@@ -96,7 +96,13 @@
     "start": "Start",
     "end": "End",
     "category": "Category",
+    "meeting": "Meeting",
     "action": "Action",
+    "responseAccepted": "Accepted",
+    "responseDeclined": "Declined",
+    "responseTentative": "Tentative",
+    "responsePending": "Yet to respond",
+    "responseOwner": "You're the owner",
     "noEvents": "No events on this day",
     "eventsCount_one": "{{count}} event",
     "eventsCount_other": "{{count}} events"

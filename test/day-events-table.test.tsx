@@ -1,15 +1,17 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createInstance } from "i18next";
 import React from "react";
 import { I18nextProvider, initReactI18next } from "react-i18next";
-import { describe, expect, it, vi } from "vitest";
 import DayEventsTable from "../src/renderer/src/components/day-events-table";
 import enTranslations from "../src/renderer/src/i18n/locales/en.json";
 import itTranslations from "../src/renderer/src/i18n/locales/it.json";
 import type { CalendarEvent } from "../src/shared/schemas";
+
+afterEach(cleanup);
 
 function createEvent(overrides?: Partial<CalendarEvent>): CalendarEvent {
   return {
@@ -124,6 +126,56 @@ describe("day events table", () => {
 
     expect(onEventClick).toHaveBeenCalledWith(event);
     expect(onClear).not.toHaveBeenCalled();
+  });
+
+  it("shows meeting as the rightmost column header", () => {
+    renderTable({ events: [createEvent()] });
+
+    const headers = screen
+      .getAllByRole("columnheader")
+      .map((columnHeader) => columnHeader.textContent?.trim() ?? "");
+
+    expect(headers[headers.length - 2]).toBe("Action");
+    expect(headers[headers.length - 1]).toBe("Meeting");
+  });
+
+  it("shows attendee response and organizer ownership in action column", () => {
+    renderTable({
+      language: "en",
+      events: [
+        createEvent({
+          id: "attendee-accepted",
+          isOrganizer: false,
+          responseStatus: {
+            response: "accepted",
+            time: null,
+          },
+          subject: "Accepted attendee event",
+        }),
+        createEvent({
+          id: "attendee-pending",
+          isOrganizer: false,
+          responseStatus: {
+            response: "none",
+            time: null,
+          },
+          subject: "Pending attendee event",
+        }),
+        createEvent({
+          id: "organizer",
+          isOrganizer: true,
+          responseStatus: {
+            response: "declined",
+            time: null,
+          },
+          subject: "Owned event",
+        }),
+      ],
+    });
+
+    expect(screen.getByText("Accepted")).toBeInTheDocument();
+    expect(screen.getByText("Yet to respond")).toBeInTheDocument();
+    expect(screen.getByText("You're the owner")).toBeInTheDocument();
   });
 
   it("shows join button and calls onJoinMeeting when clicked", () => {
