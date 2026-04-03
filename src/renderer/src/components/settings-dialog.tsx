@@ -459,7 +459,7 @@ function NotificationsSection({
 
 function SyncSection({ onSave, settings }: Pick<SettingsDialogProps, "onSave" | "settings">) {
   const { t } = useTranslation();
-  const syncIntervalOptions: SyncIntervalSetting[] = [5, 10, 15, 30, 60];
+  const syncIntervalOptions: SyncIntervalSetting[] = [1, 5, 10, 15, 30, 60];
 
   return (
     <div className="settings-section">
