@@ -589,7 +589,6 @@ class AppDatabase {
           reminderType: REMINDER_TYPE.PRE,
           snoozedUntil: readNullableStringProperty(row, "snoozed_until_pre"),
         });
-        continue;
       }
 
       candidates.push({

@@ -1,6 +1,6 @@
 {
   "name": "defcalendar",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Desktop calendar app for Microsoft 365 Exchange Online built with Electron.",
   "author": "Daniel",
   "main": "out/main/index.cjs",
@@ -103,7 +103,7 @@
     "oxfmt": "^0.43.0",
     "oxlint": "^1.58.0",
     "typescript": "^6.0.2",
-    "vite": "^7.3.1",
+    "vite": "^7.3.2",
     "vitest": "^4.1.2"
   },
   "overrides": {
