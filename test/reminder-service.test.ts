@@ -312,7 +312,6 @@ describe("reminder service", () => {
 
     fixture.service.dismissAll();
 
-    // Advance to event start — now start reminder is due
     vi.setSystemTime(new Date("2026-03-30T10:00:00.000Z"));
     await fixture.service.checkNow();
 
