@@ -310,7 +310,6 @@ describe("reminder service", () => {
       true,
     );
 
-    // Dismiss the pre-reminder
     fixture.service.dismissAll();
 
     // Advance to event start — now start reminder is due
