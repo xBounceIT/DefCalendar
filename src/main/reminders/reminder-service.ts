@@ -260,7 +260,6 @@ class ReminderService {
 
     const staleKeys: string[] = [];
 
-    // Pre-compute dedupe keys for batch state fetch
     const validEvents: {
       event: (typeof events)[number];
       eventStart: number;
