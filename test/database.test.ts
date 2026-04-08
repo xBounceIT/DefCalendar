@@ -213,7 +213,13 @@ describe("database", () => {
     const db = Object.create(AppDatabase.prototype) as AppDatabase;
     (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
 
-    expect(db.listReminderCandidates(["calendar-1"], "2026-03-30T12:00:00.000Z")).toEqual([
+    expect(
+      db.listReminderCandidates(
+        ["calendar-1"],
+        "2026-03-28T12:00:00.000Z",
+        "2026-03-30T12:00:00.000Z",
+      ),
+    ).toEqual([
       expect.objectContaining({
         dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z:pre",
         dismissedAt: null,
@@ -234,7 +240,11 @@ describe("database", () => {
       }),
     ]);
 
-    expect(all).toHaveBeenCalledWith("2026-03-30T12:00:00.000Z", "calendar-1");
+    expect(all).toHaveBeenCalledWith(
+      "2026-03-28T12:00:00.000Z",
+      "2026-03-30T12:00:00.000Z",
+      "calendar-1",
+    );
   });
 
   it("searches contacts with normalized attendee input", () => {

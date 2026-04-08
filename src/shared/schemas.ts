@@ -368,6 +368,9 @@ const reminderDismissArgsSchema = z.object({
   dedupeKey: z.string().min(1),
 });
 
+const REMINDER_TYPE = { PRE: "pre", START: "start" } as const;
+type ReminderType = (typeof REMINDER_TYPE)[keyof typeof REMINDER_TYPE];
+
 const reminderDialogItemSchema = z.object({
   dedupeKey: z.string().min(1),
   end: dateTimeStringSchema,
@@ -375,7 +378,7 @@ const reminderDialogItemSchema = z.object({
   location: z.string().nullable(),
   onlineMeeting: onlineMeetingInfoSchema.nullable().default(null),
   reminderMinutesBeforeStart: z.number().int().min(0),
-  reminderType: z.enum(["pre", "start"]).optional(),
+  reminderType: z.enum([REMINDER_TYPE.PRE, REMINDER_TYPE.START]).optional(),
   start: dateTimeStringSchema,
   subject: z.string(),
 });
@@ -575,6 +578,7 @@ export {
   onlineMeetingInfoSchema,
   participantResponseStatusSchema,
   reminderDialogItemSchema,
+  REMINDER_TYPE,
   reminderDialogStateSchema,
   reminderDismissArgsSchema,
   reminderSnoozeArgsSchema,
@@ -622,6 +626,7 @@ export {
   type ReminderDismissArgs,
   type ReminderDialogItem,
   type ReminderDialogState,
+  type ReminderType,
   type ReminderSnoozeArgs,
   type EventDraft,
   type EventListArgs,

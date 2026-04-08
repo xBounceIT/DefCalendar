@@ -75,9 +75,27 @@ function createFixture(args?: {
         candidate.dismissedAt = new Date().toISOString();
       }
     }),
+    dismissReminders: vi.fn().mockImplementation((dedupeKeys: string[]) => {
+      for (const key of dedupeKeys) {
+        const candidate = candidates.find((c) => c.dedupeKey === key);
+        if (candidate) {
+          candidate.dismissedAt = new Date().toISOString();
+        }
+      }
+    }),
     getReminderState: vi
       .fn()
       .mockImplementation((dedupeKey: string) => reminderStateByKey[dedupeKey] ?? null),
+    getReminderStates: vi.fn().mockImplementation((keys: string[]) => {
+      const map = new Map<string, { dismissedAt: null | string; snoozedUntil: null | string }>();
+      for (const key of keys) {
+        const state = reminderStateByKey[key];
+        if (state) {
+          map.set(key, state);
+        }
+      }
+      return map;
+    }),
     listReminderEventsByStartRange: vi
       .fn()
       .mockImplementation(
@@ -99,8 +117,9 @@ function createFixture(args?: {
       ),
     listReminderCandidates: vi
       .fn()
-      .mockImplementation((visibleCalendarIds: string[]) =>
-        candidates.filter((candidate) => visibleCalendarIds.includes(candidate.event.calendarId)),
+      .mockImplementation(
+        (visibleCalendarIds: string[], _windowStart: string, _windowEnd: string) =>
+          candidates.filter((candidate) => visibleCalendarIds.includes(candidate.event.calendarId)),
       ),
     pruneNotificationState: vi.fn(),
     pruneReminderState: vi.fn(),
@@ -148,6 +167,7 @@ describe("reminder service", () => {
 
     expect(fixture.db.listReminderCandidates).toHaveBeenCalledWith(
       ["calendar-1"],
+      "2026-03-28T09:45:00.000Z",
       "2026-04-13T09:45:00.000Z",
     );
     expect(fixture.reminderManager.show).toHaveBeenCalledWith(
@@ -177,6 +197,7 @@ describe("reminder service", () => {
 
     vi.setSystemTime(new Date("2026-03-30T09:44:59.000Z"));
     fixture.service.start();
+    void fixture.service.checkNow();
 
     expect(fixture.reminderManager.show).not.toHaveBeenCalled();
 
@@ -247,14 +268,10 @@ describe("reminder service", () => {
     await fixture.service.checkNow();
     fixture.service.dismissAll();
 
-    expect(fixture.db.dismissReminder).toHaveBeenNthCalledWith(
-      1,
+    expect(fixture.db.dismissReminders).toHaveBeenCalledWith([
       "calendar-1:event-1:2026-03-30T10:00:00.000Z:pre",
-    );
-    expect(fixture.db.dismissReminder).toHaveBeenNthCalledWith(
-      2,
       "calendar-1:event-2:2026-03-30T10:15:00.000Z:pre",
-    );
+    ]);
   });
 
   it("shows both pre and start reminders for an event with reminderMinutesBeforeStart > 0", async () => {
@@ -487,5 +504,86 @@ describe("reminder service", () => {
     await fixture.service.checkNow();
 
     expect(fixture.reminderManager.show).not.toHaveBeenCalled();
+  });
+
+  it("auto-dismisses and skips stale reminders that would have fired more than 48 hours ago", async () => {
+    vi.setSystemTime(new Date("2026-03-30T09:45:00.000Z"));
+    const fixture = createFixture({
+      candidates: [
+        createCandidate({
+          start: "2026-03-27T10:00:00.000Z",
+          dedupeKey: "calendar-1:event-stale:2026-03-27T10:00:00.000Z:pre",
+          subject: "Old meeting",
+        }),
+      ],
+    });
+
+    await fixture.service.checkNow();
+
+    expect(fixture.db.dismissReminders).toHaveBeenCalledWith([
+      "calendar-1:event-stale:2026-03-27T10:00:00.000Z:pre",
+    ]);
+    expect(fixture.reminderManager.show).not.toHaveBeenCalled();
+  });
+
+  it("shows reminders that are due within the stale threshold", async () => {
+    vi.setSystemTime(new Date("2026-03-30T09:45:00.000Z"));
+    const fixture = createFixture({
+      candidates: [
+        createCandidate({
+          start: "2026-03-29T10:00:00.000Z",
+          dedupeKey: "calendar-1:event-recent:2026-03-29T10:00:00.000Z:pre",
+          subject: "Recent meeting",
+        }),
+      ],
+    });
+
+    await fixture.service.checkNow();
+
+    expect(fixture.db.dismissReminders).not.toHaveBeenCalled();
+    expect(fixture.reminderManager.show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [expect.objectContaining({ subject: "Recent meeting" })],
+      }),
+      true,
+    );
+  });
+
+  it("auto-dismisses stale reminders under local override rules", async () => {
+    vi.setSystemTime(new Date("2026-03-30T09:45:00.000Z"));
+    const fixture = createFixture({
+      localEvents: [
+        {
+          calendarId: "calendar-1",
+          end: "2026-03-27T10:30:00.000Z",
+          id: "event-stale",
+          isAllDay: false,
+          location: "Room 3",
+          reminderMinutesBeforeStart: null,
+          start: "2026-03-27T10:00:00.000Z",
+          subject: "Old meeting",
+        },
+      ],
+      localReminderOverrideEnabled: true,
+      localReminderRules: [{ minutes: 15, when: "before" }],
+    });
+
+    await fixture.service.checkNow();
+
+    expect(fixture.db.dismissReminders).toHaveBeenCalledWith([
+      "calendar-1:event-stale:2026-03-27T10:00:00.000Z:before:15",
+    ]);
+    expect(fixture.reminderManager.show).not.toHaveBeenCalled();
+  });
+
+  it("does not check reminders when started without an explicit checkNow call", () => {
+    const fixture = createFixture({ candidates: [createCandidate()] });
+
+    fixture.service.start();
+
+    expect(fixture.db.listReminderCandidates).not.toHaveBeenCalled();
+    expect(fixture.reminderManager.show).not.toHaveBeenCalled();
+
+    fixture.service.stop();
   });
 });

@@ -4,6 +4,7 @@ import type GraphCalendarService from "@main/graph/calendar-service";
 import type MsalAuthService from "@main/auth/msal-auth-service";
 import type ReminderService from "@main/reminders/reminder-service";
 import type SettingsService from "@main/settings/settings-service";
+import { DAY_MS, MINUTE_MS } from "@shared/duration";
 import type { CalendarEvent, CalendarSummary, SyncStatus } from "@shared/schemas";
 
 type SyncReason = "startup" | "sign-in" | "switch-account" | "manual" | "interval" | "mutation";
@@ -236,10 +237,10 @@ class SyncService {
       }
 
       const rangeStart = new Date(
-        Date.now() - this.dependencies.config.syncLookBehindDays * 24 * 60 * 60 * 1000,
+        Date.now() - this.dependencies.config.syncLookBehindDays * DAY_MS,
       ).toISOString();
       const rangeEnd = new Date(
-        Date.now() + this.dependencies.config.syncLookAheadDays * 24 * 60 * 60 * 1000,
+        Date.now() + this.dependencies.config.syncLookAheadDays * DAY_MS,
       ).toISOString();
       const finishedAt = new Date().toISOString();
 
@@ -376,7 +377,7 @@ class SyncService {
       this.dependencies.settings.getSettings().syncIntervalMinutes ??
       this.dependencies.config.syncIntervalMinutes;
 
-    return syncIntervalMinutes * 60_000;
+    return syncIntervalMinutes * MINUTE_MS;
   }
 
   private setStatus(status: SyncStatus): void {

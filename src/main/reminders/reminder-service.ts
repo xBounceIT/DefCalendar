@@ -5,10 +5,13 @@ import { app, powerMonitor } from "@main/electron-runtime";
 import { resolveMainLocale } from "@main/i18n";
 import type { ReminderDialogItem, ReminderDialogState } from "@shared/ipc";
 import type { LocalReminderRule, UserSettings } from "@shared/schemas";
+import { REMINDER_TYPE } from "@shared/schema-values";
+import { MINUTE_MS, DAY_MS } from "@shared/duration";
 
 const MAX_REMINDER_MINUTES = 20_160;
-const REMINDER_REFRESH_INTERVAL_MS = 60_000;
+const REMINDER_REFRESH_INTERVAL_MS = MINUTE_MS;
 const REMINDER_STATE_RETENTION_DAYS = 30;
+const STALE_REMINDER_THRESHOLD_MS = 2 * DAY_MS;
 
 interface ReminderEvaluation {
   nextCheckAt: null | number;
@@ -23,6 +26,7 @@ interface DueReminderEntry {
 interface ReminderComputation {
   dueItems: DueReminderEntry[];
   nextCheckAt: null | number;
+  staleKeys: string[];
 }
 
 class ReminderService {
@@ -56,7 +60,6 @@ class ReminderService {
     this.started = true;
     powerMonitor.on("resume", this.handlePowerResume);
     powerMonitor.on("unlock-screen", this.handlePowerResume);
-    void this.checkNow();
   }
 
   stop(): void {
@@ -88,15 +91,13 @@ class ReminderService {
   }
 
   dismissAll(): void {
-    for (const item of this.state.items) {
-      this.db.dismissReminder(item.dedupeKey);
-    }
+    this.db.dismissReminders(this.state.items.map((item) => item.dedupeKey));
 
     void this.checkNow();
   }
 
   snooze(dedupeKey: string, minutes: number): void {
-    this.db.snoozeReminder(dedupeKey, new Date(Date.now() + minutes * 60_000).toISOString());
+    this.db.snoozeReminder(dedupeKey, new Date(Date.now() + minutes * MINUTE_MS).toISOString());
     void this.checkNow();
   }
 
@@ -125,10 +126,10 @@ class ReminderService {
 
     this.scheduleNextCheck(evaluation.nextCheckAt, now);
     this.db.pruneReminderState(
-      new Date(now - REMINDER_STATE_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString(),
+      new Date(now - REMINDER_STATE_RETENTION_DAYS * DAY_MS).toISOString(),
     );
     this.db.pruneNotificationState(
-      new Date(now - REMINDER_STATE_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString(),
+      new Date(now - REMINDER_STATE_RETENTION_DAYS * DAY_MS).toISOString(),
     );
   }
 
@@ -142,6 +143,10 @@ class ReminderService {
         )
       : this.evaluateWithSyncedReminderSettings(now, settings.visibleCalendarIds);
 
+    if (computation.staleKeys.length > 0) {
+      this.db.dismissReminders(computation.staleKeys);
+    }
+
     return this.toReminderEvaluation(now, computation, settings);
   }
 
@@ -151,11 +156,14 @@ class ReminderService {
   ): ReminderComputation {
     const dueItems: DueReminderEntry[] = [];
     let nextCheckAt: null | number = null;
-    const schedulingHorizon = now + MAX_REMINDER_MINUTES * 60_000;
+    const schedulingHorizon = now + MAX_REMINDER_MINUTES * MINUTE_MS;
+    const windowStart = new Date(now - STALE_REMINDER_THRESHOLD_MS).toISOString();
     const candidates = this.db.listReminderCandidates(
       visibleCalendarIds,
+      windowStart,
       new Date(schedulingHorizon).toISOString(),
     );
+    const staleKeys: string[] = [];
 
     for (const candidate of candidates) {
       if (candidate.dismissedAt) {
@@ -173,12 +181,18 @@ class ReminderService {
       }
 
       const reminderAt =
-        candidate.reminderType === "start" ? eventStart : eventStart - reminderMinutes * 60_000;
+        candidate.reminderType === REMINDER_TYPE.START
+          ? eventStart
+          : eventStart - reminderMinutes * MINUTE_MS;
 
       const snoozedUntil = candidate.snoozedUntil
         ? new Date(candidate.snoozedUntil).getTime()
         : null;
       const dueAt = snoozedUntil !== null && snoozedUntil > reminderAt ? snoozedUntil : reminderAt;
+      if (dueAt < now - STALE_REMINDER_THRESHOLD_MS) {
+        staleKeys.push(candidate.dedupeKey);
+        continue;
+      }
       if (dueAt <= now) {
         dueItems.push({
           dueAt,
@@ -207,6 +221,7 @@ class ReminderService {
     return {
       dueItems,
       nextCheckAt,
+      staleKeys,
     };
   }
 
@@ -217,13 +232,10 @@ class ReminderService {
   ): ReminderComputation {
     const dueItems: DueReminderEntry[] = [];
     let nextCheckAt: null | number = null;
-    const schedulingHorizon = now + MAX_REMINDER_MINUTES * 60_000;
+    const schedulingHorizon = now + MAX_REMINDER_MINUTES * MINUTE_MS;
 
     if (localReminderRules.length === 0) {
-      return {
-        dueItems,
-        nextCheckAt,
-      };
+      return { dueItems, nextCheckAt, staleKeys: [] };
     }
 
     let maxBeforeMinutes = 0;
@@ -236,31 +248,52 @@ class ReminderService {
       }
     }
 
-    const lookbackMinutes = maxBeforeMinutes > 0 ? MAX_REMINDER_MINUTES : maxAfterMinutes;
+    const lookbackMinutes = Math.max(
+      maxBeforeMinutes > 0 ? MAX_REMINDER_MINUTES : maxAfterMinutes,
+      STALE_REMINDER_THRESHOLD_MS / MINUTE_MS + maxAfterMinutes,
+    );
     const events = this.db.listReminderEventsByStartRange(
       visibleCalendarIds,
-      new Date(now - lookbackMinutes * 60_000).toISOString(),
+      new Date(now - lookbackMinutes * MINUTE_MS).toISOString(),
       new Date(schedulingHorizon).toISOString(),
     );
 
+    const staleKeys: string[] = [];
+
+    const validEvents: {
+      event: (typeof events)[number];
+      eventStart: number;
+      ruleKeys: Map<LocalReminderRule, string>;
+    }[] = [];
+    const allDedupeKeys: string[] = [];
     for (const event of events) {
       const eventStart = new Date(event.start).getTime();
       if (Number.isNaN(eventStart)) {
         continue;
       }
-
+      const ruleKeys = new Map<LocalReminderRule, string>();
       for (const rule of localReminderRules) {
-        const reminderAt =
-          rule.when === "before"
-            ? eventStart - rule.minutes * 60_000
-            : eventStart + rule.minutes * 60_000;
-        const dedupeKey = this.createLocalReminderDedupeKey(
+        const key = this.createLocalReminderDedupeKey(
           event.calendarId,
           event.id,
           event.start,
           rule,
         );
-        const reminderState = this.db.getReminderState(dedupeKey);
+        ruleKeys.set(rule, key);
+        allDedupeKeys.push(key);
+      }
+      validEvents.push({ event, eventStart, ruleKeys });
+    }
+    const stateMap = this.db.getReminderStates(allDedupeKeys);
+
+    for (const { event, eventStart, ruleKeys } of validEvents) {
+      for (const rule of localReminderRules) {
+        const reminderAt =
+          rule.when === "before"
+            ? eventStart - rule.minutes * MINUTE_MS
+            : eventStart + rule.minutes * MINUTE_MS;
+        const dedupeKey = ruleKeys.get(rule)!;
+        const reminderState = stateMap.get(dedupeKey) ?? null;
 
         if (reminderState?.dismissedAt) {
           continue;
@@ -272,6 +305,10 @@ class ReminderService {
         const dueAt =
           snoozedUntil !== null && snoozedUntil > reminderAt ? snoozedUntil : reminderAt;
 
+        if (dueAt < now - STALE_REMINDER_THRESHOLD_MS) {
+          staleKeys.push(dedupeKey);
+          continue;
+        }
         if (dueAt <= now) {
           dueItems.push({
             dueAt,
@@ -300,6 +337,7 @@ class ReminderService {
     return {
       dueItems,
       nextCheckAt,
+      staleKeys,
     };
   }
 

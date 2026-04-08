@@ -4,6 +4,7 @@ export {
   calendarViewSchema,
   contactSuggestionSchema,
   createDefaultSettings,
+  REMINDER_TYPE,
   storedAccountSchema,
   userSettingsSchema,
 } from "./schemas";

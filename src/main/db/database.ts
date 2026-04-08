@@ -3,6 +3,7 @@ import type {
   CalendarSummary,
   ContactSuggestion,
   EventListArgs,
+  ReminderType,
   SearchContactsArgs,
   StoredAccount,
   SyncStatus,
@@ -13,6 +14,7 @@ import {
   calendarSummarySchema,
   contactSuggestionSchema,
   createDefaultSettings,
+  REMINDER_TYPE,
   storedAccountSchema,
   userSettingsSchema,
 } from "@shared/schema-values";
@@ -43,7 +45,7 @@ interface ReminderCandidate {
   dismissedAt: null | string;
   event: CalendarEvent;
   snoozedUntil: null | string;
-  reminderType: "pre" | "start";
+  reminderType: ReminderType;
 }
 
 interface ReminderStateSnapshot {
@@ -53,6 +55,7 @@ interface ReminderStateSnapshot {
 
 class AppDatabase {
   private readonly db: Database.Database;
+  private cachedDismissStatement: Database.Statement | null = null;
 
   constructor() {
     const databasePath = join(app.getPath("userData"), "project-calendar.sqlite");
@@ -536,7 +539,11 @@ class AppDatabase {
       .map((row) => calendarEventSchema.parse(JSON.parse(readStringProperty(row, "payload_json"))));
   }
 
-  listReminderCandidates(visibleCalendarIds: string[], windowEnd: string): ReminderCandidate[] {
+  listReminderCandidates(
+    visibleCalendarIds: string[],
+    windowStart: string,
+    windowEnd: string,
+  ): ReminderCandidate[] {
     if (visibleCalendarIds.length === 0) {
       return [];
     }
@@ -557,6 +564,7 @@ class AppDatabase {
         ON reminder_state_start.dedupe_key = events.calendar_id || ':' || events.id || ':' || events.start_sort || ':start'
       WHERE events.is_reminder_on = 1
         AND events.reminder_minutes_before_start IS NOT NULL
+        AND events.start_sort >= ?
         AND events.start_sort <= ?
         AND events.calendar_id IN (${placeholders})
       ORDER BY events.start_sort ASC, events.subject COLLATE NOCASE ASC
@@ -564,7 +572,7 @@ class AppDatabase {
 
     const candidates: ReminderCandidate[] = [];
 
-    for (const row of statement.all(windowEnd, ...visibleCalendarIds)) {
+    for (const row of statement.all(windowStart, windowEnd, ...visibleCalendarIds)) {
       const event = calendarEventSchema.parse(JSON.parse(readStringProperty(row, "payload_json")));
       const baseKey = readStringProperty(row, "base_key");
       const reminderMinutes = event.reminderMinutesBeforeStart;
@@ -575,19 +583,19 @@ class AppDatabase {
 
       if (reminderMinutes > 0) {
         candidates.push({
-          dedupeKey: `${baseKey}:pre`,
+          dedupeKey: `${baseKey}:${REMINDER_TYPE.PRE}`,
           dismissedAt: readNullableStringProperty(row, "dismissed_at_pre"),
           event,
-          reminderType: "pre",
+          reminderType: REMINDER_TYPE.PRE,
           snoozedUntil: readNullableStringProperty(row, "snoozed_until_pre"),
         });
       }
 
       candidates.push({
-        dedupeKey: `${baseKey}:start`,
+        dedupeKey: `${baseKey}:${REMINDER_TYPE.START}`,
         dismissedAt: readNullableStringProperty(row, "dismissed_at_start"),
         event,
-        reminderType: "start",
+        reminderType: REMINDER_TYPE.START,
         snoozedUntil: readNullableStringProperty(row, "snoozed_until_start"),
       });
     }
@@ -632,6 +640,28 @@ class AppDatabase {
       dismissedAt: readNullableStringProperty(row, "dismissed_at"),
       snoozedUntil: readNullableStringProperty(row, "snoozed_until"),
     };
+  }
+
+  getReminderStates(keys: string[]): Map<string, ReminderStateSnapshot> {
+    if (keys.length === 0) {
+      return new Map();
+    }
+
+    const placeholders = keys.map(() => "?").join(", ");
+    const rows = this.db
+      .prepare(
+        `SELECT dedupe_key, dismissed_at, snoozed_until FROM reminder_state WHERE dedupe_key IN (${placeholders})`,
+      )
+      .all(...keys);
+
+    const result = new Map<string, ReminderStateSnapshot>();
+    for (const row of rows) {
+      result.set(readStringProperty(row, "dedupe_key"), {
+        dismissedAt: readNullableStringProperty(row, "dismissed_at"),
+        snoozedUntil: readNullableStringProperty(row, "snoozed_until"),
+      });
+    }
+    return result;
   }
 
   getSettings(): UserSettings {
@@ -763,17 +793,32 @@ class AppDatabase {
   }
 
   dismissReminder(key: string): void {
-    this.db
-      .prepare(
-        `
-          INSERT INTO reminder_state (dedupe_key, snoozed_until, dismissed_at)
-          VALUES (?, NULL, ?)
-          ON CONFLICT(dedupe_key) DO UPDATE SET
-            snoozed_until = excluded.snoozed_until,
-            dismissed_at = excluded.dismissed_at
-        `,
-      )
-      .run(key, new Date().toISOString());
+    this.dismissReminders([key]);
+  }
+
+  dismissReminders(keys: string[]): void {
+    if (keys.length === 0) {
+      return;
+    }
+
+    if (!this.cachedDismissStatement) {
+      this.cachedDismissStatement = this.db.prepare(`
+        INSERT INTO reminder_state (dedupe_key, snoozed_until, dismissed_at)
+        VALUES (?, NULL, ?)
+        ON CONFLICT(dedupe_key) DO UPDATE SET
+          snoozed_until = excluded.snoozed_until,
+          dismissed_at = excluded.dismissed_at
+      `);
+    }
+
+    const dismiss = this.cachedDismissStatement;
+    const now = new Date().toISOString();
+    const transaction = this.db.transaction(() => {
+      for (const key of keys) {
+        dismiss.run(key, now);
+      }
+    });
+    transaction();
   }
 
   snoozeReminder(key: string, untilIso: string): void {
