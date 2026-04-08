@@ -1,4 +1,5 @@
 import type { CalendarEvent, CalendarView } from "./schemas";
+import { MINUTE_MS } from "./duration";
 
 const CALENDAR_VIEW_ORDER: CalendarView[] = ["dayGridMonth", "timeGridWeek", "timeGridDay"];
 
@@ -40,7 +41,7 @@ function fromDateTimeInputValue(value: string, allDay: boolean): string {
 }
 
 function addMinutesToIso(value: string, minutes: number): string {
-  return new Date(new Date(value).getTime() + minutes * 60_000).toISOString();
+  return new Date(new Date(value).getTime() + minutes * MINUTE_MS).toISOString();
 }
 
 function roundUpToNext15Minutes(date: Date): Date {
