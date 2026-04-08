@@ -126,9 +126,10 @@ async function bootstrap(): Promise<void> {
 
   if (auth.hasSession()) {
     void sync.syncAll("startup");
-  } else {
-    void reminders.checkNow();
   }
+
+  void reminders.checkNow();
+
 
   if (app.isPackaged) {
     void updates.checkForUpdates();
