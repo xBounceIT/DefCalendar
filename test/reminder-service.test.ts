@@ -69,7 +69,12 @@ function createFixture(args?: {
   const localEvents = args?.localEvents ?? [];
   const reminderStateByKey = args?.reminderStateByKey ?? {};
   const db = {
-    dismissReminder: vi.fn(),
+    dismissReminder: vi.fn().mockImplementation((dedupeKey: string) => {
+      const candidate = candidates.find((c) => c.dedupeKey === dedupeKey);
+      if (candidate) {
+        candidate.dismissedAt = new Date().toISOString();
+      }
+    }),
     getReminderState: vi
       .fn()
       .mockImplementation((dedupeKey: string) => reminderStateByKey[dedupeKey] ?? null),
@@ -249,6 +254,80 @@ describe("reminder service", () => {
     expect(fixture.db.dismissReminder).toHaveBeenNthCalledWith(
       2,
       "calendar-1:event-2:2026-03-30T10:15:00.000Z:pre",
+    );
+  });
+
+  it("shows both pre and start reminders for an event with reminderMinutesBeforeStart > 0", async () => {
+    vi.setSystemTime(new Date("2026-03-30T10:00:00.000Z"));
+    const fixture = createFixture({
+      candidates: [
+        createCandidate({ reminderMinutesBeforeStart: 15, reminderType: "pre" }),
+        createCandidate({ reminderMinutesBeforeStart: 15, reminderType: "start" }),
+      ],
+    });
+
+    await fixture.service.checkNow();
+
+    expect(fixture.reminderManager.show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [
+          expect.objectContaining({
+            dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z:pre",
+            reminderMinutesBeforeStart: 15,
+            reminderType: "pre",
+          }),
+          expect.objectContaining({
+            dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z:start",
+            reminderMinutesBeforeStart: 15,
+            reminderType: "start",
+          }),
+        ],
+      }),
+      true,
+    );
+  });
+
+  it("fires start reminder after pre reminder is dismissed", async () => {
+    // At T-15: only pre-reminder is due, start reminder is in the future
+    vi.setSystemTime(new Date("2026-03-30T09:45:00.000Z"));
+    const fixture = createFixture({
+      candidates: [
+        createCandidate({ reminderMinutesBeforeStart: 15, reminderType: "pre" }),
+        createCandidate({ reminderMinutesBeforeStart: 15, reminderType: "start" }),
+      ],
+    });
+
+    await fixture.service.checkNow();
+
+    expect(fixture.reminderManager.show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [
+          expect.objectContaining({
+            dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z:pre",
+            reminderType: "pre",
+          }),
+        ],
+      }),
+      true,
+    );
+
+    // Dismiss the pre-reminder
+    fixture.service.dismissAll();
+
+    // Advance to event start — now start reminder is due
+    vi.setSystemTime(new Date("2026-03-30T10:00:00.000Z"));
+    await fixture.service.checkNow();
+
+    expect(fixture.reminderManager.show).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        items: [
+          expect.objectContaining({
+            dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z:start",
+            reminderType: "start",
+          }),
+        ],
+      }),
+      true,
     );
   });
 
