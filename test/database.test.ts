@@ -183,7 +183,7 @@ describe("database", () => {
     ]);
   });
 
-  it("returns only the effective synced reminder candidate for each event", () => {
+  it("returns pre and start candidates for events with reminderMinutesBeforeStart > 0", () => {
     const all = vi.fn().mockReturnValue([
       {
         base_key: "calendar-1:event-1:2026-03-30T10:00:00.000Z",
@@ -219,6 +219,12 @@ describe("database", () => {
         dismissedAt: null,
         reminderType: "pre",
         snoozedUntil: "2026-03-30T09:50:00.000Z",
+      }),
+      expect.objectContaining({
+        dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z:start",
+        dismissedAt: "2026-03-30T10:00:00.000Z",
+        reminderType: "start",
+        snoozedUntil: null,
       }),
       expect.objectContaining({
         dedupeKey: "calendar-1:event-2:2026-03-30T11:00:00.000Z:start",
