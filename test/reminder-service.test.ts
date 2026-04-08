@@ -288,7 +288,6 @@ describe("reminder service", () => {
   });
 
   it("fires start reminder after pre reminder is dismissed", async () => {
-    // At T-15: only pre-reminder is due, start reminder is in the future
     vi.setSystemTime(new Date("2026-03-30T09:45:00.000Z"));
     const fixture = createFixture({
       candidates: [
