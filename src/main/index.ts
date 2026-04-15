@@ -130,7 +130,6 @@ async function bootstrap(): Promise<void> {
 
   void reminders.checkNow();
 
-
   if (app.isPackaged) {
     void updates.checkForUpdates();
   }
