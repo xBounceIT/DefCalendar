@@ -598,6 +598,57 @@ describe("reminder service", () => {
     );
   });
 
+  it("shows start reminders shortly after event start on startup (synced path)", async () => {
+    vi.setSystemTime(new Date("2026-03-30T10:03:00.000Z"));
+    const fixture = createFixture({
+      candidates: [
+        createCandidate({
+          reminderMinutesBeforeStart: 15,
+          reminderType: "start",
+          start: "2026-03-30T10:00:00.000Z",
+          subject: "Just-started meeting",
+        }),
+      ],
+    });
+
+    await fixture.service.checkNow("startup");
+
+    expect(fixture.db.dismissReminders).not.toHaveBeenCalled();
+    expect(fixture.reminderManager.show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [
+          expect.objectContaining({
+            dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z:start",
+            reminderType: "start",
+            subject: "Just-started meeting",
+          }),
+        ],
+      }),
+      true,
+    );
+  });
+
+  it("dismisses start reminders that are beyond startup grace on startup (synced path)", async () => {
+    vi.setSystemTime(new Date("2026-03-30T10:06:00.000Z"));
+    const fixture = createFixture({
+      candidates: [
+        createCandidate({
+          reminderMinutesBeforeStart: 15,
+          reminderType: "start",
+          start: "2026-03-30T10:00:00.000Z",
+          subject: "Too-old start reminder",
+        }),
+      ],
+    });
+
+    await fixture.service.checkNow("startup");
+
+    expect(fixture.db.dismissReminders).toHaveBeenCalledWith([
+      "calendar-1:event-1:2026-03-30T10:00:00.000Z:start",
+    ]);
+    expect(fixture.reminderManager.show).not.toHaveBeenCalled();
+  });
+
   it("auto-dismisses and hides reminders for past events on startup (local rules path)", async () => {
     vi.setSystemTime(new Date("2026-03-30T09:45:00.000Z"));
     const fixture = createFixture({
@@ -654,6 +705,72 @@ describe("reminder service", () => {
       }),
       true,
     );
+  });
+
+  it("shows local start reminders shortly after event start on startup", async () => {
+    vi.setSystemTime(new Date("2026-03-30T10:03:00.000Z"));
+    const fixture = createFixture({
+      localEvents: [
+        {
+          calendarId: "calendar-1",
+          end: "2026-03-30T10:30:00.000Z",
+          id: "event-1",
+          isAllDay: false,
+          location: "Room 3",
+          reminderMinutesBeforeStart: null,
+          start: "2026-03-30T10:00:00.000Z",
+          subject: "Just-started local meeting",
+        },
+      ],
+      localReminderOverrideEnabled: true,
+      localReminderRules: [{ minutes: 15, when: "before" }],
+    });
+
+    await fixture.service.checkNow("startup");
+
+    expect(fixture.db.dismissReminders).toHaveBeenCalledWith([
+      "calendar-1:event-1:2026-03-30T10:00:00.000Z:before:15",
+    ]);
+    expect(fixture.reminderManager.show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [
+          expect.objectContaining({
+            dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z:start",
+            reminderType: "start",
+            subject: "Just-started local meeting",
+          }),
+        ],
+      }),
+      true,
+    );
+  });
+
+  it("dismisses local start reminders beyond startup grace", async () => {
+    vi.setSystemTime(new Date("2026-03-30T10:06:00.000Z"));
+    const fixture = createFixture({
+      localEvents: [
+        {
+          calendarId: "calendar-1",
+          end: "2026-03-30T10:30:00.000Z",
+          id: "event-1",
+          isAllDay: false,
+          location: "Room 3",
+          reminderMinutesBeforeStart: null,
+          start: "2026-03-30T10:00:00.000Z",
+          subject: "Too-old local start reminder",
+        },
+      ],
+      localReminderOverrideEnabled: true,
+      localReminderRules: [{ minutes: 15, when: "before" }],
+    });
+
+    await fixture.service.checkNow("startup");
+
+    expect(fixture.db.dismissReminders).toHaveBeenCalledWith([
+      "calendar-1:event-1:2026-03-30T10:00:00.000Z:before:15",
+      "calendar-1:event-1:2026-03-30T10:00:00.000Z:start",
+    ]);
+    expect(fixture.reminderManager.show).not.toHaveBeenCalled();
   });
 
   it("auto-dismisses past events on power resume (uses startup trigger)", async () => {
@@ -926,6 +1043,6 @@ describe("reminder service", () => {
     const shownItems = fixture.reminderManager.show.mock.calls.flatMap(
       ([state]) => (state as { items: { reminderType?: string }[] }).items,
     );
-    expect(shownItems.some((item) => item.reminderType === "start")).toBe(false);
+    expect(shownItems.filter((item) => item.reminderType === "start")).toHaveLength(0);
   });
 });
