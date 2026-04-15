@@ -526,7 +526,7 @@ describe("reminder service", () => {
     expect(fixture.reminderManager.show).not.toHaveBeenCalled();
   });
 
-  it("shows reminders that are due within the stale threshold", async () => {
+  it("shows reminders that are due within the stale threshold (tick trigger)", async () => {
     vi.setSystemTime(new Date("2026-03-30T09:45:00.000Z"));
     const fixture = createFixture({
       candidates: [
@@ -538,7 +538,7 @@ describe("reminder service", () => {
       ],
     });
 
-    await fixture.service.checkNow();
+    await fixture.service.checkNow("tick");
 
     expect(fixture.db.dismissReminders).not.toHaveBeenCalled();
     expect(fixture.reminderManager.show).toHaveBeenCalledWith(
@@ -547,6 +547,139 @@ describe("reminder service", () => {
       }),
       true,
     );
+  });
+
+  it("auto-dismisses and hides reminders for past events on startup (synced path)", async () => {
+    vi.setSystemTime(new Date("2026-03-30T09:45:00.000Z"));
+    const fixture = createFixture({
+      candidates: [
+        createCandidate({
+          start: "2026-03-29T10:00:00.000Z",
+          dedupeKey: "calendar-1:event-past:2026-03-29T10:00:00.000Z:pre",
+          subject: "Past meeting",
+        }),
+      ],
+    });
+
+    await fixture.service.checkNow("startup");
+
+    expect(fixture.db.dismissReminders).toHaveBeenCalledWith([
+      "calendar-1:event-past:2026-03-29T10:00:00.000Z:pre",
+    ]);
+    expect(fixture.reminderManager.show).not.toHaveBeenCalled();
+  });
+
+  it("shows reminders for future events whose reminder time is already due on startup (synced path)", async () => {
+    // Event starts in 30 minutes; 60-min-before reminder means dueAt is 30 min in the past.
+    // On startup, event start is still in the future → reminder should still show.
+    vi.setSystemTime(new Date("2026-03-30T09:45:00.000Z"));
+    const fixture = createFixture({
+      candidates: [
+        createCandidate({
+          start: "2026-03-30T10:15:00.000Z",
+          reminderMinutesBeforeStart: 60,
+          dedupeKey: "calendar-1:event-upcoming:2026-03-30T10:15:00.000Z:pre",
+          subject: "Upcoming meeting",
+        }),
+      ],
+    });
+
+    await fixture.service.checkNow("startup");
+
+    expect(fixture.db.dismissReminders).not.toHaveBeenCalled();
+    expect(fixture.reminderManager.show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [expect.objectContaining({ subject: "Upcoming meeting" })],
+      }),
+      true,
+    );
+  });
+
+  it("auto-dismisses and hides reminders for past events on startup (local rules path)", async () => {
+    vi.setSystemTime(new Date("2026-03-30T09:45:00.000Z"));
+    const fixture = createFixture({
+      localEvents: [
+        {
+          calendarId: "calendar-1",
+          end: "2026-03-29T10:30:00.000Z",
+          id: "event-past",
+          isAllDay: false,
+          location: "Room 3",
+          reminderMinutesBeforeStart: null,
+          start: "2026-03-29T10:00:00.000Z",
+          subject: "Past meeting",
+        },
+      ],
+      localReminderOverrideEnabled: true,
+      localReminderRules: [{ minutes: 15, when: "before" }],
+    });
+
+    await fixture.service.checkNow("startup");
+
+    expect(fixture.db.dismissReminders).toHaveBeenCalledWith([
+      "calendar-1:event-past:2026-03-29T10:00:00.000Z:before:15",
+    ]);
+    expect(fixture.reminderManager.show).not.toHaveBeenCalled();
+  });
+
+  it("shows reminders for future events whose reminder time is already due on startup (local rules path)", async () => {
+    // Event starts in 30 minutes; 60-min-before reminder means dueAt is 30 min in the past.
+    vi.setSystemTime(new Date("2026-03-30T09:45:00.000Z"));
+    const fixture = createFixture({
+      localEvents: [
+        {
+          calendarId: "calendar-1",
+          end: "2026-03-30T10:45:00.000Z",
+          id: "event-upcoming",
+          isAllDay: false,
+          location: "Room 3",
+          reminderMinutesBeforeStart: null,
+          start: "2026-03-30T10:15:00.000Z",
+          subject: "Upcoming meeting",
+        },
+      ],
+      localReminderOverrideEnabled: true,
+      localReminderRules: [{ minutes: 60, when: "before" }],
+    });
+
+    await fixture.service.checkNow("startup");
+
+    expect(fixture.db.dismissReminders).not.toHaveBeenCalled();
+    expect(fixture.reminderManager.show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [expect.objectContaining({ subject: "Upcoming meeting" })],
+      }),
+      true,
+    );
+  });
+
+  it("auto-dismisses past events on power resume (uses startup trigger)", async () => {
+    vi.setSystemTime(new Date("2026-03-30T09:45:00.000Z"));
+    const fixture = createFixture({
+      candidates: [
+        createCandidate({
+          start: "2026-03-29T10:00:00.000Z",
+          dedupeKey: "calendar-1:event-past:2026-03-29T10:00:00.000Z:pre",
+          subject: "Past meeting",
+        }),
+      ],
+    });
+
+    fixture.service.start();
+
+    // Simulate powerMonitor "resume" event
+    const resumeHandler = powerMonitor.on.mock.calls.find(([event]) => event === "resume")?.[1] as
+      | (() => void)
+      | undefined;
+    expect(resumeHandler).toBeDefined();
+    await resumeHandler!();
+
+    expect(fixture.db.dismissReminders).toHaveBeenCalledWith([
+      "calendar-1:event-past:2026-03-29T10:00:00.000Z:pre",
+    ]);
+    expect(fixture.reminderManager.show).not.toHaveBeenCalled();
+
+    fixture.service.stop();
   });
 
   it("auto-dismisses stale reminders under local override rules", async () => {
