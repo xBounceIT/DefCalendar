@@ -706,7 +706,6 @@ describe("reminder service", () => {
   });
 
   it("preserves a snoozed past-event reminder on startup instead of dismissing it (synced path)", async () => {
-    // Event is in the past but was snoozed to a future time → must NOT be auto-dismissed on startup.
     vi.setSystemTime(new Date("2026-03-30T09:45:00.000Z"));
     const fixture = createFixture({
       candidates: [
