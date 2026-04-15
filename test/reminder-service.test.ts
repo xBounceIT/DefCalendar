@@ -709,6 +709,106 @@ describe("reminder service", () => {
     expect(fixture.reminderManager.show).not.toHaveBeenCalled();
   });
 
+  it("preserves a snoozed past-event reminder on startup instead of dismissing it (synced path)", async () => {
+    // Event is in the past but was snoozed to a future time → must NOT be auto-dismissed on startup.
+    vi.setSystemTime(new Date("2026-03-30T09:45:00.000Z"));
+    const fixture = createFixture({
+      candidates: [
+        createCandidate({
+          start: "2026-03-29T10:00:00.000Z",
+          dedupeKey: "calendar-1:event-past:2026-03-29T10:00:00.000Z:pre",
+          snoozedUntil: "2026-03-30T10:00:00.000Z",
+          subject: "Snoozed past meeting",
+        }),
+      ],
+    });
+
+    await fixture.service.checkNow("startup");
+
+    expect(fixture.db.dismissReminders).not.toHaveBeenCalled();
+    // Snooze fires at 10:00 which is in the future, so the window stays closed for now.
+    expect(fixture.reminderManager.show).not.toHaveBeenCalled();
+  });
+
+  it("dismisses a past-event reminder whose snooze has already expired on startup (synced path)", async () => {
+    vi.setSystemTime(new Date("2026-03-30T09:45:00.000Z"));
+    const fixture = createFixture({
+      candidates: [
+        createCandidate({
+          start: "2026-03-29T10:00:00.000Z",
+          dedupeKey: "calendar-1:event-past:2026-03-29T10:00:00.000Z:pre",
+          snoozedUntil: "2026-03-29T12:00:00.000Z",
+          subject: "Expired-snooze past meeting",
+        }),
+      ],
+    });
+
+    await fixture.service.checkNow("startup");
+
+    expect(fixture.db.dismissReminders).toHaveBeenCalledWith([
+      "calendar-1:event-past:2026-03-29T10:00:00.000Z:pre",
+    ]);
+    expect(fixture.reminderManager.show).not.toHaveBeenCalled();
+  });
+
+  it("preserves a snoozed past-event reminder on startup instead of dismissing it (local rules path)", async () => {
+    vi.setSystemTime(new Date("2026-03-30T09:45:00.000Z"));
+    const dedupeKey = "calendar-1:event-past:2026-03-29T10:00:00.000Z:before:15";
+    const fixture = createFixture({
+      localEvents: [
+        {
+          calendarId: "calendar-1",
+          end: "2026-03-29T10:30:00.000Z",
+          id: "event-past",
+          isAllDay: false,
+          location: "Room 3",
+          reminderMinutesBeforeStart: null,
+          start: "2026-03-29T10:00:00.000Z",
+          subject: "Snoozed past meeting",
+        },
+      ],
+      localReminderOverrideEnabled: true,
+      localReminderRules: [{ minutes: 15, when: "before" }],
+      reminderStateByKey: {
+        [dedupeKey]: { dismissedAt: null, snoozedUntil: "2026-03-30T10:00:00.000Z" },
+      },
+    });
+
+    await fixture.service.checkNow("startup");
+
+    expect(fixture.db.dismissReminders).not.toHaveBeenCalled();
+    expect(fixture.reminderManager.show).not.toHaveBeenCalled();
+  });
+
+  it("dismisses a past-event reminder whose snooze has already expired on startup (local rules path)", async () => {
+    vi.setSystemTime(new Date("2026-03-30T09:45:00.000Z"));
+    const dedupeKey = "calendar-1:event-past:2026-03-29T10:00:00.000Z:before:15";
+    const fixture = createFixture({
+      localEvents: [
+        {
+          calendarId: "calendar-1",
+          end: "2026-03-29T10:30:00.000Z",
+          id: "event-past",
+          isAllDay: false,
+          location: "Room 3",
+          reminderMinutesBeforeStart: null,
+          start: "2026-03-29T10:00:00.000Z",
+          subject: "Expired-snooze past meeting",
+        },
+      ],
+      localReminderOverrideEnabled: true,
+      localReminderRules: [{ minutes: 15, when: "before" }],
+      reminderStateByKey: {
+        [dedupeKey]: { dismissedAt: null, snoozedUntil: "2026-03-29T12:00:00.000Z" },
+      },
+    });
+
+    await fixture.service.checkNow("startup");
+
+    expect(fixture.db.dismissReminders).toHaveBeenCalledWith([dedupeKey]);
+    expect(fixture.reminderManager.show).not.toHaveBeenCalled();
+  });
+
   it("does not check reminders when started without an explicit checkNow call", () => {
     const fixture = createFixture({ candidates: [createCandidate()] });
 

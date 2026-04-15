@@ -184,11 +184,6 @@ class ReminderService {
         continue;
       }
 
-      if (trigger === "startup" && eventStart < now) {
-        staleKeys.push(candidate.dedupeKey);
-        continue;
-      }
-
       const reminderAt =
         candidate.reminderType === REMINDER_TYPE.START
           ? eventStart
@@ -198,6 +193,15 @@ class ReminderService {
         ? new Date(candidate.snoozedUntil).getTime()
         : null;
       const dueAt = snoozedUntil !== null && snoozedUntil > reminderAt ? snoozedUntil : reminderAt;
+
+      if (
+        trigger === "startup" &&
+        eventStart < now &&
+        (snoozedUntil === null || snoozedUntil <= now)
+      ) {
+        staleKeys.push(candidate.dedupeKey);
+        continue;
+      }
       if (dueAt < now - STALE_REMINDER_THRESHOLD_MS) {
         staleKeys.push(candidate.dedupeKey);
         continue;
@@ -316,11 +320,14 @@ class ReminderService {
           snoozedUntil !== null && snoozedUntil > reminderAt ? snoozedUntil : reminderAt;
 
         const startupStaleTime = rule.when === "after" ? reminderAt : eventStart;
-        if (trigger === "startup" && startupStaleTime < now) {
+        if (
+          trigger === "startup" &&
+          startupStaleTime < now &&
+          (snoozedUntil === null || snoozedUntil <= now)
+        ) {
           staleKeys.push(dedupeKey);
           continue;
         }
-
 
         if (dueAt < now - STALE_REMINDER_THRESHOLD_MS) {
           staleKeys.push(dedupeKey);
