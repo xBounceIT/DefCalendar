@@ -468,6 +468,11 @@ describe("reminder service", () => {
       expect.objectContaining({
         items: [
           expect.objectContaining({
+            dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z:start",
+            reminderMinutesBeforeStart: 0,
+            reminderType: "start",
+          }),
+          expect.objectContaining({
             dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z:after:10",
             reminderMinutesBeforeStart: 10,
           }),
@@ -616,6 +621,7 @@ describe("reminder service", () => {
 
     expect(fixture.db.dismissReminders).toHaveBeenCalledWith([
       "calendar-1:event-past:2026-03-29T10:00:00.000Z:before:15",
+      "calendar-1:event-past:2026-03-29T10:00:00.000Z:start",
     ]);
     expect(fixture.reminderManager.show).not.toHaveBeenCalled();
   });
@@ -701,6 +707,7 @@ describe("reminder service", () => {
 
     expect(fixture.db.dismissReminders).toHaveBeenCalledWith([
       "calendar-1:event-stale:2026-03-27T10:00:00.000Z:before:15",
+      "calendar-1:event-stale:2026-03-27T10:00:00.000Z:start",
     ]);
     expect(fixture.reminderManager.show).not.toHaveBeenCalled();
   });
@@ -770,7 +777,9 @@ describe("reminder service", () => {
 
     await fixture.service.checkNow("startup");
 
-    expect(fixture.db.dismissReminders).not.toHaveBeenCalled();
+    expect(fixture.db.dismissReminders).toHaveBeenCalledWith([
+      "calendar-1:event-past:2026-03-29T10:00:00.000Z:start",
+    ]);
     expect(fixture.reminderManager.show).not.toHaveBeenCalled();
   });
 
@@ -799,7 +808,10 @@ describe("reminder service", () => {
 
     await fixture.service.checkNow("startup");
 
-    expect(fixture.db.dismissReminders).toHaveBeenCalledWith([dedupeKey]);
+    expect(fixture.db.dismissReminders).toHaveBeenCalledWith([
+      dedupeKey,
+      "calendar-1:event-past:2026-03-29T10:00:00.000Z:start",
+    ]);
     expect(fixture.reminderManager.show).not.toHaveBeenCalled();
   });
 
@@ -812,5 +824,108 @@ describe("reminder service", () => {
     expect(fixture.reminderManager.show).not.toHaveBeenCalled();
 
     fixture.service.stop();
+  });
+
+  it("fires start-time reminder at event start when local override is enabled", async () => {
+    vi.setSystemTime(new Date("2026-03-30T10:00:00.000Z"));
+    const fixture = createFixture({
+      localEvents: [
+        {
+          calendarId: "calendar-1",
+          end: "2026-03-30T10:30:00.000Z",
+          id: "event-1",
+          isAllDay: false,
+          location: "Room 3",
+          reminderMinutesBeforeStart: null,
+          start: "2026-03-30T10:00:00.000Z",
+          subject: "Planning",
+        },
+      ],
+      localReminderOverrideEnabled: true,
+      localReminderRules: [{ minutes: 15, when: "before" }],
+    });
+
+    await fixture.service.checkNow();
+
+    expect(fixture.reminderManager.show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: expect.arrayContaining([
+          expect.objectContaining({
+            dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z:start",
+            reminderMinutesBeforeStart: 0,
+            reminderType: "start",
+          }),
+        ]),
+      }),
+      true,
+    );
+  });
+
+  it("fires start-time reminder with no local rules configured", async () => {
+    vi.setSystemTime(new Date("2026-03-30T10:00:00.000Z"));
+    const fixture = createFixture({
+      localEvents: [
+        {
+          calendarId: "calendar-1",
+          end: "2026-03-30T10:30:00.000Z",
+          id: "event-1",
+          isAllDay: false,
+          location: "Room 3",
+          reminderMinutesBeforeStart: null,
+          start: "2026-03-30T10:00:00.000Z",
+          subject: "Planning",
+        },
+      ],
+      localReminderOverrideEnabled: true,
+      localReminderRules: [],
+    });
+
+    await fixture.service.checkNow();
+
+    expect(fixture.reminderManager.show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [
+          expect.objectContaining({
+            dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z:start",
+            reminderMinutesBeforeStart: 0,
+            reminderType: "start",
+          }),
+        ],
+      }),
+      true,
+    );
+  });
+
+  it("does not fire start-time reminder again after it is dismissed under local override", async () => {
+    vi.setSystemTime(new Date("2026-03-30T10:00:00.000Z"));
+    const fixture = createFixture({
+      localEvents: [
+        {
+          calendarId: "calendar-1",
+          end: "2026-03-30T10:30:00.000Z",
+          id: "event-1",
+          isAllDay: false,
+          location: "Room 3",
+          reminderMinutesBeforeStart: null,
+          start: "2026-03-30T10:00:00.000Z",
+          subject: "Planning",
+        },
+      ],
+      localReminderOverrideEnabled: true,
+      localReminderRules: [{ minutes: 15, when: "before" }],
+      reminderStateByKey: {
+        "calendar-1:event-1:2026-03-30T10:00:00.000Z:start": {
+          dismissedAt: "2026-03-30T10:00:05.000Z",
+          snoozedUntil: null,
+        },
+      },
+    });
+
+    await fixture.service.checkNow();
+
+    const shownItems = fixture.reminderManager.show.mock.calls.flatMap(
+      ([state]) => (state as { items: { reminderType?: string }[] }).items,
+    );
+    expect(shownItems.some((item) => item.reminderType === "start")).toBe(false);
   });
 });

@@ -248,10 +248,6 @@ class ReminderService {
     let nextCheckAt: null | number = null;
     const schedulingHorizon = now + MAX_REMINDER_MINUTES * MINUTE_MS;
 
-    if (localReminderRules.length === 0) {
-      return { dueItems, nextCheckAt, staleKeys: [] };
-    }
-
     let maxBeforeMinutes = 0;
     let maxAfterMinutes = 0;
     for (const rule of localReminderRules) {
@@ -278,6 +274,7 @@ class ReminderService {
       event: (typeof events)[number];
       eventStart: number;
       ruleKeys: Map<LocalReminderRule, string>;
+      startKey: string;
     }[] = [];
     const allDedupeKeys: string[] = [];
     for (const event of events) {
@@ -296,11 +293,13 @@ class ReminderService {
         ruleKeys.set(rule, key);
         allDedupeKeys.push(key);
       }
-      validEvents.push({ event, eventStart, ruleKeys });
+      const startKey = this.createStartReminderDedupeKey(event.calendarId, event.id, event.start);
+      allDedupeKeys.push(startKey);
+      validEvents.push({ event, eventStart, ruleKeys, startKey });
     }
     const stateMap = this.db.getReminderStates(allDedupeKeys);
 
-    for (const { event, eventStart, ruleKeys } of validEvents) {
+    for (const { event, eventStart, ruleKeys, startKey } of validEvents) {
       for (const rule of localReminderRules) {
         const reminderAt =
           rule.when === "before"
@@ -354,6 +353,47 @@ class ReminderService {
 
         if (nextCheckAt === null || nextDueAt < nextCheckAt) {
           nextCheckAt = nextDueAt;
+        }
+      }
+
+      const startState = stateMap.get(startKey) ?? null;
+      if (!startState?.dismissedAt) {
+        const startSnoozedUntil = startState?.snoozedUntil
+          ? new Date(startState.snoozedUntil).getTime()
+          : null;
+        const startDueAt =
+          startSnoozedUntil !== null && startSnoozedUntil > eventStart
+            ? startSnoozedUntil
+            : eventStart;
+
+        if (
+          trigger === "startup" &&
+          eventStart < now &&
+          (startSnoozedUntil === null || startSnoozedUntil <= now)
+        ) {
+          staleKeys.push(startKey);
+        } else if (startDueAt < now - STALE_REMINDER_THRESHOLD_MS) {
+          staleKeys.push(startKey);
+        } else if (startDueAt <= now) {
+          dueItems.push({
+            dueAt: startDueAt,
+            item: {
+              dedupeKey: startKey,
+              end: event.end,
+              isAllDay: event.isAllDay,
+              location: event.location,
+              onlineMeeting: event.onlineMeeting ?? null,
+              reminderMinutesBeforeStart: 0,
+              reminderType: REMINDER_TYPE.START,
+              start: event.start,
+              subject: event.subject,
+            },
+          });
+        } else {
+          const nextDueAt = Math.min(startDueAt, schedulingHorizon);
+          if (nextCheckAt === null || nextDueAt < nextCheckAt) {
+            nextCheckAt = nextDueAt;
+          }
         }
       }
     }
@@ -411,6 +451,14 @@ class ReminderService {
     rule: LocalReminderRule,
   ): string {
     return `${calendarId}:${eventId}:${eventStart}:${rule.when}:${rule.minutes}`;
+  }
+
+  private createStartReminderDedupeKey(
+    calendarId: string,
+    eventId: string,
+    eventStart: string,
+  ): string {
+    return `${calendarId}:${eventId}:${eventStart}:${REMINDER_TYPE.START}`;
   }
 
   private scheduleNextCheck(nextCheckAt: null | number, now: number): void {
