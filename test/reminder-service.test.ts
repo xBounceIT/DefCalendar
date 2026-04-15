@@ -726,7 +726,6 @@ describe("reminder service", () => {
     await fixture.service.checkNow("startup");
 
     expect(fixture.db.dismissReminders).not.toHaveBeenCalled();
-    // Snooze fires at 10:00 which is in the future, so the window stays closed for now.
     expect(fixture.reminderManager.show).not.toHaveBeenCalled();
   });
 
