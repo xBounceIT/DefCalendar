@@ -14,6 +14,7 @@ const MAX_REMINDER_MINUTES = 20_160;
 const REMINDER_REFRESH_INTERVAL_MS = MINUTE_MS;
 const REMINDER_STATE_RETENTION_DAYS = 30;
 const STALE_REMINDER_THRESHOLD_MS = 2 * DAY_MS;
+const STARTUP_START_REMINDER_GRACE_MS = 5 * MINUTE_MS;
 
 interface ReminderEvaluation {
   nextCheckAt: null | number;
@@ -193,10 +194,14 @@ class ReminderService {
         ? new Date(candidate.snoozedUntil).getTime()
         : null;
       const dueAt = snoozedUntil !== null && snoozedUntil > reminderAt ? snoozedUntil : reminderAt;
+      const startupStaleTime =
+        candidate.reminderType === REMINDER_TYPE.START
+          ? eventStart + STARTUP_START_REMINDER_GRACE_MS
+          : eventStart;
 
       if (
         trigger === "startup" &&
-        eventStart < now &&
+        startupStaleTime < now &&
         (snoozedUntil === null || snoozedUntil <= now)
       ) {
         staleKeys.push(candidate.dedupeKey);
@@ -368,7 +373,7 @@ class ReminderService {
 
         if (
           trigger === "startup" &&
-          eventStart < now &&
+          eventStart + STARTUP_START_REMINDER_GRACE_MS < now &&
           (startSnoozedUntil === null || startSnoozedUntil <= now)
         ) {
           staleKeys.push(startKey);
