@@ -664,7 +664,6 @@ describe("reminder service", () => {
 
     fixture.service.start();
 
-    // Simulate powerMonitor "resume" event
     const resumeHandler = powerMonitor.on.mock.calls.find(([event]) => event === "resume")?.[1] as
       | (() => void)
       | undefined;
