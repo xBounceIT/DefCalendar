@@ -570,8 +570,6 @@ describe("reminder service", () => {
   });
 
   it("shows reminders for future events whose reminder time is already due on startup (synced path)", async () => {
-    // Event starts in 30 minutes; 60-min-before reminder means dueAt is 30 min in the past.
-    // On startup, event start is still in the future → reminder should still show.
     vi.setSystemTime(new Date("2026-03-30T09:45:00.000Z"));
     const fixture = createFixture({
       candidates: [
