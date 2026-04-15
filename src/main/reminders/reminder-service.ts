@@ -315,10 +315,12 @@ class ReminderService {
         const dueAt =
           snoozedUntil !== null && snoozedUntil > reminderAt ? snoozedUntil : reminderAt;
 
-        if (trigger === "startup" && eventStart < now) {
+        const startupStaleTime = rule.when === "after" ? reminderAt : eventStart;
+        if (trigger === "startup" && startupStaleTime < now) {
           staleKeys.push(dedupeKey);
           continue;
         }
+
 
         if (dueAt < now - STALE_REMINDER_THRESHOLD_MS) {
           staleKeys.push(dedupeKey);
