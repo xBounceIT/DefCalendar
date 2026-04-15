@@ -8,6 +8,8 @@ import type { LocalReminderRule, UserSettings } from "@shared/schemas";
 import { REMINDER_TYPE } from "@shared/schema-values";
 import { MINUTE_MS, DAY_MS } from "@shared/duration";
 
+type ReminderCheckTrigger = "startup" | "tick";
+
 const MAX_REMINDER_MINUTES = 20_160;
 const REMINDER_REFRESH_INTERVAL_MS = MINUTE_MS;
 const REMINDER_STATE_RETENTION_DAYS = 30;
@@ -43,7 +45,7 @@ class ReminderService {
   private started = false;
 
   private readonly handlePowerResume = () => {
-    void this.checkNow();
+    void this.checkNow("startup");
   };
 
   constructor(db: AppDatabase, reminderManager: ReminderWindowManager, settings: SettingsService) {
@@ -101,10 +103,10 @@ class ReminderService {
     void this.checkNow();
   }
 
-  async checkNow(): Promise<void> {
+  async checkNow(trigger: ReminderCheckTrigger = "tick"): Promise<void> {
     const now = Date.now();
     const previousState = this.state;
-    const evaluation = this.evaluate(now);
+    const evaluation = this.evaluate(now, trigger);
     const hasNewDueItems = evaluation.state.items.some(
       (item) =>
         !previousState.items.some((previousItem) => previousItem.dedupeKey === item.dedupeKey),
@@ -133,15 +135,16 @@ class ReminderService {
     );
   }
 
-  private evaluate(now: number): ReminderEvaluation {
+  private evaluate(now: number, trigger: ReminderCheckTrigger): ReminderEvaluation {
     const settings = this.settings.getSettings();
     const computation = settings.localReminderOverrideEnabled
       ? this.evaluateWithLocalReminderRules(
           now,
           settings.visibleCalendarIds,
           settings.localReminderRules,
+          trigger,
         )
-      : this.evaluateWithSyncedReminderSettings(now, settings.visibleCalendarIds);
+      : this.evaluateWithSyncedReminderSettings(now, settings.visibleCalendarIds, trigger);
 
     if (computation.staleKeys.length > 0) {
       this.db.dismissReminders(computation.staleKeys);
@@ -153,6 +156,7 @@ class ReminderService {
   private evaluateWithSyncedReminderSettings(
     now: number,
     visibleCalendarIds: string[],
+    trigger: ReminderCheckTrigger,
   ): ReminderComputation {
     const dueItems: DueReminderEntry[] = [];
     let nextCheckAt: null | number = null;
@@ -189,6 +193,15 @@ class ReminderService {
         ? new Date(candidate.snoozedUntil).getTime()
         : null;
       const dueAt = snoozedUntil !== null && snoozedUntil > reminderAt ? snoozedUntil : reminderAt;
+
+      if (
+        trigger === "startup" &&
+        eventStart < now &&
+        (snoozedUntil === null || snoozedUntil <= now)
+      ) {
+        staleKeys.push(candidate.dedupeKey);
+        continue;
+      }
       if (dueAt < now - STALE_REMINDER_THRESHOLD_MS) {
         staleKeys.push(candidate.dedupeKey);
         continue;
@@ -229,6 +242,7 @@ class ReminderService {
     now: number,
     visibleCalendarIds: string[],
     localReminderRules: LocalReminderRule[],
+    trigger: ReminderCheckTrigger,
   ): ReminderComputation {
     const dueItems: DueReminderEntry[] = [];
     let nextCheckAt: null | number = null;
@@ -304,6 +318,16 @@ class ReminderService {
         const dueAt =
           snoozedUntil !== null && snoozedUntil > reminderAt ? snoozedUntil : reminderAt;
 
+        const startupStaleTime = rule.when === "after" ? reminderAt : eventStart;
+        if (
+          trigger === "startup" &&
+          startupStaleTime < now &&
+          (snoozedUntil === null || snoozedUntil <= now)
+        ) {
+          staleKeys.push(dedupeKey);
+          continue;
+        }
+
         if (dueAt < now - STALE_REMINDER_THRESHOLD_MS) {
           staleKeys.push(dedupeKey);
           continue;
@@ -342,7 +366,13 @@ class ReminderService {
             ? startSnoozedUntil
             : eventStart;
 
-        if (startDueAt < now - STALE_REMINDER_THRESHOLD_MS) {
+        if (
+          trigger === "startup" &&
+          eventStart < now &&
+          (startSnoozedUntil === null || startSnoozedUntil <= now)
+        ) {
+          staleKeys.push(startKey);
+        } else if (startDueAt < now - STALE_REMINDER_THRESHOLD_MS) {
           staleKeys.push(startKey);
         } else if (startDueAt <= now) {
           dueItems.push({
@@ -449,4 +479,5 @@ class ReminderService {
   }
 }
 
+export type { ReminderCheckTrigger };
 export default ReminderService;

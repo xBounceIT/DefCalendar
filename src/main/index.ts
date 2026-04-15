@@ -128,7 +128,7 @@ async function bootstrap(): Promise<void> {
     void sync.syncAll("startup");
   }
 
-  void reminders.checkNow();
+  void reminders.checkNow("startup");
 
   if (app.isPackaged) {
     void updates.checkForUpdates();

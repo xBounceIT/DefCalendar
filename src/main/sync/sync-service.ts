@@ -3,6 +3,7 @@ import type AppDatabase from "@main/db/database";
 import type GraphCalendarService from "@main/graph/calendar-service";
 import type MsalAuthService from "@main/auth/msal-auth-service";
 import type ReminderService from "@main/reminders/reminder-service";
+import type { ReminderCheckTrigger } from "@main/reminders/reminder-service";
 import type SettingsService from "@main/settings/settings-service";
 import { DAY_MS, MINUTE_MS } from "@shared/duration";
 import type { CalendarEvent, CalendarSummary, SyncStatus } from "@shared/schemas";
@@ -282,7 +283,9 @@ class SyncService {
         });
       }
 
-      await this.dependencies.reminders.checkNow();
+      const reminderTrigger: ReminderCheckTrigger =
+        reason === "startup" || reason === "switch-account" ? "startup" : "tick";
+      await this.dependencies.reminders.checkNow(reminderTrigger);
 
       const totalEvents = calendarsToStore.reduce((sum, sc) => sum + sc.events.length, 0);
 
