@@ -350,9 +350,18 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
       void invalidateWorkspaceData(queryClient);
     });
 
+    const unsubscribeOpenInApp = calendarApi.events.onOpenInApp((event) => {
+      setDialogError(null);
+      setEditorState({
+        event,
+        mode: "edit",
+      });
+    });
+
     return () => {
       unsubscribeSync();
       unsubscribeAuth();
+      unsubscribeOpenInApp();
     };
   }, [queryClient, calendarApi]);
 

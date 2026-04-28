@@ -163,6 +163,18 @@ function ReminderPopup() {
     void calendarApi.events.openWebLink(joinUrl);
   };
 
+  const handleOpenEvent = (item: ReminderDialogItem) => {
+    if (!calendarApi) {
+      return;
+    }
+
+    setSelectedKey(item.dedupeKey);
+    void calendarApi.events.openInApp({
+      calendarId: item.calendarId,
+      eventId: item.eventId,
+    });
+  };
+
   const handleMinimize = () => {
     if (calendarApi) {
       void calendarApi.reminder.minimizeWindow();
@@ -215,6 +227,7 @@ function ReminderPopup() {
                   aria-pressed={isSelected}
                   className="reminder-item-select"
                   onClick={() => setSelectedKey(item.dedupeKey)}
+                  onDoubleClick={() => handleOpenEvent(item)}
                   type="button"
                 >
                   <div className="reminder-item-content">
@@ -232,7 +245,13 @@ function ReminderPopup() {
                 {item.onlineMeeting?.joinUrl && (
                   <button
                     className="reminder-item-join"
-                    onClick={() => handleJoinMeeting(item)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleJoinMeeting(item);
+                    }}
+                    onDoubleClick={(event) => {
+                      event.stopPropagation();
+                    }}
                     type="button"
                   >
                     <MeetingIcon url={item.onlineMeeting.joinUrl} />
@@ -280,3 +299,5 @@ const rootElement = document.getElementById("root");
 if (rootElement) {
   ReactDOM.createRoot(rootElement).render(<ReminderPopup />);
 }
+
+export default ReminderPopup;

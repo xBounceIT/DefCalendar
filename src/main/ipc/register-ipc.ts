@@ -438,6 +438,28 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     return attachments;
   });
 
+  ipcMain.handle(IPC_CHANNELS.eventsOpenInApp, async (event, input) => {
+    validateReminderSender(event);
+    const args = eventReferenceArgsSchema.parse(input);
+    const calendarEvent = dependencies.db.getEvent(args.calendarId, args.eventId);
+    if (!calendarEvent) {
+      return;
+    }
+
+    const window = dependencies.getMainWindow();
+    if (!window || window.isDestroyed()) {
+      return;
+    }
+
+    if (window.isMinimized()) {
+      window.restore();
+    }
+    window.show();
+    window.focus();
+    window.webContents.send(IPC_CHANNELS.eventsOpenInAppRequested, calendarEvent);
+    dependencies.reminderManager.minimize();
+  });
+
   ipcMain.handle(IPC_CHANNELS.eventsOpenWebLink, async (event, input) => {
     validateReminderSender(event);
     const args = openExternalArgsSchema.parse({ url: input });

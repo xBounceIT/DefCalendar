@@ -78,7 +78,6 @@ class ReminderWindowManager {
       minimizable: true,
       resizable: false,
       show: false,
-      skipTaskbar: true,
       title: t("reminderTitle"),
       width: POPUP_WIDTH,
       x: x + Math.round((width - POPUP_WIDTH) / 2),

@@ -1,4 +1,10 @@
-import type { AppUpdateStatus, AuthSignInMode, AuthState, SyncStatus } from "@shared/schemas";
+import type {
+  AppUpdateStatus,
+  AuthSignInMode,
+  AuthState,
+  CalendarEvent,
+  SyncStatus,
+} from "@shared/schemas";
 import { contextBridge, ipcRenderer } from "electron";
 import type { CalendarApi, ReminderDialogState } from "@shared/ipc";
 import IPC_CHANNELS from "@shared/ipc-values";
@@ -47,6 +53,14 @@ const calendarApi: CalendarApi = {
     listAttachments: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsListAttachments, args),
     addAttachment: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsAddAttachment, args),
     removeAttachment: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsRemoveAttachment, args),
+    openInApp: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsOpenInApp, args),
+    onOpenInApp: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, event: CalendarEvent) => listener(event);
+      ipcRenderer.on(IPC_CHANNELS.eventsOpenInAppRequested, wrapped);
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.eventsOpenInAppRequested, wrapped);
+      };
+    },
     openWebLink: (url) => ipcRenderer.invoke(IPC_CHANNELS.eventsOpenWebLink, url),
   },
   sync: {

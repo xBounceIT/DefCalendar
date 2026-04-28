@@ -101,7 +101,11 @@ function createFixture() {
   const mainWebContents = { send: vi.fn() };
   const reminderWebContents = {};
   const mainWindow = {
+    focus: vi.fn(),
     isDestroyed: vi.fn().mockReturnValue(false),
+    isMinimized: vi.fn().mockReturnValue(false),
+    restore: vi.fn(),
+    show: vi.fn(),
     webContents: mainWebContents,
   };
   const syncStatus = {
@@ -168,6 +172,7 @@ function createFixture() {
     snooze: vi.fn(),
   };
   const reminderManager = {
+    minimize: vi.fn(),
     ownsWebContents: vi.fn((contents: unknown) => contents === reminderWebContents),
   };
   const settings = {
@@ -205,6 +210,8 @@ function createFixture() {
     graph,
     handlers,
     mainWebContents,
+    mainWindow,
+    reminderManager,
     reminderWebContents,
     reminders,
     sync,
@@ -265,6 +272,76 @@ describe("register ipc", () => {
     );
 
     expect(shell.openExternal).toHaveBeenCalledWith(url);
+  });
+
+  it("allows reminder windows to open cached events in the main app", async () => {
+    const fixture = createFixture();
+
+    await fixture.handlers.get(IPC_CHANNELS.eventsOpenInApp)?.(
+      { sender: fixture.reminderWebContents },
+      {
+        calendarId: "calendar-1",
+        eventId: "event-1",
+      },
+    );
+
+    expect(fixture.db.getEvent).toHaveBeenCalledWith("calendar-1", "event-1");
+    expect(fixture.mainWindow.show).toHaveBeenCalledOnce();
+    expect(fixture.mainWindow.focus).toHaveBeenCalledOnce();
+    expect(fixture.mainWebContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.eventsOpenInAppRequested,
+      expect.objectContaining({ id: "event-1" }),
+    );
+    expect(fixture.reminderManager.minimize).toHaveBeenCalledOnce();
+  });
+
+  it("restores a minimized main window before opening a reminder event", async () => {
+    const fixture = createFixture();
+    fixture.mainWindow.isMinimized.mockReturnValue(true);
+
+    await fixture.handlers.get(IPC_CHANNELS.eventsOpenInApp)?.(
+      { sender: fixture.reminderWebContents },
+      {
+        calendarId: "calendar-1",
+        eventId: "event-1",
+      },
+    );
+
+    expect(fixture.mainWindow.restore).toHaveBeenCalledOnce();
+  });
+
+  it("leaves the reminder window visible when a reminder event is missing from cache", async () => {
+    const fixture = createFixture();
+    fixture.db.getEvent.mockReturnValue(null);
+
+    await fixture.handlers.get(IPC_CHANNELS.eventsOpenInApp)?.(
+      { sender: fixture.reminderWebContents },
+      {
+        calendarId: "calendar-1",
+        eventId: "missing-event",
+      },
+    );
+
+    expect(fixture.mainWebContents.send).not.toHaveBeenCalledWith(
+      IPC_CHANNELS.eventsOpenInAppRequested,
+      expect.anything(),
+    );
+    expect(fixture.reminderManager.minimize).not.toHaveBeenCalled();
+  });
+
+  it("rejects in-app event open requests from untrusted senders", async () => {
+    const fixture = createFixture();
+
+    await expect(
+      fixture.handlers.get(IPC_CHANNELS.eventsOpenInApp)?.(
+        { sender: {} },
+        {
+          calendarId: "calendar-1",
+          eventId: "event-1",
+        },
+      ),
+    ).rejects.toThrow("Rejected IPC request from an untrusted sender.");
+    expect(fixture.mainWebContents.send).not.toHaveBeenCalled();
   });
 
   it("rejects external link requests from untrusted senders", async () => {

@@ -240,6 +240,8 @@ function createCalendarApiMock(): CalendarApi {
       forward: vi.fn(),
       list: vi.fn(),
       listAttachments: vi.fn(),
+      onOpenInApp: vi.fn().mockReturnValue(() => undefined),
+      openInApp: vi.fn(),
       openWebLink: vi.fn(),
       removeAttachment: vi.fn(),
       respond: vi.fn(),
@@ -376,6 +378,8 @@ function createSignedInCalendarApiMock(): CalendarApi {
       forward: vi.fn(),
       list: vi.fn().mockResolvedValue([]),
       listAttachments: vi.fn(),
+      onOpenInApp: vi.fn().mockReturnValue(() => undefined),
+      openInApp: vi.fn(),
       openWebLink: vi.fn(),
       removeAttachment: vi.fn(),
       respond: vi.fn(),
@@ -535,6 +539,8 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
       delete: vi.fn(),
       forward: vi.fn(),
       list: vi.fn().mockResolvedValue([]),
+      onOpenInApp: vi.fn().mockReturnValue(() => undefined),
+      openInApp: vi.fn(),
       openWebLink: vi.fn(),
       update: vi.fn(),
       respond: vi.fn(),
@@ -752,6 +758,35 @@ describe("app startup", () => {
           updated: true,
         });
       });
+    } finally {
+      restoreCalendarApi();
+      restoreResizeObserver();
+    }
+  });
+
+  it("opens the event editor when the main process requests an in-app event open", async () => {
+    try {
+      installResizeObserverMock();
+      const calendarApi = createSignedInCalendarApiMock();
+      const event = createCalendarEvent({ subject: "Reminder planning" });
+      let openInAppListener: ((event: CalendarEvent) => void) | null = null;
+      calendarApi.events.onOpenInApp = vi.fn().mockImplementation((listener) => {
+        openInAppListener = listener;
+        return () => undefined;
+      });
+      installCalendarApi(calendarApi);
+
+      renderApp();
+
+      await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
+      expect(openInAppListener).toBeInstanceOf(Function);
+
+      act(() => {
+        openInAppListener?.(event);
+      });
+
+      await expect(screen.findByDisplayValue("Reminder planning")).resolves.not.toBeNull();
+      expect(screen.getByRole("dialog")).not.toBeNull();
     } finally {
       restoreCalendarApi();
       restoreResizeObserver();

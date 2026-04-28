@@ -215,8 +215,10 @@ class ReminderService {
         dueItems.push({
           dueAt,
           item: {
+            calendarId: candidate.event.calendarId,
             dedupeKey: candidate.dedupeKey,
             end: candidate.event.end,
+            eventId: candidate.event.id,
             isAllDay: candidate.event.isAllDay,
             location: candidate.event.location,
             onlineMeeting: candidate.event.onlineMeeting ?? null,
@@ -341,8 +343,10 @@ class ReminderService {
           dueItems.push({
             dueAt,
             item: {
+              calendarId: event.calendarId,
               dedupeKey,
               end: event.end,
+              eventId: event.id,
               isAllDay: event.isAllDay,
               location: event.location,
               onlineMeeting: event.onlineMeeting ?? null,
@@ -383,8 +387,10 @@ class ReminderService {
           dueItems.push({
             dueAt: startDueAt,
             item: {
+              calendarId: event.calendarId,
               dedupeKey: startKey,
               end: event.end,
+              eventId: event.id,
               isAllDay: event.isAllDay,
               location: event.location,
               onlineMeeting: event.onlineMeeting ?? null,
