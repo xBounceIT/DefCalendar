@@ -274,9 +274,9 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     onError: (error) => {
       setDialogError(toErrorMessage(error));
     },
-    onSuccess: async () => {
+    onSuccess: () => {
       resetEditor(setDialogError, setEditorState);
-      await invalidateEventQueries(queryClient);
+      void invalidateEventQueries(queryClient);
     },
   });
 

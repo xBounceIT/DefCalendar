@@ -295,31 +295,29 @@ class GraphCalendarService {
     return this.getEvent(draft.calendarId, response.id, homeAccountId);
   }
 
-  async updateEvent(draft: EventDraft, homeAccountId: string): Promise<CalendarEvent> {
+  async updateEvent(
+    draft: EventDraft,
+    homeAccountId: string,
+    currentEvent?: CalendarEvent | null,
+  ): Promise<CalendarEvent> {
     if (!draft.id) {
       throw new Error("Event id is required for updates.");
     }
 
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-
-    if (draft.etag) {
-      headers["If-Match"] = draft.etag;
+    try {
+      return await this.updateEventOnce(draft, homeAccountId, currentEvent, draft.etag ?? null);
+    } catch (error) {
+      if (!isStaleGraphItemError(error)) {
+        throw error;
+      }
     }
 
-    await this.requestJson(
-      `/me/events/${encodeURIComponent(draft.id)}`,
-      {
-        body: JSON.stringify(this.toGraphEventPayload(draft, "update")),
-        headers,
-        method: "PATCH",
-      },
-      homeAccountId,
-    );
+    const latest = await this.getEvent(draft.calendarId, draft.id, homeAccountId);
+    if (latest.unsupportedReason) {
+      throw new Error(latest.unsupportedReason);
+    }
 
-    await this.syncAttachmentOperations(draft.calendarId, draft.id, draft, homeAccountId);
-    return this.getEvent(draft.calendarId, draft.id, homeAccountId);
+    return this.updateEventOnce(draft, homeAccountId, currentEvent ?? latest, latest.etag);
   }
 
   async getEvent(
@@ -327,16 +325,8 @@ class GraphCalendarService {
     eventId: string,
     homeAccountId: string,
   ): Promise<CalendarEvent> {
-    const query = new URLSearchParams({
-      $select: EVENT_SELECT,
-    });
-
     const response = parseGraphEvent(
-      await this.requestJson(
-        `/me/events/${encodeURIComponent(eventId)}?${query.toString()}`,
-        {},
-        homeAccountId,
-      ),
+      await this.requestJson(buildEventPath(eventId), {}, homeAccountId),
     );
 
     return this.toCalendarEvent(response, calendarId, homeAccountId);
@@ -701,6 +691,58 @@ class GraphCalendarService {
     };
   }
 
+  private async updateEventOnce(
+    draft: EventDraft,
+    homeAccountId: string,
+    currentEvent: CalendarEvent | null | undefined,
+    etag: null | string,
+  ): Promise<CalendarEvent> {
+    if (!draft.id) {
+      throw new Error("Event id is required for updates.");
+    }
+
+    const payload = currentEvent
+      ? this.toGraphEventPatchPayload(draft, currentEvent)
+      : this.toGraphEventPayload(draft, "update");
+    const hasAttachmentChanges =
+      draft.attachmentIdsToRemove.length > 0 || draft.attachmentsToAdd.length > 0;
+
+    let updated = currentEvent ?? null;
+    if (Object.keys(payload).length > 0) {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+
+      if (etag) {
+        headers["If-Match"] = etag;
+      }
+
+      const response = parseGraphEvent(
+        await this.requestJson(
+          buildEventPath(draft.id),
+          {
+            body: JSON.stringify(payload),
+            headers,
+            method: "PATCH",
+          },
+          homeAccountId,
+        ),
+      );
+      updated = this.toCalendarEvent(response, draft.calendarId, homeAccountId);
+    }
+
+    if (hasAttachmentChanges) {
+      await this.syncAttachmentOperations(draft.calendarId, draft.id, draft, homeAccountId);
+      return this.getEvent(draft.calendarId, draft.id, homeAccountId);
+    }
+
+    if (updated) {
+      return updated;
+    }
+
+    return this.getEvent(draft.calendarId, draft.id, homeAccountId);
+  }
+
   private toGraphEventPayload(
     draft: EventDraft,
     mode: "create" | "update",
@@ -792,6 +834,160 @@ class GraphCalendarService {
 
     return payload;
   }
+
+  private toGraphEventPatchPayload(
+    draft: EventDraft,
+    currentEvent: CalendarEvent,
+  ): Record<string, unknown> {
+    const fullPayload = this.toGraphEventPayload(draft, "update");
+    const payload: Record<string, unknown> = {};
+
+    setChanged(payload, fullPayload, "allowNewTimeProposals", draft.allowNewTimeProposals, {
+      current: currentEvent.allowNewTimeProposals,
+      fallback: true,
+    });
+    setChanged(payload, fullPayload, "attendees", normalizeParticipants(draft.attendees), {
+      current: normalizeParticipants(currentEvent.attendees),
+    });
+    setChanged(payload, fullPayload, "categories", draft.categories, {
+      current: currentEvent.categories,
+    });
+    setChanged(payload, fullPayload, "end", draft.end, { current: currentEvent.end });
+    setChanged(payload, fullPayload, "isAllDay", draft.isAllDay, {
+      current: currentEvent.isAllDay,
+    });
+    setChanged(payload, fullPayload, "isOnlineMeeting", draft.isOnlineMeeting, {
+      current: currentEvent.isOnlineMeeting,
+    });
+    setChanged(payload, fullPayload, "isReminderOn", draft.isReminderOn, {
+      current: currentEvent.isReminderOn,
+    });
+    setChanged(payload, fullPayload, "responseRequested", draft.responseRequested, {
+      current: currentEvent.responseRequested,
+      fallback: true,
+    });
+    setChanged(payload, fullPayload, "sensitivity", draft.sensitivity, {
+      current: currentEvent.sensitivity,
+      fallback: "normal",
+    });
+    setChanged(payload, fullPayload, "showAs", draft.showAs, {
+      current: currentEvent.showAs,
+      fallback: "busy",
+    });
+    setChanged(payload, fullPayload, "start", draft.start, { current: currentEvent.start });
+    setChanged(payload, fullPayload, "subject", draft.subject, { current: currentEvent.subject });
+    setChanged(payload, fullPayload, "body", normalizeBody(draft), {
+      current: normalizeCurrentBody(currentEvent),
+    });
+    setChanged(payload, fullPayload, "location", normalizeOptionalString(draft.location), {
+      current: normalizeOptionalString(currentEvent.location),
+    });
+    setChanged(payload, fullPayload, "reminderMinutesBeforeStart", normalizeReminder(draft), {
+      current: currentEvent.isReminderOn ? (currentEvent.reminderMinutesBeforeStart ?? 15) : null,
+    });
+    setChanged(payload, fullPayload, "recurrence", draft.recurrence, {
+      current: currentEvent.recurrence,
+    });
+
+    if (draft.isOnlineMeeting !== currentEvent.isOnlineMeeting) {
+      payload.onlineMeetingProvider = fullPayload.onlineMeetingProvider;
+    }
+
+    return payload;
+  }
+}
+
+interface ComparableValue {
+  current: unknown;
+  fallback?: unknown;
+}
+
+function setChanged(
+  payload: Record<string, unknown>,
+  fullPayload: Record<string, unknown>,
+  key: string,
+  draftValue: unknown,
+  value: ComparableValue,
+): void {
+  const currentValue = value.current ?? value.fallback ?? null;
+  const nextValue = draftValue ?? null;
+  if (!areComparableValuesEqual(nextValue, currentValue) && key in fullPayload) {
+    payload[key] = fullPayload[key];
+  }
+}
+
+function buildEventPath(eventId: string): string {
+  const query = new URLSearchParams({
+    $select: EVENT_SELECT,
+  });
+
+  return `/me/events/${encodeURIComponent(eventId)}?${query.toString()}`;
+}
+
+function areComparableValuesEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function normalizeBody(draft: EventDraft): {
+  content: null | string;
+  contentType: CalendarEvent["bodyContentType"] | null;
+} {
+  const content = normalizeOptionalString(draft.body);
+  return {
+    content,
+    contentType: content ? draft.bodyContentType : null,
+  };
+}
+
+function normalizeCurrentBody(event: CalendarEvent): {
+  content: null | string;
+  contentType: CalendarEvent["bodyContentType"] | null;
+} {
+  const content = normalizeOptionalString(event.body);
+  return {
+    content,
+    contentType: content ? event.bodyContentType : null,
+  };
+}
+
+function normalizeOptionalString(value: null | string | undefined): null | string {
+  return trimOrNull(value);
+}
+
+function normalizeParticipants(participants: EventParticipant[]): EventParticipant[] {
+  return participants.map((participant) => ({
+    email: participant.email,
+    name: participant.name,
+    response: null,
+    status: null,
+    type:
+      participant.type === "resource"
+        ? "resource"
+        : participant.type === "optional"
+          ? "optional"
+          : "required",
+  }));
+}
+
+function normalizeReminder(draft: EventDraft): null | number {
+  if (!draft.isReminderOn) {
+    return null;
+  }
+
+  return draft.reminderMinutesBeforeStart ?? 15;
+}
+
+function isStaleGraphItemError(value: unknown): boolean {
+  if (value instanceof GraphRequestError) {
+    return value.status === 412 || value.code === "ErrorIrresolvableConflict";
+  }
+
+  if (!(value instanceof Error)) {
+    return false;
+  }
+
+  const message = value.message.toLowerCase();
+  return message.includes("precondition failed") || message.includes("conflict");
 }
 
 function formatGraphDateTime(iso: string, timeZone: string): string {
@@ -830,12 +1026,27 @@ function normalizeGraphDateTime(value?: string): string {
     return new Date().toISOString();
   }
 
-  const parsed = new Date(value);
+  const parsed = parseGraphDateTimeValue(value);
   if (!Number.isNaN(parsed.getTime())) {
     return parsed.toISOString();
   }
 
-  return new Date(`${value}Z`).toISOString();
+  return new Date().toISOString();
+}
+
+function parseGraphDateTimeValue(value: string): Date {
+  const normalizedFractionalSeconds = value.replace(/\.(\d{3})\d+/, ".$1");
+  let parsed = new Date(normalizedFractionalSeconds);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed;
+  }
+
+  parsed = new Date(`${normalizedFractionalSeconds}Z`);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed;
+  }
+
+  return new Date(Number.NaN);
 }
 
 function parseGraphAttachment(value: unknown): EventAttachment {
