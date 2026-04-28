@@ -260,7 +260,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     }
 
     const homeAccountId = resolveCalendarHomeAccountId(draft.calendarId);
-    const updated = await dependencies.graph.updateEvent(draft, homeAccountId);
+    const updated = await dependencies.graph.updateEvent(draft, homeAccountId, current);
     replaceStoredEvent(current, mergeCachedAttachments(updated, current));
     await dependencies.reminders.checkNow();
     void dependencies.sync.syncAll("mutation", homeAccountId);
