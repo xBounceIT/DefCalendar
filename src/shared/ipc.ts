@@ -50,6 +50,8 @@ export const IPC_CHANNELS = {
   eventsListAttachments: "events:list-attachments",
   eventsAddAttachment: "events:add-attachment",
   eventsRemoveAttachment: "events:remove-attachment",
+  eventsOpenInApp: "events:open-in-app",
+  eventsOpenInAppRequested: "events:open-in-app-requested",
   eventsOpenWebLink: "events:open-web-link",
   syncRefresh: "sync:refresh",
   syncGetStatus: "sync:get-status",
@@ -108,6 +110,8 @@ interface CalendarApi {
     listAttachments: (args: EventReferenceArgs) => Promise<EventAttachment[]>;
     addAttachment: (args: AttachmentUploadArgs) => Promise<EventAttachment[]>;
     removeAttachment: (args: AttachmentDeleteArgs) => Promise<EventAttachment[]>;
+    openInApp: (args: EventReferenceArgs) => Promise<void>;
+    onOpenInApp: (listener: (event: CalendarEvent) => void) => () => void;
     openWebLink: (url: string) => Promise<void>;
   };
   sync: {

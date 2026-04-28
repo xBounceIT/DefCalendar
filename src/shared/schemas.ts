@@ -372,8 +372,10 @@ const REMINDER_TYPE = { PRE: "pre", START: "start" } as const;
 type ReminderType = (typeof REMINDER_TYPE)[keyof typeof REMINDER_TYPE];
 
 const reminderDialogItemSchema = z.object({
+  calendarId: z.string(),
   dedupeKey: z.string().min(1),
   end: dateTimeStringSchema,
+  eventId: z.string(),
   isAllDay: z.boolean(),
   location: z.string().nullable(),
   onlineMeeting: onlineMeetingInfoSchema.nullable().default(null),

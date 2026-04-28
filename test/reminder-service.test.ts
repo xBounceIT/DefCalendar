@@ -20,6 +20,7 @@ function createCandidate(overrides?: {
   calendarId?: string;
   dedupeKey?: string;
   dismissedAt?: null | string;
+  id?: string;
   reminderMinutesBeforeStart?: number;
   reminderType?: "pre" | "start";
   snoozedUntil?: null | string;
@@ -36,6 +37,7 @@ function createCandidate(overrides?: {
     event: {
       calendarId,
       end: "2026-03-30T10:30:00.000Z",
+      id: overrides?.id ?? "event-1",
       isAllDay: false,
       location: "Room 3",
       reminderMinutesBeforeStart: overrides?.reminderMinutesBeforeStart ?? 15,
@@ -174,8 +176,10 @@ describe("reminder service", () => {
       {
         items: [
           {
+            calendarId: "calendar-1",
             dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z:pre",
             end: "2026-03-30T10:30:00.000Z",
+            eventId: "event-1",
             isAllDay: false,
             location: "Room 3",
             onlineMeeting: null,
