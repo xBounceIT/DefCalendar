@@ -1194,8 +1194,8 @@ function parseOnlineMeetingInfo(event: GraphEvent): null | OnlineMeetingInfo {
 
 function extractKnownMeetingUrlFromEvent(event: GraphEvent): string | null {
   const candidates = [
-    event.body?.content,
     stripHtml(event.body?.content),
+    event.body?.content,
     event.bodyPreview,
     event.location?.displayName,
     ...(event.locations ?? []).map((location) => location.displayName),
@@ -1212,7 +1212,11 @@ function extractKnownMeetingUrlFromEvent(event: GraphEvent): string | null {
 }
 
 function normalizeExtractedUrl(url: string): string {
-  return url.replace(/&amp;/gi, "&").replace(/[),.;\]]+$/g, "");
+  return url
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .trim()
+    .replace(/[),.;\]]+$/g, "");
 }
 
 function isKnownMeetingUrl(url: string): boolean {

@@ -168,6 +168,34 @@ describe("graph calendar service request handling", () => {
     expect(event.onlineMeeting?.joinUrl).toBe(joinUrl);
   });
 
+  it("strips HTML entities around parsed meeting links", async () => {
+    const joinUrl = "https://acme.zoom.us/j/123456789";
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        value: [
+          createGraphEvent({
+            body: {
+              content: `<p>${joinUrl}&nbsp;</p>`,
+              contentType: "HTML",
+            },
+          }),
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const service = createService();
+    const [event] = await service.listCalendarView(
+      "calendar-1",
+      "2026-03-30T00:00:00.000Z",
+      "2026-03-31T00:00:00.000Z",
+      "account-1",
+    );
+
+    expect(event).toMatchObject({ isOnlineMeeting: true });
+    expect(event.onlineMeeting?.joinUrl).toBe(joinUrl);
+  });
+
   it("parses WebEx links from event locations", async () => {
     const joinUrl = "https://example.webex.com/meet/team-room";
     const fetchMock = vi.fn().mockResolvedValue(
