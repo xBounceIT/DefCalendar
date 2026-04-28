@@ -641,6 +641,7 @@ class GraphCalendarService {
     const currentEmail = this.auth.getAccountUsername(homeAccountId)?.toLowerCase() ?? null;
     const organizer = event.organizer ? toParticipant(event.organizer) : null;
     const organizerEmail = organizer?.email?.toLowerCase() ?? null;
+    const onlineMeeting = parseOnlineMeetingInfo(event);
     const isOrganizer =
       event.isOrganizer ?? (currentEmail !== null && organizerEmail === currentEmail);
 
@@ -660,7 +661,7 @@ class GraphCalendarService {
       hasAttachments: Boolean(event.hasAttachments),
       id: event.id,
       isAllDay: Boolean(event.isAllDay),
-      isOnlineMeeting: Boolean(event.isOnlineMeeting),
+      isOnlineMeeting: Boolean(event.isOnlineMeeting || onlineMeeting?.joinUrl),
       isOrganizer: Boolean(isOrganizer),
       isReminderOn: Boolean(event.isReminderOn),
       lastModifiedDateTime: event.lastModifiedDateTime ?? null,
@@ -669,7 +670,7 @@ class GraphCalendarService {
         displayName: trimOrNull(location.displayName),
       })),
       occurrenceId: event.originalStart ?? null,
-      onlineMeeting: parseOnlineMeetingInfo(event),
+      onlineMeeting,
       onlineMeetingProvider: trimOrNull(event.onlineMeetingProvider),
       organizer,
       recurrence: parseRecurrence(event.recurrence),
@@ -1363,26 +1364,35 @@ function parseGraphResponseStatus(
   };
 }
 
-function extractGoogleMeetUrl(text?: string): string | null {
+function extractKnownMeetingUrl(text?: string): string | null {
   if (!text) {
     return null;
   }
-  const match = text.match(/https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}(?:\?[^\s]*)?/i);
-  return match ? match[0] : null;
-}
 
-function parseOnlineMeetingInfo(event: GraphEvent): null | OnlineMeetingInfo {
-  if (!event.onlineMeeting && !event.onlineMeetingProvider) {
+  const matches = text.match(/https:\/\/[^\s"'<>]+/gi);
+  if (!matches) {
     return null;
   }
 
+  for (const match of matches) {
+    const url = normalizeExtractedUrl(match);
+    if (isKnownMeetingUrl(url)) {
+      return url;
+    }
+  }
+
+  return null;
+}
+
+function parseOnlineMeetingInfo(event: GraphEvent): null | OnlineMeetingInfo {
   let joinUrl = event.onlineMeeting?.joinUrl ?? null;
 
   if (!joinUrl) {
-    joinUrl =
-      extractGoogleMeetUrl(event.body?.content) ??
-      extractGoogleMeetUrl(event.location?.displayName) ??
-      null;
+    joinUrl = extractKnownMeetingUrlFromEvent(event);
+  }
+
+  if (!event.onlineMeeting && !event.onlineMeetingProvider && !joinUrl) {
+    return null;
   }
 
   return {
@@ -1391,6 +1401,69 @@ function parseOnlineMeetingInfo(event: GraphEvent): null | OnlineMeetingInfo {
     phones: (event.onlineMeeting?.phones ?? []).map((phone) => phone.number).filter(isString),
     provider: trimOrNull(event.onlineMeetingProvider),
   };
+}
+
+function extractKnownMeetingUrlFromEvent(event: GraphEvent): string | null {
+  const candidates = [
+    stripHtml(event.body?.content),
+    event.body?.content,
+    event.bodyPreview,
+    event.location?.displayName,
+    ...(event.locations ?? []).map((location) => location.displayName),
+  ];
+
+  for (const candidate of candidates) {
+    const match = extractKnownMeetingUrl(candidate);
+    if (match) {
+      return match;
+    }
+  }
+
+  return null;
+}
+
+function normalizeExtractedUrl(url: string): string {
+  return url
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .trim()
+    .replace(/[),.;\]]+$/g, "");
+}
+
+function isKnownMeetingUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+    const pathname = parsed.pathname.toLowerCase();
+
+    if (hostname === "meet.google.com" || hostname.endsWith(".meet.google.com")) {
+      return /^\/[a-z]{3}-[a-z]{4}-[a-z]{3}$/.test(pathname);
+    }
+
+    if (hostname === "teams.microsoft.com" || hostname.endsWith(".teams.microsoft.com")) {
+      return pathname.startsWith("/l/meetup-join/");
+    }
+
+    if (hostname === "zoom.us" || hostname.endsWith(".zoom.us")) {
+      return (
+        pathname.startsWith("/j/") ||
+        pathname.startsWith("/wc/join/") ||
+        pathname.startsWith("/my/")
+      );
+    }
+
+    if (hostname === "webex.com" || hostname.endsWith(".webex.com")) {
+      return (
+        pathname.includes("/j.php") ||
+        pathname.startsWith("/meet/") ||
+        pathname.startsWith("/join/")
+      );
+    }
+  } catch {
+    return false;
+  }
+
+  return false;
 }
 
 function parseRecurrence(value?: GraphRecurrence): null | Recurrence {

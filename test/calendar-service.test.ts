@@ -216,6 +216,146 @@ describe("graph calendar service request handling", () => {
     expect(preferHeader).toContain('IdType="ImmutableId"');
   });
 
+  it("parses Zoom links from event body content", async () => {
+    const joinUrl = "https://acme.zoom.us/j/123456789?pwd=abc123";
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        value: [
+          createGraphEvent({
+            body: {
+              content: `<p>Join here: <a href="${joinUrl}">${joinUrl}</a></p>`,
+              contentType: "HTML",
+            },
+          }),
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const service = createService();
+    const [event] = await service.listCalendarView(
+      "calendar-1",
+      "2026-03-30T00:00:00.000Z",
+      "2026-03-31T00:00:00.000Z",
+      "account-1",
+    );
+
+    expect(event).toMatchObject({ isOnlineMeeting: true });
+    expect(event.onlineMeeting?.joinUrl).toBe(joinUrl);
+  });
+
+  it("strips HTML entities around parsed meeting links", async () => {
+    const joinUrl = "https://acme.zoom.us/j/123456789";
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        value: [
+          createGraphEvent({
+            body: {
+              content: `<p>${joinUrl}&nbsp;</p>`,
+              contentType: "HTML",
+            },
+          }),
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const service = createService();
+    const [event] = await service.listCalendarView(
+      "calendar-1",
+      "2026-03-30T00:00:00.000Z",
+      "2026-03-31T00:00:00.000Z",
+      "account-1",
+    );
+
+    expect(event).toMatchObject({ isOnlineMeeting: true });
+    expect(event.onlineMeeting?.joinUrl).toBe(joinUrl);
+  });
+
+  it("parses WebEx links from event locations", async () => {
+    const joinUrl = "https://example.webex.com/meet/team-room";
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        value: [
+          createGraphEvent({
+            location: {
+              displayName: `Cisco WebEx: ${joinUrl}`,
+            },
+          }),
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const service = createService();
+    const [event] = await service.listCalendarView(
+      "calendar-1",
+      "2026-03-30T00:00:00.000Z",
+      "2026-03-31T00:00:00.000Z",
+      "account-1",
+    );
+
+    expect(event).toMatchObject({ isOnlineMeeting: true });
+    expect(event.onlineMeeting?.joinUrl).toBe(joinUrl);
+  });
+
+  it("keeps Graph-provided join URLs before parsed URLs", async () => {
+    const graphJoinUrl = "https://teams.microsoft.com/l/meetup-join/graph-link";
+    const bodyJoinUrl = "https://acme.zoom.us/j/123456789";
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        value: [
+          createGraphEvent({
+            body: {
+              content: bodyJoinUrl,
+              contentType: "HTML",
+            },
+            onlineMeeting: {
+              joinUrl: graphJoinUrl,
+            },
+          }),
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const service = createService();
+    const [event] = await service.listCalendarView(
+      "calendar-1",
+      "2026-03-30T00:00:00.000Z",
+      "2026-03-31T00:00:00.000Z",
+      "account-1",
+    );
+
+    expect(event.onlineMeeting?.joinUrl).toBe(graphJoinUrl);
+  });
+
+  it("ignores non-meeting URLs", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        value: [
+          createGraphEvent({
+            body: {
+              content: "https://example.com/j/123456789",
+              contentType: "HTML",
+            },
+          }),
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const service = createService();
+    const [event] = await service.listCalendarView(
+      "calendar-1",
+      "2026-03-30T00:00:00.000Z",
+      "2026-03-31T00:00:00.000Z",
+      "account-1",
+    );
+
+    expect(event).toMatchObject({ isOnlineMeeting: false, onlineMeeting: null });
+  });
+
   it("posts forward requests with Graph recipients payload", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 202 }));
     vi.stubGlobal("fetch", fetchMock);
