@@ -1,0 +1,7 @@
+{
+  "name": "boolean",
+  "version": "3.2.0",
+  "main": "index.cjs",
+  "types": "index.d.ts",
+  "license": "MIT"
+}
