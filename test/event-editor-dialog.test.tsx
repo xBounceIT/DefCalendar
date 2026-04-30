@@ -889,13 +889,7 @@ describe("event editor dialog", () => {
     const saveButton = screen.getByRole("button", { name: "Save Changes" });
     expect(saveButton).toBeDisabled();
 
-    const commentTextareas = screen
-      .getAllByRole("textbox")
-      .filter((node): node is HTMLTextAreaElement => node instanceof HTMLTextAreaElement);
-    const responseCommentTextarea = commentTextareas.find((node) => node.rows === 4);
-    expect(responseCommentTextarea).toBeDefined();
-
-    fireEvent.change(responseCommentTextarea!, {
+    fireEvent.change(screen.getByLabelText("Comment"), {
       target: { value: "Heads up — running 5 min late." },
     });
 

@@ -96,6 +96,63 @@ interface CategoryOption {
   displayName: string;
 }
 
+/**
+ * Fields the Save action consumes (directly or via buildDraft). Adding a
+ * new EditorFormState field? Either list it here, or add it to
+ * ExcludedDirtyField below — the type-level check will fail to compile
+ * otherwise.
+ */
+const SAVABLE_FORM_FIELDS = [
+  "allDay",
+  "allowNewTimeProposals",
+  "attendees",
+  "body",
+  "bodyContentType",
+  "calendarId",
+  "categories",
+  "endInput",
+  "isOnlineMeeting",
+  "isReminderOn",
+  "location",
+  "optionalAttendeesInput",
+  "recurrenceDayOfMonth",
+  "recurrenceDaysOfWeek",
+  "recurrenceEnabled",
+  "recurrenceEndDate",
+  "recurrenceInterval",
+  "recurrenceOccurrences",
+  "recurrenceRangeType",
+  "recurrenceType",
+  "reminderMinutesBeforeStart",
+  "requiredAttendeesInput",
+  "responseRequested",
+  "sensitivity",
+  "showAs",
+  "startInput",
+  "subject",
+] as const satisfies readonly (keyof EditorFormState)[];
+
+/** Form fields intentionally excluded from the dirty check (UI-only state). */
+type ExcludedDirtyField = "responseComment";
+
+/**
+ * Compile-time guarantee that every EditorFormState field is either
+ * savable or explicitly excluded. If this errors, audit the new field
+ * and add it to one list or the other.
+ */
+type _UncoveredFormFields = Exclude<
+  keyof EditorFormState,
+  ExcludedDirtyField | (typeof SAVABLE_FORM_FIELDS)[number]
+>;
+const _formFieldCoverageCheck: [_UncoveredFormFields] extends [never]
+  ? true
+  : _UncoveredFormFields = true;
+void _formFieldCoverageCheck;
+
+function getSavableFormFingerprint(form: EditorFormState): string {
+  return JSON.stringify(SAVABLE_FORM_FIELDS.map((key) => form[key]));
+}
+
 function buildAccountParticipant(account: AccountSummary | null): EventParticipant | null {
   if (!account) {
     return null;
@@ -163,10 +220,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
     if (form === null || initialForm === null) {
       return false;
     }
-    // Exclude responseComment from the diff — it drives the respond / cancel-meeting flows, not Save, so typing in it must not flip the Save button on.
-    const { responseComment: _f, ...formRest } = form;
-    const { responseComment: _i, ...initialRest } = initialForm;
-    return JSON.stringify(formRest) !== JSON.stringify(initialRest);
+    return getSavableFormFingerprint(form) !== getSavableFormFingerprint(initialForm);
   }, [form, initialForm]);
 
   if (!props.state || !form) {
