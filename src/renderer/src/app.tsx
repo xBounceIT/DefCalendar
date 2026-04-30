@@ -97,6 +97,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   const [bannerError, setBannerError] = useState<string | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [editorState, setEditorState] = useState<EditorState | null>(null);
+  const [copiedEvent, setCopiedEvent] = useState<CalendarEvent | null>(null);
   const [pendingSignInMode, setPendingSignInMode] = useState<AuthSignInMode>("user");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -471,6 +472,102 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     forwardEventMutation.isPending ||
     cancelEventMutation.isPending;
 
+  useEffect(() => {
+    function isEditableTarget(target: EventTarget | null): boolean {
+      if (!(target instanceof HTMLElement)) {
+        return false;
+      }
+      return (
+        target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable
+      );
+    }
+
+    async function pasteCopiedEvent(source: CalendarEvent): Promise<void> {
+      if (!editableCalendar) {
+        setBannerError(t("app.noWritableCalendar"));
+        return;
+      }
+
+      const targetDateIso = selectedDayForTable ?? selectedDate;
+      const targetDate = new Date(targetDateIso);
+      const sourceStart = new Date(source.start);
+      const sourceEnd = new Date(source.end);
+      const durationMs = sourceEnd.getTime() - sourceStart.getTime();
+
+      const newStart = new Date(targetDate);
+      if (source.isAllDay) {
+        newStart.setHours(0, 0, 0, 0);
+      } else {
+        newStart.setHours(sourceStart.getHours(), sourceStart.getMinutes(), 0, 0);
+      }
+      const newEnd = new Date(newStart.getTime() + durationMs);
+
+      const draft: EventDraft = {
+        allowNewTimeProposals: source.allowNewTimeProposals ?? true,
+        attachmentIdsToRemove: [],
+        attachmentsToAdd: [],
+        attendees: source.attendees,
+        body: source.body,
+        bodyContentType: source.bodyContentType,
+        calendarId: editableCalendar.id,
+        categories: source.categories,
+        end: newEnd.toISOString(),
+        etag: null,
+        isAllDay: source.isAllDay,
+        isOnlineMeeting: source.isOnlineMeeting,
+        isReminderOn: source.isReminderOn,
+        location: source.location,
+        recurrence: null,
+        recurrenceEditScope: "single",
+        reminderMinutesBeforeStart: source.reminderMinutesBeforeStart,
+        responseRequested: source.responseRequested ?? true,
+        sensitivity: source.sensitivity ?? "normal",
+        showAs: source.showAs ?? "busy",
+        start: newStart.toISOString(),
+        subject: source.subject,
+        timeZone: source.timeZone,
+        webLink: null,
+      };
+
+      await createEventMutation.mutateAsync(draft);
+    }
+
+    function onKeyDown(e: KeyboardEvent): void {
+      const isCopyChord = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c";
+      const isPasteChord = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v";
+      if (!isCopyChord && !isPasteChord) {
+        return;
+      }
+      if (isEditableTarget(e.target)) {
+        return;
+      }
+
+      if (isCopyChord && editorState?.mode === "edit") {
+        e.preventDefault();
+        setCopiedEvent(editorState.event);
+        return;
+      }
+
+      if (isPasteChord && copiedEvent && !editorState && !createEventMutation.isPending) {
+        e.preventDefault();
+        void pasteCopiedEvent(copiedEvent);
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [
+    copiedEvent,
+    createEventMutation,
+    editableCalendar,
+    editorState,
+    selectedDate,
+    selectedDayForTable,
+    t,
+  ]);
+
   async function handleCalendarToggle(calendar: CalendarSummary): Promise<void> {
     const nextCalendars = await calendarApi.calendars.setVisibility({
       calendarId: calendar.id,
@@ -540,6 +637,13 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
       event: eventData,
       mode: "edit",
     });
+  }
+
+  function handleEventCopy(calendarId: string, eventId: string): void {
+    const eventData = eventLookup.get(`${calendarId}:${eventId}`);
+    if (eventData) {
+      setCopiedEvent(eventData);
+    }
   }
 
   function handleSearchResultSelect(eventData: CalendarEvent): void {
@@ -879,6 +983,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         onDateClick={handleDateClick}
         onDatesSet={handleDatesSet}
         onEventClick={handleEventClick}
+        onEventCopy={handleEventCopy}
         onEventDrop={(changeInfo) => {
           void handleEventMove(changeInfo);
         }}

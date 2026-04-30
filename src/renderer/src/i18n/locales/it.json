@@ -99,7 +99,9 @@
     "noCalendars": "Nessun calendario selezionato",
     "noCalendarsHint": "Abilita almeno un calendario Exchange dalla barra laterale sinistra per popolare la vista.",
     "moreEvents": "+{{count}}",
-    "ownerTooltip": "Sei il proprietario"
+    "ownerTooltip": "Sei il proprietario",
+    "copyEvent": "Copia evento",
+    "eventCopied": "Evento copiato"
   },
   "dayEventsTable": {
     "title": "Titolo",
