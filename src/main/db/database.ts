@@ -547,13 +547,23 @@ class AppDatabase {
     }
 
     const escaped = escapeLikePattern(normalizedQuery);
-    const filters: string[] = [
-      String.raw`(LOWER(subject) LIKE @contains ESCAPE '\' OR LOWER(payload_json) LIKE @contains ESCAPE '\')`,
+    const matchClauses = [
+      String.raw`LOWER(subject) LIKE @contains ESCAPE '\'`,
+      String.raw`LOWER(IFNULL(json_extract(payload_json, '$.bodyPreview'), '')) LIKE @contains ESCAPE '\'`,
+      String.raw`LOWER(IFNULL(json_extract(payload_json, '$.location'), '')) LIKE @contains ESCAPE '\'`,
+      String.raw`LOWER(IFNULL(json_extract(payload_json, '$.categories'), '')) LIKE @contains ESCAPE '\'`,
+      String.raw`EXISTS (
+        SELECT 1
+        FROM json_each(IFNULL(json_extract(payload_json, '$.attendees'), '[]')) AS attendee
+        WHERE LOWER(IFNULL(json_extract(attendee.value, '$.name'), '')) LIKE @contains ESCAPE '\'
+           OR LOWER(IFNULL(json_extract(attendee.value, '$.email'), '')) LIKE @contains ESCAPE '\'
+      )`,
     ];
+    const filters: string[] = [`(${matchClauses.join(" OR ")})`];
     const parameters: Record<string, number | string> = {
       contains: `%${escaped}%`,
-      prefix: `${escaped}%`,
       limit: args.limit,
+      prefix: `${escaped}%`,
     };
 
     if (args.calendarIds?.length) {

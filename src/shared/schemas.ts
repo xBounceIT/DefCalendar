@@ -309,9 +309,9 @@ const searchContactsArgsSchema = z.object({
 });
 
 const searchEventsArgsSchema = z.object({
-  query: z.string().trim().min(2).max(200),
   calendarIds: z.array(z.string()).optional(),
   limit: z.number().int().min(1).max(100).default(30),
+  query: z.string().trim().min(2).max(200),
 });
 
 const deleteEventArgsSchema = z.object({

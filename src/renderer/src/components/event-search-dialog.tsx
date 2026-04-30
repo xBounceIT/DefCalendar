@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 
 import { formatLocalizedDate } from "../date-formatting";
+import SearchIcon from "./search-icon";
 
 interface EventSearchDialogProps {
   calendarMap: Map<string, CalendarSummary>;
@@ -17,21 +18,10 @@ interface EventSearchDialogProps {
 const DEBOUNCE_MS = 200;
 const MIN_QUERY_LENGTH = 2;
 const RESULT_LIMIT = 30;
+const RESULTS_LISTBOX_ID = "event-search-dialog-results";
 
-function SearchIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      fill="none"
-      height="18"
-      viewBox="0 0 24 24"
-      width="18"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
-      <path d="M20 20l-3.5-3.5" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
-    </svg>
-  );
+function getResultId(index: number): string {
+  return `event-search-result-${index}`;
 }
 
 function CloseIcon() {
@@ -95,6 +85,7 @@ function EventSearchDialog({
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLUListElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
   const sortedCalendarIds = useMemo(
     () => [...visibleCalendarIds].toSorted((a, b) => a.localeCompare(b)),
@@ -109,7 +100,17 @@ function EventSearchDialog({
       setInputValue("");
       setDebouncedQuery("");
       setActiveIndex(0);
+      const previouslyFocused = previouslyFocusedRef.current;
+      previouslyFocusedRef.current = null;
+      if (previouslyFocused && globalThis.document.contains(previouslyFocused)) {
+        previouslyFocused.focus();
+      }
       return;
+    }
+
+    const activeElement = globalThis.document.activeElement;
+    if (activeElement instanceof HTMLElement) {
+      previouslyFocusedRef.current = activeElement;
     }
 
     const focusTimeout = globalThis.setTimeout(() => {
@@ -175,7 +176,7 @@ function EventSearchDialog({
     return null;
   }
 
-  function handleKeyDown(keyEvent: React.KeyboardEvent<HTMLDivElement>): void {
+  function handleKeyDown(keyEvent: React.KeyboardEvent<HTMLInputElement>): void {
     if (keyEvent.key === "Escape") {
       keyEvent.preventDefault();
       onClose();
@@ -218,7 +219,12 @@ function EventSearchDialog({
     body = <div className="event-search-dialog__empty">{t("eventSearch.noResults")}</div>;
   } else {
     body = (
-      <ul className="event-search-dialog__results" ref={resultsRef} role="listbox">
+      <ul
+        className="event-search-dialog__results"
+        id={RESULTS_LISTBOX_ID}
+        ref={resultsRef}
+        role="listbox"
+      >
         {results.map((event, index) => {
           const calendar = calendarMap.get(event.calendarId);
           const color = getCalendarColor(calendar);
@@ -240,6 +246,7 @@ function EventSearchDialog({
               aria-selected={isActive}
               className={className}
               data-result-index={index}
+              id={getResultId(index)}
               key={`${event.calendarId}:${event.id}`}
               onClick={() => onSelect(event)}
               onKeyDown={(keyEvent) => {
@@ -282,8 +289,10 @@ function EventSearchDialog({
     );
   }
 
+  const activeResultId = results[activeIndex] ? getResultId(activeIndex) : undefined;
+
   return (
-    <div className="dialog-scrim" onKeyDown={handleKeyDown} role="presentation">
+    <div className="dialog-scrim" role="presentation">
       <button
         aria-label={t("common.close")}
         className="dialog-scrim__dismiss"
@@ -312,12 +321,18 @@ function EventSearchDialog({
             <SearchIcon />
           </span>
           <input
+            aria-activedescendant={activeResultId}
+            aria-autocomplete="list"
+            aria-controls={results.length > 0 ? RESULTS_LISTBOX_ID : undefined}
+            aria-expanded={results.length > 0}
             aria-label={t("eventSearch.title")}
             className="event-search-dialog__input"
             disabled={!hasVisibleCalendars}
             onChange={(changeEvent) => setInputValue(changeEvent.target.value)}
+            onKeyDown={handleKeyDown}
             placeholder={t("eventSearch.placeholder")}
             ref={inputRef}
+            role="combobox"
             type="search"
             value={inputValue}
           />
