@@ -637,6 +637,13 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     });
   }
 
+  function handleEventCopy(calendarId: string, eventId: string): void {
+    const eventData = eventLookup.get(`${calendarId}:${eventId}`);
+    if (eventData) {
+      setCopiedEvent(eventData);
+    }
+  }
+
   function handleJoinMeeting(event: CalendarEvent): void {
     const joinUrl = event.onlineMeeting?.joinUrl;
     if (joinUrl) {
@@ -960,6 +967,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         onDateClick={handleDateClick}
         onDatesSet={handleDatesSet}
         onEventClick={handleEventClick}
+        onEventCopy={handleEventCopy}
         onEventDrop={(changeInfo) => {
           void handleEventMove(changeInfo);
         }}

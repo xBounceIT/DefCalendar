@@ -29,6 +29,7 @@ interface CalendarBoardProps {
   onDateClick: (clickInfo: DateClickArg) => void;
   onDatesSet: (dates: DatesSetArg) => void;
   onEventClick: (clickInfo: EventClickArg) => void;
+  onEventCopy: (calendarId: string, eventId: string) => void;
   onEventDrop: (changeInfo: EventDropArg) => void;
   onEventResize: (changeInfo: EventResizeDoneArg) => void;
   selectedDate: string;
@@ -41,7 +42,9 @@ const TOOLTIP_SHOW_DELAY_MS = 500;
 
 interface CalendarEventExtendedProps {
   calendarColor?: string | null;
+  calendarId?: string;
   eventData?: Pick<CalendarEvent, "isOrganizer" | "isReminderOn" | "responseStatus">;
+  eventId?: string;
 }
 
 function normalizeResponseValue(response: null | string | undefined): null | string {
@@ -138,17 +141,42 @@ function BellIcon() {
   );
 }
 
-function renderEventContent(info: EventContentArg) {
-  const { eventData } = info.event.extendedProps as CalendarEventExtendedProps;
-  const hasReminder = Boolean(eventData?.isReminderOn);
-  const hasTime = info.timeText.length > 0;
-
+function CopyIcon() {
   return (
-    <div className="calendar-event-content">
-      {hasTime ? <span className="fc-event-time">{info.timeText}</span> : null}
-      <span className="fc-event-title">{info.event.title}</span>
-      {hasReminder ? <BellIcon /> : null}
-    </div>
+    <svg
+      aria-hidden="true"
+      fill="none"
+      focusable="false"
+      height="12"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.5"
+      viewBox="0 0 24 24"
+      width="12"
+    >
+      <rect height="14" rx="2" ry="2" width="14" x="8" y="8" />
+      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      focusable="false"
+      height="12"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="12"
+    >
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
   );
 }
 
@@ -213,6 +241,7 @@ function CalendarSurface({
   onDateClick,
   onDatesSet,
   onEventClick,
+  onEventCopy,
   onEventDrop,
   onEventResize,
   selectedDate,
@@ -221,11 +250,15 @@ function CalendarSurface({
 }: Omit<CalendarBoardProps, "hasVisibleCalendars">) {
   const { t, i18n } = useTranslation();
   const tooltipShowTimeoutRef = React.useRef<null | ReturnType<typeof globalThis.setTimeout>>(null);
+  const recentlyCopiedTimeoutRef = React.useRef<null | ReturnType<typeof globalThis.setTimeout>>(
+    null,
+  );
   const [hoverTooltip, setHoverTooltip] = React.useState<null | {
     text: string;
     x: number;
     y: number;
   }>(null);
+  const [recentlyCopiedEventId, setRecentlyCopiedEventId] = React.useState<null | string>(null);
   const locale = React.useMemo(() => (i18n.language === "it" ? "it" : "en"), [i18n.language]);
   const eventTimeFormat = React.useMemo(() => buildEventTimeFormat(timeFormat), [timeFormat]);
   const handleEventDidMount = React.useCallback((arg: EventMountArg) => {
@@ -266,6 +299,66 @@ function CalendarSurface({
       clearTooltipShowTimeout();
     },
     [clearTooltipShowTimeout],
+  );
+
+  React.useEffect(
+    () => () => {
+      if (recentlyCopiedTimeoutRef.current !== null) {
+        globalThis.clearTimeout(recentlyCopiedTimeoutRef.current);
+      }
+    },
+    [],
+  );
+
+  const handleCopyClick = React.useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>, calendarId: string, eventId: string) => {
+      event.stopPropagation();
+      onEventCopy(calendarId, eventId);
+
+      if (recentlyCopiedTimeoutRef.current !== null) {
+        globalThis.clearTimeout(recentlyCopiedTimeoutRef.current);
+      }
+      setRecentlyCopiedEventId(`${calendarId}:${eventId}`);
+      recentlyCopiedTimeoutRef.current = globalThis.setTimeout(() => {
+        setRecentlyCopiedEventId(null);
+        recentlyCopiedTimeoutRef.current = null;
+      }, 1500);
+    },
+    [onEventCopy],
+  );
+
+  const renderEventContent = React.useCallback(
+    (info: EventContentArg) => {
+      const { calendarId, eventData, eventId } = info.event
+        .extendedProps as CalendarEventExtendedProps;
+      const hasReminder = Boolean(eventData?.isReminderOn);
+      const hasTime = info.timeText.length > 0;
+      const isRecentlyCopied = info.event.id === recentlyCopiedEventId;
+      const canCopy = Boolean(calendarId && eventId);
+
+      return (
+        <div className="calendar-event-content">
+          {hasTime ? <span className="fc-event-time">{info.timeText}</span> : null}
+          <span className="fc-event-title">{info.event.title}</span>
+          {hasReminder ? <BellIcon /> : null}
+          {canCopy ? (
+            <button
+              aria-label={t("calendarBoard.copyEvent")}
+              className={`calendar-event-content__copy-btn${
+                isRecentlyCopied ? " calendar-event-content__copy-btn--copied" : ""
+              }`}
+              onClick={(event) => {
+                handleCopyClick(event, calendarId as string, eventId as string);
+              }}
+              type="button"
+            >
+              {isRecentlyCopied ? <CheckIcon /> : <CopyIcon />}
+            </button>
+          ) : null}
+        </div>
+      );
+    },
+    [handleCopyClick, recentlyCopiedEventId, t],
   );
 
   const renderedTooltip = hoverTooltip
@@ -392,6 +485,7 @@ function CalendarBoard(props: CalendarBoardProps) {
         onDateClick={props.onDateClick}
         onDatesSet={props.onDatesSet}
         onEventClick={props.onEventClick}
+        onEventCopy={props.onEventCopy}
         onEventDrop={props.onEventDrop}
         onEventResize={props.onEventResize}
         selectedDate={props.selectedDate}

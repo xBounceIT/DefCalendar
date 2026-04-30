@@ -1788,6 +1788,38 @@ button {
   opacity: 0.8;
 }
 
+.calendar-event-content__copy-btn {
+  flex: 0 0 auto;
+  margin-left: 4px;
+  padding: 2px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition:
+    opacity 120ms ease,
+    background-color 120ms ease;
+}
+
+.fc-event:hover .calendar-event-content__copy-btn,
+.calendar-event-content__copy-btn:focus-visible,
+.calendar-event-content__copy-btn--copied {
+  opacity: 1;
+}
+
+.calendar-event-content__copy-btn:hover {
+  background-color: rgba(17, 24, 39, 0.12);
+}
+
+.calendar-event-content__copy-btn--copied {
+  color: var(--success);
+}
+
 .calendar-event-content > .fc-event-title {
   flex: 1 1 auto;
   min-width: 0;

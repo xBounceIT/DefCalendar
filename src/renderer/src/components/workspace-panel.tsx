@@ -30,6 +30,7 @@ interface WorkspacePanelProps {
   onDateClick: (clickInfo: DateClickArg) => void;
   onDatesSet: (dates: DatesSetArg) => void;
   onEventClick: (clickInfo: EventClickArg) => void;
+  onEventCopy: (calendarId: string, eventId: string) => void;
   onEventDrop: (changeInfo: EventDropArg) => void;
   onEventResize: (changeInfo: EventResizeDoneArg) => void;
   onJoinMeeting: (event: CalendarEvent) => void;
@@ -271,6 +272,7 @@ function WorkspacePanel(props: WorkspacePanelProps) {
         onDateClick={props.onDateClick}
         onDatesSet={props.onDatesSet}
         onEventClick={props.onEventClick}
+        onEventCopy={props.onEventCopy}
         onEventDrop={props.onEventDrop}
         onEventResize={props.onEventResize}
         selectedDate={props.selectedDate}
