@@ -234,6 +234,54 @@ function EmptyState() {
   );
 }
 
+interface EventCopyButtonProps {
+  ariaLabel: string;
+  calendarId: string;
+  eventId: string;
+  onCopy: (calendarId: string, eventId: string) => void;
+}
+
+function EventCopyButton({ ariaLabel, calendarId, eventId, onCopy }: EventCopyButtonProps) {
+  const [recentlyCopied, setRecentlyCopied] = React.useState(false);
+  const timeoutRef = React.useRef<null | ReturnType<typeof globalThis.setTimeout>>(null);
+
+  React.useEffect(
+    () => () => {
+      if (timeoutRef.current !== null) {
+        globalThis.clearTimeout(timeoutRef.current);
+      }
+    },
+    [],
+  );
+
+  function handleClick(event: React.MouseEvent<HTMLButtonElement>): void {
+    event.stopPropagation();
+    onCopy(calendarId, eventId);
+
+    if (timeoutRef.current !== null) {
+      globalThis.clearTimeout(timeoutRef.current);
+    }
+    setRecentlyCopied(true);
+    timeoutRef.current = globalThis.setTimeout(() => {
+      setRecentlyCopied(false);
+      timeoutRef.current = null;
+    }, 1500);
+  }
+
+  return (
+    <button
+      aria-label={ariaLabel}
+      className={`calendar-event-content__copy-btn${
+        recentlyCopied ? " calendar-event-content__copy-btn--copied" : ""
+      }`}
+      onClick={handleClick}
+      type="button"
+    >
+      {recentlyCopied ? <CheckIcon /> : <CopyIcon />}
+    </button>
+  );
+}
+
 function CalendarSurface({
   activeView,
   calendarEvents,
@@ -250,15 +298,11 @@ function CalendarSurface({
 }: Omit<CalendarBoardProps, "hasVisibleCalendars">) {
   const { t, i18n } = useTranslation();
   const tooltipShowTimeoutRef = React.useRef<null | ReturnType<typeof globalThis.setTimeout>>(null);
-  const recentlyCopiedTimeoutRef = React.useRef<null | ReturnType<typeof globalThis.setTimeout>>(
-    null,
-  );
   const [hoverTooltip, setHoverTooltip] = React.useState<null | {
     text: string;
     x: number;
     y: number;
   }>(null);
-  const [recentlyCopiedEventId, setRecentlyCopiedEventId] = React.useState<null | string>(null);
   const locale = React.useMemo(() => (i18n.language === "it" ? "it" : "en"), [i18n.language]);
   const eventTimeFormat = React.useMemo(() => buildEventTimeFormat(timeFormat), [timeFormat]);
   const handleEventDidMount = React.useCallback((arg: EventMountArg) => {
@@ -301,64 +345,30 @@ function CalendarSurface({
     [clearTooltipShowTimeout],
   );
 
-  React.useEffect(
-    () => () => {
-      if (recentlyCopiedTimeoutRef.current !== null) {
-        globalThis.clearTimeout(recentlyCopiedTimeoutRef.current);
-      }
-    },
-    [],
-  );
-
-  const handleCopyClick = React.useCallback(
-    (event: React.MouseEvent<HTMLButtonElement>, calendarId: string, eventId: string) => {
-      event.stopPropagation();
-      onEventCopy(calendarId, eventId);
-
-      if (recentlyCopiedTimeoutRef.current !== null) {
-        globalThis.clearTimeout(recentlyCopiedTimeoutRef.current);
-      }
-      setRecentlyCopiedEventId(`${calendarId}:${eventId}`);
-      recentlyCopiedTimeoutRef.current = globalThis.setTimeout(() => {
-        setRecentlyCopiedEventId(null);
-        recentlyCopiedTimeoutRef.current = null;
-      }, 1500);
-    },
-    [onEventCopy],
-  );
-
   const renderEventContent = React.useCallback(
     (info: EventContentArg) => {
       const { calendarId, eventData, eventId } = info.event
         .extendedProps as CalendarEventExtendedProps;
       const hasReminder = Boolean(eventData?.isReminderOn);
       const hasTime = info.timeText.length > 0;
-      const isRecentlyCopied = info.event.id === recentlyCopiedEventId;
-      const canCopy = Boolean(calendarId && eventId);
 
       return (
         <div className="calendar-event-content">
           {hasTime ? <span className="fc-event-time">{info.timeText}</span> : null}
           <span className="fc-event-title">{info.event.title}</span>
-          {canCopy ? (
-            <button
-              aria-label={t("calendarBoard.copyEvent")}
-              className={`calendar-event-content__copy-btn${
-                isRecentlyCopied ? " calendar-event-content__copy-btn--copied" : ""
-              }`}
-              onClick={(event) => {
-                handleCopyClick(event, calendarId as string, eventId as string);
-              }}
-              type="button"
-            >
-              {isRecentlyCopied ? <CheckIcon /> : <CopyIcon />}
-            </button>
+          {calendarId && eventId ? (
+            <EventCopyButton
+              ariaLabel={t("calendarBoard.copyEvent")}
+              calendarId={calendarId}
+              eventId={eventId}
+              onCopy={onEventCopy}
+            />
           ) : null}
           {hasReminder ? <BellIcon /> : null}
         </div>
       );
     },
-    [handleCopyClick, recentlyCopiedEventId, t],
+    [onEventCopy, t],
   );
 
   const renderedTooltip = hoverTooltip
