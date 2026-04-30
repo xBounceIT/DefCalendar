@@ -271,18 +271,22 @@ function EventCopyButton({ calendarId, eventId, onCopy }: EventCopyButtonProps) 
   const ariaLabel = recentlyCopied ? t("calendarBoard.eventCopied") : t("calendarBoard.copyEvent");
 
   return (
-    <button
-      aria-label={ariaLabel}
-      aria-live="polite"
-      className={`calendar-event-content__copy-btn${
-        recentlyCopied ? " calendar-event-content__copy-btn--copied" : ""
-      }`}
-      onClick={handleClick}
-      onMouseDown={(event) => event.stopPropagation()}
-      type="button"
-    >
-      {recentlyCopied ? <CheckIcon /> : <CopyIcon />}
-    </button>
+    <>
+      <button
+        aria-label={ariaLabel}
+        className={`calendar-event-content__copy-btn${
+          recentlyCopied ? " calendar-event-content__copy-btn--copied" : ""
+        }`}
+        onClick={handleClick}
+        onMouseDown={(event) => event.stopPropagation()}
+        type="button"
+      >
+        {recentlyCopied ? <CheckIcon /> : <CopyIcon />}
+      </button>
+      <span className="visually-hidden" role="status">
+        {recentlyCopied ? t("calendarBoard.eventCopied") : ""}
+      </span>
+    </>
   );
 }
 
