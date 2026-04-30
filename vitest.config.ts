@@ -12,4 +12,7 @@ export default defineConfig({
       '@shared': resolve(currentDirectory, 'src/shared'),
     },
   },
+  test: {
+    exclude: ['node_modules/**', '.claude/**', 'out/**', 'release/**'],
+  },
 });
