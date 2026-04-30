@@ -247,6 +247,86 @@ describe("database", () => {
     );
   });
 
+  it("searches events across scoped fields with parameterized SQL", () => {
+    const matchedEvent = createStoredReminderEvent({
+      calendarId: "calendar-1",
+      id: "event-1",
+    });
+    const all = vi
+      .fn()
+      .mockReturnValue([{ payload_json: JSON.stringify(matchedEvent), sort_rank: 0 }]);
+    let capturedSql = "";
+    const prepare = vi.fn((sql: string) => {
+      capturedSql = sql;
+      return { all };
+    });
+
+    const db = Object.create(AppDatabase.prototype) as AppDatabase;
+    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+
+    const results = db.searchEvents({
+      calendarIds: ["calendar-1", "calendar-2"],
+      limit: 30,
+      query: "Plan%_ning",
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.id).toBe("event-1");
+
+    expect(capturedSql).toContain("LOWER(subject) LIKE @contains");
+    expect(capturedSql).toContain("json_extract(payload_json, '$.bodyPreview')");
+    expect(capturedSql).toContain("json_extract(payload_json, '$.location')");
+    expect(capturedSql).toContain("json_extract(payload_json, '$.categories')");
+    expect(capturedSql).toContain("json_each(IFNULL(json_extract(payload_json, '$.attendees')");
+    expect(capturedSql).toContain("calendar_id IN (@calendar_0, @calendar_1)");
+    expect(capturedSql).toContain("ORDER BY sort_rank, start_sort DESC");
+    expect(capturedSql).toContain("LIMIT @limit");
+
+    expect(all).toHaveBeenCalledWith({
+      calendar_0: "calendar-1",
+      calendar_1: "calendar-2",
+      contains: String.raw`%plan\%\_ning%`,
+      limit: 30,
+      prefix: String.raw`plan\%\_ning%`,
+    });
+  });
+
+  it("returns no results when search query normalizes to empty", () => {
+    const prepare = vi.fn();
+    const db = Object.create(AppDatabase.prototype) as AppDatabase;
+    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+
+    const results = db.searchEvents({
+      calendarIds: ["calendar-1"],
+      limit: 30,
+      query: '",;:()',
+    });
+
+    expect(results).toStrictEqual([]);
+    expect(prepare).not.toHaveBeenCalled();
+  });
+
+  it("searches events without a calendar filter when omitted", () => {
+    const all = vi.fn().mockReturnValue([]);
+    let capturedSql = "";
+    const prepare = vi.fn((sql: string) => {
+      capturedSql = sql;
+      return { all };
+    });
+
+    const db = Object.create(AppDatabase.prototype) as AppDatabase;
+    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+
+    db.searchEvents({ limit: 10, query: "weekly" });
+
+    expect(capturedSql).not.toContain("calendar_id IN");
+    expect(all).toHaveBeenCalledWith({
+      contains: "%weekly%",
+      limit: 10,
+      prefix: "weekly%",
+    });
+  });
+
   it("searches contacts with normalized attendee input", () => {
     const all = vi.fn().mockReturnValue([
       { email: "john@example.com", name: "Doe, John" },

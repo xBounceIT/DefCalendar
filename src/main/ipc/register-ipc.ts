@@ -25,6 +25,7 @@ import {
   reminderSnoozeArgsSchema,
   respondToEventArgsSchema,
   searchContactsArgsSchema,
+  searchEventsArgsSchema,
   setCalendarColorArgsSchema,
   setCalendarVisibilityArgsSchema,
   syncStatusSchema,
@@ -234,6 +235,12 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     validateMainSender(event);
     const args = eventListArgsSchema.parse(input);
     return dependencies.db.listEvents(args);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.eventsSearch, async (event, input) => {
+    validateMainSender(event);
+    const args = searchEventsArgsSchema.parse(input);
+    return dependencies.db.searchEvents(args);
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsCreate, async (event, input) => {

@@ -5,6 +5,7 @@ import type {
   EventListArgs,
   ReminderType,
   SearchContactsArgs,
+  SearchEventsArgs,
   StoredAccount,
   SyncStatus,
   UserSettings,
@@ -532,6 +533,58 @@ class AppDatabase {
       FROM events
       WHERE ${filters.join(" AND ")}
       ORDER BY start_sort ASC, subject COLLATE NOCASE ASC
+    `);
+
+    return statement
+      .all(parameters)
+      .map((row) => calendarEventSchema.parse(JSON.parse(readStringProperty(row, "payload_json"))));
+  }
+
+  searchEvents(args: SearchEventsArgs): CalendarEvent[] {
+    const normalizedQuery = normalizeContactSearchValue(args.query);
+    if (!normalizedQuery) {
+      return [];
+    }
+
+    const escaped = escapeLikePattern(normalizedQuery);
+    const matchClauses = [
+      String.raw`LOWER(subject) LIKE @contains ESCAPE '\'`,
+      String.raw`LOWER(IFNULL(json_extract(payload_json, '$.bodyPreview'), '')) LIKE @contains ESCAPE '\'`,
+      String.raw`LOWER(IFNULL(json_extract(payload_json, '$.location'), '')) LIKE @contains ESCAPE '\'`,
+      String.raw`LOWER(IFNULL(json_extract(payload_json, '$.categories'), '')) LIKE @contains ESCAPE '\'`,
+      String.raw`EXISTS (
+        SELECT 1
+        FROM json_each(IFNULL(json_extract(payload_json, '$.attendees'), '[]')) AS attendee
+        WHERE LOWER(IFNULL(json_extract(attendee.value, '$.name'), '')) LIKE @contains ESCAPE '\'
+           OR LOWER(IFNULL(json_extract(attendee.value, '$.email'), '')) LIKE @contains ESCAPE '\'
+      )`,
+    ];
+    const filters: string[] = [`(${matchClauses.join(" OR ")})`];
+    const parameters: Record<string, number | string> = {
+      contains: `%${escaped}%`,
+      limit: args.limit,
+      prefix: `${escaped}%`,
+    };
+
+    if (args.calendarIds?.length) {
+      const placeholders = args.calendarIds.map((_calendarId, index) => `@calendar_${index}`);
+      filters.push(`calendar_id IN (${placeholders.join(", ")})`);
+      args.calendarIds.forEach((calendarId, index) => {
+        parameters[`calendar_${index}`] = calendarId;
+      });
+    }
+
+    const statement = this.db.prepare(String.raw`
+      SELECT payload_json,
+        CASE
+          WHEN LOWER(subject) LIKE @prefix ESCAPE '\' THEN 0
+          WHEN LOWER(subject) LIKE @contains ESCAPE '\' THEN 1
+          ELSE 2
+        END AS sort_rank
+      FROM events
+      WHERE ${filters.join(" AND ")}
+      ORDER BY sort_rank, start_sort DESC
+      LIMIT @limit
     `);
 
     return statement
