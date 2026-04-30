@@ -1797,19 +1797,15 @@ button {
   background: transparent;
   color: inherit;
   cursor: pointer;
-  display: inline-flex;
+  display: none;
   align-items: center;
   justify-content: center;
-  opacity: 0;
-  transition:
-    opacity 120ms ease,
-    background-color 120ms ease;
+  transition: background-color 120ms ease;
 }
 
 .fc-event:hover .calendar-event-content__copy-btn,
-.calendar-event-content__copy-btn:focus-visible,
 .calendar-event-content__copy-btn--copied {
-  opacity: 1;
+  display: inline-flex;
 }
 
 .calendar-event-content__copy-btn:hover {

@@ -340,7 +340,6 @@ function CalendarSurface({
         <div className="calendar-event-content">
           {hasTime ? <span className="fc-event-time">{info.timeText}</span> : null}
           <span className="fc-event-title">{info.event.title}</span>
-          {hasReminder ? <BellIcon /> : null}
           {canCopy ? (
             <button
               aria-label={t("calendarBoard.copyEvent")}
@@ -355,6 +354,7 @@ function CalendarSurface({
               {isRecentlyCopied ? <CheckIcon /> : <CopyIcon />}
             </button>
           ) : null}
+          {hasReminder ? <BellIcon /> : null}
         </div>
       );
     },
