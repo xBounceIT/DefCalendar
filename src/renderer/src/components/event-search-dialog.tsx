@@ -84,7 +84,6 @@ function EventSearchDialog({
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const resultsRef = useRef<HTMLUListElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
   const sortedCalendarIds = useMemo(
@@ -161,12 +160,7 @@ function EventSearchDialog({
       return;
     }
 
-    const list = resultsRef.current;
-    if (!list) {
-      return;
-    }
-
-    const activeEl = list.querySelector<HTMLElement>(`[data-result-index="${activeIndex}"]`);
+    const activeEl = globalThis.document.getElementById(getResultId(activeIndex));
     if (activeEl) {
       activeEl.scrollIntoView({ block: "nearest" });
     }
@@ -219,12 +213,7 @@ function EventSearchDialog({
     body = <div className="event-search-dialog__empty">{t("eventSearch.noResults")}</div>;
   } else {
     body = (
-      <ul
-        className="event-search-dialog__results"
-        id={RESULTS_LISTBOX_ID}
-        ref={resultsRef}
-        role="listbox"
-      >
+      <ul className="event-search-dialog__results" id={RESULTS_LISTBOX_ID} role="listbox">
         {results.map((event, index) => {
           const calendar = calendarMap.get(event.calendarId);
           const color = getCalendarColor(calendar);
@@ -245,10 +234,14 @@ function EventSearchDialog({
             <li
               aria-selected={isActive}
               className={className}
-              data-result-index={index}
               id={getResultId(index)}
               key={`${event.calendarId}:${event.id}`}
               onClick={() => onSelect(event)}
+              /*
+               * Keyboard activation normally flows through the combobox input via
+               * aria-activedescendant; this handler is a defensive fallback that
+               * also satisfies jsx-a11y/click-events-have-key-events.
+               */
               onKeyDown={(keyEvent) => {
                 if (keyEvent.key === "Enter" || keyEvent.key === " ") {
                   keyEvent.preventDefault();
@@ -290,6 +283,7 @@ function EventSearchDialog({
   }
 
   const activeResultId = results[activeIndex] ? getResultId(activeIndex) : undefined;
+  const isPopupOpen = hasVisibleCalendars && isQueryEligible;
 
   return (
     <div className="dialog-scrim" role="presentation">
@@ -323,8 +317,8 @@ function EventSearchDialog({
           <input
             aria-activedescendant={activeResultId}
             aria-autocomplete="list"
-            aria-controls={results.length > 0 ? RESULTS_LISTBOX_ID : undefined}
-            aria-expanded={results.length > 0}
+            aria-controls={isPopupOpen ? RESULTS_LISTBOX_ID : undefined}
+            aria-expanded={isPopupOpen}
             aria-label={t("eventSearch.title")}
             className="event-search-dialog__input"
             disabled={!hasVisibleCalendars}
