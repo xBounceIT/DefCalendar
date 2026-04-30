@@ -159,11 +159,15 @@ function EventEditorDialog(props: EventEditorDialogProps) {
     };
   }, [attachmentSourceEvent, props.onListAttachments]);
 
-  const isDirty = useMemo(
-    () =>
-      form !== null && initialForm !== null && JSON.stringify(form) !== JSON.stringify(initialForm),
-    [form, initialForm],
-  );
+  const isDirty = useMemo(() => {
+    if (form === null || initialForm === null) {
+      return false;
+    }
+    // Exclude responseComment from the diff — it drives the respond / cancel-meeting flows, not Save, so typing in it must not flip the Save button on.
+    const { responseComment: _f, ...formRest } = form;
+    const { responseComment: _i, ...initialRest } = initialForm;
+    return JSON.stringify(formRest) !== JSON.stringify(initialRest);
+  }, [form, initialForm]);
 
   if (!props.state || !form) {
     return null;

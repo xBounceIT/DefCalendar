@@ -882,4 +882,23 @@ describe("event editor dialog", () => {
 
     expect(screen.getByRole("button", { name: "Create Event" })).toBeEnabled();
   });
+
+  it("does not enable Save when only the response comment changes", () => {
+    renderDialog();
+
+    const saveButton = screen.getByRole("button", { name: "Save Changes" });
+    expect(saveButton).toBeDisabled();
+
+    const commentTextareas = screen
+      .getAllByRole("textbox")
+      .filter((node): node is HTMLTextAreaElement => node instanceof HTMLTextAreaElement);
+    const responseCommentTextarea = commentTextareas.find((node) => node.rows === 4);
+    expect(responseCommentTextarea).toBeDefined();
+
+    fireEvent.change(responseCommentTextarea!, {
+      target: { value: "Heads up — running 5 min late." },
+    });
+
+    expect(saveButton).toBeDisabled();
+  });
 });
