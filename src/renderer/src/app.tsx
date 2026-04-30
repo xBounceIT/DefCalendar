@@ -618,7 +618,9 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
 
   function openSelectedDateComposer(): void {
     const now = new Date();
-    const roundedStart = roundUpToNext15Minutes(now);
+    const seed = new Date(selectedDayForTable ?? selectedDate);
+    seed.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+    const roundedStart = roundUpToNext15Minutes(seed);
     openCreateDialog({
       allDay: false,
       end: addMinutesToIso(roundedStart.toISOString(), 30),
