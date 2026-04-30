@@ -96,6 +96,63 @@ interface CategoryOption {
   displayName: string;
 }
 
+/**
+ * Fields the Save action consumes (directly or via buildDraft). Adding a
+ * new EditorFormState field? Either list it here, or add it to
+ * ExcludedDirtyField below — the type-level check will fail to compile
+ * otherwise.
+ */
+const SAVABLE_FORM_FIELDS = [
+  "allDay",
+  "allowNewTimeProposals",
+  "attendees",
+  "body",
+  "bodyContentType",
+  "calendarId",
+  "categories",
+  "endInput",
+  "isOnlineMeeting",
+  "isReminderOn",
+  "location",
+  "optionalAttendeesInput",
+  "recurrenceDayOfMonth",
+  "recurrenceDaysOfWeek",
+  "recurrenceEnabled",
+  "recurrenceEndDate",
+  "recurrenceInterval",
+  "recurrenceOccurrences",
+  "recurrenceRangeType",
+  "recurrenceType",
+  "reminderMinutesBeforeStart",
+  "requiredAttendeesInput",
+  "responseRequested",
+  "sensitivity",
+  "showAs",
+  "startInput",
+  "subject",
+] as const satisfies readonly (keyof EditorFormState)[];
+
+/** Form fields intentionally excluded from the dirty check (UI-only state). */
+type ExcludedDirtyField = "responseComment";
+
+/**
+ * Compile-time guarantee that every EditorFormState field is either
+ * savable or explicitly excluded. If this errors, audit the new field
+ * and add it to one list or the other.
+ */
+type _UncoveredFormFields = Exclude<
+  keyof EditorFormState,
+  ExcludedDirtyField | (typeof SAVABLE_FORM_FIELDS)[number]
+>;
+const _formFieldCoverageCheck: [_UncoveredFormFields] extends [never]
+  ? true
+  : _UncoveredFormFields = true;
+void _formFieldCoverageCheck;
+
+function getSavableFormFingerprint(form: EditorFormState): string {
+  return JSON.stringify(SAVABLE_FORM_FIELDS.map((key) => form[key]));
+}
+
 function buildAccountParticipant(account: AccountSummary | null): EventParticipant | null {
   if (!account) {
     return null;
@@ -115,9 +172,12 @@ function EventEditorDialog(props: EventEditorDialogProps) {
   const [attachments, setAttachments] = useState<EventAttachment[]>([]);
   const [attachmentsBusy, setAttachmentsBusy] = useState(false);
   const [form, setForm] = useState<EditorFormState | null>(null);
+  const [initialForm, setInitialForm] = useState<EditorFormState | null>(null);
 
   useEffect(() => {
-    setForm(buildFormState(props.state));
+    const next = buildFormState(props.state);
+    setForm(next);
+    setInitialForm(next);
   }, [props.state]);
 
   const attachmentSourceEvent = props.state?.mode === "edit" ? props.state.event : null;
@@ -155,6 +215,13 @@ function EventEditorDialog(props: EventEditorDialogProps) {
       cancelled = true;
     };
   }, [attachmentSourceEvent, props.onListAttachments]);
+
+  const isDirty = useMemo(() => {
+    if (form === null || initialForm === null) {
+      return false;
+    }
+    return getSavableFormFingerprint(form) !== getSavableFormFingerprint(initialForm);
+  }, [form, initialForm]);
 
   if (!props.state || !form) {
     return null;
@@ -416,7 +483,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
             {!readOnlyForAttendee && (
               <button
                 className="primary-button"
-                disabled={props.busy || form.subject.trim().length === 0}
+                disabled={props.busy || form.subject.trim().length === 0 || (isEdit && !isDirty)}
                 onClick={() => {
                   void props.onSave(buildDraft(form, editedEvent));
                 }}
