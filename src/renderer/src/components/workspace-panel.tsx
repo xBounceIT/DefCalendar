@@ -14,6 +14,7 @@ import type FullCalendar from "@fullcalendar/react";
 import CalendarBoard from "./calendar-board";
 import DayEventsTable from "./day-events-table";
 import React from "react";
+import SearchIcon from "./search-icon";
 import { formatHeaderDate } from "../date-formatting";
 import { useTranslation } from "react-i18next";
 
@@ -35,6 +36,7 @@ interface WorkspacePanelProps {
   onEventResize: (changeInfo: EventResizeDoneArg) => void;
   onJoinMeeting: (event: CalendarEvent) => void;
   onNext: () => void;
+  onOpenSearch: () => void;
   onPrev: () => void;
   onToday: () => void;
   onViewSelect: (view: CalendarView) => void;
@@ -196,13 +198,38 @@ function NewEventButton({
   );
 }
 
+function SearchButton({
+  hasVisibleCalendars,
+  onOpenSearch,
+}: {
+  hasVisibleCalendars: boolean;
+  onOpenSearch: () => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <button
+      aria-label={t("workspace.search")}
+      className="icon-button"
+      disabled={!hasVisibleCalendars}
+      onClick={onOpenSearch}
+      title={t("workspace.search")}
+      type="button"
+    >
+      <SearchIcon />
+    </button>
+  );
+}
+
 function WorkspaceHeader(
   props: Pick<
     WorkspacePanelProps,
     | "activeView"
     | "canCreateEvent"
+    | "hasVisibleCalendars"
     | "onCreateEvent"
     | "onNext"
+    | "onOpenSearch"
     | "onPrev"
     | "onToday"
     | "onViewSelect"
@@ -216,6 +243,10 @@ function WorkspaceHeader(
         <DateDisplay selectedDate={props.selectedDate} view={props.activeView} />
       </div>
       <div className="workspace-header-right">
+        <SearchButton
+          hasVisibleCalendars={props.hasVisibleCalendars}
+          onOpenSearch={props.onOpenSearch}
+        />
         <ViewSelector activeView={props.activeView} onViewSelect={props.onViewSelect} />
         <NewEventButton canCreateEvent={props.canCreateEvent} onCreateEvent={props.onCreateEvent} />
       </div>
@@ -248,8 +279,10 @@ function WorkspacePanel(props: WorkspacePanelProps) {
       <WorkspaceHeader
         activeView={props.activeView}
         canCreateEvent={props.canCreateEvent}
+        hasVisibleCalendars={props.hasVisibleCalendars}
         onCreateEvent={props.onCreateEvent}
         onNext={props.onNext}
+        onOpenSearch={props.onOpenSearch}
         onPrev={props.onPrev}
         onToday={props.onToday}
         onViewSelect={props.onViewSelect}

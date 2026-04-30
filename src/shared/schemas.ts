@@ -308,6 +308,12 @@ const searchContactsArgsSchema = z.object({
   query: z.string().trim().min(1).max(200),
 });
 
+const searchEventsArgsSchema = z.object({
+  calendarIds: z.array(z.string()).optional(),
+  limit: z.number().int().min(1).max(100).default(30),
+  query: z.string().trim().min(2).max(200),
+});
+
 const deleteEventArgsSchema = z.object({
   calendarId: z.string(),
   eventId: z.string(),
@@ -514,6 +520,7 @@ type SetCalendarVisibilityArgs = z.infer<typeof setCalendarVisibilityArgsSchema>
 type SetCalendarColorArgs = z.infer<typeof setCalendarColorArgsSchema>;
 type ListOutlookCategoriesArgs = z.infer<typeof listOutlookCategoriesArgsSchema>;
 type SearchContactsArgs = z.infer<typeof searchContactsArgsSchema>;
+type SearchEventsArgs = z.infer<typeof searchEventsArgsSchema>;
 type DeleteEventArgs = z.infer<typeof deleteEventArgsSchema>;
 type EventReferenceArgs = z.infer<typeof eventReferenceArgsSchema>;
 type RespondToEventArgs = z.infer<typeof respondToEventArgsSchema>;
@@ -592,6 +599,7 @@ export {
   forwardEventArgsSchema,
   listOutlookCategoriesArgsSchema,
   searchContactsArgsSchema,
+  searchEventsArgsSchema,
   setCalendarVisibilityArgsSchema,
   setCalendarColorArgsSchema,
   sensitivitySchema,
@@ -623,6 +631,7 @@ export {
   type ForwardEventArgs,
   type ListOutlookCategoriesArgs,
   type SearchContactsArgs,
+  type SearchEventsArgs,
   type LocalReminderRule,
   type LocalReminderWhen,
   type ReminderDismissArgs,

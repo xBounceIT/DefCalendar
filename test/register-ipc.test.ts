@@ -146,6 +146,7 @@ function createFixture() {
       { email: "alice@example.com", name: "Alice Example" },
       { email: "bob@example.com", name: null },
     ]),
+    searchEvents: vi.fn().mockReturnValue([storedEvent]),
     upsertEvent: vi.fn(),
   };
   const graph = {
@@ -403,6 +404,38 @@ describe("register ipc", () => {
     expect(fixture.mainWebContents.send).toHaveBeenCalledWith(IPC_CHANNELS.authStateChanged, state);
 
     deferredSync.resolve(fixture.sync.getStatus());
+  });
+
+  it("searches cached events with the parsed query and calendar filter", async () => {
+    const fixture = createFixture();
+    const invokeEvent = { sender: fixture.mainWebContents };
+
+    const response = await fixture.handlers.get(IPC_CHANNELS.eventsSearch)?.(invokeEvent, {
+      calendarIds: ["calendar-1"],
+      limit: 10,
+      query: "planning",
+    });
+
+    expect(fixture.db.searchEvents).toHaveBeenCalledWith({
+      calendarIds: ["calendar-1"],
+      limit: 10,
+      query: "planning",
+    });
+    expect(response).toStrictEqual([createCalendarEvent()]);
+  });
+
+  it("rejects event search input that fails schema validation", async () => {
+    const fixture = createFixture();
+    const invokeEvent = { sender: fixture.mainWebContents };
+
+    await expect(
+      fixture.handlers.get(IPC_CHANNELS.eventsSearch)?.(invokeEvent, {
+        limit: 10,
+        query: "x",
+      }),
+    ).rejects.toThrow();
+
+    expect(fixture.db.searchEvents).not.toHaveBeenCalled();
   });
 
   it("searches cached contacts for an account", async () => {

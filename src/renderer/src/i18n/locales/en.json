@@ -79,7 +79,16 @@
     "previous": "Previous",
     "next": "Next",
     "today": "Today",
-    "new": "New"
+    "new": "New",
+    "search": "Search"
+  },
+  "eventSearch": {
+    "title": "Search events",
+    "placeholder": "Search by title, location, attendees…",
+    "hint": "Type at least 2 characters",
+    "loading": "Searching…",
+    "noResults": "No matching events",
+    "noVisibleCalendars": "Select a calendar to search"
   },
   "calendarViews": {
     "month": "Month",

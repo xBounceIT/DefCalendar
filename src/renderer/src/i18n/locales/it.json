@@ -79,7 +79,16 @@
     "previous": "Precedente",
     "next": "Successivo",
     "today": "Oggi",
-    "new": "Nuovo"
+    "new": "Nuovo",
+    "search": "Cerca"
+  },
+  "eventSearch": {
+    "title": "Cerca eventi",
+    "placeholder": "Cerca per titolo, luogo, partecipanti…",
+    "hint": "Digita almeno 2 caratteri",
+    "loading": "Ricerca…",
+    "noResults": "Nessun evento corrispondente",
+    "noVisibleCalendars": "Seleziona un calendario per cercare"
   },
   "calendarViews": {
     "month": "Mese",
