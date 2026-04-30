@@ -5,6 +5,7 @@ import type {
   EventListArgs,
   ReminderType,
   SearchContactsArgs,
+  SearchEventsArgs,
   StoredAccount,
   SyncStatus,
   UserSettings,
@@ -532,6 +533,48 @@ class AppDatabase {
       FROM events
       WHERE ${filters.join(" AND ")}
       ORDER BY start_sort ASC, subject COLLATE NOCASE ASC
+    `);
+
+    return statement
+      .all(parameters)
+      .map((row) => calendarEventSchema.parse(JSON.parse(readStringProperty(row, "payload_json"))));
+  }
+
+  searchEvents(args: SearchEventsArgs): CalendarEvent[] {
+    const normalizedQuery = normalizeContactSearchValue(args.query);
+    if (!normalizedQuery) {
+      return [];
+    }
+
+    const escaped = escapeLikePattern(normalizedQuery);
+    const filters: string[] = [
+      String.raw`(LOWER(subject) LIKE @contains ESCAPE '\' OR LOWER(payload_json) LIKE @contains ESCAPE '\')`,
+    ];
+    const parameters: Record<string, number | string> = {
+      contains: `%${escaped}%`,
+      prefix: `${escaped}%`,
+      limit: args.limit,
+    };
+
+    if (args.calendarIds?.length) {
+      const placeholders = args.calendarIds.map((_calendarId, index) => `@calendar_${index}`);
+      filters.push(`calendar_id IN (${placeholders.join(", ")})`);
+      args.calendarIds.forEach((calendarId, index) => {
+        parameters[`calendar_${index}`] = calendarId;
+      });
+    }
+
+    const statement = this.db.prepare(String.raw`
+      SELECT payload_json,
+        CASE
+          WHEN LOWER(subject) LIKE @prefix ESCAPE '\' THEN 0
+          WHEN LOWER(subject) LIKE @contains ESCAPE '\' THEN 1
+          ELSE 2
+        END AS sort_rank
+      FROM events
+      WHERE ${filters.join(" AND ")}
+      ORDER BY sort_rank, start_sort DESC
+      LIMIT @limit
     `);
 
     return statement

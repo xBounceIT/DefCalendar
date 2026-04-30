@@ -1,0 +1,331 @@
+import type { CalendarEvent, CalendarSummary, UserSettings } from "@shared/schemas";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
+
+import { formatLocalizedDate } from "../date-formatting";
+
+interface EventSearchDialogProps {
+  calendarMap: Map<string, CalendarSummary>;
+  isOpen: boolean;
+  onClose: () => void;
+  onSelect: (event: CalendarEvent) => void;
+  timeFormat: UserSettings["timeFormat"];
+  visibleCalendarIds: string[];
+}
+
+const DEBOUNCE_MS = 200;
+const MIN_QUERY_LENGTH = 2;
+const RESULT_LIMIT = 30;
+
+function SearchIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      fill="none"
+      height="18"
+      viewBox="0 0 24 24"
+      width="18"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+      <path d="M20 20l-3.5-3.5" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg fill="none" height="18" viewBox="0 0 24 24" width="18" xmlns="http://www.w3.org/2000/svg">
+      <path
+        d="M18 6L6 18M6 6l12 12"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
+function formatEventStart(
+  event: CalendarEvent,
+  timeFormat: UserSettings["timeFormat"],
+  allDayLabel: string,
+): string {
+  const start = new Date(event.start);
+  if (Number.isNaN(start.getTime())) {
+    return "";
+  }
+
+  const dateLabel = formatLocalizedDate(
+    start,
+    { day: "numeric", month: "short", weekday: "short", year: "numeric" },
+    timeFormat,
+  );
+
+  if (event.isAllDay) {
+    return `${dateLabel} · ${allDayLabel}`;
+  }
+
+  const timeLabel = formatLocalizedDate(start, { hour: "numeric", minute: "2-digit" }, timeFormat);
+
+  return `${dateLabel} · ${timeLabel}`;
+}
+
+function getCalendarColor(calendar: CalendarSummary | undefined): null | string {
+  if (!calendar) {
+    return null;
+  }
+
+  return calendar.userColor ?? calendar.color ?? null;
+}
+
+function EventSearchDialog({
+  calendarMap,
+  isOpen,
+  onClose,
+  onSelect,
+  timeFormat,
+  visibleCalendarIds,
+}: EventSearchDialogProps) {
+  const { t } = useTranslation();
+  const [inputValue, setInputValue] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const resultsRef = useRef<HTMLUListElement>(null);
+
+  const sortedCalendarIds = useMemo(
+    () => [...visibleCalendarIds].toSorted((a, b) => a.localeCompare(b)),
+    [visibleCalendarIds],
+  );
+
+  const trimmedQuery = inputValue.trim();
+  const isQueryEligible = trimmedQuery.length >= MIN_QUERY_LENGTH;
+
+  useEffect(() => {
+    if (!isOpen) {
+      setInputValue("");
+      setDebouncedQuery("");
+      setActiveIndex(0);
+      return;
+    }
+
+    const focusTimeout = globalThis.setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+
+    return () => {
+      globalThis.clearTimeout(focusTimeout);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isQueryEligible) {
+      setDebouncedQuery("");
+      return;
+    }
+
+    const timeoutId = globalThis.setTimeout(() => {
+      setDebouncedQuery(trimmedQuery);
+    }, DEBOUNCE_MS);
+
+    return () => {
+      globalThis.clearTimeout(timeoutId);
+    };
+  }, [isQueryEligible, trimmedQuery]);
+
+  const searchQuery = useQuery({
+    enabled: isOpen && debouncedQuery.length >= MIN_QUERY_LENGTH,
+    queryFn: () =>
+      globalThis.calendarApi.events.search({
+        calendarIds: sortedCalendarIds,
+        limit: RESULT_LIMIT,
+        query: debouncedQuery,
+      }),
+    queryKey: ["events", "search", debouncedQuery, sortedCalendarIds],
+    staleTime: 30_000,
+  });
+
+  const results = searchQuery.data ?? [];
+  const hasVisibleCalendars = visibleCalendarIds.length > 0;
+
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [searchQuery.data]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const list = resultsRef.current;
+    if (!list) {
+      return;
+    }
+
+    const activeEl = list.querySelector<HTMLElement>(`[data-result-index="${activeIndex}"]`);
+    if (activeEl) {
+      activeEl.scrollIntoView({ block: "nearest" });
+    }
+  }, [activeIndex, isOpen]);
+
+  if (!isOpen) {
+    return null;
+  }
+
+  function handleKeyDown(keyEvent: React.KeyboardEvent<HTMLDivElement>): void {
+    if (keyEvent.key === "Escape") {
+      keyEvent.preventDefault();
+      onClose();
+      return;
+    }
+
+    if (results.length === 0) {
+      return;
+    }
+
+    if (keyEvent.key === "ArrowDown") {
+      keyEvent.preventDefault();
+      setActiveIndex((index) => (index + 1) % results.length);
+      return;
+    }
+
+    if (keyEvent.key === "ArrowUp") {
+      keyEvent.preventDefault();
+      setActiveIndex((index) => (index - 1 + results.length) % results.length);
+      return;
+    }
+
+    if (keyEvent.key === "Enter") {
+      keyEvent.preventDefault();
+      const selected = results[activeIndex];
+      if (selected) {
+        onSelect(selected);
+      }
+    }
+  }
+
+  let body: React.ReactNode = null;
+  if (!hasVisibleCalendars) {
+    body = <div className="event-search-dialog__empty">{t("eventSearch.noVisibleCalendars")}</div>;
+  } else if (!isQueryEligible) {
+    body = <div className="event-search-dialog__empty">{t("eventSearch.hint")}</div>;
+  } else if (searchQuery.isLoading || (searchQuery.isFetching && results.length === 0)) {
+    body = <div className="event-search-dialog__empty">{t("eventSearch.loading")}</div>;
+  } else if (results.length === 0) {
+    body = <div className="event-search-dialog__empty">{t("eventSearch.noResults")}</div>;
+  } else {
+    body = (
+      <ul className="event-search-dialog__results" ref={resultsRef} role="listbox">
+        {results.map((event, index) => {
+          const calendar = calendarMap.get(event.calendarId);
+          const color = getCalendarColor(calendar);
+          const subject = event.subject || t("reminder.untitledEvent");
+          const dateLabel = formatEventStart(event, timeFormat, t("eventEditor.allDay"));
+          const calendarName = calendar?.name ?? t("dateFormatting.fallbackCalendar");
+          const isPrivate = event.sensitivity === "private";
+          const trimmedLocation = event.location?.trim() ?? "";
+          const showLocation = !isPrivate && trimmedLocation.length > 0;
+          const isActive = index === activeIndex;
+
+          let className = "event-search-result";
+          if (isActive) {
+            className += " event-search-result--active";
+          }
+
+          return (
+            <li
+              aria-selected={isActive}
+              className={className}
+              data-result-index={index}
+              key={`${event.calendarId}:${event.id}`}
+              onClick={() => onSelect(event)}
+              onKeyDown={(keyEvent) => {
+                if (keyEvent.key === "Enter" || keyEvent.key === " ") {
+                  keyEvent.preventDefault();
+                  onSelect(event);
+                }
+              }}
+              onMouseEnter={() => setActiveIndex(index)}
+              role="option"
+              tabIndex={-1}
+            >
+              <span
+                aria-hidden="true"
+                className="event-search-result__color"
+                style={color ? { backgroundColor: color } : undefined}
+              />
+              <span className="event-search-result__body">
+                <span className="event-search-result__title">{subject}</span>
+                <span className="event-search-result__meta">
+                  <span>{dateLabel}</span>
+                  <span className="event-search-result__separator" aria-hidden="true">
+                    ·
+                  </span>
+                  <span>{calendarName}</span>
+                  {showLocation ? (
+                    <>
+                      <span className="event-search-result__separator" aria-hidden="true">
+                        ·
+                      </span>
+                      <span className="event-search-result__location">{trimmedLocation}</span>
+                    </>
+                  ) : null}
+                </span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+
+  return (
+    <div className="dialog-scrim" onKeyDown={handleKeyDown} role="presentation">
+      <button
+        aria-label={t("common.close")}
+        className="dialog-scrim__dismiss"
+        onClick={onClose}
+        type="button"
+      />
+      <div
+        aria-modal="true"
+        className="dialog-card event-search-dialog"
+        role="dialog"
+        aria-labelledby="event-search-dialog-title"
+      >
+        <header className="event-search-dialog__header">
+          <h3 id="event-search-dialog-title">{t("eventSearch.title")}</h3>
+          <button
+            aria-label={t("common.close")}
+            className="event-search-dialog__close"
+            onClick={onClose}
+            type="button"
+          >
+            <CloseIcon />
+          </button>
+        </header>
+        <div className="event-search-dialog__input-row">
+          <span aria-hidden="true" className="event-search-dialog__input-icon">
+            <SearchIcon />
+          </span>
+          <input
+            aria-label={t("eventSearch.title")}
+            className="event-search-dialog__input"
+            disabled={!hasVisibleCalendars}
+            onChange={(changeEvent) => setInputValue(changeEvent.target.value)}
+            placeholder={t("eventSearch.placeholder")}
+            ref={inputRef}
+            type="search"
+            value={inputValue}
+          />
+        </div>
+        {body}
+      </div>
+    </div>
+  );
+}
+
+export default EventSearchDialog;

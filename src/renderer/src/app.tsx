@@ -41,6 +41,7 @@ import CalendarSelectionScreen from "./components/calendar-selection-screen";
 import SettingsDialog from "./components/settings-dialog";
 import type { EditorState } from "./event-editor-state";
 import EventEditorDialog from "./components/event-editor-dialog";
+import EventSearchDialog from "./components/event-search-dialog";
 import TitleBar from "./components/title-bar";
 import UpdateAvailablePopup from "./components/update-available-popup";
 import WorkspacePanel from "./components/workspace-panel";
@@ -98,6 +99,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   const [editorState, setEditorState] = useState<EditorState | null>(null);
   const [pendingSignInMode, setPendingSignInMode] = useState<AuthSignInMode>("user");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [showAuthScreen, setShowAuthScreen] = useState(false);
   const [showCalendarSelection, setShowCalendarSelection] = useState(false);
   const [isApplyingCalendarSelection, setIsApplyingCalendarSelection] = useState(false);
@@ -540,6 +542,20 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     });
   }
 
+  function handleSearchResultSelect(eventData: CalendarEvent): void {
+    setIsSearchOpen(false);
+    setSelectedDate(eventData.start);
+    const targetDate = new Date(eventData.start);
+    if (!Number.isNaN(targetDate.getTime())) {
+      calendarRef.current?.getApi().gotoDate(targetDate);
+    }
+    setDialogError(null);
+    setEditorState({
+      event: eventData,
+      mode: "edit",
+    });
+  }
+
   function handleJoinMeeting(event: CalendarEvent): void {
     const joinUrl = event.onlineMeeting?.joinUrl;
     if (joinUrl) {
@@ -871,6 +887,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         }}
         onJoinMeeting={handleJoinMeeting}
         onNext={handleNext}
+        onOpenSearch={() => setIsSearchOpen(true)}
         onPrev={handlePrev}
         onToday={handleToday}
         onViewSelect={handleViewSelect}
@@ -897,6 +914,14 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
               queryClient.setQueryData(["settings"], previousSettings);
             });
         }}
+      />
+      <EventSearchDialog
+        calendarMap={calendarMap}
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        onSelect={handleSearchResultSelect}
+        timeFormat={appSettings.timeFormat}
+        visibleCalendarIds={visibleCalendarIds}
       />
       <EventEditorDialog
         accounts={accounts}

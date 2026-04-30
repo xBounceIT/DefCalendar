@@ -34,6 +34,7 @@ interface WorkspacePanelProps {
   onEventResize: (changeInfo: EventResizeDoneArg) => void;
   onJoinMeeting: (event: CalendarEvent) => void;
   onNext: () => void;
+  onOpenSearch: () => void;
   onPrev: () => void;
   onToday: () => void;
   onViewSelect: (view: CalendarView) => void;
@@ -90,6 +91,24 @@ function PlusIcon() {
     >
       <line x1="12" y1="5" x2="12" y2="19" />
       <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="11" cy="11" r="7" />
+      <line x1="20" y1="20" x2="16.5" y2="16.5" />
     </svg>
   );
 }
@@ -195,13 +214,38 @@ function NewEventButton({
   );
 }
 
+function SearchButton({
+  hasVisibleCalendars,
+  onOpenSearch,
+}: {
+  hasVisibleCalendars: boolean;
+  onOpenSearch: () => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <button
+      aria-label={t("workspace.search")}
+      className="icon-button"
+      disabled={!hasVisibleCalendars}
+      onClick={onOpenSearch}
+      title={t("workspace.search")}
+      type="button"
+    >
+      <SearchIcon />
+    </button>
+  );
+}
+
 function WorkspaceHeader(
   props: Pick<
     WorkspacePanelProps,
     | "activeView"
     | "canCreateEvent"
+    | "hasVisibleCalendars"
     | "onCreateEvent"
     | "onNext"
+    | "onOpenSearch"
     | "onPrev"
     | "onToday"
     | "onViewSelect"
@@ -215,6 +259,10 @@ function WorkspaceHeader(
         <DateDisplay selectedDate={props.selectedDate} view={props.activeView} />
       </div>
       <div className="workspace-header-right">
+        <SearchButton
+          hasVisibleCalendars={props.hasVisibleCalendars}
+          onOpenSearch={props.onOpenSearch}
+        />
         <ViewSelector activeView={props.activeView} onViewSelect={props.onViewSelect} />
         <NewEventButton canCreateEvent={props.canCreateEvent} onCreateEvent={props.onCreateEvent} />
       </div>
@@ -247,8 +295,10 @@ function WorkspacePanel(props: WorkspacePanelProps) {
       <WorkspaceHeader
         activeView={props.activeView}
         canCreateEvent={props.canCreateEvent}
+        hasVisibleCalendars={props.hasVisibleCalendars}
         onCreateEvent={props.onCreateEvent}
         onNext={props.onNext}
+        onOpenSearch={props.onOpenSearch}
         onPrev={props.onPrev}
         onToday={props.onToday}
         onViewSelect={props.onViewSelect}
