@@ -91,7 +91,8 @@
     "noCalendarsHint": "Enable at least one Exchange calendar from the left sidebar to populate the view.",
     "moreEvents": "+{{count}}",
     "ownerTooltip": "You're the owner",
-    "copyEvent": "Copy event"
+    "copyEvent": "Copy event",
+    "eventCopied": "Event copied"
   },
   "dayEventsTable": {
     "title": "Title",

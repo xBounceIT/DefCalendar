@@ -1774,6 +1774,7 @@ button {
   min-width: 0;
   flex: 1 1 auto;
   justify-content: space-between;
+  position: relative;
 }
 
 .calendar-event-content > .fc-event-time {

@@ -235,13 +235,13 @@ function EmptyState() {
 }
 
 interface EventCopyButtonProps {
-  ariaLabel: string;
   calendarId: string;
   eventId: string;
   onCopy: (calendarId: string, eventId: string) => void;
 }
 
-function EventCopyButton({ ariaLabel, calendarId, eventId, onCopy }: EventCopyButtonProps) {
+function EventCopyButton({ calendarId, eventId, onCopy }: EventCopyButtonProps) {
+  const { t } = useTranslation();
   const [recentlyCopied, setRecentlyCopied] = React.useState(false);
   const timeoutRef = React.useRef<null | ReturnType<typeof globalThis.setTimeout>>(null);
 
@@ -268,9 +268,12 @@ function EventCopyButton({ ariaLabel, calendarId, eventId, onCopy }: EventCopyBu
     }, 1500);
   }
 
+  const ariaLabel = recentlyCopied ? t("calendarBoard.eventCopied") : t("calendarBoard.copyEvent");
+
   return (
     <button
       aria-label={ariaLabel}
+      aria-live="polite"
       className={`calendar-event-content__copy-btn${
         recentlyCopied ? " calendar-event-content__copy-btn--copied" : ""
       }`}
@@ -358,18 +361,13 @@ function CalendarSurface({
           {hasTime ? <span className="fc-event-time">{info.timeText}</span> : null}
           <span className="fc-event-title">{info.event.title}</span>
           {calendarId && eventId ? (
-            <EventCopyButton
-              ariaLabel={t("calendarBoard.copyEvent")}
-              calendarId={calendarId}
-              eventId={eventId}
-              onCopy={onEventCopy}
-            />
+            <EventCopyButton calendarId={calendarId} eventId={eventId} onCopy={onEventCopy} />
           ) : null}
           {hasReminder ? <BellIcon /> : null}
         </div>
       );
     },
-    [onEventCopy, t],
+    [onEventCopy],
   );
 
   const renderedTooltip = hoverTooltip
