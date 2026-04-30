@@ -115,9 +115,12 @@ function EventEditorDialog(props: EventEditorDialogProps) {
   const [attachments, setAttachments] = useState<EventAttachment[]>([]);
   const [attachmentsBusy, setAttachmentsBusy] = useState(false);
   const [form, setForm] = useState<EditorFormState | null>(null);
+  const [initialForm, setInitialForm] = useState<EditorFormState | null>(null);
 
   useEffect(() => {
-    setForm(buildFormState(props.state));
+    const next = buildFormState(props.state);
+    setForm(next);
+    setInitialForm(next);
   }, [props.state]);
 
   const attachmentSourceEvent = props.state?.mode === "edit" ? props.state.event : null;
@@ -155,6 +158,12 @@ function EventEditorDialog(props: EventEditorDialogProps) {
       cancelled = true;
     };
   }, [attachmentSourceEvent, props.onListAttachments]);
+
+  const isDirty = useMemo(
+    () =>
+      form !== null && initialForm !== null && JSON.stringify(form) !== JSON.stringify(initialForm),
+    [form, initialForm],
+  );
 
   if (!props.state || !form) {
     return null;
@@ -416,7 +425,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
             {!readOnlyForAttendee && (
               <button
                 className="primary-button"
-                disabled={props.busy || form.subject.trim().length === 0}
+                disabled={props.busy || form.subject.trim().length === 0 || (isEdit && !isDirty)}
                 onClick={() => {
                   void props.onSave(buildDraft(form, editedEvent));
                 }}

@@ -175,6 +175,12 @@ function toLocalIso(value: string): string {
   return new Date(value).toISOString();
 }
 
+function editSubject(value: string): void {
+  fireEvent.change(screen.getByPlaceholderText("Subject"), {
+    target: { value },
+  });
+}
+
 afterEach(() => {
   cleanup();
 });
@@ -186,6 +192,7 @@ describe("event editor dialog", () => {
     expect(await screen.findByRole("button", { name: "0 min" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "5 minutes" })).toBeNull();
 
+    editSubject("Planning Updated");
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
 
     expect(onSave).toHaveBeenCalledWith(
@@ -213,9 +220,7 @@ describe("event editor dialog", () => {
     const option2330 = screen.getByText("23:30");
     fireEvent.click(option2330);
 
-    fireEvent.change(screen.getByPlaceholderText("Subject"), {
-      target: { value: "Late event" },
-    });
+    editSubject("Late event");
     fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
 
     expect(onSave).toHaveBeenCalledWith(
@@ -244,9 +249,7 @@ describe("event editor dialog", () => {
     const option2330 = screen.getByText("23:30");
     fireEvent.click(option2330);
 
-    fireEvent.change(screen.getByPlaceholderText("Subject"), {
-      target: { value: "Late event" },
-    });
+    editSubject("Late event");
     fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
 
     expect(onSave).toHaveBeenCalledWith(
@@ -274,9 +277,7 @@ describe("event editor dialog", () => {
       target: { value: "2026-01-20" },
     });
 
-    fireEvent.change(screen.getByPlaceholderText("Subject"), {
-      target: { value: "Late event" },
-    });
+    editSubject("Late event");
     fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
 
     expect(onSave).toHaveBeenCalledWith(
@@ -314,9 +315,7 @@ describe("event editor dialog", () => {
       },
     });
 
-    fireEvent.change(screen.getByPlaceholderText("Subject"), {
-      target: { value: "Planning" },
-    });
+    editSubject("Planning");
     const requiredInput = screen.getByRole("textbox", { name: "Required attendees" });
     const optionalInput = screen.getByRole("textbox", { name: "Optional attendees" });
 
@@ -372,6 +371,7 @@ describe("event editor dialog", () => {
       },
     });
 
+    editSubject("Planning Updated");
     fireEvent.click(screen.getAllByRole("button", { name: "Save Changes" })[0]!);
 
     expect(onSave).toHaveBeenCalledWith(
@@ -434,9 +434,7 @@ describe("event editor dialog", () => {
       },
     });
 
-    fireEvent.change(screen.getByPlaceholderText("Subject"), {
-      target: { value: "Planning" },
-    });
+    editSubject("Planning");
 
     const requiredInput = screen.getByRole("textbox", { name: "Required attendees" });
     fireEvent.focus(requiredInput);
@@ -482,9 +480,7 @@ describe("event editor dialog", () => {
       },
     });
 
-    fireEvent.change(screen.getByPlaceholderText("Subject"), {
-      target: { value: "Planning" },
-    });
+    editSubject("Planning");
     const requiredInput = screen.getByRole("textbox", { name: "Required attendees" });
     const optionalInput = screen.getByRole("textbox", { name: "Optional attendees" });
 
@@ -566,6 +562,7 @@ describe("event editor dialog", () => {
     expect(within(requiredRow as HTMLElement).getByText("alice@example.com")).toBeInTheDocument();
     expect(within(optionalRow as HTMLElement).getByText("bob@example.com")).toBeInTheDocument();
 
+    editSubject("Planning Updated");
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
 
     expect(onSave).toHaveBeenCalledWith(
@@ -850,5 +847,39 @@ describe("event editor dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Refuse without sending" }));
 
     expect(onRespond).toHaveBeenCalledWith(attendeeEvent, "decline", "", false);
+  });
+
+  it("disables Save in edit mode until the form has unsaved changes", () => {
+    renderDialog();
+
+    const saveButton = screen.getByRole("button", { name: "Save Changes" });
+    expect(saveButton).toBeDisabled();
+
+    editSubject("Planning Updated");
+    expect(saveButton).toBeEnabled();
+
+    editSubject("Planning");
+    expect(saveButton).toBeDisabled();
+  });
+
+  it("keeps Save enabled in create/clone mode even without edits", () => {
+    renderDialog({
+      state: {
+        allDay: false,
+        calendarId: "calendar-1",
+        draft: {
+          calendarId: "calendar-1",
+          end: "2026-03-30T10:00:00.000Z",
+          isAllDay: false,
+          start: "2026-03-30T09:00:00.000Z",
+          subject: "Cloned planning",
+        },
+        end: "2026-03-30T10:00:00.000Z",
+        mode: "create",
+        start: "2026-03-30T09:00:00.000Z",
+      },
+    });
+
+    expect(screen.getByRole("button", { name: "Create Event" })).toBeEnabled();
   });
 });

@@ -708,7 +708,7 @@ class GraphCalendarService {
     const hasAttachmentChanges =
       draft.attachmentIdsToRemove.length > 0 || draft.attachmentsToAdd.length > 0;
 
-    let updated = currentEvent ?? null;
+    let updated: CalendarEvent | null = null;
     if (Object.keys(payload).length > 0) {
       const headers: Record<string, string> = {
         "Content-Type": "application/json",

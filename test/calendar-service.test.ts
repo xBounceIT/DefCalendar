@@ -427,16 +427,33 @@ describe("graph calendar service request handling", () => {
     expect(updated.etag).toBe('"etag-2"');
   });
 
-  it("skips the graph patch for no-op event detail saves", async () => {
-    const fetchMock = vi.fn();
+  it("skips the graph patch but refetches the event for no-op event detail saves", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      Response.json(
+        createGraphEvent({
+          "@odata.etag": '"etag-2"',
+          body: {
+            content: "Agenda",
+            contentType: "HTML",
+          },
+          isOrganizer: true,
+          location: { displayName: "Room 1" },
+        }),
+      ),
+    );
     vi.stubGlobal("fetch", fetchMock);
 
     const service = createService();
     const current = createCalendarEvent();
     const updated = await service.updateEvent(createEventDraft(), "account-1", current);
 
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(updated).toBe(current);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const requestInit = fetchMock.mock.calls[0][1];
+    expect(requestInit?.method ?? "GET").toBe("GET");
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/me/events/event-1?");
+    expect(updated).not.toBe(current);
+    expect(updated.id).toBe("event-1");
+    expect(updated.etag).toBe('"etag-2"');
   });
 
   it("retries an event detail update once with the latest etag after a stale conflict", async () => {
