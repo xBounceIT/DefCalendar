@@ -427,7 +427,7 @@ describe("reminder service", () => {
 
     await fixture.service.checkNow();
 
-    expect(fixture.db.listReminderCandidates).toHaveBeenCalledTimes(0);
+    expect(fixture.db.listReminderCandidates).not.toHaveBeenCalled();
     expect(fixture.db.listReminderEventsByStartRange).toHaveBeenCalledWith(
       ["calendar-1"],
       "2026-03-16T09:45:00.000Z",

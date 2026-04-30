@@ -819,13 +819,13 @@ describe("app startup", () => {
       await waitFor(() => {
         expect(calendarApi.categories.list).toHaveBeenCalledWith({ homeAccountId: "account-1" });
         const calendarEvents = (capturedCalendarProps?.events as EventInput[] | undefined) ?? [];
-        expect(calendarEvents.length).toBe(2);
+        expect(calendarEvents).toHaveLength(2);
         expect(calendarEvents[0]?.backgroundColor).toBe("rgba(37, 99, 235, 0.2)");
       });
 
       const calendarEvents = capturedCalendarProps?.events as EventInput[];
 
-      expect(calendarEvents[0]).toEqual(
+      expect(calendarEvents[0]).toStrictEqual(
         expect.objectContaining({
           backgroundColor: "rgba(37, 99, 235, 0.2)",
           borderColor: "#2563eb",
@@ -834,7 +834,7 @@ describe("app startup", () => {
           }),
         }),
       );
-      expect(calendarEvents[1]).toEqual(
+      expect(calendarEvents[1]).toStrictEqual(
         expect.objectContaining({
           extendedProps: expect.objectContaining({
             calendarColor: "#bde7f6",
@@ -878,7 +878,7 @@ describe("app startup", () => {
       await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
       await waitFor(() => {
         const calendarEvents = (capturedCalendarProps?.events as EventInput[] | undefined) ?? [];
-        expect(calendarEvents.length).toBe(2);
+        expect(calendarEvents).toHaveLength(2);
       });
 
       const calendarEvents = capturedCalendarProps?.events as EventInput[];

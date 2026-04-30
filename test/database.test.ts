@@ -219,7 +219,7 @@ describe("database", () => {
         "2026-03-28T12:00:00.000Z",
         "2026-03-30T12:00:00.000Z",
       ),
-    ).toEqual([
+    ).toStrictEqual([
       expect.objectContaining({
         dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z:pre",
         dismissedAt: null,

@@ -46,8 +46,8 @@ describe("shared schemas", () => {
     expect(defaults.timeFormat).toBe("system");
     expect(defaults.syncIntervalMinutes).toBe(1);
     expect(defaults).toMatchObject({ localReminderOverrideEnabled: false });
-    expect(defaults.localReminderRules).toEqual([{ minutes: 15, when: "before" }]);
-    expect(defaults.visibleCalendarIds).toEqual([]);
+    expect(defaults.localReminderRules).toStrictEqual([{ minutes: 15, when: "before" }]);
+    expect(defaults.visibleCalendarIds).toStrictEqual([]);
   });
 
   it("accepts calendar summaries with account ownership", () => {

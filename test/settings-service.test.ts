@@ -37,7 +37,7 @@ describe("settings service", () => {
       knownCalendarIds: ["calendar-a", "calendar-b"],
     });
 
-    expect(fixture.readSettings().visibleCalendarIds).toEqual(["calendar-a"]);
+    expect(fixture.readSettings().visibleCalendarIds).toStrictEqual(["calendar-a"]);
   });
 
   it("preserves visible calendars from other accounts", () => {
@@ -48,7 +48,7 @@ describe("settings service", () => {
       knownCalendarIds: ["calendar-a"],
     });
 
-    expect(fixture.readSettings().visibleCalendarIds).toEqual([
+    expect(fixture.readSettings().visibleCalendarIds).toStrictEqual([
       "calendar-a",
       "calendar-b",
       "calendar-c",
@@ -63,7 +63,7 @@ describe("settings service", () => {
       knownCalendarIds: ["calendar-a"],
     });
 
-    expect(fixture.readSettings().visibleCalendarIds).toEqual(["calendar-a", "calendar-b"]);
+    expect(fixture.readSettings().visibleCalendarIds).toStrictEqual(["calendar-a", "calendar-b"]);
   });
 
   it("removes deleted calendars from visible settings", () => {
@@ -74,7 +74,7 @@ describe("settings service", () => {
       knownCalendarIds: ["calendar-a", "calendar-b"],
     });
 
-    expect(fixture.readSettings().visibleCalendarIds).toEqual(["calendar-a"]);
+    expect(fixture.readSettings().visibleCalendarIds).toStrictEqual(["calendar-a"]);
   });
 
   it("marks all calendars visible on first sync", () => {
@@ -85,7 +85,7 @@ describe("settings service", () => {
       knownCalendarIds: [],
     });
 
-    expect(fixture.readSettings().visibleCalendarIds).toEqual(["calendar-a", "calendar-b"]);
+    expect(fixture.readSettings().visibleCalendarIds).toStrictEqual(["calendar-a", "calendar-b"]);
   });
 
   it("persists the auto sync interval", () => {
@@ -108,7 +108,7 @@ describe("settings service", () => {
     });
 
     expect(fixture.readSettings()).toMatchObject({ localReminderOverrideEnabled: true });
-    expect(fixture.readSettings().localReminderRules).toEqual([
+    expect(fixture.readSettings().localReminderRules).toStrictEqual([
       { minutes: 20, when: "before" },
       { minutes: 10, when: "after" },
     ]);

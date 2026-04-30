@@ -112,9 +112,9 @@ describe("settings dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "About" }));
     fireEvent.click(await screen.findByText("Release notes"));
 
-    expect(
-      await screen.findByRole("heading", { level: 2, name: "Highlights" }),
-    ).toBeInTheDocument();
+    await expect(
+      screen.findByRole("heading", { level: 2, name: "Highlights" }),
+    ).resolves.toBeInTheDocument();
     expect(screen.getByText("Security update")).toBeInTheDocument();
     expect(screen.getByText("Fix tray refresh issues")).toBeInTheDocument();
     expect(screen.getByText("Improve sync recovery")).toBeInTheDocument();

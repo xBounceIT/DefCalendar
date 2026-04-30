@@ -9,7 +9,7 @@ describe("app config", () => {
 
     expect(config.clientId).toBe(bundledMsalApp.clientId);
     expect(config.authority).toBe(bundledMsalApp.authority);
-    expect(config.graphScopes).toEqual([
+    expect(config.graphScopes).toStrictEqual([
       "openid",
       "profile",
       "offline_access",
@@ -30,7 +30,7 @@ describe("app config", () => {
 
     expect(config.clientId).toBe(env.MSAL_CLIENT_ID);
     expect(config.authority).toBe(env.MSAL_AUTHORITY);
-    expect(config.graphScopes).toEqual([
+    expect(config.graphScopes).toStrictEqual([
       "User.Read",
       "Calendars.ReadWrite",
       "MailboxSettings.Read",

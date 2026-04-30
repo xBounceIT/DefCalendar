@@ -189,7 +189,7 @@ describe("event editor dialog", () => {
   it("shows and preserves a zero-minute reminder", async () => {
     const { onSave } = renderDialog();
 
-    expect(await screen.findByRole("button", { name: "0 min" })).toBeInTheDocument();
+    await expect(screen.findByRole("button", { name: "0 min" })).resolves.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "5 minutes" })).toBeNull();
 
     editSubject("Planning Updated");

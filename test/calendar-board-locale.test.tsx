@@ -157,10 +157,10 @@ describe("calendar board locale", () => {
   it("passes the day click callback to FullCalendar", async () => {
     await renderBoard("en");
 
-    expect(capturedCalendarProps?.dateClick).toEqual(expect.any(Function));
-    expect(capturedCalendarProps?.dayCellClassNames).toEqual(expect.any(Function));
-    expect(capturedCalendarProps?.eventMouseEnter).toEqual(expect.any(Function));
-    expect(capturedCalendarProps?.eventMouseLeave).toEqual(expect.any(Function));
+    expect(capturedCalendarProps?.dateClick).toStrictEqual(expect.any(Function));
+    expect(capturedCalendarProps?.dayCellClassNames).toStrictEqual(expect.any(Function));
+    expect(capturedCalendarProps?.eventMouseEnter).toStrictEqual(expect.any(Function));
+    expect(capturedCalendarProps?.eventMouseLeave).toStrictEqual(expect.any(Function));
     expect(capturedCalendarProps?.selectable).toBeUndefined();
     expect(capturedCalendarProps?.select).toBeUndefined();
     expect(capturedCalendarProps?.selectMirror).toBeUndefined();

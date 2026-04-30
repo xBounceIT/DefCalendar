@@ -208,8 +208,8 @@ describe("sync service", () => {
       calendarIds: ["calendar-a", "calendar-b"],
       knownCalendarIds: [],
     });
-    expect(fixture.graph.listCalendarView).toHaveBeenCalledTimes(0);
-    expect(fixture.reminders.checkNow).toHaveBeenCalledTimes(0);
+    expect(fixture.graph.listCalendarView).not.toHaveBeenCalled();
+    expect(fixture.reminders.checkNow).not.toHaveBeenCalled();
   });
 
   it("syncs all signed-in accounts during manual refresh", async () => {
@@ -341,9 +341,9 @@ describe("sync service", () => {
       counts: null,
       state: "idle",
     });
-    expect(fixture.graph.listCalendarView).toHaveBeenCalledTimes(0);
-    expect(fixture.db.replaceEventsForCalendarRange).toHaveBeenCalledTimes(0);
-    expect(fixture.reminders.checkNow).toHaveBeenCalledTimes(0);
+    expect(fixture.graph.listCalendarView).not.toHaveBeenCalled();
+    expect(fixture.db.replaceEventsForCalendarRange).not.toHaveBeenCalled();
+    expect(fixture.reminders.checkNow).not.toHaveBeenCalled();
   });
 
   it("keeps calendar discovery working when contacts sync fails", async () => {
@@ -378,7 +378,7 @@ describe("sync service", () => {
       fixture.service.start();
 
       await vi.advanceTimersByTimeAsync(9 * 60_000);
-      expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(0);
+      expect(fixture.graph.listCalendars).not.toHaveBeenCalled();
 
       await vi.advanceTimersByTimeAsync(60_000);
       expect(fixture.graph.listCalendars).toHaveBeenCalledOnce();
@@ -404,7 +404,7 @@ describe("sync service", () => {
       fixture.service.refreshSchedule();
 
       await vi.advanceTimersByTimeAsync(5 * 60_000);
-      expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(0);
+      expect(fixture.graph.listCalendars).not.toHaveBeenCalled();
 
       await vi.advanceTimersByTimeAsync(5 * 60_000);
       expect(fixture.graph.listCalendars).toHaveBeenCalledOnce();
@@ -420,7 +420,7 @@ describe("sync service", () => {
     const firstCalendars = createDeferred<CalendarSummary[]>();
 
     fixture.graph.listCalendars
-      .mockImplementationOnce(() => firstCalendars.promise)
+      .mockReturnValueOnce(firstCalendars.promise)
       .mockResolvedValue([createCalendar("calendar-a")]);
 
     const firstSync = fixture.service.syncAll("manual");
@@ -445,7 +445,7 @@ describe("sync service", () => {
     const firstCalendars = createDeferred<CalendarSummary[]>();
 
     fixture.graph.listCalendars
-      .mockImplementationOnce(() => firstCalendars.promise)
+      .mockReturnValueOnce(firstCalendars.promise)
       .mockResolvedValue([createCalendar("calendar-a")]);
 
     const firstSync = fixture.service.syncAll("manual");
@@ -470,7 +470,7 @@ describe("sync service", () => {
 
     fixture.graph.listCalendars = vi
       .fn()
-      .mockImplementationOnce(() => firstCalendars.promise)
+      .mockReturnValueOnce(firstCalendars.promise)
       .mockImplementation(async (homeAccountId: string) =>
         homeAccountId === "account-1"
           ? [createCalendar("calendar-a", "account-1")]
@@ -500,7 +500,7 @@ describe("sync service", () => {
     const firstCalendars = createDeferred<CalendarSummary[]>();
 
     fixture.graph.listCalendars
-      .mockImplementationOnce(() => firstCalendars.promise)
+      .mockReturnValueOnce(firstCalendars.promise)
       .mockResolvedValue([createCalendar("calendar-a")]);
 
     const firstSync = fixture.service.syncAll("manual");
