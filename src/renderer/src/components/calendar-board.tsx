@@ -275,6 +275,7 @@ function EventCopyButton({ ariaLabel, calendarId, eventId, onCopy }: EventCopyBu
         recentlyCopied ? " calendar-event-content__copy-btn--copied" : ""
       }`}
       onClick={handleClick}
+      onMouseDown={(event) => event.stopPropagation()}
       type="button"
     >
       {recentlyCopied ? <CheckIcon /> : <CopyIcon />}
