@@ -64,6 +64,8 @@
     "unicorn/prefer-add-event-listener": "off",
     "unicorn/consistent-function-scoping": "off",
     "vitest/prefer-called-times": "off",
+    "jest/prefer-called-with": "off",
+    "vitest/prefer-called-with": "off",
     "max-params": "off",
     "prefer-destructuring": "off",
     "sort-imports": "off",
@@ -117,7 +119,8 @@
         "test/**/*.tsx"
       ],
       "rules": {
-        "vitest/require-mock-type-parameters": "off"
+        "vitest/require-mock-type-parameters": "off",
+        "no-underscore-dangle": "off"
       }
     },
     {

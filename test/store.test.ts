@@ -31,7 +31,7 @@ describe("ui store setters", () => {
 
     try {
       setRange(rangeStart, rangeEnd);
-      expect(listener).toHaveBeenCalledTimes(0);
+      expect(listener).not.toHaveBeenCalled();
 
       setRange(shiftDays(rangeStart, 1), shiftDays(rangeEnd, 1));
       expect(listener).toHaveBeenCalledOnce();
@@ -47,7 +47,7 @@ describe("ui store setters", () => {
 
     try {
       setSelectedDate(selectedDate);
-      expect(listener).toHaveBeenCalledTimes(0);
+      expect(listener).not.toHaveBeenCalled();
 
       setSelectedDate(shiftDays(selectedDate, 1));
       expect(listener).toHaveBeenCalledOnce();
@@ -63,7 +63,7 @@ describe("ui store setters", () => {
 
     try {
       setActiveView(activeView);
-      expect(listener).toHaveBeenCalledTimes(0);
+      expect(listener).not.toHaveBeenCalled();
 
       const nextView = activeView === "dayGridMonth" ? "timeGridWeek" : "dayGridMonth";
       setActiveView(nextView);
