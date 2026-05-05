@@ -11,7 +11,7 @@ import type { CalendarEvent, CalendarSummary, SyncStatus } from "@shared/schemas
 
 type SyncReason = "startup" | "sign-in" | "switch-account" | "manual" | "interval" | "mutation";
 
-const DEEP_BACKFILL_DAYS = 365 * 5;
+const GRAPH_CALENDAR_VIEW_MAX_DAYS = 1825;
 
 interface SyncServiceDependencies {
   auth: MsalAuthService;
@@ -241,13 +241,15 @@ class SyncService {
         return nextStatus;
       }
 
-      const rollingRangeStart = new Date(
-        Date.now() - this.dependencies.config.syncLookBehindDays * DAY_MS,
-      ).toISOString();
-      const deepRangeStart = new Date(Date.now() - DEEP_BACKFILL_DAYS * DAY_MS).toISOString();
-      const rangeEnd = new Date(
-        Date.now() + this.dependencies.config.syncLookAheadDays * DAY_MS,
-      ).toISOString();
+      const lookAheadDays = this.dependencies.config.syncLookAheadDays;
+      const maxLookBehindDays = GRAPH_CALENDAR_VIEW_MAX_DAYS - lookAheadDays;
+      const rollingLookBehindDays = Math.min(
+        this.dependencies.config.syncLookBehindDays,
+        maxLookBehindDays,
+      );
+      const rollingRangeStart = new Date(Date.now() - rollingLookBehindDays * DAY_MS).toISOString();
+      const deepRangeStart = new Date(Date.now() - maxLookBehindDays * DAY_MS).toISOString();
+      const rangeEnd = new Date(Date.now() + lookAheadDays * DAY_MS).toISOString();
       const finishedAt = new Date().toISOString();
 
       const calendarsToStore = await Promise.all(
