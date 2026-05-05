@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { CalendarApi, NewEventNotificationItem } from "@shared/ipc";
+import type { NewEventNotificationItem } from "@shared/ipc";
 import type { EventResponseAction, RespondToEventArgs, UserSettings } from "@shared/schemas";
 import { formatEventTimeRange } from "../date-formatting";
 
@@ -34,22 +34,17 @@ function NewEventPopup({ timeFormat }: NewEventPopupProps): React.JSX.Element | 
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [items, setItems] = useState<NewEventNotificationItem[]>([]);
-  const calendarApi = (globalThis as { calendarApi?: CalendarApi }).calendarApi;
 
   useEffect(() => {
-    if (!calendarApi) {
-      return;
-    }
-
     let cancelled = false;
 
-    void calendarApi.newEventNotifications.get().then((initial) => {
+    void globalThis.calendarApi.newEventNotifications.get().then((initial) => {
       if (!cancelled) {
         setItems(initial);
       }
     });
 
-    const unsubscribe = calendarApi.newEventNotifications.onChanged((next) => {
+    const unsubscribe = globalThis.calendarApi.newEventNotifications.onChanged((next) => {
       if (!cancelled) {
         setItems(next);
       }
@@ -59,21 +54,16 @@ function NewEventPopup({ timeFormat }: NewEventPopupProps): React.JSX.Element | 
       cancelled = true;
       unsubscribe();
     };
-  }, [calendarApi]);
+  }, []);
 
   const respondMutation = useMutation({
-    mutationFn: (args: RespondToEventArgs) => {
-      if (!calendarApi) {
-        throw new Error("calendarApi not available");
-      }
-      return calendarApi.events.respond(args);
-    },
+    mutationFn: (args: RespondToEventArgs) => globalThis.calendarApi.events.respond(args),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["events"] });
     },
   });
 
-  if (!calendarApi || items.length === 0) {
+  if (items.length === 0) {
     return null;
   }
 
@@ -90,11 +80,11 @@ function NewEventPopup({ timeFormat }: NewEventPopupProps): React.JSX.Element | 
   };
 
   const handleDismissAll = () => {
-    void calendarApi.newEventNotifications.dismissAll();
+    void globalThis.calendarApi.newEventNotifications.dismissAll();
   };
 
   const handleDismissOne = (eventId: string) => {
-    void calendarApi.newEventNotifications.dismiss(eventId);
+    void globalThis.calendarApi.newEventNotifications.dismiss(eventId);
   };
 
   return (
