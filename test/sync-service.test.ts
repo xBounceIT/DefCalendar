@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { SyncService } from "../src/main/sync/sync-service";
 import type { CalendarEvent, CalendarSummary, UserSettings } from "../src/shared/schemas";
 
+const FIXTURE_LOOKBEHIND_DAYS = 30;
+const FIXTURE_LOOKAHEAD_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 interface SyncFixture {
   db: {
     getDeepBackfillCompletedAt: ReturnType<typeof vi.fn>;
@@ -148,8 +152,8 @@ function createFixture(args?: {
     auth: auth as never,
     config: {
       syncIntervalMinutes: 15,
-      syncLookAheadDays: 30,
-      syncLookBehindDays: 30,
+      syncLookAheadDays: FIXTURE_LOOKAHEAD_DAYS,
+      syncLookBehindDays: FIXTURE_LOOKBEHIND_DAYS,
     } as never,
     db: db as never,
     graph: graph as never,
@@ -529,7 +533,7 @@ describe("sync service", () => {
     expect(fixture.graph.listCalendarView).toHaveBeenCalledOnce();
     const [, rangeStart] = fixture.graph.listCalendarView.mock.calls[0] as [string, string];
     const rangeStartMs = new Date(rangeStart).getTime();
-    const fiveYearsMs = 365 * 5 * 24 * 60 * 60 * 1000;
+    const fiveYearsMs = 365 * 5 * DAY_MS;
     expect(rangeStartMs).toBeGreaterThanOrEqual(before - fiveYearsMs);
     expect(rangeStartMs).toBeLessThanOrEqual(after - fiveYearsMs);
     expect(fixture.db.markDeepBackfillCompleted).toHaveBeenCalledWith(
@@ -549,7 +553,7 @@ describe("sync service", () => {
     expect(fixture.graph.listCalendarView).toHaveBeenCalledOnce();
     const [, rangeStart] = fixture.graph.listCalendarView.mock.calls[0] as [string, string];
     const rangeStartMs = new Date(rangeStart).getTime();
-    const lookbehindMs = 30 * 24 * 60 * 60 * 1000;
+    const lookbehindMs = FIXTURE_LOOKBEHIND_DAYS * DAY_MS;
     expect(rangeStartMs).toBeGreaterThanOrEqual(before - lookbehindMs);
     expect(rangeStartMs).toBeLessThanOrEqual(after - lookbehindMs);
     expect(fixture.db.markDeepBackfillCompleted).not.toHaveBeenCalled();

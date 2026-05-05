@@ -47,4 +47,21 @@ describe("app config", () => {
     expect(config.clientId).toBe(bundledMsalApp.clientId);
     expect(config.authority).toBe(bundledMsalApp.authority);
   });
+
+  it("defaults sync window days to a year back and 90 days forward", () => {
+    const config = resolveAppConfig({});
+
+    expect(config.syncLookBehindDays).toBe(365);
+    expect(config.syncLookAheadDays).toBe(90);
+  });
+
+  it("accepts SYNC_LOOKBEHIND_DAYS up to the 3650-day maximum", () => {
+    const config = resolveAppConfig({ SYNC_LOOKBEHIND_DAYS: "3650" });
+
+    expect(config.syncLookBehindDays).toBe(3650);
+  });
+
+  it("rejects SYNC_LOOKBEHIND_DAYS above the 3650-day maximum", () => {
+    expect(() => resolveAppConfig({ SYNC_LOOKBEHIND_DAYS: "3651" })).toThrow();
+  });
 });

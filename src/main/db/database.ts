@@ -26,6 +26,8 @@ import fs from "fs-extra";
 
 const SETTINGS_KEY = "user-settings";
 
+const IDENTIFIER_PATTERN = /^[A-Z_a-z][\w]*$/;
+
 interface ReplaceEventsForCalendarRangeArgs {
   calendarId: string;
   events: CalendarEvent[];
@@ -1179,6 +1181,9 @@ class AppDatabase {
   }
 
   private hasColumn(tableName: string, columnName: string): boolean {
+    if (!IDENTIFIER_PATTERN.test(tableName)) {
+      throw new Error(`Refusing to inspect non-identifier table name: ${tableName}`);
+    }
     const tableInfo = this.db.prepare(`PRAGMA table_info(${tableName})`).all();
     return tableInfo.some(
       (col: unknown) =>
