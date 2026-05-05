@@ -2,6 +2,7 @@ import type { AppConfig } from "@main/config";
 import type AppDatabase from "@main/db/database";
 import type GraphCalendarService from "@main/graph/calendar-service";
 import type MsalAuthService from "@main/auth/msal-auth-service";
+import type NewEventNotificationService from "@main/notifications/new-event-notification-service";
 import type ReminderService from "@main/reminders/reminder-service";
 import type { ReminderCheckTrigger } from "@main/reminders/reminder-service";
 import type SettingsService from "@main/settings/settings-service";
@@ -15,6 +16,7 @@ interface SyncServiceDependencies {
   config: AppConfig;
   db: AppDatabase;
   graph: GraphCalendarService;
+  newEventNotifications: NewEventNotificationService;
   reminders: ReminderService;
   settings: SettingsService;
 }
@@ -267,6 +269,26 @@ class SyncService {
         ),
       }));
 
+      const shouldDetectNewEvents =
+        settings.newEventPopupEnabled &&
+        reason !== "startup" &&
+        reason !== "sign-in" &&
+        reason !== "switch-account";
+
+      const preSyncIdsByCalendar = new Map<string, Set<string>>();
+      if (shouldDetectNewEvents) {
+        for (const syncedCalendar of calendarsToStore) {
+          preSyncIdsByCalendar.set(
+            syncedCalendar.calendarId,
+            this.dependencies.db.listEventIdsForCalendarRange({
+              calendarId: syncedCalendar.calendarId,
+              end: rangeEnd,
+              start: rangeStart,
+            }),
+          );
+        }
+      }
+
       for (const syncedCalendar of calendarsToStore) {
         this.dependencies.db.replaceEventsForCalendarRange({
           calendarId: syncedCalendar.calendarId,
@@ -281,6 +303,22 @@ class SyncService {
           rangeEnd,
           rangeStart,
         });
+      }
+
+      if (shouldDetectNewEvents) {
+        const newEvents: CalendarEvent[] = [];
+        for (const syncedCalendar of calendarsToStore) {
+          const before = preSyncIdsByCalendar.get(syncedCalendar.calendarId) ?? new Set<string>();
+          for (const ev of syncedCalendar.events) {
+            if (!before.has(ev.id)) {
+              newEvents.push(ev);
+            }
+          }
+        }
+
+        if (newEvents.length > 0) {
+          this.dependencies.newEventNotifications.recordCandidates(newEvents);
+        }
       }
 
       const reminderTrigger: ReminderCheckTrigger =

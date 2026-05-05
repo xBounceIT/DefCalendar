@@ -8,6 +8,7 @@ interface SyncFixture {
     listCalendarIds: ReturnType<typeof vi.fn>;
     replaceContactsForAccount: ReturnType<typeof vi.fn>;
     listEvents: ReturnType<typeof vi.fn>;
+    listEventIdsForCalendarRange: ReturnType<typeof vi.fn>;
     replaceEventsForCalendarRange: ReturnType<typeof vi.fn>;
     saveSyncState: ReturnType<typeof vi.fn>;
     upsertCalendars: ReturnType<typeof vi.fn>;
@@ -108,6 +109,7 @@ function createFixture(args?: {
     listCalendarIds: vi.fn().mockReturnValue(args?.knownCalendarIds ?? []),
     replaceContactsForAccount: vi.fn(),
     listEvents: vi.fn().mockReturnValue([]),
+    listEventIdsForCalendarRange: vi.fn().mockReturnValue(new Set<string>()),
     replaceEventsForCalendarRange: vi.fn(),
     saveSyncState: vi.fn(),
     upsertCalendars: vi.fn(),
@@ -140,6 +142,14 @@ function createFixture(args?: {
     hasSession: vi.fn().mockReturnValue(true),
   };
 
+  const newEventNotifications = {
+    clear: vi.fn(),
+    dismiss: vi.fn(),
+    getItems: vi.fn().mockReturnValue([]),
+    onChange: vi.fn(),
+    recordCandidates: vi.fn(),
+  };
+
   const service = new SyncService({
     auth: auth as never,
     config: {
@@ -149,6 +159,7 @@ function createFixture(args?: {
     } as never,
     db: db as never,
     graph: graph as never,
+    newEventNotifications: newEventNotifications as never,
     reminders: reminders as never,
     settings: settings as never,
   });

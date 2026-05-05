@@ -227,6 +227,7 @@ function NotificationsSection({
     after: t("settings.sections.notifications.whenOptions.after"),
   };
   const localReminderOverrideEnabled = settings.localReminderOverrideEnabled ?? false;
+  const newEventPopupEnabled = settings.newEventPopupEnabled ?? false;
   const localReminderRules =
     settings.localReminderRules?.length > 0
       ? settings.localReminderRules
@@ -299,6 +300,17 @@ function NotificationsSection({
       <h3>{t("settings.sections.notifications.title")}</h3>
       <div className="settings-fields">
         <p className="settings-placeholder">{t("settings.sections.notifications.description")}</p>
+        <label className="toggle-field settings-notifications__toggle">
+          <input
+            checked={newEventPopupEnabled}
+            onChange={(e) => {
+              onSave({ newEventPopupEnabled: e.target.checked });
+            }}
+            type="checkbox"
+          />
+          <span className="toggle-slider" />
+          <span>{t("settings.sections.notifications.newEventPopup")}</span>
+        </label>
         <label className="toggle-field settings-notifications__toggle">
           <input
             checked={localReminderOverrideEnabled}

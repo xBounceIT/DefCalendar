@@ -31,22 +31,26 @@ import {
   syncStatusSchema,
   userSettingsPatchSchema,
 } from "@shared/schemas";
+import { z } from "zod";
 import type AppDatabase from "@main/db/database";
 import { isMissingGraphItemError } from "@main/graph/calendar-service";
 import type GraphCalendarService from "@main/graph/calendar-service";
 import type MsalAuthService from "@main/auth/msal-auth-service";
+import type NewEventNotificationService from "@main/notifications/new-event-notification-service";
 import type ReminderService from "@main/reminders/reminder-service";
 import type ReminderWindowManager from "@main/reminders/reminder-window";
 import type SettingsService from "@main/settings/settings-service";
 import type { SyncService } from "@main/sync/sync-service";
 import type UpdateService from "@main/update/update-service";
 import { app, ipcMain, shell } from "@main/electron-runtime";
+import { showAndFocusMainWindow } from "@main/window";
 import { IPC_CHANNELS } from "@shared/ipc";
 
 interface RegisterIpcDependencies {
   auth: MsalAuthService;
   db: AppDatabase;
   graph: GraphCalendarService;
+  newEventNotifications: NewEventNotificationService;
   reminders: ReminderService;
   reminderManager: ReminderWindowManager;
   settings: SettingsService;
@@ -180,6 +184,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     } else {
       dependencies.sync.reset();
     }
+    dependencies.newEventNotifications.clear();
     await dependencies.reminders.checkNow();
     const state = dependencies.auth.getAuthState();
     broadcast(IPC_CHANNELS.authStateChanged, state);
@@ -190,6 +195,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   ipcMain.handle(IPC_CHANNELS.authSwitchAccount, async (event, homeAccountId: string) => {
     validateMainSender(event);
     const state = await dependencies.auth.switchAccount(homeAccountId);
+    dependencies.newEventNotifications.clear();
     await dependencies.sync.syncAll("switch-account", homeAccountId);
     broadcast(IPC_CHANNELS.authStateChanged, state);
     broadcast(IPC_CHANNELS.syncStatusChanged, dependencies.sync.getStatus());
@@ -312,6 +318,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     const current = dependencies.db.getEvent(args.calendarId, args.eventId);
     const isSeriesTarget = targetsDifferentEvent(args.eventId, args.targetEventId);
     await dependencies.graph.respondToEvent(args, homeAccountId);
+    dependencies.newEventNotifications.dismiss(args.eventId);
 
     if (isSeriesTarget) {
       await dependencies.reminders.checkNow();
@@ -458,11 +465,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
       return;
     }
 
-    if (window.isMinimized()) {
-      window.restore();
-    }
-    window.show();
-    window.focus();
+    showAndFocusMainWindow(window);
     window.webContents.send(IPC_CHANNELS.eventsOpenInAppRequested, calendarEvent);
     dependencies.reminderManager.minimize();
   });
@@ -560,6 +563,36 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   ipcMain.handle(IPC_CHANNELS.reminderWindowMinimize, async (event) => {
     validateReminderSender(event);
     dependencies.reminderManager.minimize();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.newEventNotificationsGet, async (event) => {
+    validateMainSender(event);
+    return dependencies.newEventNotifications.getItems();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.newEventNotificationsDismiss, async (event, input) => {
+    validateMainSender(event);
+    const eventId = z.string().min(1).parse(input);
+    dependencies.newEventNotifications.dismiss(eventId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.newEventNotificationsDismissAll, async (event) => {
+    validateMainSender(event);
+    dependencies.newEventNotifications.clear();
+  });
+
+  dependencies.newEventNotifications.onChange((items) => {
+    broadcast(IPC_CHANNELS.newEventNotificationsChanged, items);
+    if (items.length === 0) {
+      return;
+    }
+
+    const window = dependencies.getMainWindow();
+    if (!window || window.isDestroyed()) {
+      return;
+    }
+
+    showAndFocusMainWindow(window);
   });
 
   dependencies.sync.onStatus((status) => {

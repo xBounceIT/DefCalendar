@@ -46,4 +46,13 @@ function createMainWindow(): BrowserWindow {
   return window;
 }
 
+function showAndFocusMainWindow(window: BrowserWindow): void {
+  if (window.isMinimized()) {
+    window.restore();
+  }
+  window.show();
+  window.focus();
+}
+
 export default createMainWindow;
+export { showAndFocusMainWindow };

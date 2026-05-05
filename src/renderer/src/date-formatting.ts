@@ -122,4 +122,51 @@ function formatSyncTimestamp(value: null | string, timeFormat: TimeFormatSetting
   });
 }
 
-export { buildEventTimeFormat, formatHeaderDate, formatLocalizedDate, formatSyncTimestamp };
+interface EventTimeRange {
+  end: string;
+  isAllDay: boolean;
+  start: string;
+}
+
+function formatEventTimeRange(item: EventTimeRange, timeFormat: TimeFormatSetting): string {
+  const startDate = new Date(item.start);
+  if (Number.isNaN(startDate.getTime())) {
+    return item.start;
+  }
+
+  if (item.isAllDay) {
+    return formatLocalizedDate(
+      startDate,
+      { day: "numeric", month: "short", weekday: "short" },
+      timeFormat,
+    );
+  }
+
+  const startText = formatLocalizedDate(
+    startDate,
+    {
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      month: "short",
+      weekday: "short",
+    },
+    timeFormat,
+  );
+
+  const endDate = new Date(item.end);
+  if (Number.isNaN(endDate.getTime())) {
+    return startText;
+  }
+
+  const endText = formatLocalizedDate(endDate, { hour: "numeric", minute: "2-digit" }, timeFormat);
+  return `${startText} - ${endText}`;
+}
+
+export {
+  buildEventTimeFormat,
+  formatEventTimeRange,
+  formatHeaderDate,
+  formatLocalizedDate,
+  formatSyncTimestamp,
+};

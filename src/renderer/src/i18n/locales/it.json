@@ -322,6 +322,7 @@
         "label": "Notifiche",
         "title": "Impostazioni Notifiche",
         "description": "Gestisci le preferenze di promemoria e notifiche.",
+        "newEventPopup": "Mostra un popup quando vengono sincronizzati nuovi inviti",
         "overrideSynced": "Usa regole di promemoria locali al posto dei promemoria sincronizzati degli eventi",
         "ruleTime": "Tempo",
         "ruleWhen": "Quando",
@@ -387,5 +388,17 @@
     "downloadAndRestart": "Scarica e riavvia",
     "downloading": "Download…",
     "remindLater": "Ricordamelo più tardi"
+  },
+  "newEventPopup": {
+    "title": "Nuovi inviti",
+    "subtitle_one": "{{count}} nuovo evento in attesa di risposta",
+    "subtitle_other": "{{count}} nuovi eventi in attesa di risposta",
+    "noOrganizer": "Organizzatore sconosciuto",
+    "closeAria": "Chiudi",
+    "actions": {
+      "accept": "Accetta",
+      "tentative": "Provvisorio",
+      "decline": "Rifiuta"
+    }
   }
 }
