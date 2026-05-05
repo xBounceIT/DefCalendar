@@ -950,7 +950,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         calendars={calendars}
         canCreateEvent={Boolean(editableCalendar)}
         eventDayKeys={miniCalendarEventDayKeys}
-        isRefreshing={refreshMutation.isPending}
+        isRefreshing={refreshMutation.isPending || syncStatus.state === "syncing"}
         onAccountAdd={() => setShowAuthScreen(true)}
         onCalendarColorChange={(calendar, color) => {
           void handleCalendarColorChange(calendar, color);
