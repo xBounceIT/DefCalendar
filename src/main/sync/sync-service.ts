@@ -11,6 +11,8 @@ import type { CalendarEvent, CalendarSummary, SyncStatus } from "@shared/schemas
 
 type SyncReason = "startup" | "sign-in" | "switch-account" | "manual" | "interval" | "mutation";
 
+const DEEP_BACKFILL_DAYS = 365 * 5;
+
 interface SyncServiceDependencies {
   auth: MsalAuthService;
   config: AppConfig;
@@ -239,35 +241,39 @@ class SyncService {
         return nextStatus;
       }
 
-      const rangeStart = new Date(
+      const rollingRangeStart = new Date(
         Date.now() - this.dependencies.config.syncLookBehindDays * DAY_MS,
       ).toISOString();
+      const deepRangeStart = new Date(Date.now() - DEEP_BACKFILL_DAYS * DAY_MS).toISOString();
       const rangeEnd = new Date(
         Date.now() + this.dependencies.config.syncLookAheadDays * DAY_MS,
       ).toISOString();
       const finishedAt = new Date().toISOString();
 
-      const syncedCalendars = await Promise.all(
-        calendarsToSync.map(async (calendar) => ({
-          calendarId: calendar.id,
-          events: await this.dependencies.graph.listCalendarView(
+      const calendarsToStore = await Promise.all(
+        calendarsToSync.map(async (calendar) => {
+          const isDeepBackfill =
+            this.dependencies.db.getDeepBackfillCompletedAt(calendar.id) === null;
+          const rangeStart = isDeepBackfill ? deepRangeStart : rollingRangeStart;
+          const fetchedEvents = await this.dependencies.graph.listCalendarView(
             calendar.id,
             rangeStart,
             rangeEnd,
             calendar.homeAccountId,
-          ),
-        })),
+          );
+          return {
+            calendarId: calendar.id,
+            events: this.mergePersistedDeclinedEvents(
+              calendar.id,
+              fetchedEvents,
+              rangeStart,
+              rangeEnd,
+            ),
+            isDeepBackfill,
+            rangeStart,
+          };
+        }),
       );
-
-      const calendarsToStore = syncedCalendars.map((syncedCalendar) => ({
-        calendarId: syncedCalendar.calendarId,
-        events: this.mergePersistedDeclinedEvents(
-          syncedCalendar.calendarId,
-          syncedCalendar.events,
-          rangeStart,
-          rangeEnd,
-        ),
-      }));
 
       const shouldDetectNewEvents =
         settings.newEventPopupEnabled &&
@@ -278,37 +284,46 @@ class SyncService {
       const preSyncIdsByCalendar = new Map<string, Set<string>>();
       if (shouldDetectNewEvents) {
         for (const syncedCalendar of calendarsToStore) {
+          if (syncedCalendar.isDeepBackfill) {
+            continue;
+          }
           preSyncIdsByCalendar.set(
             syncedCalendar.calendarId,
             this.dependencies.db.listEventIdsForCalendarRange({
               calendarId: syncedCalendar.calendarId,
               end: rangeEnd,
-              start: rangeStart,
+              start: syncedCalendar.rangeStart,
             }),
           );
         }
       }
 
-      for (const syncedCalendar of calendarsToStore) {
+      for (const { calendarId, events, isDeepBackfill, rangeStart } of calendarsToStore) {
         this.dependencies.db.replaceEventsForCalendarRange({
-          calendarId: syncedCalendar.calendarId,
-          events: syncedCalendar.events,
+          calendarId,
+          events,
           rangeEnd,
           rangeStart,
         });
         this.dependencies.db.saveSyncState({
-          calendarId: syncedCalendar.calendarId,
+          calendarId,
           errorMessage: null,
           lastSyncedAt: finishedAt,
           rangeEnd,
           rangeStart,
         });
+        if (isDeepBackfill) {
+          this.dependencies.db.markDeepBackfillCompleted(calendarId, finishedAt);
+        }
       }
 
       if (shouldDetectNewEvents) {
         const newEvents: CalendarEvent[] = [];
         for (const syncedCalendar of calendarsToStore) {
-          const before = preSyncIdsByCalendar.get(syncedCalendar.calendarId) ?? new Set<string>();
+          const before = preSyncIdsByCalendar.get(syncedCalendar.calendarId);
+          if (!before) {
+            continue;
+          }
           for (const ev of syncedCalendar.events) {
             if (!before.has(ev.id)) {
               newEvents.push(ev);

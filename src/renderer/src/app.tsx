@@ -818,6 +818,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
 
   function handleToday(): void {
     calendarRef.current?.getApi().today();
+    setSelectedDayForTable(new Date().toISOString());
   }
 
   function handlePrev(): void {

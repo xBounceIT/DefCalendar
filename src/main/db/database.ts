@@ -26,6 +26,8 @@ import fs from "fs-extra";
 
 const SETTINGS_KEY = "user-settings";
 
+const IDENTIFIER_PATTERN = /^[A-Z_a-z][\w]*$/;
+
 interface ReplaceEventsForCalendarRangeArgs {
   calendarId: string;
   events: CalendarEvent[];
@@ -780,6 +782,31 @@ class AppDatabase {
       .run(calendarId, lastSyncedAt, rangeStart, rangeEnd, errorMessage);
   }
 
+  getDeepBackfillCompletedAt(calendarId: string): null | string {
+    const row = this.db
+      .prepare("SELECT deep_backfill_completed_at FROM sync_state WHERE calendar_id = ?")
+      .get(calendarId);
+
+    if (!row) {
+      return null;
+    }
+
+    return readNullableStringProperty(row, "deep_backfill_completed_at");
+  }
+
+  markDeepBackfillCompleted(calendarId: string, completedAt: string): void {
+    this.db
+      .prepare(
+        `
+          INSERT INTO sync_state (calendar_id, deep_backfill_completed_at)
+          VALUES (?, ?)
+          ON CONFLICT(calendar_id) DO UPDATE SET
+            deep_backfill_completed_at = excluded.deep_backfill_completed_at
+        `,
+      )
+      .run(calendarId, completedAt);
+  }
+
   getLatestSyncStatus(): SyncStatus {
     const row = this.db
       .prepare(
@@ -1082,6 +1109,7 @@ class AppDatabase {
         range_start TEXT,
         range_end TEXT,
         error_message TEXT,
+        deep_backfill_completed_at TEXT,
         FOREIGN KEY (calendar_id) REFERENCES calendars(id) ON DELETE CASCADE
       );
 
@@ -1116,32 +1144,17 @@ class AppDatabase {
     this.migrateCalendarsUserColor();
     this.migrateReminderStateTable(hadReminderStateTable);
     this.migrateReminderStateKeyFormat();
+    this.migrateSyncStateDeepBackfill();
   }
 
   private migrateCalendarsTable(): void {
-    const tableInfo = this.db.prepare("PRAGMA table_info(calendars)").all();
-    const hasHomeAccountId = tableInfo.some(
-      (col: unknown) =>
-        typeof col === "object" &&
-        col !== null &&
-        "name" in col &&
-        (col as Record<string, unknown>).name === "home_account_id",
-    );
-    if (!hasHomeAccountId) {
+    if (!this.hasColumn("calendars", "home_account_id")) {
       this.db.exec("ALTER TABLE calendars ADD COLUMN home_account_id TEXT NOT NULL DEFAULT ''");
     }
   }
 
   private migrateCalendarsUserColor(): void {
-    const tableInfo = this.db.prepare("PRAGMA table_info(calendars)").all();
-    const hasUserColor = tableInfo.some(
-      (col: unknown) =>
-        typeof col === "object" &&
-        col !== null &&
-        "name" in col &&
-        (col as Record<string, unknown>).name === "user_color",
-    );
-    if (!hasUserColor) {
+    if (!this.hasColumn("calendars", "user_color")) {
       this.db.exec("ALTER TABLE calendars ADD COLUMN user_color TEXT");
     }
   }
@@ -1178,6 +1191,26 @@ class AppDatabase {
       DELETE FROM reminder_state
       WHERE dedupe_key NOT LIKE '%:pre' AND dedupe_key NOT LIKE '%:start';
     `);
+  }
+
+  private migrateSyncStateDeepBackfill(): void {
+    if (!this.hasColumn("sync_state", "deep_backfill_completed_at")) {
+      this.db.exec("ALTER TABLE sync_state ADD COLUMN deep_backfill_completed_at TEXT");
+    }
+  }
+
+  private hasColumn(tableName: string, columnName: string): boolean {
+    if (!IDENTIFIER_PATTERN.test(tableName)) {
+      throw new Error(`Refusing to inspect non-identifier table name: ${tableName}`);
+    }
+    const tableInfo = this.db.prepare(`PRAGMA table_info(${tableName})`).all();
+    return tableInfo.some(
+      (col: unknown) =>
+        typeof col === "object" &&
+        col !== null &&
+        "name" in col &&
+        (col as Record<string, unknown>).name === columnName,
+    );
   }
 
   private hasTable(name: string): boolean {
