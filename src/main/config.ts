@@ -11,7 +11,7 @@ const envSchema = z.object({
       "openid profile offline_access User.Read Calendars.ReadWrite MailboxSettings.Read Contacts.Read",
     ),
   SYNC_LOOKAHEAD_DAYS: z.coerce.number().int().min(1).max(365).default(90),
-  SYNC_LOOKBEHIND_DAYS: z.coerce.number().int().min(0).max(365).default(30),
+  SYNC_LOOKBEHIND_DAYS: z.coerce.number().int().min(0).max(3650).default(365),
   SYNC_INTERVAL_MINUTES: z.coerce.number().int().min(1).max(60).default(1),
 });
 

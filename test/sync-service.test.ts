@@ -4,10 +4,12 @@ import type { CalendarEvent, CalendarSummary, UserSettings } from "../src/shared
 
 interface SyncFixture {
   db: {
+    getDeepBackfillCompletedAt: ReturnType<typeof vi.fn>;
     getLatestSyncStatus: ReturnType<typeof vi.fn>;
     listCalendarIds: ReturnType<typeof vi.fn>;
-    replaceContactsForAccount: ReturnType<typeof vi.fn>;
     listEvents: ReturnType<typeof vi.fn>;
+    markDeepBackfillCompleted: ReturnType<typeof vi.fn>;
+    replaceContactsForAccount: ReturnType<typeof vi.fn>;
     replaceEventsForCalendarRange: ReturnType<typeof vi.fn>;
     saveSyncState: ReturnType<typeof vi.fn>;
     upsertCalendars: ReturnType<typeof vi.fn>;
@@ -98,6 +100,7 @@ function createFixture(args?: {
   const syncIntervalMinutes = args?.syncIntervalMinutes ?? 15;
 
   const db = {
+    getDeepBackfillCompletedAt: vi.fn().mockReturnValue("2026-01-01T00:00:00.000Z"),
     getLatestSyncStatus: vi.fn().mockReturnValue({
       lastSyncedAt: null,
       message: "Sign in to sync Exchange 365.",
@@ -106,8 +109,9 @@ function createFixture(args?: {
       state: "idle",
     }),
     listCalendarIds: vi.fn().mockReturnValue(args?.knownCalendarIds ?? []),
-    replaceContactsForAccount: vi.fn(),
     listEvents: vi.fn().mockReturnValue([]),
+    markDeepBackfillCompleted: vi.fn(),
+    replaceContactsForAccount: vi.fn(),
     replaceEventsForCalendarRange: vi.fn(),
     saveSyncState: vi.fn(),
     upsertCalendars: vi.fn(),
@@ -512,5 +516,60 @@ describe("sync service", () => {
     await Promise.resolve();
 
     expect(fixture.graph.listCalendars).toHaveBeenCalledOnce();
+  });
+
+  it("fetches a 5-year window for calendars that have not been deeply backfilled", async () => {
+    const fixture = createFixture();
+    fixture.db.getDeepBackfillCompletedAt.mockReturnValue(null);
+
+    const before = Date.now();
+    await fixture.service.syncAll("manual");
+    const after = Date.now();
+
+    expect(fixture.graph.listCalendarView).toHaveBeenCalledOnce();
+    const [, rangeStart] = fixture.graph.listCalendarView.mock.calls[0] as [string, string];
+    const rangeStartMs = new Date(rangeStart).getTime();
+    const fiveYearsMs = 365 * 5 * 24 * 60 * 60 * 1000;
+    expect(rangeStartMs).toBeGreaterThanOrEqual(before - fiveYearsMs);
+    expect(rangeStartMs).toBeLessThanOrEqual(after - fiveYearsMs);
+    expect(fixture.db.markDeepBackfillCompleted).toHaveBeenCalledWith(
+      "calendar-a",
+      expect.any(String),
+    );
+  });
+
+  it("uses the rolling lookbehind window for calendars already deeply backfilled", async () => {
+    const fixture = createFixture();
+    fixture.db.getDeepBackfillCompletedAt.mockReturnValue("2025-01-01T00:00:00.000Z");
+
+    const before = Date.now();
+    await fixture.service.syncAll("manual");
+    const after = Date.now();
+
+    expect(fixture.graph.listCalendarView).toHaveBeenCalledOnce();
+    const [, rangeStart] = fixture.graph.listCalendarView.mock.calls[0] as [string, string];
+    const rangeStartMs = new Date(rangeStart).getTime();
+    const lookbehindMs = 30 * 24 * 60 * 60 * 1000;
+    expect(rangeStartMs).toBeGreaterThanOrEqual(before - lookbehindMs);
+    expect(rangeStartMs).toBeLessThanOrEqual(after - lookbehindMs);
+    expect(fixture.db.markDeepBackfillCompleted).not.toHaveBeenCalled();
+  });
+
+  it("marks deep backfill complete only for calendars that needed it", async () => {
+    const fixture = createFixture({
+      calendars: [createCalendar("calendar-a"), createCalendar("calendar-b")],
+      visibleCalendarIds: ["calendar-a", "calendar-b"],
+    });
+    fixture.db.getDeepBackfillCompletedAt.mockImplementation((calendarId: string) =>
+      calendarId === "calendar-a" ? "2025-01-01T00:00:00.000Z" : null,
+    );
+
+    await fixture.service.syncAll("manual");
+
+    expect(fixture.db.markDeepBackfillCompleted).toHaveBeenCalledOnce();
+    expect(fixture.db.markDeepBackfillCompleted).toHaveBeenCalledWith(
+      "calendar-b",
+      expect.any(String),
+    );
   });
 });
