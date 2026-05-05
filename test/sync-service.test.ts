@@ -11,6 +11,7 @@ interface SyncFixture {
     getDeepBackfillCompletedAt: ReturnType<typeof vi.fn>;
     getLatestSyncStatus: ReturnType<typeof vi.fn>;
     listCalendarIds: ReturnType<typeof vi.fn>;
+    listEventIdsForCalendarRange: ReturnType<typeof vi.fn>;
     listEvents: ReturnType<typeof vi.fn>;
     markDeepBackfillCompleted: ReturnType<typeof vi.fn>;
     replaceContactsForAccount: ReturnType<typeof vi.fn>;
@@ -113,6 +114,7 @@ function createFixture(args?: {
       state: "idle",
     }),
     listCalendarIds: vi.fn().mockReturnValue(args?.knownCalendarIds ?? []),
+    listEventIdsForCalendarRange: vi.fn().mockReturnValue(new Set<string>()),
     listEvents: vi.fn().mockReturnValue([]),
     markDeepBackfillCompleted: vi.fn(),
     replaceContactsForAccount: vi.fn(),
@@ -148,6 +150,14 @@ function createFixture(args?: {
     hasSession: vi.fn().mockReturnValue(true),
   };
 
+  const newEventNotifications = {
+    clear: vi.fn(),
+    dismiss: vi.fn(),
+    getItems: vi.fn().mockReturnValue([]),
+    onChange: vi.fn(),
+    recordCandidates: vi.fn(),
+  };
+
   const service = new SyncService({
     auth: auth as never,
     config: {
@@ -157,6 +167,7 @@ function createFixture(args?: {
     } as never,
     db: db as never,
     graph: graph as never,
+    newEventNotifications: newEventNotifications as never,
     reminders: reminders as never,
     settings: settings as never,
   });
@@ -522,7 +533,7 @@ describe("sync service", () => {
     expect(fixture.graph.listCalendars).toHaveBeenCalledOnce();
   });
 
-  it("fetches a 5-year window for calendars that have not been deeply backfilled", async () => {
+  it("fetches the maximum Graph window for calendars that have not been deeply backfilled", async () => {
     const fixture = createFixture();
     fixture.db.getDeepBackfillCompletedAt.mockReturnValue(null);
 
@@ -531,11 +542,17 @@ describe("sync service", () => {
     const after = Date.now();
 
     expect(fixture.graph.listCalendarView).toHaveBeenCalledOnce();
-    const [, rangeStart] = fixture.graph.listCalendarView.mock.calls[0] as [string, string];
+    const [, rangeStart, rangeEnd] = fixture.graph.listCalendarView.mock.calls[0] as [
+      string,
+      string,
+      string,
+    ];
     const rangeStartMs = new Date(rangeStart).getTime();
-    const fiveYearsMs = 365 * 5 * DAY_MS;
-    expect(rangeStartMs).toBeGreaterThanOrEqual(before - fiveYearsMs);
-    expect(rangeStartMs).toBeLessThanOrEqual(after - fiveYearsMs);
+    const rangeEndMs = new Date(rangeEnd).getTime();
+    const maxBackfillMs = (1825 - FIXTURE_LOOKAHEAD_DAYS) * DAY_MS;
+    expect(rangeStartMs).toBeGreaterThanOrEqual(before - maxBackfillMs);
+    expect(rangeStartMs).toBeLessThanOrEqual(after - maxBackfillMs);
+    expect(rangeEndMs - rangeStartMs).toBeLessThanOrEqual(1825 * DAY_MS);
     expect(fixture.db.markDeepBackfillCompleted).toHaveBeenCalledWith(
       "calendar-a",
       expect.any(String),

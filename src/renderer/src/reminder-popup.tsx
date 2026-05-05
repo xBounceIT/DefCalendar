@@ -3,13 +3,11 @@ import ReactDOM from "react-dom/client";
 import i18n from "i18next";
 import { initReactI18next, useTranslation } from "react-i18next";
 import type { ReminderDialogItem, ReminderDialogState } from "@shared/ipc";
-import type { UserSettings } from "@shared/schemas";
 
 import { MeetingIcon } from "./components/meeting-icon";
+import { formatEventTimeRange } from "./date-formatting";
 import en from "./i18n/locales/en.json";
 import it from "./i18n/locales/it.json";
-
-type TimeFormatSetting = UserSettings["timeFormat"];
 
 const EMPTY_STATE: ReminderDialogState = {
   items: [],
@@ -26,61 +24,6 @@ void i18n.use(initReactI18next).init({
   fallbackLng: "en",
   interpolation: { escapeValue: false },
 });
-
-function applyTimeFormat(
-  options: Intl.DateTimeFormatOptions,
-  timeFormat: TimeFormatSetting,
-): Intl.DateTimeFormatOptions {
-  if (timeFormat === "system") {
-    return options;
-  }
-
-  return {
-    ...options,
-    hour12: timeFormat === "12h",
-  };
-}
-
-function formatEventTime(
-  item: ReminderDialogItem,
-  locale: ReminderDialogState["locale"],
-  timeFormat: TimeFormatSetting,
-): string {
-  const startDate = new Date(item.start);
-  if (Number.isNaN(startDate.getTime())) {
-    return item.start;
-  }
-
-  if (item.isAllDay) {
-    return new Intl.DateTimeFormat(locale, {
-      day: "numeric",
-      month: "short",
-      weekday: "short",
-    }).format(startDate);
-  }
-
-  const endDate = new Date(item.end);
-  const timeOptions = applyTimeFormat(
-    {
-      hour: "numeric",
-      minute: "2-digit",
-    },
-    timeFormat,
-  );
-  const startText = new Intl.DateTimeFormat(locale, {
-    day: "numeric",
-    month: "short",
-    weekday: "short",
-    ...timeOptions,
-  }).format(startDate);
-
-  if (Number.isNaN(endDate.getTime())) {
-    return startText;
-  }
-
-  const endText = new Intl.DateTimeFormat(locale, timeOptions).format(endDate);
-  return `${startText} - ${endText}`;
-}
 
 function ReminderPopup() {
   const { t } = useTranslation();
@@ -235,7 +178,7 @@ function ReminderPopup() {
                       {item.subject || t("reminder.untitledEvent")}
                     </span>
                     <span className="reminder-item-time">
-                      {formatEventTime(item, state.locale, state.timeFormat)}
+                      {formatEventTimeRange(item, state.timeFormat)}
                     </span>
                     {item.location && (
                       <span className="reminder-item-location">{item.location}</span>

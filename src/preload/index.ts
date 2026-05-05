@@ -6,7 +6,7 @@ import type {
   SyncStatus,
 } from "@shared/schemas";
 import { contextBridge, ipcRenderer } from "electron";
-import type { CalendarApi, ReminderDialogState } from "@shared/ipc";
+import type { CalendarApi, NewEventNotificationItem, ReminderDialogState } from "@shared/ipc";
 import IPC_CHANNELS from "@shared/ipc-values";
 
 const calendarApi: CalendarApi = {
@@ -108,6 +108,20 @@ const calendarApi: CalendarApi = {
     dismiss: (dedupeKey: string) => ipcRenderer.invoke(IPC_CHANNELS.reminderDismiss, { dedupeKey }),
     dismissAll: () => ipcRenderer.invoke(IPC_CHANNELS.reminderDismissAll),
     minimizeWindow: () => ipcRenderer.invoke(IPC_CHANNELS.reminderWindowMinimize),
+  },
+  newEventNotifications: {
+    get: () => ipcRenderer.invoke(IPC_CHANNELS.newEventNotificationsGet),
+    onChanged: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, items: NewEventNotificationItem[]) =>
+        listener(items);
+      ipcRenderer.on(IPC_CHANNELS.newEventNotificationsChanged, wrapped);
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.newEventNotificationsChanged, wrapped);
+      };
+    },
+    dismiss: (eventId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.newEventNotificationsDismiss, eventId),
+    dismissAll: () => ipcRenderer.invoke(IPC_CHANNELS.newEventNotificationsDismissAll),
   },
   window: {
     minimize: () => ipcRenderer.invoke(IPC_CHANNELS.windowMinimize),

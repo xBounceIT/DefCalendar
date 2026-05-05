@@ -42,6 +42,7 @@ import SettingsDialog from "./components/settings-dialog";
 import type { EditorState } from "./event-editor-state";
 import EventEditorDialog from "./components/event-editor-dialog";
 import EventSearchDialog from "./components/event-search-dialog";
+import NewEventPopup from "./components/new-event-popup";
 import TitleBar from "./components/title-bar";
 import UpdateAvailablePopup from "./components/update-available-popup";
 import WorkspacePanel from "./components/workspace-panel";
@@ -949,7 +950,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         calendars={calendars}
         canCreateEvent={Boolean(editableCalendar)}
         eventDayKeys={miniCalendarEventDayKeys}
-        isRefreshing={refreshMutation.isPending}
+        isRefreshing={refreshMutation.isPending || syncStatus.state === "syncing"}
         onAccountAdd={() => setShowAuthScreen(true)}
         onCalendarColorChange={(calendar, color) => {
           void handleCalendarColorChange(calendar, color);
@@ -1052,6 +1053,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         timeFormat={appSettings.timeFormat}
       />
       <UpdateAvailablePopup />
+      <NewEventPopup timeFormat={appSettings.timeFormat} />
     </div>
   );
 }

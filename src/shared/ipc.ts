@@ -25,7 +25,12 @@ import type {
   UserSettings,
   UserSettingsPatch,
 } from "./schemas";
-import type { EventResponseAction, ReminderDialogItem, ReminderDialogState } from "./ipc-types";
+import type {
+  EventResponseAction,
+  NewEventNotificationItem,
+  ReminderDialogItem,
+  ReminderDialogState,
+} from "./ipc-types";
 
 export const IPC_CHANNELS = {
   appGetLocale: "app:get-locale",
@@ -71,6 +76,10 @@ export const IPC_CHANNELS = {
   reminderDismiss: "reminder:dismiss",
   reminderDismissAll: "reminder:dismiss-all",
   reminderWindowMinimize: "reminder:window-minimize",
+  newEventNotificationsGet: "new-event-notifications:get",
+  newEventNotificationsChanged: "new-event-notifications:changed",
+  newEventNotificationsDismiss: "new-event-notifications:dismiss",
+  newEventNotificationsDismissAll: "new-event-notifications:dismiss-all",
   windowMinimize: "window:minimize",
   windowMaximize: "window:maximize",
   windowClose: "window:close",
@@ -141,6 +150,12 @@ interface CalendarApi {
     dismissAll: () => Promise<void>;
     minimizeWindow: () => Promise<void>;
   };
+  newEventNotifications: {
+    get: () => Promise<NewEventNotificationItem[]>;
+    onChanged: (listener: (items: NewEventNotificationItem[]) => void) => () => void;
+    dismiss: (eventId: string) => Promise<void>;
+    dismissAll: () => Promise<void>;
+  };
   window: {
     minimize: () => Promise<void>;
     maximize: () => Promise<void>;
@@ -153,6 +168,7 @@ export {
   type CalendarApi,
   type EventAttachment,
   type EventResponseAction,
+  type NewEventNotificationItem,
   type ReminderDialogItem,
   type ReminderDialogState,
 };

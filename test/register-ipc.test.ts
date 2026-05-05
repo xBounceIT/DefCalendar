@@ -193,11 +193,20 @@ function createFixture() {
     onStatus: vi.fn(),
   };
 
+  const newEventNotifications = {
+    clear: vi.fn(),
+    dismiss: vi.fn(),
+    getItems: vi.fn().mockReturnValue([]),
+    onChange: vi.fn(),
+    recordCandidates: vi.fn(),
+  };
+
   registerIpc({
     auth: auth as never,
     db: db as never,
     getMainWindow: () => mainWindow as never,
     graph: graph as never,
+    newEventNotifications: newEventNotifications as never,
     reminderManager: reminderManager as never,
     reminders: reminders as never,
     settings: settings as never,

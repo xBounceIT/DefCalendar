@@ -391,6 +391,19 @@ const reminderDialogItemSchema = z.object({
   subject: z.string(),
 });
 
+const newEventNotificationItemSchema = z.object({
+  calendarId: z.string(),
+  end: dateTimeStringSchema,
+  eventId: z.string(),
+  isAllDay: z.boolean(),
+  location: z.string().nullable(),
+  onlineMeetingJoinUrl: z.string().nullable(),
+  organizerEmail: z.string().nullable(),
+  organizerName: z.string().nullable(),
+  start: dateTimeStringSchema,
+  subject: z.string(),
+});
+
 const syncStatusCountsSchema = z.object({
   calendars: z.number().int().nonnegative(),
   events: z.number().int().nonnegative(),
@@ -462,6 +475,8 @@ const localReminderOverrideEnabledPreferenceSchema = z.preprocess(
   z.boolean().default(false),
 );
 
+const newEventPopupEnabledPreferenceSchema = z.boolean().default(false);
+
 const localReminderRulesPreferenceSchema = z.preprocess(
   (value) => (value === null ? undefined : value),
   z
@@ -487,6 +502,7 @@ const userSettingsSchema = z.object({
   syncIntervalMinutes: syncIntervalMinutesPreferenceSchema,
   localReminderOverrideEnabled: localReminderOverrideEnabledPreferenceSchema,
   localReminderRules: localReminderRulesPreferenceSchema,
+  newEventPopupEnabled: newEventPopupEnabledPreferenceSchema,
   updateChannel: updateChannelSchema.default("stable"),
 });
 
@@ -532,6 +548,7 @@ type ReminderSnoozeArgs = z.infer<typeof reminderSnoozeArgsSchema>;
 type ReminderDismissArgs = z.infer<typeof reminderDismissArgsSchema>;
 type ReminderDialogItem = z.infer<typeof reminderDialogItemSchema>;
 type ReminderDialogState = z.infer<typeof reminderDialogStateSchema>;
+type NewEventNotificationItem = z.infer<typeof newEventNotificationItemSchema>;
 type SyncStatus = z.infer<typeof syncStatusSchema>;
 type AppUpdateState = z.infer<typeof appUpdateStateSchema>;
 type AppUpdateStatus = z.infer<typeof appUpdateStatusSchema>;
@@ -552,6 +569,7 @@ function createDefaultSettings(): UserSettings {
     syncIntervalMinutes: 1,
     localReminderOverrideEnabled: false,
     localReminderRules: [{ minutes: 15, when: "before" }],
+    newEventPopupEnabled: false,
     updateChannel: "stable",
   };
 }
@@ -586,6 +604,7 @@ export {
   openExternalArgsSchema,
   onlineMeetingInfoSchema,
   participantResponseStatusSchema,
+  newEventNotificationItemSchema,
   reminderDialogItemSchema,
   REMINDER_TYPE,
   reminderDialogStateSchema,
@@ -634,6 +653,7 @@ export {
   type SearchEventsArgs,
   type LocalReminderRule,
   type LocalReminderWhen,
+  type NewEventNotificationItem,
   type ReminderDismissArgs,
   type ReminderDialogItem,
   type ReminderDialogState,

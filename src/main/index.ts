@@ -3,6 +3,7 @@ import type { BrowserWindow } from "electron";
 import GraphCalendarService from "@main/graph/calendar-service";
 import { IPC_CHANNELS } from "@shared/ipc";
 import MsalAuthService from "@main/auth/msal-auth-service";
+import NewEventNotificationService from "@main/notifications/new-event-notification-service";
 import ReminderService from "@main/reminders/reminder-service";
 import ReminderWindowManager from "@main/reminders/reminder-window";
 import SafeStorageTokenCache from "@main/auth/cache-plugin";
@@ -11,7 +12,7 @@ import { SyncService } from "@main/sync/sync-service";
 import TrayService from "@main/tray-service";
 import UpdateService from "@main/update/update-service";
 import { app, ipcMain } from "@main/electron-runtime";
-import createMainWindow from "@main/window";
+import createMainWindow, { showAndFocusMainWindow } from "@main/window";
 import { join } from "pathe";
 import { loadAppConfig } from "@main/config";
 import registerIpc from "@main/ipc/register-ipc";
@@ -37,6 +38,7 @@ async function bootstrap(): Promise<void> {
 
   const reminderManager = new ReminderWindowManager();
   const reminders = new ReminderService(db, reminderManager, settings);
+  const newEventNotifications = new NewEventNotificationService();
   const auth = new MsalAuthService(
     config,
     new SafeStorageTokenCache(join(app.getPath("userData"), "msal-token-cache.bin")),
@@ -47,7 +49,15 @@ async function bootstrap(): Promise<void> {
   await auth.initialize();
 
   const graph = new GraphCalendarService(auth, config);
-  const sync = new SyncService({ auth, graph, db, settings, reminders, config });
+  const sync = new SyncService({
+    auth,
+    config,
+    db,
+    graph,
+    newEventNotifications,
+    reminders,
+    settings,
+  });
   const updates = new UpdateService(savedSettings.updateChannel === "prerelease");
 
   ipcMain.handle(IPC_CHANNELS.appSetLocale, async (_event, locale: unknown) => {
@@ -65,6 +75,7 @@ async function bootstrap(): Promise<void> {
     await auth.signOutAll();
     db.clearUserData();
     sync.reset();
+    newEventNotifications.clear();
     await reminders.checkNow();
 
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -113,6 +124,7 @@ async function bootstrap(): Promise<void> {
     auth,
     db,
     graph,
+    newEventNotifications,
     reminders,
     reminderManager,
     settings,
@@ -135,12 +147,7 @@ async function bootstrap(): Promise<void> {
   }
 
   app.on("second-instance", () => {
-    const window = ensureWindow();
-    if (window.isMinimized()) {
-      window.restore();
-    }
-    window.show();
-    window.focus();
+    showAndFocusMainWindow(ensureWindow());
   });
 
   app.on("activate", () => {

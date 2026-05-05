@@ -322,6 +322,7 @@
         "label": "Notifications",
         "title": "Notification Settings",
         "description": "Manage reminder and notification preferences.",
+        "newEventPopup": "Show popup when new event invitations are synced",
         "overrideSynced": "Use local reminder rules instead of synced event reminders",
         "ruleTime": "Time",
         "ruleWhen": "When",
@@ -387,5 +388,17 @@
     "downloadAndRestart": "Download and Restart",
     "downloading": "Downloading…",
     "remindLater": "Remind me later"
+  },
+  "newEventPopup": {
+    "title": "New invitations",
+    "subtitle_one": "{{count}} new event awaiting your response",
+    "subtitle_other": "{{count}} new events awaiting your response",
+    "noOrganizer": "Unknown organizer",
+    "closeAria": "Close",
+    "actions": {
+      "accept": "Accept",
+      "tentative": "Tentative",
+      "decline": "Decline"
+    }
   }
 }

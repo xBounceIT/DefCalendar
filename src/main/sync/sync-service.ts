@@ -2,6 +2,7 @@ import type { AppConfig } from "@main/config";
 import type AppDatabase from "@main/db/database";
 import type GraphCalendarService from "@main/graph/calendar-service";
 import type MsalAuthService from "@main/auth/msal-auth-service";
+import type NewEventNotificationService from "@main/notifications/new-event-notification-service";
 import type ReminderService from "@main/reminders/reminder-service";
 import type { ReminderCheckTrigger } from "@main/reminders/reminder-service";
 import type SettingsService from "@main/settings/settings-service";
@@ -10,13 +11,14 @@ import type { CalendarEvent, CalendarSummary, SyncStatus } from "@shared/schemas
 
 type SyncReason = "startup" | "sign-in" | "switch-account" | "manual" | "interval" | "mutation";
 
-const DEEP_BACKFILL_DAYS = 365 * 5;
+const GRAPH_CALENDAR_VIEW_MAX_DAYS = 1825;
 
 interface SyncServiceDependencies {
   auth: MsalAuthService;
   config: AppConfig;
   db: AppDatabase;
   graph: GraphCalendarService;
+  newEventNotifications: NewEventNotificationService;
   reminders: ReminderService;
   settings: SettingsService;
 }
@@ -239,13 +241,15 @@ class SyncService {
         return nextStatus;
       }
 
-      const rollingRangeStart = new Date(
-        Date.now() - this.dependencies.config.syncLookBehindDays * DAY_MS,
-      ).toISOString();
-      const deepRangeStart = new Date(Date.now() - DEEP_BACKFILL_DAYS * DAY_MS).toISOString();
-      const rangeEnd = new Date(
-        Date.now() + this.dependencies.config.syncLookAheadDays * DAY_MS,
-      ).toISOString();
+      const lookAheadDays = this.dependencies.config.syncLookAheadDays;
+      const maxLookBehindDays = GRAPH_CALENDAR_VIEW_MAX_DAYS - lookAheadDays;
+      const rollingLookBehindDays = Math.min(
+        this.dependencies.config.syncLookBehindDays,
+        maxLookBehindDays,
+      );
+      const rollingRangeStart = new Date(Date.now() - rollingLookBehindDays * DAY_MS).toISOString();
+      const deepRangeStart = new Date(Date.now() - maxLookBehindDays * DAY_MS).toISOString();
+      const rangeEnd = new Date(Date.now() + lookAheadDays * DAY_MS).toISOString();
       const finishedAt = new Date().toISOString();
 
       const calendarsToStore = await Promise.all(
@@ -273,6 +277,29 @@ class SyncService {
         }),
       );
 
+      const shouldDetectNewEvents =
+        settings.newEventPopupEnabled &&
+        reason !== "startup" &&
+        reason !== "sign-in" &&
+        reason !== "switch-account";
+
+      const preSyncIdsByCalendar = new Map<string, Set<string>>();
+      if (shouldDetectNewEvents) {
+        for (const syncedCalendar of calendarsToStore) {
+          if (syncedCalendar.isDeepBackfill) {
+            continue;
+          }
+          preSyncIdsByCalendar.set(
+            syncedCalendar.calendarId,
+            this.dependencies.db.listEventIdsForCalendarRange({
+              calendarId: syncedCalendar.calendarId,
+              end: rangeEnd,
+              start: syncedCalendar.rangeStart,
+            }),
+          );
+        }
+      }
+
       for (const { calendarId, events, isDeepBackfill, rangeStart } of calendarsToStore) {
         this.dependencies.db.replaceEventsForCalendarRange({
           calendarId,
@@ -289,6 +316,25 @@ class SyncService {
         });
         if (isDeepBackfill) {
           this.dependencies.db.markDeepBackfillCompleted(calendarId, finishedAt);
+        }
+      }
+
+      if (shouldDetectNewEvents) {
+        const newEvents: CalendarEvent[] = [];
+        for (const syncedCalendar of calendarsToStore) {
+          const before = preSyncIdsByCalendar.get(syncedCalendar.calendarId);
+          if (!before) {
+            continue;
+          }
+          for (const ev of syncedCalendar.events) {
+            if (!before.has(ev.id)) {
+              newEvents.push(ev);
+            }
+          }
+        }
+
+        if (newEvents.length > 0) {
+          this.dependencies.newEventNotifications.recordCandidates(newEvents);
         }
       }
 
