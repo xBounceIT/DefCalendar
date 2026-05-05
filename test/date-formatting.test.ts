@@ -137,7 +137,10 @@ describe("buildEventTimeFormat", () => {
   });
 
   it("returns 24h shape when system clock is not 12-hour", () => {
-    const format = buildEventTimeFormat("system");
+    const format = withStubbedDateTimeFormat(
+      () => ({ hour12: false }),
+      () => buildEventTimeFormat("system"),
+    );
     expect(format.hour12).toBe(false);
     expect(format.meridiem).toBe(false);
   });
