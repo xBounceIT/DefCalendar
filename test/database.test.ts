@@ -377,6 +377,12 @@ describe("database", () => {
         };
       }
 
+      if (sql === "PRAGMA table_info(sync_state)") {
+        return {
+          all: vi.fn().mockReturnValue([{ name: "deep_backfill_completed_at" }]),
+        };
+      }
+
       throw new Error(`Unexpected SQL: ${sql}`);
     });
 
@@ -412,6 +418,12 @@ describe("database", () => {
         };
       }
 
+      if (sql === "PRAGMA table_info(sync_state)") {
+        return {
+          all: vi.fn().mockReturnValue([{ name: "deep_backfill_completed_at" }]),
+        };
+      }
+
       throw new Error(`Unexpected SQL: ${sql}`);
     });
 
@@ -424,5 +436,51 @@ describe("database", () => {
     (db as unknown as { migrate: () => void }).migrate();
 
     expect(exec).toHaveBeenCalledTimes(2);
+  });
+
+  it("adds the deep_backfill_completed_at column when migrating an older sync_state table", () => {
+    const exec = vi.fn();
+    const prepare = vi.fn((sql: string) => {
+      if (sql === "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?") {
+        return {
+          get: vi.fn().mockReturnValue({ 1: 1 }),
+        };
+      }
+
+      if (sql === "PRAGMA table_info(calendars)") {
+        return {
+          all: vi.fn().mockReturnValue([{ name: "home_account_id" }, { name: "user_color" }]),
+        };
+      }
+
+      if (sql === "PRAGMA table_info(sync_state)") {
+        return {
+          all: vi
+            .fn()
+            .mockReturnValue([
+              { name: "calendar_id" },
+              { name: "last_synced_at" },
+              { name: "range_start" },
+              { name: "range_end" },
+              { name: "error_message" },
+            ]),
+        };
+      }
+
+      throw new Error(`Unexpected SQL: ${sql}`);
+    });
+
+    const db = Object.create(AppDatabase.prototype) as AppDatabase;
+    (db as unknown as { db: { exec: typeof exec; prepare: typeof prepare } }).db = {
+      exec,
+      prepare,
+    };
+
+    (db as unknown as { migrate: () => void }).migrate();
+
+    expect(exec).toHaveBeenCalledTimes(3);
+    expect(exec.mock.calls[2]?.[0]).toContain(
+      "ALTER TABLE sync_state ADD COLUMN deep_backfill_completed_at TEXT",
+    );
   });
 });
