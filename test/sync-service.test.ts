@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { SyncService } from "../src/main/sync/sync-service";
+import { DAY_MS } from "../src/shared/duration";
 import type { CalendarEvent, CalendarSummary, UserSettings } from "../src/shared/schemas";
 
 const FIXTURE_LOOKBEHIND_DAYS = 30;
 const FIXTURE_LOOKAHEAD_DAYS = 30;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 interface SyncFixture {
   db: {
