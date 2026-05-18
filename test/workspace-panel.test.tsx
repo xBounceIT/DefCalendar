@@ -39,6 +39,7 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof WorkspacePan
     onClearDaySelection: vi.fn(),
     onCreateEvent: vi.fn(),
     onDateClick: vi.fn(),
+    onDateDoubleClick: vi.fn(),
     onDatesSet: vi.fn(),
     onEventClick: vi.fn(),
     onEventCopy: vi.fn(),

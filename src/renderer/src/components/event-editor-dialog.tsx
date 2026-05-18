@@ -1008,9 +1008,16 @@ function TimeSelect({
   scrollToSelected: boolean;
   value: string;
 }) {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
+  const [draft, setDraft] = useState(value);
   const containerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setDraft((current) => (current === value ? current : value));
+  }, [value]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -1041,19 +1048,64 @@ function TimeSelect({
     }
   }, [isOpen, scrollToSelected]);
 
-  const selectedOption = options.find((opt) => opt.value === value);
+  function commitDraft(): void {
+    if (draft === value) {
+      return;
+    }
+    const parsed = parseTimeInput(draft);
+    if (parsed === null) {
+      setDraft(value);
+      return;
+    }
+    if (parsed !== value) {
+      onChange(parsed);
+    }
+    setDraft(parsed);
+  }
 
   return (
     <div className="time-select" ref={containerRef}>
-      <button
-        className="time-select__trigger"
-        disabled={disabled}
-        onClick={() => setIsOpen(!isOpen)}
-        type="button"
-      >
-        <span>{selectedOption?.label || value}</span>
-        <ChevronDownIcon className={isOpen ? "expanded" : ""} />
-      </button>
+      <div className="time-select__trigger">
+        <input
+          className="time-select__input"
+          disabled={disabled}
+          inputMode="numeric"
+          onBlur={commitDraft}
+          onChange={(event) => setDraft(event.target.value)}
+          onFocus={() => setIsOpen(true)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commitDraft();
+              setIsOpen(false);
+              inputRef.current?.blur();
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              setDraft(value);
+              setIsOpen(false);
+              inputRef.current?.blur();
+            } else if (event.key === "ArrowDown" && !isOpen) {
+              setIsOpen(true);
+            }
+          }}
+          ref={inputRef}
+          type="text"
+          value={draft}
+        />
+        <button
+          aria-label={t("eventEditor.toggleTimeOptions")}
+          className="time-select__chevron"
+          disabled={disabled}
+          onClick={() => {
+            setIsOpen((open) => !open);
+            inputRef.current?.focus();
+          }}
+          onMouseDown={(event) => event.preventDefault()}
+          type="button"
+        >
+          <ChevronDownIcon className={isOpen ? "expanded" : ""} />
+        </button>
+      </div>
       {isOpen && (
         <div className="time-select__dropdown">
           <div className="time-select__list" ref={listRef}>
@@ -1063,9 +1115,11 @@ function TimeSelect({
                 data-selected={opt.value === value}
                 key={opt.value}
                 onClick={() => {
+                  setDraft(opt.value);
                   onChange(opt.value);
                   setIsOpen(false);
                 }}
+                onMouseDown={(event) => event.preventDefault()}
                 type="button"
               >
                 {opt.label}
@@ -1094,6 +1148,61 @@ function generateTimeOptions(): { label: string; value: string }[] {
 function parseTimeToMinutes(time: string): number {
   const [h, m] = time.split(":").map(Number);
   return h * 60 + m;
+}
+
+function parseTimeInput(raw: string): null | string {
+  const trimmed = raw.trim().toLowerCase();
+  if (!trimmed) {
+    return null;
+  }
+
+  const match = trimmed.match(/^(\d{1,4})(?::(\d{1,2}))?\s*(am|pm)?$/);
+  if (!match) {
+    return null;
+  }
+
+  const [, digits, minutesPart, period] = match;
+  let hours = 0;
+  let minutes = 0;
+
+  if (minutesPart === undefined) {
+    if (digits.length <= 2) {
+      hours = Number(digits);
+    } else if (digits.length === 3) {
+      hours = Number(digits.slice(0, 1));
+      minutes = Number(digits.slice(1));
+    } else {
+      hours = Number(digits.slice(0, 2));
+      minutes = Number(digits.slice(2));
+    }
+  } else {
+    if (digits.length > 2) {
+      return null;
+    }
+    hours = Number(digits);
+    minutes = Number(minutesPart.padEnd(2, "0").slice(0, 2));
+  }
+
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+    return null;
+  }
+
+  if (period) {
+    if (hours < 1 || hours > 12) {
+      return null;
+    }
+    if (period === "am") {
+      hours = hours === 12 ? 0 : hours;
+    } else {
+      hours = hours === 12 ? 12 : hours + 12;
+    }
+  }
+
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return null;
+  }
+
+  return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
 }
 
 function dateInputToDate(value: string): Date {

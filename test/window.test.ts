@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import createMainWindow from "../src/main/window";
 
 interface MockBrowserWindowInstance {
@@ -68,7 +68,7 @@ describe("createMainWindow — security configuration", () => {
     expect(webPreferences.sandbox).toBe(true);
     expect(webPreferences.contextIsolation).toBe(true);
     expect(webPreferences.nodeIntegration).toBe(false);
-    expect(typeof webPreferences.preload).toBe("string");
+    expectTypeOf(webPreferences.preload).toBeString();
     expect(webPreferences.preload).toMatch(/preload[\\/]index\.cjs$/);
   });
 

@@ -29,6 +29,7 @@ interface WorkspacePanelProps {
   onClearDaySelection: () => void;
   onCreateEvent: () => void;
   onDateClick: (clickInfo: DateClickArg) => void;
+  onDateDoubleClick: (clickInfo: DateClickArg) => void;
   onDatesSet: (dates: DatesSetArg) => void;
   onEventClick: (clickInfo: EventClickArg) => void;
   onEventCopy: (calendarId: string, eventId: string) => void;
@@ -303,6 +304,7 @@ function WorkspacePanel(props: WorkspacePanelProps) {
         calendarRef={props.calendarRef}
         hasVisibleCalendars={props.hasVisibleCalendars}
         onDateClick={props.onDateClick}
+        onDateDoubleClick={props.onDateDoubleClick}
         onDatesSet={props.onDatesSet}
         onEventClick={props.onEventClick}
         onEventCopy={props.onEventCopy}

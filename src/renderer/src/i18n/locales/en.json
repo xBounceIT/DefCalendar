@@ -132,6 +132,7 @@
     "end": "End",
     "endDay": "End day",
     "endTime": "End time",
+    "toggleTimeOptions": "Toggle time options",
     "allDay": "All day",
     "location": "Location",
     "desktopReminder": "Desktop reminder",

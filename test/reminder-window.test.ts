@@ -161,9 +161,9 @@ describe("reminderWindowManager.show", () => {
     expect(fakeWindows).toHaveLength(1);
     const win = fakeWindows[0]!;
     const webPreferences = win.options.webPreferences as Record<string, unknown>;
-    expect(webPreferences.sandbox).toBe(true);
-    expect(webPreferences.contextIsolation).toBe(true);
-    expect(webPreferences.nodeIntegration).toBe(false);
+    expect(webPreferences.sandbox).toBeTruthy();
+    expect(webPreferences.contextIsolation).toBeTruthy();
+    expect(webPreferences.nodeIntegration).toBeFalsy();
     expect(win.loadURL).toHaveBeenCalledWith("http://localhost:5173/reminder-popup.html");
     expect(win.loadFile).not.toHaveBeenCalled();
   });
@@ -265,11 +265,11 @@ describe("reminderWindowManager lifecycle", () => {
   it("hasWindow returns true while alive, false after closed", async () => {
     const manager = new ReminderWindowManager();
     manager.show(STATE, false);
-    expect(manager.hasWindow()).toBe(true);
+    expect(manager.hasWindow()).toBeTruthy();
 
     const win = fakeWindows[0]!;
     win.fireOn("closed");
-    expect(manager.hasWindow()).toBe(false);
+    expect(manager.hasWindow()).toBeFalsy();
   });
 
   it("ownsWebContents returns true only for the active window's webContents", async () => {
@@ -277,8 +277,10 @@ describe("reminderWindowManager lifecycle", () => {
     manager.show(STATE, false);
     const win = fakeWindows[0]!;
 
-    expect(manager.ownsWebContents(win.webContents as unknown as Electron.WebContents)).toBe(true);
-    expect(manager.ownsWebContents({} as unknown as Electron.WebContents)).toBe(false);
+    expect(
+      manager.ownsWebContents(win.webContents as unknown as Electron.WebContents),
+    ).toBeTruthy();
+    expect(manager.ownsWebContents({} as unknown as Electron.WebContents)).toBeFalsy();
   });
 
   it("minimize() minimizes the window when alive", async () => {

@@ -4028,42 +4028,66 @@ button {
 .time-select__trigger {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   width: 100%;
-  padding: 10px 12px;
+  padding: 0 4px 0 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  font-size: 15px;
-  line-height: 1;
-  font-family: inherit;
   background: var(--surface);
-  color: var(--ink);
-  cursor: pointer;
-  gap: 8px;
+  gap: 4px;
   height: 38px;
 }
 
-.time-select__trigger span {
-  font-size: 15px;
+.time-select__trigger:focus-within {
+  border-color: var(--accent);
 }
 
-.time-select__trigger:disabled {
-  background: var(--bg-tertiary);
+.time-select__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1;
+  font-family: inherit;
+  padding: 0;
+}
+
+.time-select__input:disabled {
   cursor: not-allowed;
   opacity: 0.6;
 }
 
-.time-select__trigger:focus {
-  outline: none;
-  border-color: var(--accent);
+.time-select__chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
 }
 
-.time-select__trigger svg {
-  flex-shrink: 0;
+.time-select__chevron:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.time-select__chevron:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.time-select__chevron svg {
   transition: transform 0.15s ease;
 }
 
-.time-select__trigger svg.expanded {
+.time-select__chevron svg.expanded {
   transform: rotate(180deg);
 }
 

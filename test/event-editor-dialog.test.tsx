@@ -215,8 +215,8 @@ describe("event editor dialog", () => {
 
     openSchedulingSection(container);
 
-    const startTimeBtn = screen.getByRole("button", { name: "Start time" });
-    fireEvent.click(startTimeBtn);
+    const startTimeInput = screen.getByLabelText("Start time");
+    fireEvent.focus(startTimeInput);
     const option2330 = screen.getByText("23:30");
     fireEvent.click(option2330);
 
@@ -244,8 +244,8 @@ describe("event editor dialog", () => {
 
     openSchedulingSection(container);
 
-    const startTimeBtn = screen.getByRole("button", { name: "Start time" });
-    fireEvent.click(startTimeBtn);
+    const startTimeInput = screen.getByLabelText("Start time");
+    fireEvent.focus(startTimeInput);
     const option2330 = screen.getByText("23:30");
     fireEvent.click(option2330);
 

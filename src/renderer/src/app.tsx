@@ -89,6 +89,13 @@ function StartupFailureScreen() {
   );
 }
 
+function seedStartFromDate(date: Date): Date {
+  const now = new Date();
+  const seed = new Date(date);
+  seed.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+  return roundUpToNext15Minutes(seed);
+}
+
 function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   const { t } = useTranslation();
   const calendarRef = useRef<FullCalendar | null>(null);
@@ -626,6 +633,18 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     setSelectedDayForTable(clickInfo.date.toISOString());
   }
 
+  function handleDateDoubleClick(clickInfo: DateClickArg): void {
+    const startIso = clickInfo.allDay
+      ? seedStartFromDate(clickInfo.date).toISOString()
+      : clickInfo.date.toISOString();
+
+    openCreateDialog({
+      allDay: false,
+      end: addMinutesToIso(startIso, 30),
+      start: startIso,
+    });
+  }
+
   function handleEventClick(clickInfo: EventClickArg): void {
     const { calendarId, eventId } = clickInfo.event.extendedProps;
     const eventData = eventLookup.get(`${calendarId}:${eventId}`);
@@ -738,14 +757,11 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   }
 
   function openSelectedDateComposer(): void {
-    const now = new Date();
-    const seed = new Date(selectedDayForTable ?? selectedDate);
-    seed.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
-    const roundedStart = roundUpToNext15Minutes(seed);
+    const startIso = seedStartFromDate(new Date(selectedDayForTable ?? selectedDate)).toISOString();
     openCreateDialog({
       allDay: false,
-      end: addMinutesToIso(roundedStart.toISOString(), 30),
-      start: roundedStart.toISOString(),
+      end: addMinutesToIso(startIso, 30),
+      start: startIso,
     });
   }
 
@@ -983,6 +999,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         onClearDaySelection={clearSelectedDayForTable}
         onCreateEvent={openSelectedDateComposer}
         onDateClick={handleDateClick}
+        onDateDoubleClick={handleDateDoubleClick}
         onDatesSet={handleDatesSet}
         onEventClick={handleEventClick}
         onEventCopy={handleEventCopy}

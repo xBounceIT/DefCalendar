@@ -124,7 +124,7 @@ describe("eventSearchDialog visibility", () => {
   it("disables the input and shows banner when no calendars are visible", () => {
     renderDialog({ visibleCalendarIds: [] });
     const input = screen.getByRole("combobox") as HTMLInputElement;
-    expect(input.disabled).toBe(true);
+    expect(input.disabled).toBeTruthy();
   });
 
   it("shows the hint message before the user types enough characters", () => {

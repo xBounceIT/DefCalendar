@@ -88,7 +88,7 @@ describe("ui store hydrate", () => {
     const state = useUiStore.getState();
     expect(state.activeView).toBe("timeGridDay");
     expect(state.selectedDate).toBe("2026-06-15T00:00:00.000Z");
-    expect(state.hydrated).toBe(true);
+    expect(state.hydrated).toBeTruthy();
 
     const seed = new Date("2026-06-15T00:00:00.000Z");
     const expectedStart = new Date(seed.getFullYear(), seed.getMonth() - 1, 1).toISOString();

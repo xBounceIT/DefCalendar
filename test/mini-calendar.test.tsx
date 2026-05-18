@@ -34,7 +34,7 @@ function renderMiniCalendar(props: Partial<React.ComponentProps<typeof MiniCalen
   return { onDateSelect, onVisibleMonthChange, result };
 }
 
-describe("MiniCalendar", () => {
+describe(MiniCalendar, () => {
   it("renders the heading with the selected month + year (English)", () => {
     renderMiniCalendar();
     expect(screen.getByRole("heading", { level: 3 }).textContent).toMatch(/April 2026/);
