@@ -12,8 +12,15 @@ describe(parseTimeInput, () => {
 
     it("zero-pads single-digit hours and minutes", () => {
       expect(parseTimeInput("9:30")).toBe("09:30");
-      expect(parseTimeInput("9:5")).toBe("09:50");
+      expect(parseTimeInput("9:5")).toBe("09:05");
       expect(parseTimeInput("0:0")).toBe("00:00");
+    });
+
+    it("treats a single-digit minutes part as the tens-zero-padded value", () => {
+      // Regression: "9:5" must be 9:05, not 9:50.
+      expect(parseTimeInput("9:5")).toBe("09:05");
+      expect(parseTimeInput("9:5 pm")).toBe("21:05");
+      expect(parseTimeInput("12:5")).toBe("12:05");
     });
 
     it("rejects hours > 23", () => {

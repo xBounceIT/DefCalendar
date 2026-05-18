@@ -1180,7 +1180,7 @@ export function parseTimeInput(raw: string): null | string {
       return null;
     }
     hours = Number(digits);
-    minutes = Number(minutesPart.padEnd(2, "0").slice(0, 2));
+    minutes = Number(minutesPart.padStart(2, "0"));
   }
 
   if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
