@@ -66,8 +66,8 @@ class TrayService {
 
 function createTrayIcon() {
   const iconPath = app.isPackaged
-    ? join(process.resourcesPath, "tray-icon.png")
-    : join(process.cwd(), "resources", "tray-icon.png");
+    ? join(process.resourcesPath, "logo.png")
+    : join(process.cwd(), "resources", "logo.png");
 
   return nativeImage.createFromPath(iconPath);
 }

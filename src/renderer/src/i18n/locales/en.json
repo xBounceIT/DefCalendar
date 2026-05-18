@@ -45,12 +45,6 @@
     "continue": "Start syncing",
     "continuePending": "Starting sync…"
   },
-  "titleBar": {
-    "minimize": "Minimize",
-    "restore": "Restore",
-    "maximize": "Maximize",
-    "close": "Close"
-  },
   "sidebar": {
     "title": "Calendar",
     "accounts": "Accounts",

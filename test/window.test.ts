@@ -38,6 +38,7 @@ const { BrowserWindowMock, openExternalMock } = vi.hoisted(() => {
 });
 
 vi.mock(import("@main/electron-runtime"), () => ({
+  app: { isPackaged: false },
   BrowserWindow: BrowserWindowMock,
   shell: {
     openExternal: openExternalMock,

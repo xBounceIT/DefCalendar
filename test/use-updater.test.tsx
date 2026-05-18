@@ -75,7 +75,7 @@ function renderUseUpdater() {
   return renderHook(() => useUpdater(), { wrapper });
 }
 
-describe(useUpdater, () => {
+describe("useUpdater", () => {
   it("calls getStatus on mount and exposes the result", async () => {
     const { result } = renderUseUpdater();
 

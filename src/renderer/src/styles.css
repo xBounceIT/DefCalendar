@@ -432,70 +432,20 @@ button {
 
 .title-bar {
   grid-area: titlebar;
-  height: 40px;
-  background: #f5f5f5;
-  border-bottom: 1px solid #e0e0e0;
+  height: env(titlebar-area-height, 40px);
+  background: var(--bg);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
+  padding-left: 16px;
+  padding-right: calc(100vw - env(titlebar-area-x, 100vw) - env(titlebar-area-width, 0px));
   -webkit-app-region: drag;
   flex-shrink: 0;
-}
-
-.title-bar-content {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  height: 100%;
-}
-
-.title-bar-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  -webkit-app-region: no-drag;
-}
-
-.title-bar-icon {
-  color: var(--accent);
 }
 
 .title-bar-title {
   font-size: 13px;
   font-weight: 600;
   color: var(--ink);
-}
-
-.title-bar-controls {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  -webkit-app-region: no-drag;
-}
-
-.title-bar-button {
-  background: transparent;
-  border: none;
-  color: var(--ink-secondary);
-  padding: 6px;
-  border-radius: 4px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-}
-
-.title-bar-button:hover {
-  background: var(--surface-hover);
-  color: var(--ink);
-}
-
-.title-bar-button--close:hover {
-  background: var(--danger);
-  color: white;
 }
 
 .sidebar,
@@ -510,7 +460,6 @@ button {
   flex-direction: column;
   gap: 20px;
   padding: 24px 20px;
-  border-right: 1px solid var(--line);
   overflow-y: auto;
   height: 100%;
   min-height: 0;
@@ -1098,6 +1047,9 @@ button {
   min-height: 0;
   overflow: hidden;
   background: #ffffff;
+  border-top: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+  border-top-left-radius: 12px;
 }
 
 .workspace-header {

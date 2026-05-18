@@ -309,12 +309,6 @@ function createCalendarApiMock(): CalendarApi {
       dismiss: vi.fn(),
       dismissAll: vi.fn(),
     },
-    window: {
-      minimize: vi.fn(),
-      maximize: vi.fn(),
-      close: vi.fn(),
-      isMaximized: vi.fn().mockResolvedValue(false),
-    },
   };
 }
 
@@ -455,12 +449,6 @@ function createSignedInCalendarApiMock(): CalendarApi {
       onChanged: vi.fn().mockReturnValue(() => undefined),
       dismiss: vi.fn(),
       dismissAll: vi.fn(),
-    },
-    window: {
-      minimize: vi.fn(),
-      maximize: vi.fn(),
-      close: vi.fn(),
-      isMaximized: vi.fn().mockResolvedValue(false),
     },
   };
 }
@@ -631,12 +619,6 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
       onChanged: vi.fn().mockReturnValue(() => undefined),
       dismiss: vi.fn(),
       dismissAll: vi.fn(),
-    },
-    window: {
-      minimize: vi.fn(),
-      maximize: vi.fn(),
-      close: vi.fn(),
-      isMaximized: vi.fn().mockResolvedValue(false),
     },
   };
 }

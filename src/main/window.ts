@@ -1,18 +1,30 @@
-import { BrowserWindow, shell } from "@main/electron-runtime";
+import { app, BrowserWindow, shell } from "@main/electron-runtime";
 import { join } from "pathe";
 import { t } from "./i18n";
 
+const TITLE_BAR_BG = "#f5f5f5";
+
 function createMainWindow(): BrowserWindow {
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, "logo.png")
+    : join(process.cwd(), "resources", "logo.png");
+
   const window = new BrowserWindow({
     width: 1480,
     height: 940,
     minWidth: 1160,
     minHeight: 760,
     show: false,
-    backgroundColor: "#f4efe7",
+    backgroundColor: TITLE_BAR_BG,
     autoHideMenuBar: true,
+    icon: iconPath,
     title: t("windowTitle"),
     titleBarStyle: "hidden",
+    titleBarOverlay: {
+      color: TITLE_BAR_BG,
+      symbolColor: "#1a1a1a",
+      height: 40,
+    },
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
       sandbox: true,

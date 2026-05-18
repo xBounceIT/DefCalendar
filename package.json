@@ -25,6 +25,7 @@
   "build": {
     "appId": "com.daniel.defcalendar",
     "productName": "DefCalendar",
+    "icon": "resources/logo.png",
     "directories": {
       "output": "release"
     },

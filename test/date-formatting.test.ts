@@ -54,7 +54,7 @@ function withStubbedDateTimeFormat<T>(
   }
 }
 
-describe(formatHeaderDate, () => {
+describe("formatHeaderDate", () => {
   it("formats with month + year for the dayGridMonth view (en locale)", () => {
     expect(formatHeaderDate("2026-04-15T00:00:00.000Z", "dayGridMonth")).toBe("April 2026");
   });
@@ -77,7 +77,7 @@ describe(formatHeaderDate, () => {
   });
 });
 
-describe(formatSyncTimestamp, () => {
+describe("formatSyncTimestamp", () => {
   it("returns the noSyncYet string for a null value", () => {
     expect(formatSyncTimestamp(null, "system")).toBe("dateFormatting.noSyncYet");
   });
@@ -114,7 +114,7 @@ describe("formatLocalizedDate + applyTimeFormat", () => {
   });
 });
 
-describe(buildEventTimeFormat, () => {
+describe("buildEventTimeFormat", () => {
   it("returns hour12=true with meridiem='short' for 12h setting", () => {
     const format = buildEventTimeFormat("12h");
     expect(format.hour12).toBeTruthy();

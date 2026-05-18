@@ -38,7 +38,7 @@ function renderScreen(
   );
 }
 
-describe(CalendarSelectionScreen, () => {
+describe("CalendarSelectionScreen", () => {
   it("renders title, account, and one row per calendar", () => {
     renderScreen({
       accountEmail: "owner@account.test",
