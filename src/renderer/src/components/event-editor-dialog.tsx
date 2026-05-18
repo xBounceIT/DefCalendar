@@ -1150,7 +1150,7 @@ function parseTimeToMinutes(time: string): number {
   return h * 60 + m;
 }
 
-function parseTimeInput(raw: string): null | string {
+export function parseTimeInput(raw: string): null | string {
   const trimmed = raw.trim().toLowerCase();
   if (!trimmed) {
     return null;
