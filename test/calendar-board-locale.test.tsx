@@ -53,6 +53,7 @@ async function renderBoard(language: "en" | "it") {
       calendarRef={calendarRef}
       hasVisibleCalendars
       onDateClick={vi.fn()}
+      onDateDoubleClick={vi.fn()}
       onDatesSet={vi.fn()}
       onEventClick={vi.fn()}
       onEventDrop={vi.fn()}

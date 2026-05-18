@@ -75,7 +75,7 @@ function renderUseUpdater() {
   return renderHook(() => useUpdater(), { wrapper });
 }
 
-describe("useUpdater", () => {
+describe(useUpdater, () => {
   it("calls getStatus on mount and exposes the result", async () => {
     const { result } = renderUseUpdater();
 
@@ -152,13 +152,13 @@ describe("useUpdater", () => {
       result.current.check();
     });
 
-    await waitFor(() => expect(result.current.isChecking).toBe(true));
+    await waitFor(() => expect(result.current.isChecking).toBeTruthy());
 
     await act(async () => {
       resolveCheck(AVAILABLE_STATUS);
     });
 
-    await waitFor(() => expect(result.current.isChecking).toBe(false));
+    await waitFor(() => expect(result.current.isChecking).toBeFalsy());
   });
 
   it("unsubscribes the onStatus listener on unmount", async () => {

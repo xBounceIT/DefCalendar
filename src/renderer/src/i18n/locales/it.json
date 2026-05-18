@@ -132,6 +132,7 @@
     "end": "Fine",
     "endDay": "Giorno di fine",
     "endTime": "Ora di fine",
+    "toggleTimeOptions": "Mostra opzioni orario",
     "allDay": "Giornata intera",
     "location": "Posizione",
     "desktopReminder": "Promemoria desktop",

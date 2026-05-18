@@ -64,8 +64,8 @@ describe("updateService construction", () => {
     const service = new UpdateService();
 
     expect(service.getStatus().state).toBe("idle");
-    expect(autoUpdaterMock.autoDownload).toBe(false);
-    expect(autoUpdaterMock.autoInstallOnAppQuit).toBe(false);
+    expect(autoUpdaterMock.autoDownload).toBeFalsy();
+    expect(autoUpdaterMock.autoInstallOnAppQuit).toBeFalsy();
     const events = autoUpdaterMock.on.mock.calls.map(([name]) => name);
     expect(events).toStrictEqual([
       "checking-for-update",
@@ -79,7 +79,7 @@ describe("updateService construction", () => {
 
   it("propagates the allowPrerelease flag to autoUpdater", () => {
     const service = new UpdateService(true);
-    expect(autoUpdaterMock.allowPrerelease).toBe(true);
+    expect(autoUpdaterMock.allowPrerelease).toBeTruthy();
     expect(service.getStatus().state).toBe("idle");
   });
 });
@@ -298,9 +298,9 @@ describe("updateService.setAllowPrerelease", () => {
     const service = new UpdateService();
 
     service.setAllowPrerelease(true);
-    expect(autoUpdaterMock.allowPrerelease).toBe(true);
+    expect(autoUpdaterMock.allowPrerelease).toBeTruthy();
 
     service.setAllowPrerelease(false);
-    expect(autoUpdaterMock.allowPrerelease).toBe(false);
+    expect(autoUpdaterMock.allowPrerelease).toBeFalsy();
   });
 });

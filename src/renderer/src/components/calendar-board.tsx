@@ -27,6 +27,7 @@ interface CalendarBoardProps {
   calendarRef: React.RefObject<FullCalendar | null>;
   hasVisibleCalendars: boolean;
   onDateClick: (clickInfo: DateClickArg) => void;
+  onDateDoubleClick: (clickInfo: DateClickArg) => void;
   onDatesSet: (dates: DatesSetArg) => void;
   onEventClick: (clickInfo: EventClickArg) => void;
   onEventCopy: (calendarId: string, eventId: string) => void;
@@ -290,11 +291,14 @@ function EventCopyButton({ calendarId, eventId, onCopy }: EventCopyButtonProps) 
   );
 }
 
+const DOUBLE_CLICK_THRESHOLD_MS = 400;
+
 function CalendarSurface({
   activeView,
   calendarEvents,
   calendarRef,
   onDateClick,
+  onDateDoubleClick,
   onDatesSet,
   onEventClick,
   onEventCopy,
@@ -399,12 +403,30 @@ function CalendarSurface({
     [selectedDayForTable],
   );
 
+  const lastClickRef = React.useRef<{ iso: string; time: number } | null>(null);
+  const handleDateClick = React.useCallback(
+    (arg: DateClickArg) => {
+      const now = Date.now();
+      const iso = arg.date.toISOString();
+      const previous = lastClickRef.current;
+      if (previous && previous.iso === iso && now - previous.time <= DOUBLE_CLICK_THRESHOLD_MS) {
+        lastClickRef.current = null;
+        onDateDoubleClick(arg);
+        return;
+      }
+
+      lastClickRef.current = { iso, time: now };
+      onDateClick(arg);
+    },
+    [onDateClick, onDateDoubleClick],
+  );
+
   return (
     <>
       <FullCalendar
         allDayMaintainDuration
         allDayText={t("eventEditor.allDay")}
-        dateClick={onDateClick}
+        dateClick={handleDateClick}
         datesSet={onDatesSet}
         dayCellClassNames={handleDayCellClassNames}
         dayMaxEvents={3}
@@ -496,6 +518,7 @@ function CalendarBoard(props: CalendarBoardProps) {
         calendarEvents={props.calendarEvents}
         calendarRef={props.calendarRef}
         onDateClick={props.onDateClick}
+        onDateDoubleClick={props.onDateDoubleClick}
         onDatesSet={props.onDatesSet}
         onEventClick={props.onEventClick}
         onEventCopy={props.onEventCopy}

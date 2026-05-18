@@ -42,7 +42,7 @@ function renderTitleBar() {
   );
 }
 
-describe("TitleBar", () => {
+describe(TitleBar, () => {
   it("renders the brand and three control buttons", () => {
     renderTitleBar();
     expect(screen.getByText("DefCalendar")).toBeInTheDocument();

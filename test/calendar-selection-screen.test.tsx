@@ -38,7 +38,7 @@ function renderScreen(
   );
 }
 
-describe("CalendarSelectionScreen", () => {
+describe(CalendarSelectionScreen, () => {
   it("renders title, account, and one row per calendar", () => {
     renderScreen({
       accountEmail: "owner@account.test",
@@ -71,8 +71,8 @@ describe("CalendarSelectionScreen", () => {
 
     const visibleInput = screen.getByLabelText("Visible").querySelector("input")!;
     const hiddenInput = screen.getByLabelText("Hidden").querySelector("input")!;
-    expect((visibleInput as HTMLInputElement).checked).toBe(true);
-    expect((hiddenInput as HTMLInputElement).checked).toBe(false);
+    expect((visibleInput as HTMLInputElement).checked).toBeTruthy();
+    expect((hiddenInput as HTMLInputElement).checked).toBeFalsy();
   });
 
   it("toggles selection when checkbox is clicked", () => {
@@ -85,11 +85,11 @@ describe("CalendarSelectionScreen", () => {
     });
 
     const input = screen.getByLabelText("Personal").querySelector("input")! as HTMLInputElement;
-    expect(input.checked).toBe(true);
+    expect(input.checked).toBeTruthy();
     fireEvent.click(input);
-    expect(input.checked).toBe(false);
+    expect(input.checked).toBeFalsy();
     fireEvent.click(input);
-    expect(input.checked).toBe(true);
+    expect(input.checked).toBeTruthy();
   });
 
   it("invokes onContinue with the selected calendar IDs", () => {
@@ -123,7 +123,7 @@ describe("CalendarSelectionScreen", () => {
     });
 
     const button = screen.getByRole("button") as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
+    expect(button.disabled).toBeTruthy();
   });
 
   it("disables Continue while isPending=true", () => {
@@ -135,7 +135,7 @@ describe("CalendarSelectionScreen", () => {
       onContinue: vi.fn(),
     });
 
-    expect((screen.getByRole("button") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button") as HTMLButtonElement).disabled).toBeTruthy();
   });
 
   it("renders an error banner when errorMessage is provided", () => {
