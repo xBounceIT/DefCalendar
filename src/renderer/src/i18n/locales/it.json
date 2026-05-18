@@ -45,12 +45,6 @@
     "continue": "Avvia sincronizzazione",
     "continuePending": "Avvio sincronizzazione…"
   },
-  "titleBar": {
-    "minimize": "Riduci a icona",
-    "restore": "Ripristina",
-    "maximize": "Ingrandisci",
-    "close": "Chiudi"
-  },
   "sidebar": {
     "title": "Calendario",
     "accounts": "Account",

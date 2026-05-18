@@ -123,12 +123,6 @@ const calendarApi: CalendarApi = {
       ipcRenderer.invoke(IPC_CHANNELS.newEventNotificationsDismiss, eventId),
     dismissAll: () => ipcRenderer.invoke(IPC_CHANNELS.newEventNotificationsDismissAll),
   },
-  window: {
-    minimize: () => ipcRenderer.invoke(IPC_CHANNELS.windowMinimize),
-    maximize: () => ipcRenderer.invoke(IPC_CHANNELS.windowMaximize),
-    close: () => ipcRenderer.invoke(IPC_CHANNELS.windowClose),
-    isMaximized: () => ipcRenderer.invoke(IPC_CHANNELS.windowIsMaximized),
-  },
 };
 
 contextBridge.exposeInMainWorld("calendarApi", calendarApi);

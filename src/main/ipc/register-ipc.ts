@@ -602,40 +602,6 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   dependencies.updates.onStatus((status) => {
     broadcast(IPC_CHANNELS.updatesStatusChanged, appUpdateStatusSchema.parse(status));
   });
-
-  ipcMain.handle(IPC_CHANNELS.windowMinimize, async (event) => {
-    validateMainSender(event);
-    const window = dependencies.getMainWindow();
-    if (window) {
-      window.minimize();
-    }
-  });
-
-  ipcMain.handle(IPC_CHANNELS.windowMaximize, async (event) => {
-    validateMainSender(event);
-    const window = dependencies.getMainWindow();
-    if (window) {
-      if (window.isMaximized()) {
-        window.unmaximize();
-      } else {
-        window.maximize();
-      }
-    }
-  });
-
-  ipcMain.handle(IPC_CHANNELS.windowClose, async (event) => {
-    validateMainSender(event);
-    const window = dependencies.getMainWindow();
-    if (window) {
-      window.close();
-    }
-  });
-
-  ipcMain.handle(IPC_CHANNELS.windowIsMaximized, async (event) => {
-    validateMainSender(event);
-    const window = dependencies.getMainWindow();
-    return window?.isMaximized() ?? false;
-  });
 }
 
 export default registerIpc;

@@ -80,10 +80,6 @@ export const IPC_CHANNELS = {
   newEventNotificationsChanged: "new-event-notifications:changed",
   newEventNotificationsDismiss: "new-event-notifications:dismiss",
   newEventNotificationsDismissAll: "new-event-notifications:dismiss-all",
-  windowMinimize: "window:minimize",
-  windowMaximize: "window:maximize",
-  windowClose: "window:close",
-  windowIsMaximized: "window:is-maximized",
 } as const;
 
 interface CalendarApi {
@@ -155,12 +151,6 @@ interface CalendarApi {
     onChanged: (listener: (items: NewEventNotificationItem[]) => void) => () => void;
     dismiss: (eventId: string) => Promise<void>;
     dismissAll: () => Promise<void>;
-  };
-  window: {
-    minimize: () => Promise<void>;
-    maximize: () => Promise<void>;
-    close: () => Promise<void>;
-    isMaximized: () => Promise<boolean>;
   };
 }
 

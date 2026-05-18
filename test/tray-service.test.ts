@@ -112,7 +112,7 @@ describe("trayService.create", () => {
     try {
       new TrayService(createHandlers()).create();
       expect(createFromPathMock).toHaveBeenCalledWith(
-        expect.stringMatching(/[\\/]app[\\/]resources[\\/]tray-icon\.png$/),
+        expect.stringMatching(/[\\/]app[\\/]resources[\\/]logo\.png$/),
       );
     } finally {
       Object.defineProperty(process, "resourcesPath", {
@@ -125,7 +125,7 @@ describe("trayService.create", () => {
   it("uses cwd resources directory when not packaged", () => {
     new TrayService(createHandlers()).create();
     const passed = createFromPathMock.mock.calls[0]?.[0] as string;
-    expect(passed).toMatch(/resources[\\/]tray-icon\.png$/);
+    expect(passed).toMatch(/resources[\\/]logo\.png$/);
   });
 });
 

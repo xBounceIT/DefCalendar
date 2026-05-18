@@ -86,7 +86,7 @@ describe("safeStorageTokenCache.beforeCacheAccess", () => {
 
   it("decrypts an encrypted payload before deserializing", async () => {
     existsSyncMock.mockReturnValue(true);
-    const encryptedBytes = Buffer.from([0xde, 0xad, 0xbe, 0xef]);
+    const encryptedBytes = Buffer.from([0xDE, 0xAD, 0xBE, 0xEF]);
     readFileSyncMock.mockReturnValue(Buffer.concat([Buffer.from("enc:", "utf8"), encryptedBytes]));
     decryptStringMock.mockReturnValue('{"plaintext": true}');
     const plugin = new SafeStorageTokenCache(CACHE_PATH).createPlugin();
