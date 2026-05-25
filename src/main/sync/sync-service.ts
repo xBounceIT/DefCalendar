@@ -69,6 +69,7 @@ class SyncService {
       message: "Sign in to sync Exchange 365.",
       messageKey: "sync.signInToSync",
       counts: null,
+      progress: null,
       state: "idle",
     });
   }
@@ -161,6 +162,7 @@ class SyncService {
         message: "Sign in to sync Exchange 365.",
         messageKey: "sync.signInToSync",
         counts: null,
+        progress: null,
         state: "idle" as const,
       };
       this.setStatus(idleStatus);
@@ -174,6 +176,7 @@ class SyncService {
         message: "Sign in to sync Exchange 365.",
         messageKey: "sync.signInToSync",
         counts: null,
+        progress: null,
         state: "idle" as const,
       };
       this.setStatus(idleStatus);
@@ -192,6 +195,7 @@ class SyncService {
       message: syncMessage,
       messageKey: syncMessageKey,
       counts: null,
+      progress: null,
       state: "syncing",
     });
 
@@ -221,6 +225,7 @@ class SyncService {
           message: "Choose calendars to sync.",
           messageKey: "sync.chooseCalendars",
           counts: null,
+          progress: null,
           state: "idle",
         };
         this.setStatus(nextStatus);
@@ -235,6 +240,7 @@ class SyncService {
           message: "Select at least one calendar to sync.",
           messageKey: "sync.selectCalendars",
           counts: null,
+          progress: null,
           state: "idle",
         };
         this.setStatus(nextStatus);
@@ -252,28 +258,60 @@ class SyncService {
       const rangeEnd = new Date(Date.now() + lookAheadDays * DAY_MS).toISOString();
       const finishedAt = new Date().toISOString();
 
+      const totalCalendars = calendarsToSync.length;
+      let processedCalendars = 0;
+      let processedEvents = 0;
+      let syncFailed = false;
+
+      this.setStatus({
+        lastSyncedAt: this.status.lastSyncedAt,
+        message: syncMessage,
+        messageKey: syncMessageKey,
+        counts: null,
+        progress: { processedCalendars: 0, totalCalendars, processedEvents: 0 },
+        state: "syncing",
+      });
+
       const calendarsToStore = await Promise.all(
         calendarsToSync.map(async (calendar) => {
-          const isDeepBackfill =
-            this.dependencies.db.getDeepBackfillCompletedAt(calendar.id) === null;
-          const rangeStart = isDeepBackfill ? deepRangeStart : rollingRangeStart;
-          const fetchedEvents = await this.dependencies.graph.listCalendarView(
-            calendar.id,
-            rangeStart,
-            rangeEnd,
-            calendar.homeAccountId,
-          );
-          return {
-            calendarId: calendar.id,
-            events: this.mergePersistedDeclinedEvents(
+          try {
+            const isDeepBackfill =
+              this.dependencies.db.getDeepBackfillCompletedAt(calendar.id) === null;
+            const rangeStart = isDeepBackfill ? deepRangeStart : rollingRangeStart;
+            const fetchedEvents = await this.dependencies.graph.listCalendarView(
+              calendar.id,
+              rangeStart,
+              rangeEnd,
+              calendar.homeAccountId,
+            );
+            const mergedEvents = this.mergePersistedDeclinedEvents(
               calendar.id,
               fetchedEvents,
               rangeStart,
               rangeEnd,
-            ),
-            isDeepBackfill,
-            rangeStart,
-          };
+            );
+            processedCalendars += 1;
+            processedEvents += mergedEvents.length;
+            if (!syncFailed) {
+              this.setStatus({
+                lastSyncedAt: this.status.lastSyncedAt,
+                message: syncMessage,
+                messageKey: syncMessageKey,
+                counts: null,
+                progress: { processedCalendars, totalCalendars, processedEvents },
+                state: "syncing",
+              });
+            }
+            return {
+              calendarId: calendar.id,
+              events: mergedEvents,
+              isDeepBackfill,
+              rangeStart,
+            };
+          } catch (error) {
+            syncFailed = true;
+            throw error;
+          }
         }),
       );
 
@@ -360,6 +398,7 @@ class SyncService {
           calendars: calendarsToSync.length,
           events: totalEvents,
         },
+        progress: null,
         state: "idle",
       };
       this.setStatus(nextStatus);
@@ -380,6 +419,7 @@ class SyncService {
         message: errorMessage,
         messageKey,
         counts: null,
+        progress: null,
         state: "error",
       };
       this.setStatus(nextStatus);

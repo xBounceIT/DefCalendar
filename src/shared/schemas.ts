@@ -409,12 +409,19 @@ const syncStatusCountsSchema = z.object({
   events: z.number().int().nonnegative(),
 });
 
+const syncStatusProgressSchema = z.object({
+  processedCalendars: z.number().int().nonnegative(),
+  totalCalendars: z.number().int().positive(),
+  processedEvents: z.number().int().nonnegative(),
+});
+
 const syncStatusSchema = z.object({
   state: z.enum(["idle", "syncing", "error"]),
   lastSyncedAt: z.string().nullable(),
   message: z.string().nullable(),
   messageKey: z.string().nullable().optional(),
   counts: syncStatusCountsSchema.nullable().optional(),
+  progress: syncStatusProgressSchema.nullable().optional(),
 });
 
 const appUpdateStateSchema = z.enum([

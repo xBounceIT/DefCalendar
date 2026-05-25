@@ -939,6 +939,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         onContinue={(selectedCalendarIds) => {
           void handleCalendarSelectionContinue(selectedCalendarIds);
         }}
+        progress={syncStatus.progress ?? null}
       />
     );
   }

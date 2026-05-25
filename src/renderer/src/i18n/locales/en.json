@@ -43,7 +43,12 @@
     "selectedCount_one": "{{count}} of {{total}} calendar selected",
     "selectedCount_other": "{{count}} of {{total}} calendars selected",
     "continue": "Start syncing",
-    "continuePending": "Starting sync…"
+    "continuePending": "Starting sync…",
+    "progress": "Synced {{calendars}} · {{events}}",
+    "progressCalendars_one": "{{processed}} of {{total}} calendar",
+    "progressCalendars_other": "{{processed}} of {{total}} calendars",
+    "progressEvents_one": "{{count}} event",
+    "progressEvents_other": "{{count}} events"
   },
   "sidebar": {
     "title": "Calendar",

@@ -3,12 +3,19 @@ import { getCalendarAccent } from "@shared/calendar";
 import React from "react";
 import { useTranslation } from "react-i18next";
 
+interface CalendarSelectionScreenProgress {
+  processedCalendars: number;
+  totalCalendars: number;
+  processedEvents: number;
+}
+
 interface CalendarSelectionScreenProps {
   accountEmail: null | string;
   calendars: CalendarSummary[];
   errorMessage: null | string;
   isPending: boolean;
   onContinue: (selectedCalendarIds: string[]) => void;
+  progress?: CalendarSelectionScreenProgress | null;
 }
 
 function CalendarSelectionRow({
@@ -129,6 +136,27 @@ function CalendarSelectionScreen(props: CalendarSelectionScreenProps): React.JSX
               ? t("calendarSelection.continuePending")
               : t("calendarSelection.continue")}
           </button>
+          {props.isPending && props.progress && (
+            <div className="calendar-selection-progress">
+              <progress
+                className="calendar-selection-progress__bar"
+                max={props.progress.totalCalendars}
+                value={props.progress.processedCalendars}
+              />
+              <p className="calendar-selection-progress__label">
+                {t("calendarSelection.progress", {
+                  calendars: t("calendarSelection.progressCalendars", {
+                    count: props.progress.totalCalendars,
+                    processed: props.progress.processedCalendars,
+                    total: props.progress.totalCalendars,
+                  }),
+                  events: t("calendarSelection.progressEvents", {
+                    count: props.progress.processedEvents,
+                  }),
+                })}
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>
