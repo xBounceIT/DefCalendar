@@ -261,6 +261,7 @@ class SyncService {
       const totalCalendars = calendarsToSync.length;
       let processedCalendars = 0;
       let processedEvents = 0;
+      let syncFailed = false;
 
       this.setStatus({
         lastSyncedAt: this.status.lastSyncedAt,
@@ -276,12 +277,18 @@ class SyncService {
           const isDeepBackfill =
             this.dependencies.db.getDeepBackfillCompletedAt(calendar.id) === null;
           const rangeStart = isDeepBackfill ? deepRangeStart : rollingRangeStart;
-          const fetchedEvents = await this.dependencies.graph.listCalendarView(
-            calendar.id,
-            rangeStart,
-            rangeEnd,
-            calendar.homeAccountId,
-          );
+          let fetchedEvents;
+          try {
+            fetchedEvents = await this.dependencies.graph.listCalendarView(
+              calendar.id,
+              rangeStart,
+              rangeEnd,
+              calendar.homeAccountId,
+            );
+          } catch (error) {
+            syncFailed = true;
+            throw error;
+          }
           const mergedEvents = this.mergePersistedDeclinedEvents(
             calendar.id,
             fetchedEvents,
@@ -290,14 +297,16 @@ class SyncService {
           );
           processedCalendars += 1;
           processedEvents += mergedEvents.length;
-          this.setStatus({
-            lastSyncedAt: this.status.lastSyncedAt,
-            message: syncMessage,
-            messageKey: syncMessageKey,
-            counts: null,
-            progress: { processedCalendars, totalCalendars, processedEvents },
-            state: "syncing",
-          });
+          if (!syncFailed) {
+            this.setStatus({
+              lastSyncedAt: this.status.lastSyncedAt,
+              message: syncMessage,
+              messageKey: syncMessageKey,
+              counts: null,
+              progress: { processedCalendars, totalCalendars, processedEvents },
+              state: "syncing",
+            });
+          }
           return {
             calendarId: calendar.id,
             events: mergedEvents,

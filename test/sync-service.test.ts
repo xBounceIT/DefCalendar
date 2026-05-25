@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { SyncService } from "../src/main/sync/sync-service";
 import { DAY_MS } from "../src/shared/duration";
-import type { CalendarEvent, CalendarSummary, UserSettings } from "../src/shared/schemas";
+import type { CalendarEvent, CalendarSummary, SyncStatus, UserSettings } from "../src/shared/schemas";
 
 const FIXTURE_LOOKBEHIND_DAYS = 30;
 const FIXTURE_LOOKAHEAD_DAYS = 30;
@@ -260,6 +260,41 @@ describe("sync service", () => {
       ["calendar-a", expect.any(String), expect.any(String), "account-1"],
       ["calendar-b", expect.any(String), expect.any(String), "account-2"],
     ]);
+  });
+
+  it("does not let a late-resolving parallel fetch overwrite an error status", async () => {
+    const fixture = createFixture({
+      calendars: [createCalendar("calendar-a"), createCalendar("calendar-b")],
+    });
+
+    const slow = createDeferred<CalendarEvent[]>();
+    fixture.graph.listCalendarView = vi
+      .fn()
+      .mockImplementation(async (calendarId: string) => {
+        if (calendarId === "calendar-a") {
+          throw new Error("graph down");
+        }
+        return slow.promise;
+      });
+
+    const statuses: SyncStatus[] = [];
+    fixture.service.onStatus((status) => {
+      statuses.push({ ...status });
+    });
+
+    const result = await fixture.service.syncAll("manual");
+
+    expect(result.state).toBe("error");
+
+    slow.resolve([]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const errorIndex = statuses.findIndex((status) => status.state === "error");
+    const syncingAfterError = statuses
+      .slice(errorIndex + 1)
+      .filter((status) => status.state === "syncing");
+    expect(syncingAfterError).toStrictEqual([]);
+    expect(statuses.at(-1)?.state).toBe("error");
   });
 
   it("syncs only selected calendars", async () => {
