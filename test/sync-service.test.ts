@@ -297,6 +297,48 @@ describe("sync service", () => {
     expect(statuses.at(-1)?.state).toBe("error");
   });
 
+  it("gates late progress emits for non-network throws (e.g. db lookup failure)", async () => {
+    const fixture = createFixture({
+      calendars: [createCalendar("calendar-a"), createCalendar("calendar-b")],
+    });
+
+    const slow = createDeferred<CalendarEvent[]>();
+    fixture.db.getDeepBackfillCompletedAt = vi
+      .fn()
+      .mockImplementation((calendarId: string) => {
+        if (calendarId === "calendar-a") {
+          throw new Error("db lookup failed");
+        }
+        return "2026-01-01T00:00:00.000Z";
+      });
+    fixture.graph.listCalendarView = vi
+      .fn()
+      .mockImplementation(async (calendarId: string) => {
+        if (calendarId === "calendar-b") {
+          return slow.promise;
+        }
+        return [];
+      });
+
+    const statuses: SyncStatus[] = [];
+    fixture.service.onStatus((status) => {
+      statuses.push({ ...status });
+    });
+
+    const result = await fixture.service.syncAll("manual");
+
+    expect(result.state).toBe("error");
+
+    slow.resolve([]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const errorIndex = statuses.findIndex((status) => status.state === "error");
+    const syncingAfterError = statuses
+      .slice(errorIndex + 1)
+      .filter((status) => status.state === "syncing");
+    expect(syncingAfterError).toStrictEqual([]);
+  });
+
   it("syncs only selected calendars", async () => {
     const fixture = createFixture({
       calendars: [

@@ -274,45 +274,44 @@ class SyncService {
 
       const calendarsToStore = await Promise.all(
         calendarsToSync.map(async (calendar) => {
-          const isDeepBackfill =
-            this.dependencies.db.getDeepBackfillCompletedAt(calendar.id) === null;
-          const rangeStart = isDeepBackfill ? deepRangeStart : rollingRangeStart;
-          let fetchedEvents;
           try {
-            fetchedEvents = await this.dependencies.graph.listCalendarView(
+            const isDeepBackfill =
+              this.dependencies.db.getDeepBackfillCompletedAt(calendar.id) === null;
+            const rangeStart = isDeepBackfill ? deepRangeStart : rollingRangeStart;
+            const fetchedEvents = await this.dependencies.graph.listCalendarView(
               calendar.id,
               rangeStart,
               rangeEnd,
               calendar.homeAccountId,
             );
+            const mergedEvents = this.mergePersistedDeclinedEvents(
+              calendar.id,
+              fetchedEvents,
+              rangeStart,
+              rangeEnd,
+            );
+            processedCalendars += 1;
+            processedEvents += mergedEvents.length;
+            if (!syncFailed) {
+              this.setStatus({
+                lastSyncedAt: this.status.lastSyncedAt,
+                message: syncMessage,
+                messageKey: syncMessageKey,
+                counts: null,
+                progress: { processedCalendars, totalCalendars, processedEvents },
+                state: "syncing",
+              });
+            }
+            return {
+              calendarId: calendar.id,
+              events: mergedEvents,
+              isDeepBackfill,
+              rangeStart,
+            };
           } catch (error) {
             syncFailed = true;
             throw error;
           }
-          const mergedEvents = this.mergePersistedDeclinedEvents(
-            calendar.id,
-            fetchedEvents,
-            rangeStart,
-            rangeEnd,
-          );
-          processedCalendars += 1;
-          processedEvents += mergedEvents.length;
-          if (!syncFailed) {
-            this.setStatus({
-              lastSyncedAt: this.status.lastSyncedAt,
-              message: syncMessage,
-              messageKey: syncMessageKey,
-              counts: null,
-              progress: { processedCalendars, totalCalendars, processedEvents },
-              state: "syncing",
-            });
-          }
-          return {
-            calendarId: calendar.id,
-            events: mergedEvents,
-            isDeepBackfill,
-            rangeStart,
-          };
         }),
       );
 
