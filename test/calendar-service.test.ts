@@ -4,6 +4,7 @@ import GraphCalendarService, {
   extractPlainTextFromGraphHtml,
   isMissingGraphItemError,
   normalizeGraphResponseValue,
+  parseRecurrence,
 } from "../src/main/graph/calendar-service";
 
 afterEach(() => {
@@ -582,5 +583,83 @@ describe("graph calendar service request handling", () => {
         ),
       ),
     }).toMatchObject({ matches: true });
+  });
+});
+
+describe("graph calendar service parseRecurrence", () => {
+  it("coerces Graph's pattern.month=0 to null for absoluteMonthly + noEnd", () => {
+    const result = parseRecurrence({
+      pattern: {
+        dayOfMonth: 10,
+        interval: 1,
+        month: 0,
+        type: "absoluteMonthly",
+      },
+      range: {
+        numberOfOccurrences: 0,
+        startDate: "2026-05-10",
+        type: "noEnd",
+      },
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.pattern.month).toBeNull();
+    expect(result?.range.numberOfOccurrences).toBeNull();
+    expect(result?.pattern.dayOfMonth).toBe(10);
+    expect(result?.pattern.interval).toBe(1);
+  });
+
+  it("preserves valid positive integers", () => {
+    const result = parseRecurrence({
+      pattern: {
+        dayOfMonth: 15,
+        interval: 2,
+        month: 6,
+        type: "absoluteYearly",
+      },
+      range: {
+        numberOfOccurrences: 5,
+        startDate: "2026-06-15",
+        type: "numbered",
+      },
+    });
+
+    expect(result?.pattern.month).toBe(6);
+    expect(result?.pattern.dayOfMonth).toBe(15);
+    expect(result?.pattern.interval).toBe(2);
+    expect(result?.range.numberOfOccurrences).toBe(5);
+  });
+
+  it("falls back interval=0 to 1 to satisfy schema min(1)", () => {
+    const result = parseRecurrence({
+      pattern: {
+        interval: 0,
+        type: "daily",
+      },
+      range: {
+        startDate: "2026-05-10",
+        type: "noEnd",
+      },
+    });
+
+    expect(result?.pattern.interval).toBe(1);
+  });
+
+  it("clamps out-of-range month and dayOfMonth to null to satisfy schema max bounds", () => {
+    const result = parseRecurrence({
+      pattern: {
+        dayOfMonth: 32,
+        interval: 1,
+        month: 13,
+        type: "absoluteYearly",
+      },
+      range: {
+        startDate: "2026-05-10",
+        type: "noEnd",
+      },
+    });
+
+    expect(result?.pattern.month).toBeNull();
+    expect(result?.pattern.dayOfMonth).toBeNull();
   });
 });

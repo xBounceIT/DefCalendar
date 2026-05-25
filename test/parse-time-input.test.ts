@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseTimeInput } from "../src/renderer/src/components/event-editor-dialog";
 
-describe("parseTimeInput", () => {
+describe(parseTimeInput, () => {
   describe("colon-separated forms", () => {
     it("parses canonical HH:MM", () => {
       expect(parseTimeInput("09:30")).toBe("09:30");

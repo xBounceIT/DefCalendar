@@ -512,7 +512,7 @@ class AppDatabase {
       return null;
     }
 
-    return calendarEventSchema.parse(JSON.parse(readStringProperty(row, "payload_json")));
+    return parseStoredEvent(readStringProperty(row, "payload_json"));
   }
 
   listEvents(args: EventListArgs): CalendarEvent[] {
@@ -539,7 +539,7 @@ class AppDatabase {
 
     return statement
       .all(parameters)
-      .map((row) => calendarEventSchema.parse(JSON.parse(readStringProperty(row, "payload_json"))));
+      .map((row) => parseStoredEvent(readStringProperty(row, "payload_json")));
   }
 
   listEventIdsForCalendarRange(args: {
@@ -610,7 +610,7 @@ class AppDatabase {
 
     return statement
       .all(parameters)
-      .map((row) => calendarEventSchema.parse(JSON.parse(readStringProperty(row, "payload_json"))));
+      .map((row) => parseStoredEvent(readStringProperty(row, "payload_json")));
   }
 
   listReminderCandidates(
@@ -647,7 +647,7 @@ class AppDatabase {
     const candidates: ReminderCandidate[] = [];
 
     for (const row of statement.all(windowStart, windowEnd, ...visibleCalendarIds)) {
-      const event = calendarEventSchema.parse(JSON.parse(readStringProperty(row, "payload_json")));
+      const event = parseStoredEvent(readStringProperty(row, "payload_json"));
       const baseKey = readStringProperty(row, "base_key");
       const reminderMinutes = event.reminderMinutesBeforeStart;
 
@@ -698,7 +698,7 @@ class AppDatabase {
 
     return statement
       .all(windowStart, windowEnd, ...visibleCalendarIds)
-      .map((row) => calendarEventSchema.parse(JSON.parse(readStringProperty(row, "payload_json"))));
+      .map((row) => parseStoredEvent(readStringProperty(row, "payload_json")));
   }
 
   getReminderState(dedupeKey: string): null | ReminderStateSnapshot {
@@ -1252,6 +1252,66 @@ function readStringProperty(row: unknown, key: string): string {
   }
 
   throw new Error(`Expected "${key}" to be a string.`);
+}
+
+function intInRangeOrNull(value: unknown, min: number, max: number): null | number {
+  return typeof value === "number" && Number.isInteger(value) && value >= min && value <= max
+    ? value
+    : null;
+}
+
+function normalizeStoredEvent(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return raw;
+  }
+
+  const event = raw as Record<string, unknown>;
+  const recurrence = event.recurrence;
+  if (!recurrence || typeof recurrence !== "object" || Array.isArray(recurrence)) {
+    return event;
+  }
+
+  const rec = recurrence as Record<string, unknown>;
+  const pattern = rec.pattern;
+  const range = rec.range;
+  const normalizedPattern =
+    pattern && typeof pattern === "object" && !Array.isArray(pattern)
+      ? {
+          ...(pattern as Record<string, unknown>),
+          dayOfMonth: intInRangeOrNull((pattern as Record<string, unknown>).dayOfMonth, 1, 31),
+          interval:
+            intInRangeOrNull(
+              (pattern as Record<string, unknown>).interval,
+              1,
+              Number.MAX_SAFE_INTEGER,
+            ) ?? 1,
+          month: intInRangeOrNull((pattern as Record<string, unknown>).month, 1, 12),
+        }
+      : pattern;
+  const normalizedRange =
+    range && typeof range === "object" && !Array.isArray(range)
+      ? {
+          ...(range as Record<string, unknown>),
+          numberOfOccurrences: intInRangeOrNull(
+            (range as Record<string, unknown>).numberOfOccurrences,
+            1,
+            Number.MAX_SAFE_INTEGER,
+          ),
+        }
+      : range;
+
+  return {
+    ...event,
+    recurrence: {
+      ...rec,
+      pattern: normalizedPattern,
+      range: normalizedRange,
+    },
+  };
+}
+
+function parseStoredEvent(payloadJson: string): CalendarEvent {
+  return calendarEventSchema.parse(normalizeStoredEvent(JSON.parse(payloadJson)));
 }
 
 function readNumberProperty(row: unknown, key: string): number {

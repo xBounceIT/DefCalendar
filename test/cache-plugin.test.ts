@@ -96,7 +96,7 @@ describe("safeStorageTokenCache.beforeCacheAccess", () => {
 
     expect(decryptStringMock).toHaveBeenCalledOnce();
     const passed = decryptStringMock.mock.calls[0]?.[0] as Buffer;
-    expect(passed.equals(encryptedBytes)).toBeTruthy();
+    expect(passed.equals(encryptedBytes)).toBe(true);
     expect(ctx.tokenCache.deserialize).toHaveBeenCalledWith('{"plaintext": true}');
   });
 
@@ -152,8 +152,8 @@ describe("safeStorageTokenCache.afterCacheAccess", () => {
     expect(mkdirSyncMock).toHaveBeenCalledWith(expect.any(String), { recursive: true });
     expect(writeFileSyncMock).toHaveBeenCalledOnce();
     const written = writeFileSyncMock.mock.calls[0]?.[1] as Buffer;
-    expect(written.subarray(0, 4).equals(Buffer.from("enc:", "utf8"))).toBeTruthy();
-    expect(written.subarray(4).equals(cipher)).toBeTruthy();
+    expect(written.subarray(0, 4).equals(Buffer.from("enc:", "utf8"))).toBe(true);
+    expect(written.subarray(4).equals(cipher)).toBe(true);
   });
 
   it("writes plain prefix when encryption is unavailable", async () => {

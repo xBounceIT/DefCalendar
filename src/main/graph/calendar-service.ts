@@ -1471,24 +1471,28 @@ function parseRecurrence(value?: GraphRecurrence): null | Recurrence {
     return null;
   }
 
-  const interval = typeof value.pattern.interval === "number" ? value.pattern.interval : 1;
+  const interval = intInRangeOrNull(value.pattern.interval, 1, Number.MAX_SAFE_INTEGER) ?? 1;
   const startDate = value.range.startDate ?? new Date().toISOString().slice(0, 10);
 
   return {
     pattern: {
-      dayOfMonth: value.pattern.dayOfMonth ?? null,
+      dayOfMonth: intInRangeOrNull(value.pattern.dayOfMonth, 1, 31),
       daysOfWeek: (value.pattern.daysOfWeek ?? []).filter(
         isString,
       ) as Recurrence["pattern"]["daysOfWeek"],
       firstDayOfWeek: normalizeDayOfWeek(value.pattern.firstDayOfWeek),
       index: value.pattern.index ?? null,
       interval,
-      month: value.pattern.month ?? null,
+      month: intInRangeOrNull(value.pattern.month, 1, 12),
       type: normalizePatternType(value.pattern.type),
     },
     range: {
       endDate: value.range.endDate ?? null,
-      numberOfOccurrences: value.range.numberOfOccurrences ?? null,
+      numberOfOccurrences: intInRangeOrNull(
+        value.range.numberOfOccurrences,
+        1,
+        Number.MAX_SAFE_INTEGER,
+      ),
       recurrenceTimeZone: value.range.recurrenceTimeZone ?? null,
       startDate,
       type: normalizeRangeType(value.range.type),
@@ -1689,6 +1693,16 @@ function readOptionalNumber(value: Record<string, unknown>, key: string): number
   return undefined;
 }
 
+function intInRangeOrNull(
+  value: number | null | undefined,
+  min: number,
+  max: number,
+): null | number {
+  return typeof value === "number" && Number.isInteger(value) && value >= min && value <= max
+    ? value
+    : null;
+}
+
 function readOptionalRecord(
   value: Record<string, unknown>,
   key: string,
@@ -1840,5 +1854,10 @@ function isString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
-export { extractPlainTextFromGraphHtml, isMissingGraphItemError, normalizeGraphResponseValue };
+export {
+  extractPlainTextFromGraphHtml,
+  isMissingGraphItemError,
+  normalizeGraphResponseValue,
+  parseRecurrence,
+};
 export default GraphCalendarService;

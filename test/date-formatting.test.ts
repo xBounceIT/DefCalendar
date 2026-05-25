@@ -54,7 +54,7 @@ function withStubbedDateTimeFormat<T>(
   }
 }
 
-describe("formatHeaderDate", () => {
+describe(formatHeaderDate, () => {
   it("formats with month + year for the dayGridMonth view (en locale)", () => {
     expect(formatHeaderDate("2026-04-15T00:00:00.000Z", "dayGridMonth")).toBe("April 2026");
   });
@@ -77,7 +77,7 @@ describe("formatHeaderDate", () => {
   });
 });
 
-describe("formatSyncTimestamp", () => {
+describe(formatSyncTimestamp, () => {
   it("returns the noSyncYet string for a null value", () => {
     expect(formatSyncTimestamp(null, "system")).toBe("dateFormatting.noSyncYet");
   });
@@ -114,17 +114,17 @@ describe("formatLocalizedDate + applyTimeFormat", () => {
   });
 });
 
-describe("buildEventTimeFormat", () => {
+describe(buildEventTimeFormat, () => {
   it("returns hour12=true with meridiem='short' for 12h setting", () => {
     const format = buildEventTimeFormat("12h");
-    expect(format.hour12).toBeTruthy();
+    expect(format.hour12).toBe(true);
     expect(format.meridiem).toBe("short");
   });
 
   it("returns hour12=false with meridiem=false for 24h setting", () => {
     const format = buildEventTimeFormat("24h");
-    expect(format.hour12).toBeFalsy();
-    expect(format.meridiem).toBeFalsy();
+    expect(format.hour12).toBe(false);
+    expect(format.meridiem).toBe(false);
   });
 
   it("falls back to system clock detection for system setting (12h)", () => {
@@ -132,7 +132,7 @@ describe("buildEventTimeFormat", () => {
       () => ({ hour12: true }),
       () => buildEventTimeFormat("system"),
     );
-    expect(format.hour12).toBeTruthy();
+    expect(format.hour12).toBe(true);
     expect(format.meridiem).toBe("short");
   });
 
@@ -141,8 +141,8 @@ describe("buildEventTimeFormat", () => {
       () => ({ hour12: false }),
       () => buildEventTimeFormat("system"),
     );
-    expect(format.hour12).toBeFalsy();
-    expect(format.meridiem).toBeFalsy();
+    expect(format.hour12).toBe(false);
+    expect(format.meridiem).toBe(false);
   });
 
   it("returns 24h shape when resolvedOptions throws (catch branch)", () => {
@@ -152,6 +152,6 @@ describe("buildEventTimeFormat", () => {
       },
       () => buildEventTimeFormat("system"),
     );
-    expect(format.hour12).toBeFalsy();
+    expect(format.hour12).toBe(false);
   });
 });
