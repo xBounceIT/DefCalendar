@@ -66,9 +66,12 @@ describe("createMainWindow — security configuration", () => {
     const win = makeWindow();
     const webPreferences = win.options.webPreferences as Record<string, unknown>;
 
-    expect(webPreferences.sandbox).toBeTruthy();
-    expect(webPreferences.contextIsolation).toBeTruthy();
-    expect(webPreferences.nodeIntegration).toBeFalsy();
+    // oxlint-disable-next-line vitest/prefer-to-be-truthy
+    expect(webPreferences.sandbox).toBe(true);
+    // oxlint-disable-next-line vitest/prefer-to-be-truthy
+    expect(webPreferences.contextIsolation).toBe(true);
+    // oxlint-disable-next-line vitest/prefer-to-be-falsy
+    expect(webPreferences.nodeIntegration).toBe(false);
     expectTypeOf(webPreferences.preload).toBeString();
     expect(webPreferences.preload).toMatch(/preload[\\/]index\.cjs$/);
   });
