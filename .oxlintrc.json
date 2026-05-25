@@ -76,6 +76,8 @@
     "promise/avoid-new": "off",
     "vitest/prefer-to-be-truthy": "off",
     "vitest/prefer-to-be-falsy": "off",
+    "vitest/valid-title": "off",
+    "jest/valid-title": "off",
     "unicorn/number-literal-case": "off"
   },
   "settings": {
