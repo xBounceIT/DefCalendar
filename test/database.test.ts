@@ -483,4 +483,43 @@ describe("database", () => {
       "ALTER TABLE sync_state ADD COLUMN deep_backfill_completed_at TEXT",
     );
   });
+
+  it("sanitizes legacy events with recurrence month=0 / numberOfOccurrences=0 on read", () => {
+    const corruptedEvent = {
+      ...createStoredReminderEvent(),
+      recurrence: {
+        pattern: {
+          dayOfMonth: 10,
+          daysOfWeek: [],
+          firstDayOfWeek: "monday",
+          index: null,
+          interval: 1,
+          month: 0,
+          type: "absoluteMonthly",
+        },
+        range: {
+          endDate: null,
+          numberOfOccurrences: 0,
+          recurrenceTimeZone: null,
+          startDate: "2026-03-10",
+          type: "noEnd",
+        },
+      },
+    };
+    const all = vi.fn().mockReturnValue([{ payload_json: JSON.stringify(corruptedEvent) }]);
+    const prepare = vi.fn(() => ({ all }));
+
+    const db = Object.create(AppDatabase.prototype) as AppDatabase;
+    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+
+    const events = db.listEvents({
+      end: "2026-03-30T23:59:59.000Z",
+      start: "2026-03-01T00:00:00.000Z",
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]?.recurrence?.pattern.month).toBeNull();
+    expect(events[0]?.recurrence?.pattern.dayOfMonth).toBe(10);
+    expect(events[0]?.recurrence?.range.numberOfOccurrences).toBeNull();
+  });
 });
