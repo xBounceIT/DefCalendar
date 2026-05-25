@@ -66,9 +66,9 @@ describe("createMainWindow — security configuration", () => {
     const win = makeWindow();
     const webPreferences = win.options.webPreferences as Record<string, unknown>;
 
-    expect(webPreferences.sandbox).toBe(true);
-    expect(webPreferences.contextIsolation).toBe(true);
-    expect(webPreferences.nodeIntegration).toBe(false);
+    expect(webPreferences.sandbox).toBeTruthy();
+    expect(webPreferences.contextIsolation).toBeTruthy();
+    expect(webPreferences.nodeIntegration).toBeFalsy();
     expectTypeOf(webPreferences.preload).toBeString();
     expect(webPreferences.preload).toMatch(/preload[\\/]index\.cjs$/);
   });

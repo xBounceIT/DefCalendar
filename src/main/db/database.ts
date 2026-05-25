@@ -832,6 +832,7 @@ class AppDatabase {
         message: errorMessage,
         messageKey: errorMessage === "Exchange 365 sync failed." ? "sync.syncFailed" : null,
         counts: null,
+        progress: null,
         state: "error",
       };
     }
@@ -854,6 +855,7 @@ class AppDatabase {
           calendars: calendarsSynced,
           events: eventsSynced,
         },
+        progress: null,
         state: "idle",
       };
     }
@@ -870,6 +872,7 @@ class AppDatabase {
       message,
       messageKey,
       counts: null,
+      progress: null,
       state: "idle",
     };
   }

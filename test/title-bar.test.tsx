@@ -20,7 +20,7 @@ function renderTitleBar() {
   );
 }
 
-describe("TitleBar", () => {
+describe(TitleBar, () => {
   it("renders the app brand", () => {
     renderTitleBar();
     expect(screen.getByText("DefCalendar")).toBeInTheDocument();

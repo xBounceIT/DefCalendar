@@ -107,7 +107,7 @@ describe("workspacePanel new event + search", () => {
   it("disables 'New' when canCreateEvent=false", () => {
     renderPanel({ canCreateEvent: false });
     const newButton = screen.getByRole("button", { name: /new/i }) as HTMLButtonElement;
-    expect(newButton.disabled).toBe(true);
+    expect(newButton.disabled).toBeTruthy();
   });
 
   it("invokes onOpenSearch when search icon is clicked", () => {
@@ -119,7 +119,7 @@ describe("workspacePanel new event + search", () => {
   it("disables search when no calendars are visible", () => {
     renderPanel({ hasVisibleCalendars: false });
     const search = screen.getByRole("button", { name: /search/i }) as HTMLButtonElement;
-    expect(search.disabled).toBe(true);
+    expect(search.disabled).toBeTruthy();
   });
 });
 

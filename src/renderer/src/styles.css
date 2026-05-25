@@ -322,6 +322,25 @@ button {
   cursor: not-allowed;
 }
 
+.calendar-selection-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.calendar-selection-progress__bar {
+  width: 100%;
+  height: 8px;
+}
+
+.calendar-selection-progress__label {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: 13px;
+  text-align: center;
+}
+
 .auth-back-button {
   margin-top: 12px;
 }

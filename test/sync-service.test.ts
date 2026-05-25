@@ -214,6 +214,7 @@ describe("sync service", () => {
       message: "Choose calendars to sync.",
       messageKey: "sync.chooseCalendars",
       counts: null,
+      progress: null,
       state: "idle",
     });
     expect(fixture.graph.listCalendars).toHaveBeenCalledOnce();
@@ -358,6 +359,7 @@ describe("sync service", () => {
       message: "Select at least one calendar to sync.",
       messageKey: "sync.selectCalendars",
       counts: null,
+      progress: null,
       state: "idle",
     });
     expect(fixture.graph.listCalendarView).not.toHaveBeenCalled();
@@ -379,6 +381,7 @@ describe("sync service", () => {
       message: "Choose calendars to sync.",
       messageKey: "sync.chooseCalendars",
       counts: null,
+      progress: null,
       state: "idle",
     });
     expect(fixture.db.upsertCalendars).toHaveBeenCalledWith(
