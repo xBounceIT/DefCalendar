@@ -75,6 +75,9 @@ jobs:
           # Pre-create the draft release so electron-builder uploads to this
           # exact release instead of racing to create one for each parallel
           # asset upload (which produced two duplicate drafts in v0.5.0).
+          # Keep it as a draft until all assets are uploaded so update checks
+          # (autoUpdater) never observe a public release without installers
+          # or latest.yml.
           gh release create "$tag" `
             --draft `
             --title "$($notes.name)" `
@@ -83,3 +86,11 @@ jobs:
 
       - name: Build and publish assets
         run: npm run dist:publish
+
+      - name: Publish release
+        shell: pwsh
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Flip the release to public only after all assets are uploaded.
+          gh release edit "$env:TAG" --draft=false
