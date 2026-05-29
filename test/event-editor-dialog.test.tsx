@@ -895,4 +895,46 @@ describe("event editor dialog", () => {
 
     expect(saveButton).toBeDisabled();
   });
+
+  it("hides response actions and join for a cancelled attendee event but keeps delete", () => {
+    renderDialog({
+      state: {
+        event: createAttendeeEvent({
+          cancelled: true,
+          isOnlineMeeting: true,
+          onlineMeeting: {
+            conferenceId: null,
+            joinUrl: "https://teams.microsoft.com/meet/123",
+            phones: [],
+            provider: "teamsForBusiness",
+          },
+        }),
+        mode: "edit",
+      },
+    });
+
+    expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Refuse" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Other" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Join meeting" })).toBeNull();
+
+    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+  });
+
+  it("deletes a cancelled attendee event from the toolbar", () => {
+    const cancelledEvent = createAttendeeEvent({ cancelled: true });
+    const onDelete = vi.fn().mockResolvedValue(undefined);
+
+    renderDialog({
+      onDelete,
+      state: {
+        event: cancelledEvent,
+        mode: "edit",
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(onDelete).toHaveBeenCalledWith(cancelledEvent);
+  });
 });

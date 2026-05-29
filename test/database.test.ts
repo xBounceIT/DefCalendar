@@ -4,6 +4,7 @@ import AppDatabase from "../src/main/db/database";
 
 function createStoredReminderEvent(overrides?: {
   calendarId?: string;
+  cancelled?: boolean;
   id?: string;
   reminderMinutesBeforeStart?: number;
   start?: string;
@@ -16,7 +17,7 @@ function createStoredReminderEvent(overrides?: {
     bodyContentType: "html",
     bodyPreview: null,
     calendarId: overrides?.calendarId ?? "calendar-1",
-    cancelled: false,
+    cancelled: overrides?.cancelled ?? false,
     categories: [],
     changeKey: null,
     end: "2026-03-30T10:30:00.000Z",
@@ -245,6 +246,77 @@ describe("database", () => {
       "2026-03-30T12:00:00.000Z",
       "calendar-1",
     );
+  });
+
+  it("excludes cancelled events from reminder candidates", () => {
+    const all = vi.fn().mockReturnValue([
+      {
+        base_key: "calendar-1:event-1:2026-03-30T10:00:00.000Z",
+        dismissed_at_pre: null,
+        dismissed_at_start: null,
+        payload_json: JSON.stringify(createStoredReminderEvent({ cancelled: true })),
+        snoozed_until_pre: null,
+        snoozed_until_start: null,
+      },
+    ]);
+    const prepare = vi.fn(() => ({ all }));
+
+    const db = Object.create(AppDatabase.prototype) as AppDatabase;
+    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+
+    expect(
+      db.listReminderCandidates(
+        ["calendar-1"],
+        "2026-03-28T12:00:00.000Z",
+        "2026-03-30T12:00:00.000Z",
+      ),
+    ).toStrictEqual([]);
+  });
+
+  it("excludes cancelled events from listReminderEventsByStartRange", () => {
+    const all = vi.fn().mockReturnValue([
+      {
+        payload_json: JSON.stringify(createStoredReminderEvent({ id: "event-1" })),
+      },
+      {
+        payload_json: JSON.stringify(createStoredReminderEvent({ cancelled: true, id: "event-2" })),
+      },
+    ]);
+    const prepare = vi.fn(() => ({ all }));
+
+    const db = Object.create(AppDatabase.prototype) as AppDatabase;
+    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+
+    const results = db.listReminderEventsByStartRange(
+      ["calendar-1"],
+      "2026-03-28T12:00:00.000Z",
+      "2026-03-30T12:00:00.000Z",
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.id).toBe("event-1");
+  });
+
+  it("prunes dismissed rows and stale snoozed-only rows past retention", () => {
+    const run = vi.fn();
+    let capturedSql = "";
+    const prepare = vi.fn((sql: string) => {
+      capturedSql = sql;
+      return { run };
+    });
+
+    const db = Object.create(AppDatabase.prototype) as AppDatabase;
+    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+
+    db.pruneReminderState("2026-03-01T00:00:00.000Z");
+
+    const normalizedSql = capturedSql.replace(/\s+/g, " ").trim();
+    expect(normalizedSql).toContain("DELETE FROM reminder_state");
+    expect(normalizedSql).toContain("dismissed_at IS NOT NULL AND dismissed_at < ?");
+    expect(normalizedSql).toContain(
+      "dismissed_at IS NULL AND snoozed_until IS NOT NULL AND snoozed_until < ?",
+    );
+    expect(run).toHaveBeenCalledWith("2026-03-01T00:00:00.000Z", "2026-03-01T00:00:00.000Z");
   });
 
   it("searches events across scoped fields with parameterized SQL", () => {
