@@ -918,7 +918,6 @@ describe("event editor dialog", () => {
     expect(screen.queryByRole("button", { name: "Other" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Join meeting" })).toBeNull();
 
-    // Delete is surfaced so the attendee can clear the cancelled event.
     expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
   });
 

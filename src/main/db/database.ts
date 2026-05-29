@@ -947,11 +947,6 @@ class AppDatabase {
   }
 
   pruneReminderState(beforeIso: string): void {
-    // Prune dismissed rows past retention, plus snoozed-only rows whose snooze
-    // Expired long ago. The latter never transition to dismissed when their
-    // Event is removed (deleted or cancelled) — it drops out of the reminder
-    // Queries before the stale-key path can dismiss it — so without this they
-    // Would persist indefinitely.
     this.db
       .prepare(
         `DELETE FROM reminder_state
