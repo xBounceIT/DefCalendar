@@ -39,7 +39,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Create draft release with generated notes
+      - name: Create release with generated notes
         shell: pwsh
         env:
           TAG: ${{ github.ref_name }}
@@ -72,11 +72,10 @@ jobs:
           $notesFile = Join-Path $env:RUNNER_TEMP "release-notes.md"
           $notes.body | Out-File -FilePath $notesFile -Encoding utf8
 
-          # Pre-create the draft release so electron-builder uploads to this
+          # Pre-create the release so electron-builder uploads to this
           # exact release instead of racing to create one for each parallel
           # asset upload (which produced two duplicate drafts in v0.5.0).
           gh release create "$tag" `
-            --draft `
             --title "$($notes.name)" `
             --notes-file "$notesFile" `
             --target "$target"
