@@ -651,6 +651,10 @@ class AppDatabase {
       const baseKey = readStringProperty(row, "base_key");
       const reminderMinutes = event.reminderMinutesBeforeStart;
 
+      if (event.cancelled) {
+        continue;
+      }
+
       if (reminderMinutes === null) {
         continue;
       }
@@ -698,7 +702,8 @@ class AppDatabase {
 
     return statement
       .all(windowStart, windowEnd, ...visibleCalendarIds)
-      .map((row) => parseStoredEvent(readStringProperty(row, "payload_json")));
+      .map((row) => parseStoredEvent(readStringProperty(row, "payload_json")))
+      .filter((event) => !event.cancelled);
   }
 
   getReminderState(dedupeKey: string): null | ReminderStateSnapshot {
@@ -942,9 +947,18 @@ class AppDatabase {
   }
 
   pruneReminderState(beforeIso: string): void {
+    // Prune dismissed rows past retention, plus snoozed-only rows whose snooze
+    // Expired long ago. The latter never transition to dismissed when their
+    // Event is removed (deleted or cancelled) — it drops out of the reminder
+    // Queries before the stale-key path can dismiss it — so without this they
+    // Would persist indefinitely.
     this.db
-      .prepare("DELETE FROM reminder_state WHERE dismissed_at IS NOT NULL AND dismissed_at < ?")
-      .run(beforeIso);
+      .prepare(
+        `DELETE FROM reminder_state
+         WHERE (dismissed_at IS NOT NULL AND dismissed_at < ?)
+            OR (dismissed_at IS NULL AND snoozed_until IS NOT NULL AND snoozed_until < ?)`,
+      )
+      .run(beforeIso, beforeIso);
   }
 
   clearUserData(homeAccountId?: string): void {

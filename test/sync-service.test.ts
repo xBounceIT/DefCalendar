@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { SyncService } from "../src/main/sync/sync-service";
 import { DAY_MS } from "../src/shared/duration";
-import type { CalendarEvent, CalendarSummary, SyncStatus, UserSettings } from "../src/shared/schemas";
+import type {
+  CalendarEvent,
+  CalendarSummary,
+  SyncStatus,
+  UserSettings,
+} from "../src/shared/schemas";
 
 const FIXTURE_LOOKBEHIND_DAYS = 30;
 const FIXTURE_LOOKAHEAD_DAYS = 30;
@@ -268,14 +273,12 @@ describe("sync service", () => {
     });
 
     const slow = createDeferred<CalendarEvent[]>();
-    fixture.graph.listCalendarView = vi
-      .fn()
-      .mockImplementation(async (calendarId: string) => {
-        if (calendarId === "calendar-a") {
-          throw new Error("graph down");
-        }
-        return slow.promise;
-      });
+    fixture.graph.listCalendarView = vi.fn().mockImplementation(async (calendarId: string) => {
+      if (calendarId === "calendar-a") {
+        throw new Error("graph down");
+      }
+      return slow.promise;
+    });
 
     const statuses: SyncStatus[] = [];
     fixture.service.onStatus((status) => {
@@ -303,22 +306,18 @@ describe("sync service", () => {
     });
 
     const slow = createDeferred<CalendarEvent[]>();
-    fixture.db.getDeepBackfillCompletedAt = vi
-      .fn()
-      .mockImplementation((calendarId: string) => {
-        if (calendarId === "calendar-a") {
-          throw new Error("db lookup failed");
-        }
-        return "2026-01-01T00:00:00.000Z";
-      });
-    fixture.graph.listCalendarView = vi
-      .fn()
-      .mockImplementation(async (calendarId: string) => {
-        if (calendarId === "calendar-b") {
-          return slow.promise;
-        }
-        return [];
-      });
+    fixture.db.getDeepBackfillCompletedAt = vi.fn().mockImplementation((calendarId: string) => {
+      if (calendarId === "calendar-a") {
+        throw new Error("db lookup failed");
+      }
+      return "2026-01-01T00:00:00.000Z";
+    });
+    fixture.graph.listCalendarView = vi.fn().mockImplementation(async (calendarId: string) => {
+      if (calendarId === "calendar-b") {
+        return slow.promise;
+      }
+      return [];
+    });
 
     const statuses: SyncStatus[] = [];
     fixture.service.onStatus((status) => {

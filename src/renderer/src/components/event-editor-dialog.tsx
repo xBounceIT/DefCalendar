@@ -257,7 +257,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
             <h3>{isEdit ? t("eventEditor.editEventTitle") : t("eventEditor.newEventTitle")}</h3>
           </div>
           <div className="slide-panel__header-actions">
-            {editedEvent?.onlineMeeting?.joinUrl && (
+            {editedEvent?.onlineMeeting?.joinUrl && !editedEvent.cancelled && (
               <button
                 className="ghost-button"
                 onClick={() => {
@@ -289,7 +289,9 @@ function EventEditorDialog(props: EventEditorDialogProps) {
           homeAccountId={selectedCalendar?.homeAccountId ?? null}
           onChange={setForm}
           onDelete={
-            editedEvent && editedEvent.isOrganizer && editedEvent.attendees.length === 0
+            editedEvent &&
+            (editedEvent.cancelled ||
+              (editedEvent.isOrganizer && editedEvent.attendees.length === 0))
               ? () => {
                   void props.onDelete(editedEvent);
                 }
@@ -440,7 +442,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
             <NotesSection disabled={readOnlyForAttendee} form={form} onChange={setForm} />
           </div>
 
-          {editedEvent?.isOrganizer && (
+          {editedEvent?.isOrganizer && !editedEvent.cancelled && (
             <div className="slide-panel__section">
               <h4 className="slide-panel__section-title">{t("eventEditor.optionalResponses")}</h4>
               <CollapsibleSection title={t("eventEditor.optionalResponseActions")}>
@@ -1754,7 +1756,7 @@ function AttendeesSidebar({
 
   const displayOrganizer = event?.organizer ?? organizer;
   const isRecurringAttendeeEvent = Boolean(event?.seriesMasterId);
-  const showResponseActions = Boolean(event && !event.isOrganizer);
+  const showResponseActions = Boolean(event && !event.isOrganizer && !event.cancelled);
   const advancedResponseOptions: {
     action: EventResponseAction;
     label: string;
