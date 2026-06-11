@@ -595,6 +595,12 @@ class AppDatabase {
       });
     }
 
+    const orderByClauses: Record<SearchEventsArgs["sort"], string> = {
+      oldest: "start_sort ASC",
+      recent: "start_sort DESC",
+      relevance: "sort_rank, start_sort DESC",
+    };
+
     const statement = this.db.prepare(String.raw`
       SELECT payload_json,
         CASE
@@ -604,7 +610,7 @@ class AppDatabase {
         END AS sort_rank
       FROM events
       WHERE ${filters.join(" AND ")}
-      ORDER BY sort_rank, start_sort DESC
+      ORDER BY ${orderByClauses[args.sort]}
       LIMIT @limit
     `);
 

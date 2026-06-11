@@ -155,9 +155,36 @@ describe("eventSearchDialog query lifecycle", () => {
       },
       { timeout: 1000 },
     );
-    const args = searchMock.mock.calls[0]?.[0] as { query: string; calendarIds: string[] };
+    const args = searchMock.mock.calls[0]?.[0] as {
+      query: string;
+      calendarIds: string[];
+      sort: string;
+    };
     expect(args.query).toBe("team");
     expect(args.calendarIds).toStrictEqual(["calendar-1"]);
+    expect(args.sort).toBe("recent");
+  });
+
+  it("re-runs the search with the next sort mode when the sort button is clicked", async () => {
+    renderDialog();
+    const input = screen.getByRole("combobox") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "team" } });
+
+    await waitFor(
+      () => {
+        expect(searchMock).toHaveBeenCalled();
+      },
+      { timeout: 1000 },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /sort/i }));
+
+    await waitFor(() => {
+      expect(searchMock.mock.calls.length).toBeGreaterThan(1);
+    });
+    const args = searchMock.mock.calls.at(-1)?.[0] as { sort: string };
+    expect(args.sort).toBe("oldest");
+    expect(input).toHaveFocus();
   });
 
   it("renders results when search returns events", async () => {

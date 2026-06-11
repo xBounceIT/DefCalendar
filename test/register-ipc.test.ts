@@ -429,6 +429,7 @@ describe("register ipc", () => {
       calendarIds: ["calendar-1"],
       limit: 10,
       query: "planning",
+      sort: "recent",
     });
     expect(response).toStrictEqual([createCalendarEvent()]);
   });

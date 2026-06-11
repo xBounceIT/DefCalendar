@@ -1,7 +1,13 @@
-import type { CalendarEvent, CalendarSummary, UserSettings } from "@shared/schemas";
+import type {
+  CalendarEvent,
+  CalendarSummary,
+  EventSearchSort,
+  UserSettings,
+} from "@shared/schemas";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { DEFAULT_EVENT_SEARCH_SORT, eventSearchSortSchema } from "@shared/schema-values";
 
 import { formatLocalizedDate } from "../date-formatting";
 import SearchIcon from "./search-icon";
@@ -19,9 +25,24 @@ const DEBOUNCE_MS = 200;
 const MIN_QUERY_LENGTH = 2;
 const RESULT_LIMIT = 30;
 const RESULTS_LISTBOX_ID = "event-search-dialog-results";
+const SORT_CYCLE = eventSearchSortSchema.options;
 
 function getResultId(index: number): string {
   return `event-search-result-${index}`;
+}
+
+function SortIcon() {
+  return (
+    <svg fill="none" height="16" viewBox="0 0 24 24" width="16" xmlns="http://www.w3.org/2000/svg">
+      <path
+        d="M7 4v13m0 0l-3-3m3 3l3-3M17 20V7m0 0l-3 3m3-3l3 3"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
 }
 
 function CloseIcon() {
@@ -83,6 +104,7 @@ function EventSearchDialog({
   const [inputValue, setInputValue] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  const [sort, setSort] = useState<EventSearchSort>(DEFAULT_EVENT_SEARCH_SORT);
   const inputRef = useRef<HTMLInputElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
@@ -99,6 +121,7 @@ function EventSearchDialog({
       setInputValue("");
       setDebouncedQuery("");
       setActiveIndex(0);
+      setSort(DEFAULT_EVENT_SEARCH_SORT);
       const previouslyFocused = previouslyFocusedRef.current;
       previouslyFocusedRef.current = null;
       if (previouslyFocused && globalThis.document.contains(previouslyFocused)) {
@@ -143,8 +166,9 @@ function EventSearchDialog({
         calendarIds: sortedCalendarIds,
         limit: RESULT_LIMIT,
         query: debouncedQuery,
+        sort,
       }),
-    queryKey: ["events", "search", debouncedQuery, sortedCalendarIds],
+    queryKey: ["events", "search", debouncedQuery, sortedCalendarIds, sort],
     staleTime: 30_000,
   });
 
@@ -330,6 +354,22 @@ function EventSearchDialog({
             type="search"
             value={inputValue}
           />
+          <button
+            aria-label={t("eventSearch.sortButton")}
+            className="event-search-dialog__sort"
+            disabled={!hasVisibleCalendars}
+            onClick={() => {
+              setSort(
+                (current) => SORT_CYCLE[(SORT_CYCLE.indexOf(current) + 1) % SORT_CYCLE.length],
+              );
+              inputRef.current?.focus();
+            }}
+            title={t("eventSearch.sortButton")}
+            type="button"
+          >
+            <SortIcon />
+            <span>{t(`eventSearch.sort.${sort}`)}</span>
+          </button>
         </div>
         {body}
       </div>

@@ -87,7 +87,13 @@
     "hint": "Digita almeno 2 caratteri",
     "loading": "Ricerca…",
     "noResults": "Nessun evento corrispondente",
-    "noVisibleCalendars": "Seleziona un calendario per cercare"
+    "noVisibleCalendars": "Seleziona un calendario per cercare",
+    "sortButton": "Cambia ordinamento",
+    "sort": {
+      "recent": "Più recenti",
+      "oldest": "Meno recenti",
+      "relevance": "Più pertinenti"
+    }
   },
   "calendarViews": {
     "month": "Mese",
