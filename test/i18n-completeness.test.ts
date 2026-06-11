@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { eventSearchSortSchema } from "../src/shared/schema-values";
 import {
   extractKeysFromFile,
   getAllTsxFiles,
@@ -40,6 +41,13 @@ describe("i18n translation completeness", () => {
     expect(onlyInIt).toHaveLength(0);
   });
 
+  it("should have a label for every event search sort mode in both locales", () => {
+    for (const sortMode of eventSearchSortSchema.options) {
+      expect(translations.en).toHaveProperty([`eventSearch.sort.${sortMode}`]);
+      expect(translations.it).toHaveProperty([`eventSearch.sort.${sortMode}`]);
+    }
+  });
+
   it("should not have orphaned keys (defined but not used)", () => {
     // Keys used via dynamic patterns (template literals like `miniCalendar.weekdays.${day}`,
     // Lookup tables like VIEW_KEYS["dayGridMonth"] -> "calendarViews.month") that static
@@ -47,6 +55,7 @@ describe("i18n translation completeness", () => {
     const DYNAMIC_KEY_PREFIXES = [
       "miniCalendar.weekdays.", // Used via t(`miniCalendar.weekdays.${key}`)
       "calendarViews.", // Used via a VIEW_KEYS record lookup
+      "eventSearch.sort.", // Used via t(`eventSearch.sort.${sort}`)
       "tray.", // Used by main process i18n (separate translation system)
       "sync.", // Used by main process + via translateSyncMessage() lookup
     ];

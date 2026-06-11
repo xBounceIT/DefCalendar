@@ -340,6 +340,7 @@ describe("database", () => {
       calendarIds: ["calendar-1", "calendar-2"],
       limit: 30,
       query: "Plan%_ning",
+      sort: "relevance",
     });
 
     expect(results).toHaveLength(1);
@@ -372,6 +373,7 @@ describe("database", () => {
       calendarIds: ["calendar-1"],
       limit: 30,
       query: '",;:()',
+      sort: "recent",
     });
 
     expect(results).toStrictEqual([]);
@@ -389,14 +391,31 @@ describe("database", () => {
     const db = Object.create(AppDatabase.prototype) as AppDatabase;
     (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
 
-    db.searchEvents({ limit: 10, query: "weekly" });
+    db.searchEvents({ limit: 10, query: "weekly", sort: "recent" });
 
     expect(capturedSql).not.toContain("calendar_id IN");
+    expect(capturedSql).toContain("ORDER BY start_sort DESC");
     expect(all).toHaveBeenCalledWith({
       contains: "%weekly%",
       limit: 10,
       prefix: "weekly%",
     });
+  });
+
+  it("orders search results oldest-first when requested", () => {
+    const all = vi.fn().mockReturnValue([]);
+    let capturedSql = "";
+    const prepare = vi.fn((sql: string) => {
+      capturedSql = sql;
+      return { all };
+    });
+
+    const db = Object.create(AppDatabase.prototype) as AppDatabase;
+    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+
+    db.searchEvents({ limit: 10, query: "weekly", sort: "oldest" });
+
+    expect(capturedSql).toContain("ORDER BY start_sort ASC");
   });
 
   it("searches contacts with normalized attendee input", () => {

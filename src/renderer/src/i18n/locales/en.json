@@ -87,7 +87,13 @@
     "hint": "Type at least 2 characters",
     "loading": "Searching…",
     "noResults": "No matching events",
-    "noVisibleCalendars": "Select a calendar to search"
+    "noVisibleCalendars": "Select a calendar to search",
+    "sortButton": "Change sort order",
+    "sort": {
+      "recent": "Most recent",
+      "oldest": "Oldest first",
+      "relevance": "Best match"
+    }
   },
   "calendarViews": {
     "month": "Month",
