@@ -12,6 +12,7 @@ import SettingsDialog from "../src/renderer/src/components/settings-dialog";
 import enTranslations from "../src/renderer/src/i18n/locales/en.json";
 import type { CalendarApi } from "../src/shared/ipc";
 import { createDefaultSettings } from "../src/shared/schema-values";
+import type { UserSettings, UserSettingsPatch } from "../src/shared/schemas";
 
 const originalCalendarApiDescriptor = Object.getOwnPropertyDescriptor(globalThis, "calendarApi");
 
@@ -60,7 +61,13 @@ function restoreCalendarApi(): void {
   Reflect.deleteProperty(globalThis, "calendarApi");
 }
 
-function renderDialog(releaseNotes: null | string) {
+function renderDialog(
+  releaseNotes: null | string,
+  options?: {
+    onSave?: (patch: UserSettingsPatch) => void;
+    settings?: UserSettings;
+  },
+) {
   const i18n = createInstance();
   void i18n.use(initReactI18next).init({
     resources: { en: { translation: enTranslations } },
@@ -70,6 +77,7 @@ function renderDialog(releaseNotes: null | string) {
   });
 
   installCalendarApi(createCalendarApiMock(releaseNotes));
+  const onSave = options?.onSave ?? vi.fn();
 
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -86,8 +94,8 @@ function renderDialog(releaseNotes: null | string) {
           calendars={[]}
           isOpen
           onClose={vi.fn()}
-          onSave={vi.fn()}
-          settings={createDefaultSettings()}
+          onSave={onSave}
+          settings={options?.settings ?? createDefaultSettings()}
         />
       </QueryClientProvider>
     </I18nextProvider>,
@@ -129,5 +137,15 @@ describe("settings dialog", () => {
       (globalThis as typeof globalThis & { __releaseNotesInjected?: boolean })
         .__releaseNotesInjected,
     ).toBeUndefined();
+  });
+
+  it("saves the system invite notification setting", () => {
+    const onSave = vi.fn();
+    renderDialog(null, { onSave });
+
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    fireEvent.click(screen.getByLabelText("Show system notifications for new event invitations"));
+
+    expect(onSave).toHaveBeenCalledWith({ systemInviteNotificationsEnabled: true });
   });
 });

@@ -9,7 +9,7 @@ import React from "react";
 import App from "../src/renderer/src/app";
 import useUiStore from "../src/renderer/src/store";
 import { createDefaultSettings } from "../src/shared/schema-values";
-import type { CalendarApi } from "../src/shared/ipc";
+import type { CalendarApi, NewEventNotificationItem } from "../src/shared/ipc";
 import type { CalendarEvent } from "../src/shared/schemas";
 
 interface MockedCalendarModule {
@@ -131,6 +131,24 @@ function createCalendarEvent(overrides: Partial<CalendarEvent> = {}): CalendarEv
     type: null,
     unsupportedReason: null,
     webLink: null,
+    ...overrides,
+  };
+}
+
+function createNewEventNotificationItem(
+  overrides: Partial<NewEventNotificationItem> = {},
+): NewEventNotificationItem {
+  return {
+    calendarId: "calendar-1",
+    end: "2026-03-30T11:00:00.000Z",
+    eventId: "event-1",
+    isAllDay: false,
+    location: "Room 3",
+    onlineMeetingJoinUrl: null,
+    organizerEmail: "organizer@example.com",
+    organizerName: "Organizer",
+    start: "2026-03-30T10:00:00.000Z",
+    subject: "Planning invite",
     ...overrides,
   };
 }
@@ -758,6 +776,64 @@ describe("app startup", () => {
           updated: true,
         });
       });
+    } finally {
+      restoreCalendarApi();
+      restoreResizeObserver();
+    }
+  });
+
+  it("does not show the in-app invite popup for system-only invite notifications", async () => {
+    try {
+      installResizeObserverMock();
+      const calendarApi = createSignedInCalendarApiMock();
+      const settings = {
+        ...createDefaultSettings(),
+        selectedDate: signedInSelectedDate,
+        visibleCalendarIds: ["calendar-1"],
+        newEventPopupEnabled: false,
+        systemInviteNotificationsEnabled: true,
+      };
+      calendarApi.settings.get = vi.fn().mockResolvedValue(settings);
+      calendarApi.settings.update = vi.fn().mockResolvedValue(settings);
+      calendarApi.newEventNotifications.get = vi
+        .fn()
+        .mockResolvedValue([createNewEventNotificationItem()]);
+      installCalendarApi(calendarApi);
+
+      renderApp();
+
+      await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
+      await waitFor(() => {
+        expect(screen.queryByText("New invitations")).toBeNull();
+      });
+      expect(calendarApi.newEventNotifications.get).not.toHaveBeenCalled();
+    } finally {
+      restoreCalendarApi();
+      restoreResizeObserver();
+    }
+  });
+
+  it("shows the in-app invite popup when popup invite notifications are enabled", async () => {
+    try {
+      installResizeObserverMock();
+      const calendarApi = createSignedInCalendarApiMock();
+      const settings = {
+        ...createDefaultSettings(),
+        selectedDate: signedInSelectedDate,
+        visibleCalendarIds: ["calendar-1"],
+        newEventPopupEnabled: true,
+      };
+      calendarApi.settings.get = vi.fn().mockResolvedValue(settings);
+      calendarApi.settings.update = vi.fn().mockResolvedValue(settings);
+      calendarApi.newEventNotifications.get = vi
+        .fn()
+        .mockResolvedValue([createNewEventNotificationItem()]);
+      installCalendarApi(calendarApi);
+
+      renderApp();
+
+      await expect(screen.findByText("New invitations")).resolves.not.toBeNull();
+      expect(screen.getByText("Planning invite")).not.toBeNull();
     } finally {
       restoreCalendarApi();
       restoreResizeObserver();

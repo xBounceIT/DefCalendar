@@ -29,6 +29,13 @@ interface SyncFixture {
     listCalendars: ReturnType<typeof vi.fn>;
     listContacts: ReturnType<typeof vi.fn>;
   };
+  newEventNotifications: {
+    clear: ReturnType<typeof vi.fn>;
+    dismiss: ReturnType<typeof vi.fn>;
+    getItems: ReturnType<typeof vi.fn>;
+    onChange: ReturnType<typeof vi.fn>;
+    recordCandidates: ReturnType<typeof vi.fn>;
+  };
   reminders: {
     checkNow: ReturnType<typeof vi.fn>;
   };
@@ -102,7 +109,9 @@ function createFixture(args?: {
   accountIds?: string[];
   calendars?: CalendarSummary[];
   knownCalendarIds?: string[];
+  newEventPopupEnabled?: boolean;
   syncIntervalMinutes?: UserSettings["syncIntervalMinutes"];
+  systemInviteNotificationsEnabled?: boolean;
   visibleCalendarIds?: string[];
 }): SyncFixture {
   const calendars = args?.calendars ?? [createCalendar("calendar-a")];
@@ -140,11 +149,15 @@ function createFixture(args?: {
 
   const settings = {
     getSettings: vi.fn().mockReturnValue({
+      newEventPopupEnabled: args?.newEventPopupEnabled ?? false,
       syncIntervalMinutes,
+      systemInviteNotificationsEnabled: args?.systemInviteNotificationsEnabled ?? false,
       visibleCalendarIds,
     }),
     syncVisibleCalendars: vi.fn().mockReturnValue({
+      newEventPopupEnabled: args?.newEventPopupEnabled ?? false,
       syncIntervalMinutes,
+      systemInviteNotificationsEnabled: args?.systemInviteNotificationsEnabled ?? false,
       visibleCalendarIds,
     }),
   };
@@ -180,6 +193,7 @@ function createFixture(args?: {
   return {
     db,
     graph,
+    newEventNotifications,
     reminders,
     service,
     settings,
@@ -361,6 +375,51 @@ describe("sync service", () => {
     expect(fixture.db.replaceEventsForCalendarRange).toHaveBeenCalledTimes(2);
     expect(fixture.db.saveSyncState).toHaveBeenCalledTimes(2);
     expect(fixture.reminders.checkNow).toHaveBeenCalledOnce();
+  });
+
+  it("does not record invite candidates when invite notifications are disabled", async () => {
+    const fixture = createFixture();
+    fixture.graph.listCalendarView.mockResolvedValue([
+      createEvent({ id: "invite-1", isOrganizer: false, responseStatus: null }),
+    ]);
+
+    await fixture.service.syncAll("manual");
+
+    expect(fixture.newEventNotifications.recordCandidates).not.toHaveBeenCalled();
+  });
+
+  it("records invite candidates when the in-app invite popup is enabled", async () => {
+    const fixture = createFixture({ newEventPopupEnabled: true });
+    const invite = createEvent({ id: "invite-1", isOrganizer: false, responseStatus: null });
+    fixture.graph.listCalendarView.mockResolvedValue([invite]);
+
+    await fixture.service.syncAll("manual");
+
+    expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([invite]);
+  });
+
+  it("records invite candidates when system invite notifications are enabled", async () => {
+    const fixture = createFixture({ systemInviteNotificationsEnabled: true });
+    const invite = createEvent({ id: "invite-1", isOrganizer: false, responseStatus: null });
+    fixture.graph.listCalendarView.mockResolvedValue([invite]);
+
+    await fixture.service.syncAll("manual");
+
+    expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([invite]);
+  });
+
+  it("records invite candidates once when both invite notification modes are enabled", async () => {
+    const fixture = createFixture({
+      newEventPopupEnabled: true,
+      systemInviteNotificationsEnabled: true,
+    });
+    const invite = createEvent({ id: "invite-1", isOrganizer: false, responseStatus: null });
+    fixture.graph.listCalendarView.mockResolvedValue([invite]);
+
+    await fixture.service.syncAll("manual");
+
+    expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledOnce();
+    expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([invite]);
   });
 
   it("keeps locally declined attendee events when calendarView omits them", async () => {

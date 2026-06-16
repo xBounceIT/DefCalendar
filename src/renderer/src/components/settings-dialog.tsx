@@ -228,6 +228,7 @@ function NotificationsSection({
   };
   const localReminderOverrideEnabled = settings.localReminderOverrideEnabled ?? false;
   const newEventPopupEnabled = settings.newEventPopupEnabled ?? false;
+  const systemInviteNotificationsEnabled = settings.systemInviteNotificationsEnabled ?? false;
   const localReminderRules =
     settings.localReminderRules?.length > 0
       ? settings.localReminderRules
@@ -310,6 +311,17 @@ function NotificationsSection({
           />
           <span className="toggle-slider" />
           <span>{t("settings.sections.notifications.newEventPopup")}</span>
+        </label>
+        <label className="toggle-field settings-notifications__toggle">
+          <input
+            checked={systemInviteNotificationsEnabled}
+            onChange={(e) => {
+              onSave({ systemInviteNotificationsEnabled: e.target.checked });
+            }}
+            type="checkbox"
+          />
+          <span className="toggle-slider" />
+          <span>{t("settings.sections.notifications.systemInviteNotifications")}</span>
         </label>
         <label className="toggle-field settings-notifications__toggle">
           <input

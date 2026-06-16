@@ -1071,7 +1071,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         timeFormat={appSettings.timeFormat}
       />
       <UpdateAvailablePopup />
-      <NewEventPopup timeFormat={appSettings.timeFormat} />
+      {appSettings.newEventPopupEnabled && <NewEventPopup timeFormat={appSettings.timeFormat} />}
     </div>
   );
 }

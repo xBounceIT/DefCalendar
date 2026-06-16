@@ -3,6 +3,8 @@ import {
   calendarSummarySchema,
   createDefaultSettings,
   eventDraftSchema,
+  userSettingsPatchSchema,
+  userSettingsSchema,
 } from "../src/shared/schemas";
 import { describe, expect, it } from "vitest";
 
@@ -47,7 +49,36 @@ describe("shared schemas", () => {
     expect(defaults.syncIntervalMinutes).toBe(1);
     expect(defaults).toMatchObject({ localReminderOverrideEnabled: false });
     expect(defaults.localReminderRules).toStrictEqual([{ minutes: 15, when: "before" }]);
+    expect(defaults.newEventPopupEnabled).toBe(false);
+    expect(defaults.systemInviteNotificationsEnabled).toBe(false);
     expect(defaults.visibleCalendarIds).toStrictEqual([]);
+  });
+
+  it("defaults system invite notifications for legacy settings", () => {
+    const legacySettings: Record<string, unknown> = { ...createDefaultSettings() };
+    delete legacySettings.systemInviteNotificationsEnabled;
+
+    const settings = userSettingsSchema.parse(legacySettings);
+
+    expect(settings.systemInviteNotificationsEnabled).toBe(false);
+  });
+
+  it("does not inject defaults into sparse settings patches", () => {
+    const patch = userSettingsPatchSchema.parse({ activeView: "timeGridDay" });
+
+    expect(patch).toStrictEqual({ activeView: "timeGridDay" });
+  });
+
+  it("preserves explicit invite notification patch values", () => {
+    const enabledPatch = userSettingsPatchSchema.parse({
+      systemInviteNotificationsEnabled: true,
+    });
+    const disabledPatch = userSettingsPatchSchema.parse({
+      systemInviteNotificationsEnabled: false,
+    });
+
+    expect(enabledPatch.systemInviteNotificationsEnabled).toBe(true);
+    expect(disabledPatch.systemInviteNotificationsEnabled).toBe(false);
   });
 
   it("accepts calendar summaries with account ownership", () => {

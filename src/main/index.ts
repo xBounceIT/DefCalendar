@@ -1,5 +1,6 @@
 import AppDatabase from "@main/db/database";
 import type { BrowserWindow } from "electron";
+import EventActionService from "@main/events/event-action-service";
 import GraphCalendarService from "@main/graph/calendar-service";
 import { IPC_CHANNELS } from "@shared/ipc";
 import MsalAuthService from "@main/auth/msal-auth-service";
@@ -9,6 +10,7 @@ import ReminderWindowManager from "@main/reminders/reminder-window";
 import SafeStorageTokenCache from "@main/auth/cache-plugin";
 import SettingsService from "@main/settings/settings-service";
 import { SyncService } from "@main/sync/sync-service";
+import SystemInviteNotificationService from "@main/notifications/system-invite-notification-service";
 import TrayService from "@main/tray-service";
 import UpdateService from "@main/update/update-service";
 import { app, ipcMain } from "@main/electron-runtime";
@@ -29,6 +31,10 @@ let trayService: TrayService | null = null;
 let shouldQuit = false;
 
 async function bootstrap(): Promise<void> {
+  if (process.platform === "win32" && typeof app.setAppUserModelId === "function") {
+    app.setAppUserModelId("com.daniel.defcalendar");
+  }
+
   const config = loadAppConfig();
   const db = new AppDatabase();
   const settings = new SettingsService(db);
@@ -56,6 +62,19 @@ async function bootstrap(): Promise<void> {
     graph,
     newEventNotifications,
     reminders,
+    settings,
+  });
+  const eventActions = new EventActionService({
+    db,
+    getMainWindow: () => mainWindow,
+    graph,
+    newEventNotifications,
+    reminders,
+    sync,
+  });
+  const systemInviteNotifications = new SystemInviteNotificationService({
+    eventActions,
+    newEventNotifications,
     settings,
   });
   const updates = new UpdateService(savedSettings.updateChannel === "prerelease");
@@ -123,16 +142,19 @@ async function bootstrap(): Promise<void> {
   registerIpc({
     auth,
     db,
+    eventActions,
     graph,
     newEventNotifications,
     reminders,
     reminderManager,
     settings,
+    systemInviteNotifications,
     sync,
     updates,
     getMainWindow: () => mainWindow,
   });
 
+  systemInviteNotifications.start();
   reminders.start();
   sync.start();
 
@@ -158,6 +180,7 @@ async function bootstrap(): Promise<void> {
   app.on("before-quit", () => {
     shouldQuit = true;
     reminders.stop();
+    systemInviteNotifications.stop();
     sync.stop();
     trayService?.destroy();
   });
