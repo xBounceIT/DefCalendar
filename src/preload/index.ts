@@ -8,8 +8,9 @@ import type {
 import { contextBridge, ipcRenderer } from "electron";
 import type { CalendarApi, NewEventNotificationItem, ReminderDialogState } from "@shared/ipc";
 import IPC_CHANNELS from "@shared/ipc-values";
+import { createMockCalendarApi } from "./mock-calendar-api";
 
-const calendarApi: CalendarApi = {
+const ipcCalendarApi: CalendarApi = {
   app: {
     getLocale: () => ipcRenderer.invoke(IPC_CHANNELS.appGetLocale),
     getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.appGetVersion),
@@ -124,5 +125,8 @@ const calendarApi: CalendarApi = {
     dismissAll: () => ipcRenderer.invoke(IPC_CHANNELS.newEventNotificationsDismissAll),
   },
 };
+
+const calendarApi =
+  process.env.DEFCALENDAR_MOCK_DATA === "1" ? createMockCalendarApi() : ipcCalendarApi;
 
 contextBridge.exposeInMainWorld("calendarApi", calendarApi);

@@ -5,6 +5,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./app";
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { createMockCalendarApi } from "../../preload/mock-calendar-api";
+
+if (
+  import.meta.env.DEV &&
+  window.location.search.includes("mockData=1") &&
+  !globalThis.calendarApi
+) {
+  globalThis.calendarApi = createMockCalendarApi();
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
