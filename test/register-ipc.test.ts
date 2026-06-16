@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import EventActionService from "../src/main/events/event-action-service";
 import registerIpc from "../src/main/ipc/register-ipc";
 import { IPC_CHANNELS } from "../src/shared/ipc";
 
@@ -178,9 +179,18 @@ function createFixture() {
   };
   const settings = {
     getSettings: vi.fn().mockReturnValue({
+      newEventPopupEnabled: false,
+      systemInviteNotificationsEnabled: false,
       syncIntervalMinutes: 15,
       visibleCalendarIds: [],
     }),
+    updateSettings: vi.fn((patch: Record<string, unknown>) => ({
+      newEventPopupEnabled: false,
+      systemInviteNotificationsEnabled: false,
+      syncIntervalMinutes: 15,
+      visibleCalendarIds: [],
+      ...patch,
+    })),
   };
   const sync = {
     getStatus: vi.fn().mockReturnValue(syncStatus),
@@ -191,6 +201,7 @@ function createFixture() {
   };
   const updates = {
     onStatus: vi.fn(),
+    setAllowPrerelease: vi.fn(),
   };
 
   const newEventNotifications = {
@@ -200,16 +211,29 @@ function createFixture() {
     onChange: vi.fn(),
     recordCandidates: vi.fn(),
   };
+  const eventActions = new EventActionService({
+    db: db as never,
+    getMainWindow: () => mainWindow as never,
+    graph: graph as never,
+    newEventNotifications: newEventNotifications as never,
+    reminders: reminders as never,
+    sync: sync as never,
+  });
+  const systemInviteNotifications = {
+    refresh: vi.fn(),
+  };
 
   registerIpc({
     auth: auth as never,
     db: db as never,
+    eventActions,
     getMainWindow: () => mainWindow as never,
     graph: graph as never,
     newEventNotifications: newEventNotifications as never,
     reminderManager: reminderManager as never,
     reminders: reminders as never,
     settings: settings as never,
+    systemInviteNotifications: systemInviteNotifications as never,
     sync: sync as never,
     updates: updates as never,
   });
@@ -225,6 +249,7 @@ function createFixture() {
     reminderWebContents,
     reminders,
     sync,
+    systemInviteNotifications,
   };
 }
 
@@ -467,6 +492,20 @@ describe("register ipc", () => {
       { email: "alice@example.com", name: "Alice Example" },
       { email: "bob@example.com", name: null },
     ]);
+  });
+
+  it("refreshes system invite notifications when settings change", async () => {
+    const fixture = createFixture();
+    const invokeEvent = { sender: fixture.mainWebContents };
+
+    const response = await fixture.handlers.get(IPC_CHANNELS.settingsUpdate)?.(invokeEvent, {
+      systemInviteNotificationsEnabled: true,
+    });
+
+    expect(response).toMatchObject({
+      systemInviteNotificationsEnabled: true,
+    });
+    expect(fixture.systemInviteNotifications.refresh).toHaveBeenCalledOnce();
   });
 
   it("keeps a declined attendee event locally when Graph can no longer fetch it", async () => {

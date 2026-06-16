@@ -8,6 +8,12 @@ interface MainTranslations {
   quit: string;
   windowTitle: string;
   reminderTitle: string;
+  inviteNotificationTitle: string;
+  inviteNotificationUntitledEvent: string;
+  inviteNotificationUnknownOrganizer: string;
+  inviteNotificationAccept: string;
+  inviteNotificationTentative: string;
+  inviteNotificationDecline: string;
   signInToSync: string;
   syncing: string;
   connecting: string;
@@ -23,6 +29,12 @@ const translations: Record<AppLocale, MainTranslations> = {
     quit: "Quit",
     windowTitle: "DefCalendar",
     reminderTitle: "Reminder",
+    inviteNotificationTitle: "New invitation",
+    inviteNotificationUntitledEvent: "Untitled event",
+    inviteNotificationUnknownOrganizer: "Unknown organizer",
+    inviteNotificationAccept: "Accept",
+    inviteNotificationTentative: "Tentative",
+    inviteNotificationDecline: "Decline",
     signInToSync: "Sign in to sync Exchange 365.",
     syncing: "Syncing Exchange 365\u2026",
     connecting: "Connecting to Exchange 365\u2026",
@@ -36,6 +48,12 @@ const translations: Record<AppLocale, MainTranslations> = {
     quit: "Esci dall\u2019applicazione",
     windowTitle: "DefCalendar",
     reminderTitle: "Promemoria",
+    inviteNotificationTitle: "Nuovo invito",
+    inviteNotificationUntitledEvent: "Evento senza titolo",
+    inviteNotificationUnknownOrganizer: "Organizzatore sconosciuto",
+    inviteNotificationAccept: "Accetta",
+    inviteNotificationTentative: "Provvisorio",
+    inviteNotificationDecline: "Rifiuta",
     signInToSync: "Accedi per sincronizzare Exchange 365.",
     syncing: "Sincronizzazione Exchange 365\u2026",
     connecting: "Connessione a Exchange 365\u2026",

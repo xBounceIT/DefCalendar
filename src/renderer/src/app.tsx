@@ -1088,10 +1088,12 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         timeFormat={appSettings.timeFormat}
       />
       <UpdateAvailablePopup />
-      <NewEventPopup
-        onFindAcceptConflicts={findAcceptConflicts}
-        timeFormat={appSettings.timeFormat}
-      />
+      {appSettings.newEventPopupEnabled && (
+        <NewEventPopup
+          onFindAcceptConflicts={findAcceptConflicts}
+          timeFormat={appSettings.timeFormat}
+        />
+      )}
     </div>
   );
 }
