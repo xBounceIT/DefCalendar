@@ -214,6 +214,22 @@ describe("system invite notification service", () => {
     expect(notificationMock.instances[0].close).toHaveBeenCalledOnce();
   });
 
+  it("does not re-show invites opened for overlap review", () => {
+    expect.hasAssertions();
+    resetNotificationMock();
+    const { service } = createService();
+
+    service.sync([createItem()]);
+    notificationMock.instances[0].emit("action", { actionIndex: 0 });
+    service.sync([createItem(), createItem({ eventId: "event-2" })]);
+
+    expect(notificationMock.instances).toHaveLength(2);
+    expect(notificationMock.instances[1].options).toMatchObject({
+      id: "invite:calendar-1:event-2",
+    });
+    expect(notificationMock.instances[0].close).toHaveBeenCalledOnce();
+  });
+
   it("responds to tentative and decline action button clicks through the shared event action service", async () => {
     expect.hasAssertions();
     resetNotificationMock();

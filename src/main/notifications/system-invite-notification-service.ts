@@ -19,6 +19,7 @@ interface SystemInviteNotificationDependencies {
 class SystemInviteNotificationService {
   private readonly activeNotifications = new Map<string, InviteNotification>();
   private readonly dependencies: SystemInviteNotificationDependencies;
+  private readonly suppressedEventIds = new Set<string>();
   private unsubscribe: null | (() => void) = null;
 
   constructor(dependencies: SystemInviteNotificationDependencies) {
@@ -40,6 +41,7 @@ class SystemInviteNotificationService {
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.closeAll();
+    this.suppressedEventIds.clear();
   }
 
   refresh(): void {
@@ -50,11 +52,13 @@ class SystemInviteNotificationService {
     const settings = this.dependencies.settings.getSettings();
     if (!settings.systemInviteNotificationsEnabled) {
       this.closeAll();
+      this.suppressedEventIds.clear();
       return;
     }
 
     if (!Notification.isSupported()) {
       this.closeAll();
+      this.suppressedEventIds.clear();
       return;
     }
 
@@ -64,9 +68,14 @@ class SystemInviteNotificationService {
         this.close(eventId);
       }
     }
+    for (const eventId of this.suppressedEventIds) {
+      if (!nextEventIds.has(eventId)) {
+        this.suppressedEventIds.delete(eventId);
+      }
+    }
 
     for (const item of items) {
-      if (this.activeNotifications.has(item.eventId)) {
+      if (this.activeNotifications.has(item.eventId) || this.suppressedEventIds.has(item.eventId)) {
         continue;
       }
 
@@ -119,6 +128,7 @@ class SystemInviteNotificationService {
           eventId: item.eventId,
         })
       ) {
+        this.suppressedEventIds.add(item.eventId);
         this.close(item.eventId);
       }
       return;
