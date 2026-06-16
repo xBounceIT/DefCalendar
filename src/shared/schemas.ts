@@ -419,6 +419,11 @@ const syncStatusProgressSchema = z.object({
   processedEvents: z.number().int().nonnegative(),
 });
 
+const syncWindowDaysSchema = z.object({
+  lookAheadDays: z.number().int().positive(),
+  lookBehindDays: z.number().int().nonnegative(),
+});
+
 const syncStatusSchema = z.object({
   state: z.enum(["idle", "syncing", "error"]),
   lastSyncedAt: z.string().nullable(),
@@ -426,6 +431,7 @@ const syncStatusSchema = z.object({
   messageKey: z.string().nullable().optional(),
   counts: syncStatusCountsSchema.nullable().optional(),
   progress: syncStatusProgressSchema.nullable().optional(),
+  syncWindow: syncWindowDaysSchema.optional(),
 });
 
 const appUpdateStateSchema = z.enum([

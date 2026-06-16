@@ -8,6 +8,7 @@ import type { ReminderCheckTrigger } from "@main/reminders/reminder-service";
 import type SettingsService from "@main/settings/settings-service";
 import { DAY_MS, MINUTE_MS } from "@shared/duration";
 import type { CalendarEvent, CalendarSummary, SyncStatus } from "@shared/schemas";
+import type { SyncWindowDays } from "@shared/sync";
 
 type SyncReason = "startup" | "sign-in" | "switch-account" | "manual" | "interval" | "mutation";
 
@@ -34,7 +35,7 @@ class SyncService {
 
   constructor(dependencies: SyncServiceDependencies) {
     this.dependencies = dependencies;
-    this.status = dependencies.db.getLatestSyncStatus();
+    this.status = this.withSyncWindow(dependencies.db.getLatestSyncStatus());
   }
 
   start(): void {
@@ -165,8 +166,7 @@ class SyncService {
         progress: null,
         state: "idle" as const,
       };
-      this.setStatus(idleStatus);
-      return idleStatus;
+      return this.setStatus(idleStatus);
     }
 
     const accountIds = this.resolveAccountIds(reason, homeAccountId);
@@ -179,8 +179,7 @@ class SyncService {
         progress: null,
         state: "idle" as const,
       };
-      this.setStatus(idleStatus);
-      return idleStatus;
+      return this.setStatus(idleStatus);
     }
 
     let syncMessage = "Syncing Exchange 365…";
@@ -228,8 +227,7 @@ class SyncService {
           progress: null,
           state: "idle",
         };
-        this.setStatus(nextStatus);
-        return nextStatus;
+        return this.setStatus(nextStatus);
       }
 
       const visibleCalendarIdSet = new Set(settings.visibleCalendarIds);
@@ -243,16 +241,13 @@ class SyncService {
           progress: null,
           state: "idle",
         };
-        this.setStatus(nextStatus);
-        return nextStatus;
+        return this.setStatus(nextStatus);
       }
 
-      const lookAheadDays = this.dependencies.config.syncLookAheadDays;
+      const syncWindow = this.getSyncWindow();
+      const lookAheadDays = syncWindow.lookAheadDays;
       const maxLookBehindDays = GRAPH_CALENDAR_VIEW_MAX_DAYS - lookAheadDays;
-      const rollingLookBehindDays = Math.min(
-        this.dependencies.config.syncLookBehindDays,
-        maxLookBehindDays,
-      );
+      const rollingLookBehindDays = syncWindow.lookBehindDays;
       const rollingRangeStart = new Date(Date.now() - rollingLookBehindDays * DAY_MS).toISOString();
       const deepRangeStart = new Date(Date.now() - maxLookBehindDays * DAY_MS).toISOString();
       const rangeEnd = new Date(Date.now() + lookAheadDays * DAY_MS).toISOString();
@@ -401,8 +396,7 @@ class SyncService {
         progress: null,
         state: "idle",
       };
-      this.setStatus(nextStatus);
-      return nextStatus;
+      return this.setStatus(nextStatus);
     } catch (error) {
       let errorMessage = "Exchange 365 sync failed.";
       let messageKey: null | string = "sync.syncFailed";
@@ -422,8 +416,7 @@ class SyncService {
         progress: null,
         state: "error",
       };
-      this.setStatus(nextStatus);
-      return nextStatus;
+      return this.setStatus(nextStatus);
     }
   }
 
@@ -478,12 +471,33 @@ class SyncService {
     return syncIntervalMinutes * MINUTE_MS;
   }
 
-  private setStatus(status: SyncStatus): void {
-    this.status = status;
+  private getSyncWindow(): SyncWindowDays {
+    const lookAheadDays = this.dependencies.config.syncLookAheadDays;
+    return {
+      lookAheadDays,
+      lookBehindDays: Math.min(
+        this.dependencies.config.syncLookBehindDays,
+        GRAPH_CALENDAR_VIEW_MAX_DAYS - lookAheadDays,
+      ),
+    };
+  }
+
+  private withSyncWindow(status: SyncStatus): SyncStatus {
+    return {
+      ...status,
+      syncWindow: this.getSyncWindow(),
+    };
+  }
+
+  private setStatus(status: SyncStatus): SyncStatus {
+    const nextStatus = this.withSyncWindow(status);
+    this.status = nextStatus;
 
     for (const listener of this.listeners) {
-      listener(status);
+      listener(nextStatus);
     }
+
+    return nextStatus;
   }
 }
 

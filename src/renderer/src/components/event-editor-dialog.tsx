@@ -25,10 +25,14 @@ import {
 import { useTranslation } from "react-i18next";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faClock, faPaperPlane, faUser } from "@fortawesome/free-regular-svg-icons";
+import type { SyncWindowDays } from "@shared/sync";
 
 import type { EditorState } from "../event-editor-state";
+import type { CalendarOverlapTarget } from "../event-overlap";
 import { formatHeaderDate, formatLocalizedDate } from "../date-formatting";
+import { toCalendarOverlapTarget } from "../event-overlap";
 import { MeetingIcon, TeamsIcon } from "./meeting-icon";
+import OverlapWarning from "./overlap-warning";
 import SafeHtmlBody from "./safe-html-body";
 
 interface EventEditorDialogProps {
@@ -44,6 +48,7 @@ interface EventEditorDialogProps {
   onDismiss: () => void;
   onDuplicate: (draft: EventDraft) => void;
   onForward: (args: ForwardEventArgs) => Promise<void>;
+  onFindAcceptConflicts: (target: CalendarOverlapTarget) => Promise<CalendarEvent[]>;
   onListAttachments: (event: CalendarEvent) => Promise<EventAttachment[]>;
   onOpenInOutlook: (url: string) => Promise<void>;
   onRemoveAttachment: (args: AttachmentDeleteArgs) => Promise<EventAttachment[]>;
@@ -57,6 +62,7 @@ interface EventEditorDialogProps {
   onSearchContacts: (args: SearchContactsArgs) => Promise<ContactSuggestion[]>;
   onSave: (draft: EventDraft) => Promise<void>;
   state: EditorState | null;
+  syncWindow?: null | SyncWindowDays;
   timeFormat: UserSettings["timeFormat"];
 }
 
@@ -94,6 +100,14 @@ interface EditorFormState {
 interface CategoryOption {
   color: string;
   displayName: string;
+}
+
+interface PendingEventResponse {
+  action: EventResponseAction;
+  comment: string;
+  event: CalendarEvent;
+  sendResponse: boolean;
+  targetEventId?: string;
 }
 
 /**
@@ -467,11 +481,13 @@ function EventEditorDialog(props: EventEditorDialogProps) {
             attendees={form.attendees}
             form={form}
             onDelete={props.onDelete}
+            onFindAcceptConflicts={props.onFindAcceptConflicts}
             organizer={organizer}
             onRespond={props.onRespond}
             onResponseCommentChange={(responseComment) =>
               setForm((current) => (current ? { ...current, responseComment } : current))
             }
+            syncWindow={props.syncWindow}
             timeFormat={props.timeFormat}
           />
         </aside>
@@ -1610,15 +1626,25 @@ function TeamsSection({
   );
 }
 
+function getEventIdentity(event: CalendarEvent | null): string {
+  if (!event) {
+    return "";
+  }
+
+  return `${event.calendarId}:${event.id}:${event.start}:${event.end}`;
+}
+
 function AttendeesSidebar({
   busy,
   event,
   attendees,
   form,
   onDelete,
+  onFindAcceptConflicts,
   organizer,
   onRespond,
   onResponseCommentChange,
+  syncWindow,
   timeFormat,
 }: {
   busy: boolean;
@@ -1626,6 +1652,7 @@ function AttendeesSidebar({
   attendees: EventParticipant[];
   form: EditorFormState;
   onDelete: (event: CalendarEvent, targetEventId?: string) => Promise<void>;
+  onFindAcceptConflicts: (target: CalendarOverlapTarget) => Promise<CalendarEvent[]>;
   organizer: EventParticipant | null;
   onRespond: (
     event: CalendarEvent,
@@ -1635,9 +1662,11 @@ function AttendeesSidebar({
     targetEventId?: string,
   ) => Promise<void>;
   onResponseCommentChange: (value: string) => void;
+  syncWindow?: null | SyncWindowDays;
   timeFormat: UserSettings["timeFormat"];
 }) {
   const { t } = useTranslation();
+  const [checkingOverlap, setCheckingOverlap] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     accepted: true,
     tentative: true,
@@ -1645,7 +1674,21 @@ function AttendeesSidebar({
     pending: true,
   });
   const [openResponseMenu, setOpenResponseMenu] = useState<"decline" | "other" | null>(null);
+  const [overlapConflicts, setOverlapConflicts] = useState<CalendarEvent[]>([]);
+  const [overlapError, setOverlapError] = useState<null | string>(null);
+  const [pendingResponse, setPendingResponse] = useState<PendingEventResponse | null>(null);
+  const eventIdentity = getEventIdentity(event);
+  const eventIdentityRef = useRef(eventIdentity);
   const responseActionsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    eventIdentityRef.current = eventIdentity;
+    setCheckingOverlap(false);
+    setOverlapConflicts([]);
+    setOverlapError(null);
+    setPendingResponse(null);
+    setOpenResponseMenu(null);
+  }, [eventIdentity]);
 
   useEffect(() => {
     function handleClickOutside(clickEvent: MouseEvent) {
@@ -1784,9 +1827,34 @@ function AttendeesSidebar({
     },
   ];
 
-  const submitResponse = (
+  const responseBusy = busy || checkingOverlap;
+
+  const clearOverlapWarning = () => {
+    setOverlapConflicts([]);
+    setOverlapError(null);
+    setPendingResponse(null);
+  };
+
+  const dispatchResponse = (request: PendingEventResponse) => {
+    if (request.targetEventId) {
+      void onRespond(
+        request.event,
+        request.action,
+        request.comment,
+        request.sendResponse,
+        request.targetEventId,
+      );
+    } else {
+      void onRespond(request.event, request.action, request.comment, request.sendResponse);
+    }
+
+    clearOverlapWarning();
+    setOpenResponseMenu(null);
+  };
+
+  const submitResponse = async (
     action: EventResponseAction,
-    sendResponse: boolean,
+    shouldSendResponse: boolean,
     comment: string,
     targetEventId?: string,
   ) => {
@@ -1796,15 +1864,52 @@ function AttendeesSidebar({
 
     const nextTargetEventId =
       targetEventId ??
-      (action === "accept" && isRecurringAttendeeEvent ? event.seriesMasterId : undefined);
+      (action === "accept" && isRecurringAttendeeEvent
+        ? (event.seriesMasterId ?? undefined)
+        : undefined);
+    const request = {
+      action,
+      comment: shouldSendResponse ? comment : "",
+      event,
+      sendResponse: shouldSendResponse,
+      targetEventId: nextTargetEventId,
+    };
 
-    if (nextTargetEventId) {
-      void onRespond(event, action, sendResponse ? comment : "", sendResponse, nextTargetEventId);
-    } else {
-      void onRespond(event, action, sendResponse ? comment : "", sendResponse);
+    if (action !== "accept") {
+      dispatchResponse(request);
+      return;
     }
 
-    setOpenResponseMenu(null);
+    setCheckingOverlap(true);
+    setOverlapError(null);
+    setOverlapConflicts([]);
+    setPendingResponse(null);
+    const requestEventIdentity = eventIdentity;
+    try {
+      const conflicts = await onFindAcceptConflicts(toCalendarOverlapTarget(event, { syncWindow }));
+      if (eventIdentityRef.current !== requestEventIdentity) {
+        return;
+      }
+
+      if (conflicts.length > 0) {
+        setPendingResponse(request);
+        setOverlapConflicts(conflicts);
+        setOpenResponseMenu(null);
+        return;
+      }
+
+      dispatchResponse(request);
+    } catch {
+      if (eventIdentityRef.current === requestEventIdentity) {
+        setOverlapError(t("overlapWarning.lookupError"));
+        setOverlapConflicts([]);
+        setPendingResponse(null);
+      }
+    } finally {
+      if (eventIdentityRef.current === requestEventIdentity) {
+        setCheckingOverlap(false);
+      }
+    }
   };
 
   const submitDelete = () => {
@@ -1813,6 +1918,7 @@ function AttendeesSidebar({
     }
 
     void onDelete(event, event.seriesMasterId);
+    clearOverlapWarning();
     setOpenResponseMenu(null);
   };
 
@@ -1853,8 +1959,10 @@ function AttendeesSidebar({
             <div className="attendees-sidebar__response-actions">
               <button
                 className="attendees-sidebar__response-button attendees-sidebar__response-button--accept"
-                disabled={busy}
-                onClick={() => submitResponse("accept", true, "")}
+                disabled={responseBusy}
+                onClick={() => {
+                  void submitResponse("accept", true, "");
+                }}
                 type="button"
               >
                 <CheckIcon />
@@ -1865,10 +1973,10 @@ function AttendeesSidebar({
                   isRecurringAttendeeEvent ? openResponseMenu === "decline" : undefined
                 }
                 className={`attendees-sidebar__response-button attendees-sidebar__response-button--refuse ${openResponseMenu === "decline" ? "attendees-sidebar__response-button--open" : ""}`}
-                disabled={busy}
+                disabled={responseBusy}
                 onClick={() => {
                   if (!isRecurringAttendeeEvent) {
-                    submitResponse("decline", true, "");
+                    void submitResponse("decline", true, "");
                     return;
                   }
 
@@ -1887,7 +1995,7 @@ function AttendeesSidebar({
               <button
                 aria-expanded={openResponseMenu === "other"}
                 className={`attendees-sidebar__response-button attendees-sidebar__response-button--other ${openResponseMenu === "other" ? "attendees-sidebar__response-button--open" : ""}`}
-                disabled={busy}
+                disabled={responseBusy}
                 onClick={() =>
                   setOpenResponseMenu((current) => (current === "other" ? null : "other"))
                 }
@@ -1904,15 +2012,17 @@ function AttendeesSidebar({
                 <div className="attendees-sidebar__response-popup-actions">
                   <button
                     className="attendees-sidebar__response-popup-button"
-                    disabled={busy}
-                    onClick={() => submitResponse("decline", true, "")}
+                    disabled={responseBusy}
+                    onClick={() => {
+                      void submitResponse("decline", true, "");
+                    }}
                     type="button"
                   >
                     {t("eventEditor.responseActions.declineCurrent")}
                   </button>
                   <button
                     className="attendees-sidebar__response-popup-button"
-                    disabled={busy}
+                    disabled={responseBusy}
                     onClick={submitDelete}
                     type="button"
                   >
@@ -1936,9 +2046,13 @@ function AttendeesSidebar({
                     <button
                       key={`${option.action}-${option.sendResponse ? "send" : "silent"}`}
                       className="attendees-sidebar__response-popup-button"
-                      disabled={busy}
+                      disabled={responseBusy}
                       onClick={() =>
-                        submitResponse(option.action, option.sendResponse, form.responseComment)
+                        void submitResponse(
+                          option.action,
+                          option.sendResponse,
+                          form.responseComment,
+                        )
                       }
                       type="button"
                     >
@@ -1947,6 +2061,16 @@ function AttendeesSidebar({
                   ))}
                 </div>
               </div>
+            )}
+            {overlapError && <div className="banner banner--error">{overlapError}</div>}
+            {pendingResponse && overlapConflicts.length > 0 && (
+              <OverlapWarning
+                busy={responseBusy}
+                conflicts={overlapConflicts}
+                onCancel={clearOverlapWarning}
+                onConfirm={() => dispatchResponse(pendingResponse)}
+                timeFormat={timeFormat}
+              />
             )}
           </div>
         </div>

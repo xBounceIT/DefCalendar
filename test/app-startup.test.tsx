@@ -10,7 +10,7 @@ import App from "../src/renderer/src/app";
 import useUiStore from "../src/renderer/src/store";
 import { createDefaultSettings } from "../src/shared/schema-values";
 import type { CalendarApi, NewEventNotificationItem } from "../src/shared/ipc";
-import type { CalendarEvent } from "../src/shared/schemas";
+import type { CalendarEvent, EventListArgs } from "../src/shared/schemas";
 
 interface MockedCalendarModule {
   default: unknown;
@@ -864,6 +864,97 @@ describe("app startup", () => {
       await expect(screen.findByDisplayValue("Reminder planning")).resolves.not.toBeNull();
       expect(screen.getByRole("dialog")).not.toBeNull();
     } finally {
+      restoreCalendarApi();
+      restoreResizeObserver();
+    }
+  });
+
+  it("checks recurring accept conflicts across the widened series lookup range", async () => {
+    try {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.setSystemTime(new Date("2026-03-30T00:00:00.000Z"));
+      installResizeObserverMock();
+      const calendarApi = createSignedInCalendarApiMock();
+      const event = createCalendarEvent({
+        attendees: [
+          {
+            email: "organizer@example.com",
+            name: "Organizer",
+            response: "accepted",
+            status: null,
+            type: "required",
+          },
+        ],
+        id: "occurrence-1",
+        isOrganizer: false,
+        seriesMasterId: "series-1",
+        subject: "Recurring invite",
+      });
+      const earlierOccurrence = createCalendarEvent({
+        end: "2026-02-23T10:00:00.000Z",
+        id: "occurrence-0",
+        seriesMasterId: "series-1",
+        start: "2026-02-23T09:00:00.000Z",
+      });
+      const earlierConflict = createCalendarEvent({
+        end: "2026-02-23T09:45:00.000Z",
+        id: "earlier-conflict",
+        start: "2026-02-23T09:15:00.000Z",
+        subject: "Earlier conflict",
+      });
+      const earlierStartMs = new Date(earlierOccurrence.start).getTime();
+      const earlierEndMs = new Date(earlierOccurrence.end).getTime();
+      const widenedSeriesLookupStartCutoffMs = new Date("2026-01-01T00:00:00.000Z").getTime();
+      const listEventsMock = vi
+        .spyOn(calendarApi.events, "list")
+        .mockImplementation(async (args: EventListArgs) => {
+          const rangeStartMs = new Date(args.start).getTime();
+          const rangeEndMs = new Date(args.end).getTime();
+          if (
+            rangeStartMs < widenedSeriesLookupStartCutoffMs &&
+            rangeStartMs <= earlierStartMs &&
+            rangeEndMs >= earlierEndMs
+          ) {
+            return [earlierOccurrence, earlierConflict];
+          }
+
+          return [];
+        });
+      let openInAppListener: ((event: CalendarEvent) => void) | null = null;
+      vi.spyOn(calendarApi.events, "onOpenInApp").mockImplementation((listener) => {
+        openInAppListener = listener;
+        return () => undefined;
+      });
+      installCalendarApi(calendarApi);
+
+      renderApp();
+
+      await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
+      act(() => {
+        openInAppListener?.(event);
+      });
+      await expect(screen.findByDisplayValue("Recurring invite")).resolves.not.toBeNull();
+
+      fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+
+      await expect(screen.findByText("Earlier conflict")).resolves.not.toBeNull();
+      const overlapCall = listEventsMock.mock.calls.find(([args]) => {
+        const rangeStartMs = new Date(args.start).getTime();
+        const rangeEndMs = new Date(args.end).getTime();
+        return (
+          rangeStartMs < widenedSeriesLookupStartCutoffMs &&
+          rangeStartMs <= earlierStartMs &&
+          rangeEndMs >= earlierEndMs
+        );
+      });
+      expect(overlapCall?.[0].calendarIds).toStrictEqual(["calendar-1"]);
+      expect(overlapCall?.[0].start).toBe("2025-03-30T09:00:00.000Z");
+      expect(new Date(overlapCall?.[0].end ?? "").getTime()).toBeLessThan(
+        new Date("2026-06-28T00:01:00.000Z").getTime(),
+      );
+      expect(calendarApi.events.respond).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
       restoreCalendarApi();
       restoreResizeObserver();
     }

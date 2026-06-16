@@ -34,6 +34,12 @@ import type {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { resolveLocaleSettingAsync, setAppLocale } from "./i18n";
+import type { CalendarOverlapTarget } from "./event-overlap";
+import {
+  findOverlappingBusyEvents,
+  getCalendarOverlapLookupRange,
+  hasValidOverlapRange,
+} from "./event-overlap";
 
 import AuthScreen from "./components/auth-screen";
 import CalendarSidebar from "./components/calendar-sidebar";
@@ -809,6 +815,25 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     });
   }
 
+  async function findAcceptConflicts(target: CalendarOverlapTarget): Promise<CalendarEvent[]> {
+    const lookupRange = getCalendarOverlapLookupRange(target);
+    if (
+      visibleCalendarIds.length === 0 ||
+      !hasValidOverlapRange(target) ||
+      !hasValidOverlapRange(lookupRange)
+    ) {
+      return [];
+    }
+
+    const candidates = await calendarApi.events.list({
+      calendarIds: visibleCalendarIds,
+      end: lookupRange.end,
+      start: lookupRange.start,
+    });
+
+    return findOverlappingBusyEvents(target, candidates);
+  }
+
   async function forwardEvent(args: ForwardEventArgs): Promise<void> {
     await forwardEventMutation.mutateAsync(args);
   }
@@ -1057,6 +1082,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         calendars={calendars}
         categoriesLoading={categoriesQuery.isLoading}
         errorMessage={dialogError}
+        onFindAcceptConflicts={findAcceptConflicts}
         onListAttachments={listEventAttachments}
         onDelete={deleteDraft}
         onDismiss={dismissEditor}
@@ -1068,10 +1094,16 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         onSearchContacts={searchContacts}
         onSave={saveDraft}
         state={editorState}
+        syncWindow={syncStatus.syncWindow}
         timeFormat={appSettings.timeFormat}
       />
       <UpdateAvailablePopup />
-      {appSettings.newEventPopupEnabled && <NewEventPopup timeFormat={appSettings.timeFormat} />}
+      {appSettings.newEventPopupEnabled && (
+        <NewEventPopup
+          onFindAcceptConflicts={findAcceptConflicts}
+          timeFormat={appSettings.timeFormat}
+        />
+      )}
     </div>
   );
 }

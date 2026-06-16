@@ -1,14 +1,28 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { NewEventNotificationItem } from "@shared/ipc";
-import type { EventResponseAction, RespondToEventArgs, UserSettings } from "@shared/schemas";
+import type {
+  CalendarEvent,
+  EventResponseAction,
+  RespondToEventArgs,
+  UserSettings,
+} from "@shared/schemas";
 import { formatEventTimeRange } from "../date-formatting";
+import type { CalendarOverlapTarget } from "../event-overlap";
+import OverlapWarning from "./overlap-warning";
 
 type TimeFormatSetting = UserSettings["timeFormat"];
 
 interface NewEventPopupProps {
+  onFindAcceptConflicts: (target: CalendarOverlapTarget) => Promise<CalendarEvent[]>;
   timeFormat: TimeFormatSetting;
+}
+
+interface PendingOverlapPrompt {
+  args: RespondToEventArgs;
+  conflicts: CalendarEvent[];
+  eventId: string;
 }
 
 function CloseIcon() {
@@ -30,10 +44,27 @@ function CloseIcon() {
   );
 }
 
-function NewEventPopup({ timeFormat }: NewEventPopupProps): React.JSX.Element | null {
+function toOverlapTarget(item: NewEventNotificationItem): CalendarOverlapTarget {
+  return {
+    calendarId: item.calendarId,
+    end: item.end,
+    eventId: item.eventId,
+    isAllDay: item.isAllDay,
+    start: item.start,
+  };
+}
+
+function NewEventPopup({
+  onFindAcceptConflicts,
+  timeFormat,
+}: NewEventPopupProps): React.JSX.Element | null {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [items, setItems] = useState<NewEventNotificationItem[]>([]);
+  const [checkingEventId, setCheckingEventId] = useState<null | string>(null);
+  const [overlapErrorEventId, setOverlapErrorEventId] = useState<null | string>(null);
+  const [overlapPrompt, setOverlapPrompt] = useState<PendingOverlapPrompt | null>(null);
+  const lookupSequenceRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,14 +100,53 @@ function NewEventPopup({ timeFormat }: NewEventPopupProps): React.JSX.Element | 
 
   const pendingEventId = respondMutation.isPending ? respondMutation.variables?.eventId : undefined;
 
-  const handleRespond = (item: NewEventNotificationItem, action: EventResponseAction) => {
-    respondMutation.mutate({
+  const handleRespond = async (item: NewEventNotificationItem, action: EventResponseAction) => {
+    const args = {
       action,
       calendarId: item.calendarId,
       comment: "",
       eventId: item.eventId,
       sendResponse: true,
-    });
+    };
+
+    if (action !== "accept") {
+      lookupSequenceRef.current += 1;
+      setOverlapErrorEventId(null);
+      setOverlapPrompt(null);
+      respondMutation.mutate(args);
+      return;
+    }
+
+    const lookupSequence = lookupSequenceRef.current + 1;
+    lookupSequenceRef.current = lookupSequence;
+    setCheckingEventId(item.eventId);
+    setOverlapErrorEventId(null);
+    setOverlapPrompt(null);
+    try {
+      const conflicts = await onFindAcceptConflicts(toOverlapTarget(item));
+      if (lookupSequenceRef.current !== lookupSequence) {
+        return;
+      }
+
+      if (conflicts.length > 0) {
+        setOverlapPrompt({
+          args,
+          conflicts,
+          eventId: item.eventId,
+        });
+        return;
+      }
+
+      respondMutation.mutate(args);
+    } catch {
+      if (lookupSequenceRef.current === lookupSequence) {
+        setOverlapErrorEventId(item.eventId);
+      }
+    } finally {
+      if (lookupSequenceRef.current === lookupSequence) {
+        setCheckingEventId(null);
+      }
+    }
   };
 
   const handleDismissAll = () => {
@@ -115,7 +185,9 @@ function NewEventPopup({ timeFormat }: NewEventPopupProps): React.JSX.Element | 
         </header>
         <ul className="new-event-popup__list">
           {items.map((item) => {
-            const isPending = pendingEventId === item.eventId;
+            const isPending = pendingEventId === item.eventId || checkingEventId !== null;
+            const itemOverlapPrompt =
+              overlapPrompt?.eventId === item.eventId ? overlapPrompt : null;
             const organizerLabel =
               item.organizerName ?? item.organizerEmail ?? t("newEventPopup.noOrganizer");
 
@@ -145,7 +217,9 @@ function NewEventPopup({ timeFormat }: NewEventPopupProps): React.JSX.Element | 
                   <button
                     className="new-event-popup__action new-event-popup__action--accept"
                     disabled={isPending}
-                    onClick={() => handleRespond(item, "accept")}
+                    onClick={() => {
+                      void handleRespond(item, "accept");
+                    }}
                     type="button"
                   >
                     {t("newEventPopup.actions.accept")}
@@ -153,7 +227,9 @@ function NewEventPopup({ timeFormat }: NewEventPopupProps): React.JSX.Element | 
                   <button
                     className="new-event-popup__action new-event-popup__action--tentative"
                     disabled={isPending}
-                    onClick={() => handleRespond(item, "tentative")}
+                    onClick={() => {
+                      void handleRespond(item, "tentative");
+                    }}
                     type="button"
                   >
                     {t("newEventPopup.actions.tentative")}
@@ -161,12 +237,29 @@ function NewEventPopup({ timeFormat }: NewEventPopupProps): React.JSX.Element | 
                   <button
                     className="new-event-popup__action new-event-popup__action--decline"
                     disabled={isPending}
-                    onClick={() => handleRespond(item, "decline")}
+                    onClick={() => {
+                      void handleRespond(item, "decline");
+                    }}
                     type="button"
                   >
                     {t("newEventPopup.actions.decline")}
                   </button>
                 </div>
+                {overlapErrorEventId === item.eventId && (
+                  <div className="banner banner--error">{t("overlapWarning.lookupError")}</div>
+                )}
+                {itemOverlapPrompt && (
+                  <OverlapWarning
+                    busy={respondMutation.isPending}
+                    conflicts={itemOverlapPrompt.conflicts}
+                    onCancel={() => setOverlapPrompt(null)}
+                    onConfirm={() => {
+                      respondMutation.mutate(itemOverlapPrompt.args);
+                      setOverlapPrompt(null);
+                    }}
+                    timeFormat={timeFormat}
+                  />
+                )}
               </li>
             );
           })}

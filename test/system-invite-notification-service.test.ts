@@ -74,7 +74,7 @@ function createService(args?: {
   const items = args?.items ?? [];
   const onChange = vi.fn();
   const eventActions = {
-    openInApp: vi.fn(),
+    openInApp: vi.fn().mockReturnValue(true),
     respondToEvent: args?.respondToEvent ?? vi.fn().mockResolvedValue(undefined),
   };
   const newEventNotifications = {
@@ -198,7 +198,39 @@ describe("system invite notification service", () => {
     expect(notificationMock.instances).toHaveLength(1);
   });
 
-  it("responds to action button clicks through the shared event action service", async () => {
+  it("opens the event for accept actions so overlap checks run in the app", () => {
+    expect.hasAssertions();
+    resetNotificationMock();
+    const { eventActions, service } = createService();
+
+    service.sync([createItem()]);
+    notificationMock.instances[0].emit("action", { actionIndex: 0 });
+
+    expect(eventActions.openInApp).toHaveBeenCalledWith({
+      calendarId: "calendar-1",
+      eventId: "event-1",
+    });
+    expect(eventActions.respondToEvent).not.toHaveBeenCalled();
+    expect(notificationMock.instances[0].close).toHaveBeenCalledOnce();
+  });
+
+  it("does not re-show invites opened for overlap review", () => {
+    expect.hasAssertions();
+    resetNotificationMock();
+    const { service } = createService();
+
+    service.sync([createItem()]);
+    notificationMock.instances[0].emit("action", { actionIndex: 0 });
+    service.sync([createItem(), createItem({ eventId: "event-2" })]);
+
+    expect(notificationMock.instances).toHaveLength(2);
+    expect(notificationMock.instances[1].options).toMatchObject({
+      id: "invite:calendar-1:event-2",
+    });
+    expect(notificationMock.instances[0].close).toHaveBeenCalledOnce();
+  });
+
+  it("responds to tentative and decline action button clicks through the shared event action service", async () => {
     expect.hasAssertions();
     resetNotificationMock();
     const { eventActions, service } = createService();
