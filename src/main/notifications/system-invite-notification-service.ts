@@ -112,6 +112,18 @@ class SystemInviteNotificationService {
       return;
     }
 
+    if (action === "accept") {
+      if (
+        this.dependencies.eventActions.openInApp({
+          calendarId: item.calendarId,
+          eventId: item.eventId,
+        })
+      ) {
+        this.close(item.eventId);
+      }
+      return;
+    }
+
     void this.dependencies.eventActions
       .respondToEvent({
         action,
