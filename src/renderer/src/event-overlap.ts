@@ -31,7 +31,7 @@ function toCalendarOverlapTarget(event: CalendarEvent): CalendarOverlapTarget {
     eventId: event.id,
     isAllDay: event.isAllDay,
     lookupEnd: seriesMasterId ? getSeriesLookupEnd(event) : event.end,
-    lookupStart: event.start,
+    lookupStart: seriesMasterId ? getSeriesLookupStart(event) : event.start,
     seriesMasterId,
     start: event.start,
   };
@@ -159,6 +159,18 @@ function getSeriesLookupEnd(event: CalendarEvent): string {
   return new Date(Math.max(endTime, recurrenceEnd ?? fallbackEnd)).toISOString();
 }
 
+function getSeriesLookupStart(event: CalendarEvent): string {
+  const startTime = new Date(event.start).getTime();
+  if (Number.isNaN(startTime)) {
+    return event.start;
+  }
+
+  const recurrenceStart = getRecurrenceLookupStart(event, startTime);
+  return new Date(
+    Math.min(startTime, recurrenceStart ?? startTime - SERIES_LOOKUP_DAYS * DAY_MS),
+  ).toISOString();
+}
+
 function getRecurrenceLookupEnd(
   event: CalendarEvent,
   startTime: number,
@@ -182,6 +194,28 @@ function getRecurrenceLookupEnd(
   const occurrences = recurrence.range.numberOfOccurrences;
   const daysPerInterval = getRecurrenceDaysPerInterval(recurrence.pattern.type);
   return startTime + Math.max(occurrences - 1, 0) * interval * daysPerInterval * DAY_MS + duration;
+}
+
+function getRecurrenceLookupStart(event: CalendarEvent, fallbackTime: number): null | number {
+  const recurrence = event.recurrence;
+  if (!recurrence) {
+    return null;
+  }
+
+  const datePrefix = recurrence.range.startDate;
+  if (!datePrefix) {
+    return null;
+  }
+
+  const fallbackDate = new Date(fallbackTime);
+  const hours = fallbackDate.getUTCHours().toString().padStart(2, "0");
+  const minutes = fallbackDate.getUTCMinutes().toString().padStart(2, "0");
+  const seconds = fallbackDate.getUTCSeconds().toString().padStart(2, "0");
+  const milliseconds = fallbackDate.getUTCMilliseconds().toString().padStart(3, "0");
+  const startTime = new Date(
+    `${datePrefix}T${hours}:${minutes}:${seconds}.${milliseconds}Z`,
+  ).getTime();
+  return Number.isNaN(startTime) ? null : startTime;
 }
 
 function getRecurrenceDaysPerInterval(patternType: RecurrencePatternType): number {

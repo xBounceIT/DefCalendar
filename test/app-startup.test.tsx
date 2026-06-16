@@ -888,23 +888,26 @@ describe("app startup", () => {
         seriesMasterId: "series-1",
         subject: "Recurring invite",
       });
-      const futureOccurrence = createCalendarEvent({
-        end: "2026-04-06T10:00:00.000Z",
-        id: "occurrence-2",
+      const earlierOccurrence = createCalendarEvent({
+        end: "2026-02-23T10:00:00.000Z",
+        id: "occurrence-0",
         seriesMasterId: "series-1",
-        start: "2026-04-06T09:00:00.000Z",
+        start: "2026-02-23T09:00:00.000Z",
       });
-      const futureConflict = createCalendarEvent({
-        end: "2026-04-06T09:45:00.000Z",
-        id: "future-conflict",
-        start: "2026-04-06T09:15:00.000Z",
-        subject: "Future conflict",
+      const earlierConflict = createCalendarEvent({
+        end: "2026-02-23T09:45:00.000Z",
+        id: "earlier-conflict",
+        start: "2026-02-23T09:15:00.000Z",
+        subject: "Earlier conflict",
       });
       const listEventsMock = vi
         .spyOn(calendarApi.events, "list")
         .mockImplementation(async (args: EventListArgs) => {
-          if (args.start === event.start && args.end === "2027-03-30T10:00:00.000Z") {
-            return [futureOccurrence, futureConflict];
+          if (
+            args.start === "2025-03-30T09:00:00.000Z" &&
+            args.end === "2027-03-30T10:00:00.000Z"
+          ) {
+            return [earlierOccurrence, earlierConflict];
           }
 
           return [];
@@ -926,11 +929,11 @@ describe("app startup", () => {
 
       fireEvent.click(screen.getByRole("button", { name: "Accept" }));
 
-      await expect(screen.findByText("Future conflict")).resolves.not.toBeNull();
+      await expect(screen.findByText("Earlier conflict")).resolves.not.toBeNull();
       expect(listEventsMock).toHaveBeenCalledWith({
         calendarIds: ["calendar-1"],
         end: "2027-03-30T10:00:00.000Z",
-        start: event.start,
+        start: "2025-03-30T09:00:00.000Z",
       });
       expect(calendarApi.events.respond).not.toHaveBeenCalled();
     } finally {

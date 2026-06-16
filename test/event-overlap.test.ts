@@ -75,7 +75,7 @@ describe("event overlap detection", () => {
 
     expect(getCalendarOverlapLookupRange(target)).toStrictEqual({
       end: "2027-03-30T10:00:00.000Z",
-      start: "2026-03-30T09:00:00.000Z",
+      start: "2025-03-30T09:00:00.000Z",
     });
   });
 
@@ -103,6 +103,18 @@ describe("event overlap detection", () => {
       id: "occurrence-1",
       seriesMasterId: "series-1",
     });
+    const earlierOccurrence = createEvent({
+      end: "2026-02-23T10:00:00.000Z",
+      id: "occurrence-0",
+      seriesMasterId: "series-1",
+      start: "2026-02-23T09:00:00.000Z",
+    });
+    const earlierConflict = createEvent({
+      end: "2026-02-23T09:45:00.000Z",
+      id: "earlier-conflict",
+      start: "2026-02-23T09:15:00.000Z",
+      subject: "Earlier conflict",
+    });
     const futureOccurrence = createEvent({
       end: "2026-04-06T10:00:00.000Z",
       id: "occurrence-2",
@@ -118,10 +130,12 @@ describe("event overlap detection", () => {
 
     expect(
       findOverlappingBusyEvents(toCalendarOverlapTarget(target), [
+        earlierOccurrence,
+        earlierConflict,
         futureOccurrence,
         futureConflict,
       ]),
-    ).toStrictEqual([futureConflict]);
+    ).toStrictEqual([earlierConflict, futureConflict]);
   });
 
   it("does not report same-series occurrences as conflicts", () => {
