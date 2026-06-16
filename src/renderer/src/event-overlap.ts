@@ -1,3 +1,4 @@
+import { DEFAULT_SYNC_LOOK_AHEAD_DAYS, DEFAULT_SYNC_LOOK_BEHIND_DAYS } from "@shared/sync";
 import type { CalendarEvent } from "@shared/schemas";
 
 interface CalendarOverlapTarget {
@@ -22,16 +23,17 @@ const DAY_MS = 86_400_000;
 const BUSY_AVAILABILITY = new Set(["busy", "oof", "workingElsewhere", "unknown"]);
 const SERIES_LOOKUP_DAYS = 365;
 
-function toCalendarOverlapTarget(event: CalendarEvent): CalendarOverlapTarget {
+function toCalendarOverlapTarget(event: CalendarEvent, now = new Date()): CalendarOverlapTarget {
   const seriesMasterId = event.seriesMasterId ?? null;
+  const cachedRange = getDefaultSyncCacheRange(now);
 
   return {
     calendarId: event.calendarId,
     end: event.end,
     eventId: event.id,
     isAllDay: event.isAllDay,
-    lookupEnd: seriesMasterId ? getSeriesLookupEnd(event) : event.end,
-    lookupStart: seriesMasterId ? getSeriesLookupStart(event) : event.start,
+    lookupEnd: seriesMasterId ? getSeriesLookupEnd(event, cachedRange.end) : event.end,
+    lookupStart: seriesMasterId ? getSeriesLookupStart(event, cachedRange.start) : event.start,
     seriesMasterId,
     start: event.start,
   };
@@ -147,7 +149,7 @@ function isTargetEvent(target: CalendarOverlapTarget, candidate: CalendarEvent):
   );
 }
 
-function getSeriesLookupEnd(event: CalendarEvent): string {
+function getSeriesLookupEnd(event: CalendarEvent, cacheEndTime: number): string {
   const startTime = new Date(event.start).getTime();
   const endTime = new Date(event.end).getTime();
   if (Number.isNaN(startTime) || Number.isNaN(endTime) || startTime >= endTime) {
@@ -156,10 +158,12 @@ function getSeriesLookupEnd(event: CalendarEvent): string {
 
   const fallbackEnd = endTime + SERIES_LOOKUP_DAYS * DAY_MS;
   const recurrenceEnd = getRecurrenceLookupEnd(event, startTime, endTime - startTime);
-  return new Date(Math.max(endTime, recurrenceEnd ?? fallbackEnd)).toISOString();
+  return new Date(
+    Math.max(endTime, Math.min(recurrenceEnd ?? fallbackEnd, cacheEndTime)),
+  ).toISOString();
 }
 
-function getSeriesLookupStart(event: CalendarEvent): string {
+function getSeriesLookupStart(event: CalendarEvent, cacheStartTime: number): string {
   const startTime = new Date(event.start).getTime();
   if (Number.isNaN(startTime)) {
     return event.start;
@@ -167,7 +171,10 @@ function getSeriesLookupStart(event: CalendarEvent): string {
 
   const recurrenceStart = getRecurrenceLookupStart(event, startTime);
   return new Date(
-    Math.min(startTime, recurrenceStart ?? startTime - SERIES_LOOKUP_DAYS * DAY_MS),
+    Math.min(
+      startTime,
+      Math.max(recurrenceStart ?? startTime - SERIES_LOOKUP_DAYS * DAY_MS, cacheStartTime),
+    ),
   ).toISOString();
 }
 
@@ -233,6 +240,21 @@ function getRecurrenceDaysPerInterval(patternType: RecurrencePatternType): numbe
       return 366;
     }
   }
+}
+
+function getDefaultSyncCacheRange(now: Date): EventTimeRange {
+  const nowTime = now.getTime();
+  if (Number.isNaN(nowTime)) {
+    return {
+      end: Number.POSITIVE_INFINITY,
+      start: Number.NEGATIVE_INFINITY,
+    };
+  }
+
+  return {
+    end: nowTime + DEFAULT_SYNC_LOOK_AHEAD_DAYS * DAY_MS,
+    start: nowTime - DEFAULT_SYNC_LOOK_BEHIND_DAYS * DAY_MS,
+  };
 }
 
 function parseEventTimeRange(

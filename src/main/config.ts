@@ -1,4 +1,5 @@
 import { bundledMsalApp } from "@main/auth/app-registration";
+import { DEFAULT_SYNC_LOOK_AHEAD_DAYS, DEFAULT_SYNC_LOOK_BEHIND_DAYS } from "@shared/sync";
 import dotenv from "dotenv";
 import { z } from "zod";
 
@@ -10,8 +11,18 @@ const envSchema = z.object({
     .default(
       "openid profile offline_access User.Read Calendars.ReadWrite MailboxSettings.Read Contacts.Read",
     ),
-  SYNC_LOOKAHEAD_DAYS: z.coerce.number().int().min(1).max(365).default(90),
-  SYNC_LOOKBEHIND_DAYS: z.coerce.number().int().min(0).max(3650).default(365),
+  SYNC_LOOKAHEAD_DAYS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(365)
+    .default(DEFAULT_SYNC_LOOK_AHEAD_DAYS),
+  SYNC_LOOKBEHIND_DAYS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(3650)
+    .default(DEFAULT_SYNC_LOOK_BEHIND_DAYS),
   SYNC_INTERVAL_MINUTES: z.coerce.number().int().min(1).max(60).default(1),
 });
 

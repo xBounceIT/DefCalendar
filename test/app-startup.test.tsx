@@ -871,6 +871,8 @@ describe("app startup", () => {
 
   it("checks recurring accept conflicts across the widened series lookup range", async () => {
     try {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      vi.setSystemTime(new Date("2026-03-30T00:00:00.000Z"));
       installResizeObserverMock();
       const calendarApi = createSignedInCalendarApiMock();
       const event = createCalendarEvent({
@@ -900,12 +902,18 @@ describe("app startup", () => {
         start: "2026-02-23T09:15:00.000Z",
         subject: "Earlier conflict",
       });
+      const earlierStartMs = new Date(earlierOccurrence.start).getTime();
+      const earlierEndMs = new Date(earlierOccurrence.end).getTime();
+      const widenedSeriesLookupStartCutoffMs = new Date("2026-01-01T00:00:00.000Z").getTime();
       const listEventsMock = vi
         .spyOn(calendarApi.events, "list")
         .mockImplementation(async (args: EventListArgs) => {
+          const rangeStartMs = new Date(args.start).getTime();
+          const rangeEndMs = new Date(args.end).getTime();
           if (
-            args.start === "2025-03-30T09:00:00.000Z" &&
-            args.end === "2027-03-30T10:00:00.000Z"
+            rangeStartMs < widenedSeriesLookupStartCutoffMs &&
+            rangeStartMs <= earlierStartMs &&
+            rangeEndMs >= earlierEndMs
           ) {
             return [earlierOccurrence, earlierConflict];
           }
@@ -930,13 +938,23 @@ describe("app startup", () => {
       fireEvent.click(screen.getByRole("button", { name: "Accept" }));
 
       await expect(screen.findByText("Earlier conflict")).resolves.not.toBeNull();
-      expect(listEventsMock).toHaveBeenCalledWith({
-        calendarIds: ["calendar-1"],
-        end: "2027-03-30T10:00:00.000Z",
-        start: "2025-03-30T09:00:00.000Z",
+      const overlapCall = listEventsMock.mock.calls.find(([args]) => {
+        const rangeStartMs = new Date(args.start).getTime();
+        const rangeEndMs = new Date(args.end).getTime();
+        return (
+          rangeStartMs < widenedSeriesLookupStartCutoffMs &&
+          rangeStartMs <= earlierStartMs &&
+          rangeEndMs >= earlierEndMs
+        );
       });
+      expect(overlapCall?.[0].calendarIds).toStrictEqual(["calendar-1"]);
+      expect(overlapCall?.[0].start).toBe("2025-03-30T09:00:00.000Z");
+      expect(new Date(overlapCall?.[0].end ?? "").getTime()).toBeLessThan(
+        new Date("2026-06-28T00:01:00.000Z").getTime(),
+      );
       expect(calendarApi.events.respond).not.toHaveBeenCalled();
     } finally {
+      vi.useRealTimers();
       restoreCalendarApi();
       restoreResizeObserver();
     }
