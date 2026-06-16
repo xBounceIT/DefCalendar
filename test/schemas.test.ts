@@ -3,6 +3,7 @@ import {
   calendarSummarySchema,
   createDefaultSettings,
   eventDraftSchema,
+  userSettingsSchema,
 } from "../src/shared/schemas";
 import { describe, expect, it } from "vitest";
 
@@ -47,7 +48,18 @@ describe("shared schemas", () => {
     expect(defaults.syncIntervalMinutes).toBe(1);
     expect(defaults).toMatchObject({ localReminderOverrideEnabled: false });
     expect(defaults.localReminderRules).toStrictEqual([{ minutes: 15, when: "before" }]);
+    expect(defaults.newEventPopupEnabled).toBe(false);
+    expect(defaults.systemInviteNotificationsEnabled).toBe(false);
     expect(defaults.visibleCalendarIds).toStrictEqual([]);
+  });
+
+  it("defaults system invite notifications for legacy settings", () => {
+    const legacySettings: Record<string, unknown> = { ...createDefaultSettings() };
+    delete legacySettings.systemInviteNotificationsEnabled;
+
+    const settings = userSettingsSchema.parse(legacySettings);
+
+    expect(settings.systemInviteNotificationsEnabled).toBe(false);
   });
 
   it("accepts calendar summaries with account ownership", () => {

@@ -487,6 +487,7 @@ const localReminderOverrideEnabledPreferenceSchema = z.preprocess(
 );
 
 const newEventPopupEnabledPreferenceSchema = z.boolean().default(false);
+const systemInviteNotificationsEnabledPreferenceSchema = z.boolean().default(false);
 
 const localReminderRulesPreferenceSchema = z.preprocess(
   (value) => (value === null ? undefined : value),
@@ -514,6 +515,7 @@ const userSettingsSchema = z.object({
   localReminderOverrideEnabled: localReminderOverrideEnabledPreferenceSchema,
   localReminderRules: localReminderRulesPreferenceSchema,
   newEventPopupEnabled: newEventPopupEnabledPreferenceSchema,
+  systemInviteNotificationsEnabled: systemInviteNotificationsEnabledPreferenceSchema,
   updateChannel: updateChannelSchema.default("stable"),
 });
 
@@ -582,6 +584,7 @@ function createDefaultSettings(): UserSettings {
     localReminderOverrideEnabled: false,
     localReminderRules: [{ minutes: 15, when: "before" }],
     newEventPopupEnabled: false,
+    systemInviteNotificationsEnabled: false,
     updateChannel: "stable",
   };
 }

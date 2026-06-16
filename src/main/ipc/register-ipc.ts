@@ -1,10 +1,5 @@
 import type { BrowserWindow, IpcMainInvokeEvent } from "electron";
-import type {
-  CalendarEvent,
-  EventAttachment,
-  EventResponseAction,
-  ParticipantResponseStatus,
-} from "@shared/schemas";
+import type { CalendarEvent, EventAttachment } from "@shared/schemas";
 import {
   appUpdateStatusSchema,
   attachmentDeleteArgsSchema,
@@ -33,6 +28,7 @@ import {
 } from "@shared/schemas";
 import { z } from "zod";
 import type AppDatabase from "@main/db/database";
+import type EventActionService from "@main/events/event-action-service";
 import { isMissingGraphItemError } from "@main/graph/calendar-service";
 import type GraphCalendarService from "@main/graph/calendar-service";
 import type MsalAuthService from "@main/auth/msal-auth-service";
@@ -40,6 +36,7 @@ import type NewEventNotificationService from "@main/notifications/new-event-noti
 import type ReminderService from "@main/reminders/reminder-service";
 import type ReminderWindowManager from "@main/reminders/reminder-window";
 import type SettingsService from "@main/settings/settings-service";
+import type SystemInviteNotificationService from "@main/notifications/system-invite-notification-service";
 import type { SyncService } from "@main/sync/sync-service";
 import type UpdateService from "@main/update/update-service";
 import { app, ipcMain, shell } from "@main/electron-runtime";
@@ -49,11 +46,13 @@ import { IPC_CHANNELS } from "@shared/ipc";
 interface RegisterIpcDependencies {
   auth: MsalAuthService;
   db: AppDatabase;
+  eventActions: EventActionService;
   graph: GraphCalendarService;
   newEventNotifications: NewEventNotificationService;
   reminders: ReminderService;
   reminderManager: ReminderWindowManager;
   settings: SettingsService;
+  systemInviteNotifications: SystemInviteNotificationService;
   sync: SyncService;
   updates: UpdateService;
   getMainWindow: () => BrowserWindow | null;
@@ -79,11 +78,6 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     return homeAccountId;
   };
 
-  const toParticipantResponseStatus = (action: EventResponseAction): ParticipantResponseStatus => ({
-    response: action === "accept" ? "accepted" : action === "decline" ? "declined" : "tentative",
-    time: new Date().toISOString(),
-  });
-
   const mergeCachedAttachments = (
     event: CalendarEvent,
     current: CalendarEvent | null,
@@ -98,15 +92,6 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
       hasAttachments: event.hasAttachments || current.attachments.length > 0,
     };
   };
-
-  const applyResponseToEvent = (
-    event: CalendarEvent,
-    action: EventResponseAction,
-  ): CalendarEvent => ({
-    ...event,
-    isReminderOn: action === "decline" ? false : event.isReminderOn,
-    responseStatus: toParticipantResponseStatus(action),
-  });
 
   const replaceStoredEvent = (current: CalendarEvent | null, nextEvent: CalendarEvent) => {
     dependencies.db.upsertEvent(nextEvent);
@@ -314,38 +299,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   ipcMain.handle(IPC_CHANNELS.eventsRespond, async (event, input) => {
     validateMainSender(event);
     const args = respondToEventArgsSchema.parse(input);
-    const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
-    const current = dependencies.db.getEvent(args.calendarId, args.eventId);
-    const isSeriesTarget = targetsDifferentEvent(args.eventId, args.targetEventId);
-    await dependencies.graph.respondToEvent(args, homeAccountId);
-    dependencies.newEventNotifications.dismiss(args.eventId);
-
-    if (isSeriesTarget) {
-      await dependencies.reminders.checkNow();
-      await dependencies.sync.syncAll("mutation", homeAccountId);
-      return;
-    }
-
-    let nextEvent = current;
-    try {
-      const refreshed = await dependencies.graph.getEvent(
-        args.calendarId,
-        args.eventId,
-        homeAccountId,
-      );
-      nextEvent = mergeCachedAttachments(refreshed, current);
-    } catch (error) {
-      if (!isMissingGraphItemError(error)) {
-        throw error;
-      }
-    }
-
-    if (nextEvent) {
-      replaceStoredEvent(current, applyResponseToEvent(nextEvent, args.action));
-    }
-
-    await dependencies.reminders.checkNow();
-    void dependencies.sync.syncAll("mutation", homeAccountId);
+    await dependencies.eventActions.respondToEvent(args);
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsForward, async (event, input) => {
@@ -455,19 +409,9 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   ipcMain.handle(IPC_CHANNELS.eventsOpenInApp, async (event, input) => {
     validateReminderSender(event);
     const args = eventReferenceArgsSchema.parse(input);
-    const calendarEvent = dependencies.db.getEvent(args.calendarId, args.eventId);
-    if (!calendarEvent) {
-      return;
+    if (dependencies.eventActions.openInApp(args)) {
+      dependencies.reminderManager.minimize();
     }
-
-    const window = dependencies.getMainWindow();
-    if (!window || window.isDestroyed()) {
-      return;
-    }
-
-    showAndFocusMainWindow(window);
-    window.webContents.send(IPC_CHANNELS.eventsOpenInAppRequested, calendarEvent);
-    dependencies.reminderManager.minimize();
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsOpenWebLink, async (event, input) => {
@@ -535,6 +479,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     }
 
     void dependencies.reminders.checkNow();
+    dependencies.systemInviteNotifications.refresh();
     return updatedSettings;
   });
 
@@ -584,6 +529,9 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   dependencies.newEventNotifications.onChange((items) => {
     broadcast(IPC_CHANNELS.newEventNotificationsChanged, items);
     if (items.length === 0) {
+      return;
+    }
+    if (!dependencies.settings.getSettings().newEventPopupEnabled) {
       return;
     }
 
