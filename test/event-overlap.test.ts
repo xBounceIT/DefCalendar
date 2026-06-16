@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   findOverlappingBusyEvents,
+  getCalendarOverlapLookupRange,
   toCalendarOverlapTarget,
 } from "../src/renderer/src/event-overlap";
 import type { CalendarEvent } from "../src/shared/schemas";
@@ -64,6 +65,20 @@ describe("event overlap detection", () => {
     ]);
   });
 
+  it("expands the lookup range for recurring series targets", () => {
+    const target = toCalendarOverlapTarget(
+      createEvent({
+        id: "occurrence-1",
+        seriesMasterId: "series-1",
+      }),
+    );
+
+    expect(getCalendarOverlapLookupRange(target)).toStrictEqual({
+      end: "2027-03-30T10:00:00.000Z",
+      start: "2026-03-30T09:00:00.000Z",
+    });
+  });
+
   it("ignores adjacent events", () => {
     const target = createEvent({ id: "invite" });
     const candidate = createEvent({
@@ -81,6 +96,49 @@ describe("event overlap detection", () => {
     const target = createEvent({ id: "invite" });
 
     expect(findOverlappingBusyEvents(toCalendarOverlapTarget(target), [target])).toStrictEqual([]);
+  });
+
+  it("checks cached same-series occurrences when the target accepts a series", () => {
+    const target = createEvent({
+      id: "occurrence-1",
+      seriesMasterId: "series-1",
+    });
+    const futureOccurrence = createEvent({
+      end: "2026-04-06T10:00:00.000Z",
+      id: "occurrence-2",
+      seriesMasterId: "series-1",
+      start: "2026-04-06T09:00:00.000Z",
+    });
+    const futureConflict = createEvent({
+      end: "2026-04-06T09:45:00.000Z",
+      id: "conflict",
+      start: "2026-04-06T09:15:00.000Z",
+      subject: "Future conflict",
+    });
+
+    expect(
+      findOverlappingBusyEvents(toCalendarOverlapTarget(target), [
+        futureOccurrence,
+        futureConflict,
+      ]),
+    ).toStrictEqual([futureConflict]);
+  });
+
+  it("does not report same-series occurrences as conflicts", () => {
+    const target = createEvent({
+      id: "occurrence-1",
+      seriesMasterId: "series-1",
+    });
+    const futureOccurrence = createEvent({
+      end: "2026-04-06T10:00:00.000Z",
+      id: "occurrence-2",
+      seriesMasterId: "series-1",
+      start: "2026-04-06T09:00:00.000Z",
+    });
+
+    expect(
+      findOverlappingBusyEvents(toCalendarOverlapTarget(target), [futureOccurrence]),
+    ).toStrictEqual([]);
   });
 
   it("ignores cancelled events", () => {

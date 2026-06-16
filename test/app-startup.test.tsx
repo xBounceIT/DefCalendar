@@ -10,7 +10,7 @@ import App from "../src/renderer/src/app";
 import useUiStore from "../src/renderer/src/store";
 import { createDefaultSettings } from "../src/shared/schema-values";
 import type { CalendarApi, NewEventNotificationItem } from "../src/shared/ipc";
-import type { CalendarEvent } from "../src/shared/schemas";
+import type { CalendarEvent, EventListArgs } from "../src/shared/schemas";
 
 interface MockedCalendarModule {
   default: unknown;
@@ -863,6 +863,76 @@ describe("app startup", () => {
 
       await expect(screen.findByDisplayValue("Reminder planning")).resolves.not.toBeNull();
       expect(screen.getByRole("dialog")).not.toBeNull();
+    } finally {
+      restoreCalendarApi();
+      restoreResizeObserver();
+    }
+  });
+
+  it("checks recurring accept conflicts across the widened series lookup range", async () => {
+    try {
+      installResizeObserverMock();
+      const calendarApi = createSignedInCalendarApiMock();
+      const event = createCalendarEvent({
+        attendees: [
+          {
+            email: "organizer@example.com",
+            name: "Organizer",
+            response: "accepted",
+            status: null,
+            type: "required",
+          },
+        ],
+        id: "occurrence-1",
+        isOrganizer: false,
+        seriesMasterId: "series-1",
+        subject: "Recurring invite",
+      });
+      const futureOccurrence = createCalendarEvent({
+        end: "2026-04-06T10:00:00.000Z",
+        id: "occurrence-2",
+        seriesMasterId: "series-1",
+        start: "2026-04-06T09:00:00.000Z",
+      });
+      const futureConflict = createCalendarEvent({
+        end: "2026-04-06T09:45:00.000Z",
+        id: "future-conflict",
+        start: "2026-04-06T09:15:00.000Z",
+        subject: "Future conflict",
+      });
+      const listEventsMock = vi
+        .spyOn(calendarApi.events, "list")
+        .mockImplementation(async (args: EventListArgs) => {
+          if (args.start === event.start && args.end === "2027-03-30T10:00:00.000Z") {
+            return [futureOccurrence, futureConflict];
+          }
+
+          return [];
+        });
+      let openInAppListener: ((event: CalendarEvent) => void) | null = null;
+      vi.spyOn(calendarApi.events, "onOpenInApp").mockImplementation((listener) => {
+        openInAppListener = listener;
+        return () => undefined;
+      });
+      installCalendarApi(calendarApi);
+
+      renderApp();
+
+      await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
+      act(() => {
+        openInAppListener?.(event);
+      });
+      await expect(screen.findByDisplayValue("Recurring invite")).resolves.not.toBeNull();
+
+      fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+
+      await expect(screen.findByText("Future conflict")).resolves.not.toBeNull();
+      expect(listEventsMock).toHaveBeenCalledWith({
+        calendarIds: ["calendar-1"],
+        end: "2027-03-30T10:00:00.000Z",
+        start: event.start,
+      });
+      expect(calendarApi.events.respond).not.toHaveBeenCalled();
     } finally {
       restoreCalendarApi();
       restoreResizeObserver();

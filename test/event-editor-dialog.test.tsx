@@ -720,9 +720,11 @@ describe("event editor dialog", () => {
     const attendeeEvent = createAttendeeEvent({
       seriesMasterId: "series-1",
     });
+    const onFindAcceptConflicts = vi.fn().mockResolvedValue([]);
     const onRespond = vi.fn().mockResolvedValue(undefined);
 
     renderDialog({
+      onFindAcceptConflicts,
       onRespond,
       state: {
         event: attendeeEvent,
@@ -733,6 +735,13 @@ describe("event editor dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Accept" }));
 
     await waitFor(() => {
+      expect(onFindAcceptConflicts).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventId: attendeeEvent.id,
+          lookupEnd: expect.any(String),
+          seriesMasterId: "series-1",
+        }),
+      );
       expect(onRespond).toHaveBeenCalledWith(attendeeEvent, "accept", "", true, "series-1");
     });
   });

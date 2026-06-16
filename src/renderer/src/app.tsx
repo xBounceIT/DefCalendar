@@ -35,7 +35,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { resolveLocaleSettingAsync, setAppLocale } from "./i18n";
 import type { CalendarOverlapTarget } from "./event-overlap";
-import { findOverlappingBusyEvents, hasValidOverlapRange } from "./event-overlap";
+import {
+  findOverlappingBusyEvents,
+  getCalendarOverlapLookupRange,
+  hasValidOverlapRange,
+} from "./event-overlap";
 
 import AuthScreen from "./components/auth-screen";
 import CalendarSidebar from "./components/calendar-sidebar";
@@ -812,14 +816,19 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   }
 
   async function findAcceptConflicts(target: CalendarOverlapTarget): Promise<CalendarEvent[]> {
-    if (visibleCalendarIds.length === 0 || !hasValidOverlapRange(target)) {
+    const lookupRange = getCalendarOverlapLookupRange(target);
+    if (
+      visibleCalendarIds.length === 0 ||
+      !hasValidOverlapRange(target) ||
+      !hasValidOverlapRange(lookupRange)
+    ) {
       return [];
     }
 
     const candidates = await calendarApi.events.list({
       calendarIds: visibleCalendarIds,
-      end: target.end,
-      start: target.start,
+      end: lookupRange.end,
+      start: lookupRange.start,
     });
 
     return findOverlappingBusyEvents(target, candidates);
