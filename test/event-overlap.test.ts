@@ -71,12 +71,44 @@ describe("event overlap detection", () => {
         id: "occurrence-1",
         seriesMasterId: "series-1",
       }),
-      new Date("2026-03-30T00:00:00.000Z"),
+      { now: new Date("2026-03-30T00:00:00.000Z") },
     );
 
     expect(getCalendarOverlapLookupRange(target)).toStrictEqual({
       end: "2026-06-28T00:00:00.000Z",
       start: "2025-03-30T09:00:00.000Z",
+    });
+  });
+
+  it("uses configured sync window bounds for recurring series targets", () => {
+    const target = toCalendarOverlapTarget(
+      createEvent({
+        id: "occurrence-1",
+        recurrence: {
+          pattern: {
+            daysOfWeek: ["monday"],
+            interval: 1,
+            type: "weekly",
+          },
+          range: {
+            startDate: "2024-03-30",
+            type: "noEnd",
+          },
+        },
+        seriesMasterId: "series-1",
+      }),
+      {
+        now: new Date("2026-03-30T00:00:00.000Z"),
+        syncWindow: {
+          lookAheadDays: 180,
+          lookBehindDays: 730,
+        },
+      },
+    );
+
+    expect(getCalendarOverlapLookupRange(target)).toStrictEqual({
+      end: "2026-09-26T00:00:00.000Z",
+      start: "2024-03-30T09:00:00.000Z",
     });
   });
 

@@ -1094,6 +1094,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         onSearchContacts={searchContacts}
         onSave={saveDraft}
         state={editorState}
+        syncWindow={syncStatus.syncWindow}
         timeFormat={appSettings.timeFormat}
       />
       <UpdateAvailablePopup />

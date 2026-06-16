@@ -1,5 +1,6 @@
-import { DEFAULT_SYNC_LOOK_AHEAD_DAYS, DEFAULT_SYNC_LOOK_BEHIND_DAYS } from "@shared/sync";
 import type { CalendarEvent } from "@shared/schemas";
+import { DEFAULT_SYNC_WINDOW_DAYS } from "@shared/sync";
+import type { SyncWindowDays } from "@shared/sync";
 
 interface CalendarOverlapTarget {
   calendarId: string;
@@ -17,15 +18,26 @@ interface EventTimeRange {
   start: number;
 }
 
+interface CalendarOverlapOptions {
+  now?: Date;
+  syncWindow?: null | SyncWindowDays;
+}
+
 type RecurrencePatternType = NonNullable<CalendarEvent["recurrence"]>["pattern"]["type"];
 
 const DAY_MS = 86_400_000;
 const BUSY_AVAILABILITY = new Set(["busy", "oof", "workingElsewhere", "unknown"]);
 const SERIES_LOOKUP_DAYS = 365;
 
-function toCalendarOverlapTarget(event: CalendarEvent, now = new Date()): CalendarOverlapTarget {
+function toCalendarOverlapTarget(
+  event: CalendarEvent,
+  options: CalendarOverlapOptions = {},
+): CalendarOverlapTarget {
   const seriesMasterId = event.seriesMasterId ?? null;
-  const cachedRange = getDefaultSyncCacheRange(now);
+  const cachedRange = getSyncCacheRange(
+    options.now ?? new Date(),
+    options.syncWindow ?? DEFAULT_SYNC_WINDOW_DAYS,
+  );
 
   return {
     calendarId: event.calendarId,
@@ -242,7 +254,7 @@ function getRecurrenceDaysPerInterval(patternType: RecurrencePatternType): numbe
   }
 }
 
-function getDefaultSyncCacheRange(now: Date): EventTimeRange {
+function getSyncCacheRange(now: Date, syncWindow: SyncWindowDays): EventTimeRange {
   const nowTime = now.getTime();
   if (Number.isNaN(nowTime)) {
     return {
@@ -252,8 +264,8 @@ function getDefaultSyncCacheRange(now: Date): EventTimeRange {
   }
 
   return {
-    end: nowTime + DEFAULT_SYNC_LOOK_AHEAD_DAYS * DAY_MS,
-    start: nowTime - DEFAULT_SYNC_LOOK_BEHIND_DAYS * DAY_MS,
+    end: nowTime + syncWindow.lookAheadDays * DAY_MS,
+    start: nowTime - syncWindow.lookBehindDays * DAY_MS,
   };
 }
 

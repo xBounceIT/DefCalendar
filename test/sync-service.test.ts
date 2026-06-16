@@ -10,6 +10,10 @@ import type {
 
 const FIXTURE_LOOKBEHIND_DAYS = 30;
 const FIXTURE_LOOKAHEAD_DAYS = 30;
+const FIXTURE_SYNC_WINDOW = {
+  lookAheadDays: FIXTURE_LOOKAHEAD_DAYS,
+  lookBehindDays: FIXTURE_LOOKBEHIND_DAYS,
+};
 
 interface SyncFixture {
   db: {
@@ -235,6 +239,7 @@ describe("sync service", () => {
       counts: null,
       progress: null,
       state: "idle",
+      syncWindow: FIXTURE_SYNC_WINDOW,
     });
     expect(fixture.graph.listCalendars).toHaveBeenCalledOnce();
     expect(fixture.db.upsertCalendars).toHaveBeenCalledWith(
@@ -496,6 +501,7 @@ describe("sync service", () => {
       counts: null,
       progress: null,
       state: "idle",
+      syncWindow: FIXTURE_SYNC_WINDOW,
     });
     expect(fixture.graph.listCalendarView).not.toHaveBeenCalled();
     expect(fixture.db.replaceEventsForCalendarRange).not.toHaveBeenCalled();
@@ -518,6 +524,7 @@ describe("sync service", () => {
       counts: null,
       progress: null,
       state: "idle",
+      syncWindow: FIXTURE_SYNC_WINDOW,
     });
     expect(fixture.db.upsertCalendars).toHaveBeenCalledWith(
       [createCalendar("calendar-a"), createCalendar("calendar-b")],

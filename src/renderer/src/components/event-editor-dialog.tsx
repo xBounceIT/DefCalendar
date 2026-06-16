@@ -25,6 +25,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faClock, faPaperPlane, faUser } from "@fortawesome/free-regular-svg-icons";
+import type { SyncWindowDays } from "@shared/sync";
 
 import type { EditorState } from "../event-editor-state";
 import type { CalendarOverlapTarget } from "../event-overlap";
@@ -61,6 +62,7 @@ interface EventEditorDialogProps {
   onSearchContacts: (args: SearchContactsArgs) => Promise<ContactSuggestion[]>;
   onSave: (draft: EventDraft) => Promise<void>;
   state: EditorState | null;
+  syncWindow?: null | SyncWindowDays;
   timeFormat: UserSettings["timeFormat"];
 }
 
@@ -485,6 +487,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
             onResponseCommentChange={(responseComment) =>
               setForm((current) => (current ? { ...current, responseComment } : current))
             }
+            syncWindow={props.syncWindow}
             timeFormat={props.timeFormat}
           />
         </aside>
@@ -1641,6 +1644,7 @@ function AttendeesSidebar({
   organizer,
   onRespond,
   onResponseCommentChange,
+  syncWindow,
   timeFormat,
 }: {
   busy: boolean;
@@ -1658,6 +1662,7 @@ function AttendeesSidebar({
     targetEventId?: string,
   ) => Promise<void>;
   onResponseCommentChange: (value: string) => void;
+  syncWindow?: null | SyncWindowDays;
   timeFormat: UserSettings["timeFormat"];
 }) {
   const { t } = useTranslation();
@@ -1881,7 +1886,7 @@ function AttendeesSidebar({
     setPendingResponse(null);
     const requestEventIdentity = eventIdentity;
     try {
-      const conflicts = await onFindAcceptConflicts(toCalendarOverlapTarget(event));
+      const conflicts = await onFindAcceptConflicts(toCalendarOverlapTarget(event, { syncWindow }));
       if (eventIdentityRef.current !== requestEventIdentity) {
         return;
       }
