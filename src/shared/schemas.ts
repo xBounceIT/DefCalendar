@@ -519,7 +519,33 @@ const userSettingsSchema = z.object({
   updateChannel: updateChannelSchema.default("stable"),
 });
 
-const userSettingsPatchSchema = userSettingsSchema.partial();
+const userSettingsPatchSchema = z.object({
+  activeAccountId: z.string().nullable().optional(),
+  visibleCalendarIds: z.array(z.string()).optional(),
+  activeView: calendarViewSchema.optional(),
+  selectedDate: dateTimeStringSchema.optional(),
+  language: z
+    .preprocess((value) => (value === null ? "system" : value), languageSettingSchema)
+    .optional(),
+  timeFormat: z
+    .preprocess((value) => (value === null ? "system" : value), timeFormatSettingSchema)
+    .optional(),
+  syncIntervalMinutes: z
+    .preprocess((value) => (value === null ? 1 : value), syncIntervalMinutesSettingSchema)
+    .optional(),
+  localReminderOverrideEnabled: z
+    .preprocess((value) => (value === null ? false : value), z.boolean())
+    .optional(),
+  localReminderRules: z
+    .preprocess(
+      (value) => (value === null ? [{ minutes: 15, when: "before" }] : value),
+      z.array(localReminderRuleSchema).min(1).max(10),
+    )
+    .optional(),
+  newEventPopupEnabled: z.boolean().optional(),
+  systemInviteNotificationsEnabled: z.boolean().optional(),
+  updateChannel: updateChannelSchema.optional(),
+});
 
 type CalendarView = z.infer<typeof calendarViewSchema>;
 type AccountSummary = z.infer<typeof accountSummarySchema>;

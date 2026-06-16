@@ -150,9 +150,9 @@ describe("system invite notification service", () => {
       ],
       groupId: "defcalendar-invites",
       id: "invite:calendar-1:event-1",
-      timeoutType: "never",
       title: "New invitation",
     });
+    expect(notificationMock.instances[0].options).not.toHaveProperty("timeoutType");
     expect(notificationMock.instances[0].show).toHaveBeenCalledOnce();
   });
 
@@ -179,6 +179,23 @@ describe("system invite notification service", () => {
       calendarId: "calendar-1",
       eventId: "event-1",
     });
+  });
+
+  it("keeps notification handlers alive after Windows closes the live toast banner", () => {
+    expect.hasAssertions();
+    resetNotificationMock();
+    const { eventActions, service } = createService();
+
+    service.sync([createItem()]);
+    notificationMock.instances[0].emit("close");
+    notificationMock.instances[0].emit("click");
+    service.sync([createItem()]);
+
+    expect(eventActions.openInApp).toHaveBeenCalledWith({
+      calendarId: "calendar-1",
+      eventId: "event-1",
+    });
+    expect(notificationMock.instances).toHaveLength(1);
   });
 
   it("responds to action button clicks through the shared event action service", async () => {

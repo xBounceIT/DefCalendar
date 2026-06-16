@@ -84,7 +84,6 @@ class SystemInviteNotificationService {
       body: buildBody(item, settings),
       groupId: INVITE_GROUP_ID,
       id: createNotificationId(item),
-      timeoutType: "never",
       title: t("inviteNotificationTitle"),
     });
 
@@ -97,9 +96,6 @@ class SystemInviteNotificationService {
         calendarId: item.calendarId,
         eventId: item.eventId,
       });
-    });
-    notification.on("close", () => {
-      this.activeNotifications.delete(item.eventId);
     });
 
     this.activeNotifications.set(item.eventId, notification);

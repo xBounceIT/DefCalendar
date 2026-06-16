@@ -3,6 +3,7 @@ import {
   calendarSummarySchema,
   createDefaultSettings,
   eventDraftSchema,
+  userSettingsPatchSchema,
   userSettingsSchema,
 } from "../src/shared/schemas";
 import { describe, expect, it } from "vitest";
@@ -60,6 +61,24 @@ describe("shared schemas", () => {
     const settings = userSettingsSchema.parse(legacySettings);
 
     expect(settings.systemInviteNotificationsEnabled).toBe(false);
+  });
+
+  it("does not inject defaults into sparse settings patches", () => {
+    const patch = userSettingsPatchSchema.parse({ activeView: "timeGridDay" });
+
+    expect(patch).toStrictEqual({ activeView: "timeGridDay" });
+  });
+
+  it("preserves explicit invite notification patch values", () => {
+    const enabledPatch = userSettingsPatchSchema.parse({
+      systemInviteNotificationsEnabled: true,
+    });
+    const disabledPatch = userSettingsPatchSchema.parse({
+      systemInviteNotificationsEnabled: false,
+    });
+
+    expect(enabledPatch.systemInviteNotificationsEnabled).toBe(true);
+    expect(disabledPatch.systemInviteNotificationsEnabled).toBe(false);
   });
 
   it("accepts calendar summaries with account ownership", () => {
