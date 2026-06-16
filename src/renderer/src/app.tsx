@@ -34,6 +34,8 @@ import type {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { resolveLocaleSettingAsync, setAppLocale } from "./i18n";
+import type { CalendarOverlapTarget } from "./event-overlap";
+import { findOverlappingBusyEvents, hasValidOverlapRange } from "./event-overlap";
 
 import AuthScreen from "./components/auth-screen";
 import CalendarSidebar from "./components/calendar-sidebar";
@@ -809,6 +811,20 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     });
   }
 
+  async function findAcceptConflicts(target: CalendarOverlapTarget): Promise<CalendarEvent[]> {
+    if (visibleCalendarIds.length === 0 || !hasValidOverlapRange(target)) {
+      return [];
+    }
+
+    const candidates = await calendarApi.events.list({
+      calendarIds: visibleCalendarIds,
+      end: target.end,
+      start: target.start,
+    });
+
+    return findOverlappingBusyEvents(target, candidates);
+  }
+
   async function forwardEvent(args: ForwardEventArgs): Promise<void> {
     await forwardEventMutation.mutateAsync(args);
   }
@@ -1057,6 +1073,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         calendars={calendars}
         categoriesLoading={categoriesQuery.isLoading}
         errorMessage={dialogError}
+        onFindAcceptConflicts={findAcceptConflicts}
         onListAttachments={listEventAttachments}
         onDelete={deleteDraft}
         onDismiss={dismissEditor}
@@ -1071,7 +1088,10 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         timeFormat={appSettings.timeFormat}
       />
       <UpdateAvailablePopup />
-      <NewEventPopup timeFormat={appSettings.timeFormat} />
+      <NewEventPopup
+        onFindAcceptConflicts={findAcceptConflicts}
+        timeFormat={appSettings.timeFormat}
+      />
     </div>
   );
 }

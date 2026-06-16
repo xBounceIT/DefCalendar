@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createInstance } from "i18next";
 import React from "react";
 import { I18nextProvider, initReactI18next } from "react-i18next";
@@ -113,6 +113,7 @@ function renderDialog(props?: Partial<React.ComponentProps<typeof EventEditorDia
 
   const onSave = props?.onSave ?? vi.fn().mockResolvedValue(undefined);
   const onSearchContacts = props?.onSearchContacts ?? vi.fn().mockResolvedValue([]);
+  const onFindAcceptConflicts = props?.onFindAcceptConflicts ?? vi.fn().mockResolvedValue([]);
   const state: EditorState = props?.state ?? {
     event: createEvent(),
     mode: "edit",
@@ -146,6 +147,7 @@ function renderDialog(props?: Partial<React.ComponentProps<typeof EventEditorDia
         onDelete={vi.fn().mockResolvedValue(undefined)}
         onDismiss={vi.fn()}
         onDuplicate={vi.fn()}
+        onFindAcceptConflicts={onFindAcceptConflicts}
         onForward={vi.fn().mockResolvedValue(undefined)}
         onListAttachments={vi.fn().mockResolvedValue([])}
         onOpenInOutlook={vi.fn().mockResolvedValue(undefined)}
@@ -160,7 +162,7 @@ function renderDialog(props?: Partial<React.ComponentProps<typeof EventEditorDia
     </I18nextProvider>,
   );
 
-  return { ...view, onSave, onSearchContacts };
+  return { ...view, onFindAcceptConflicts, onSave, onSearchContacts };
 }
 
 function openSchedulingSection(container: HTMLElement) {
@@ -685,11 +687,13 @@ describe("event editor dialog", () => {
     expect(screen.getByText("Fabio")).toBeInTheDocument();
   });
 
-  it("sends accept immediately from the sidebar", () => {
+  it("checks overlaps before accepting from the sidebar", async () => {
     const attendeeEvent = createAttendeeEvent();
+    const onFindAcceptConflicts = vi.fn().mockResolvedValue([]);
     const onRespond = vi.fn().mockResolvedValue(undefined);
 
     renderDialog({
+      onFindAcceptConflicts,
       onRespond,
       state: {
         event: attendeeEvent,
@@ -699,10 +703,20 @@ describe("event editor dialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Accept" }));
 
-    expect(onRespond).toHaveBeenCalledWith(attendeeEvent, "accept", "", true);
+    await waitFor(() => {
+      expect(onFindAcceptConflicts).toHaveBeenCalledWith(
+        expect.objectContaining({
+          calendarId: attendeeEvent.calendarId,
+          eventId: attendeeEvent.id,
+          start: attendeeEvent.start,
+          end: attendeeEvent.end,
+        }),
+      );
+      expect(onRespond).toHaveBeenCalledWith(attendeeEvent, "accept", "", true);
+    });
   });
 
-  it("accepts recurring events for the whole series from the sidebar", () => {
+  it("accepts recurring events for the whole series from the sidebar", async () => {
     const attendeeEvent = createAttendeeEvent({
       seriesMasterId: "series-1",
     });
@@ -718,14 +732,69 @@ describe("event editor dialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Accept" }));
 
-    expect(onRespond).toHaveBeenCalledWith(attendeeEvent, "accept", "", true, "series-1");
+    await waitFor(() => {
+      expect(onRespond).toHaveBeenCalledWith(attendeeEvent, "accept", "", true, "series-1");
+    });
+  });
+
+  it("blocks accept until overlapping events are confirmed", async () => {
+    const attendeeEvent = createAttendeeEvent();
+    const conflict = createEvent({
+      id: "conflict-1",
+      start: "2026-03-30T09:30:00.000Z",
+      subject: "Existing busy event",
+    });
+    const onFindAcceptConflicts = vi.fn().mockResolvedValue([conflict]);
+    const onRespond = vi.fn().mockResolvedValue(undefined);
+
+    renderDialog({
+      onFindAcceptConflicts,
+      onRespond,
+      state: {
+        event: attendeeEvent,
+        mode: "edit",
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+
+    await expect(screen.findByText("Existing busy event")).resolves.toBeInTheDocument();
+    expect(onRespond).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Accept anyway" }));
+
+    expect(onRespond).toHaveBeenCalledWith(attendeeEvent, "accept", "", true);
+  });
+
+  it("shows an error and does not accept when overlap lookup fails", async () => {
+    const attendeeEvent = createAttendeeEvent();
+    const onFindAcceptConflicts = vi.fn().mockRejectedValue(new Error("lookup failed"));
+    const onRespond = vi.fn().mockResolvedValue(undefined);
+
+    renderDialog({
+      onFindAcceptConflicts,
+      onRespond,
+      state: {
+        event: attendeeEvent,
+        mode: "edit",
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+
+    await expect(
+      screen.findByText("Unable to check for overlapping events. Try again before accepting."),
+    ).resolves.toBeInTheDocument();
+    expect(onRespond).not.toHaveBeenCalled();
   });
 
   it("sends refuse immediately from the sidebar", () => {
     const attendeeEvent = createAttendeeEvent();
+    const onFindAcceptConflicts = vi.fn().mockResolvedValue([]);
     const onRespond = vi.fn().mockResolvedValue(undefined);
 
     renderDialog({
+      onFindAcceptConflicts,
       onRespond,
       state: {
         event: attendeeEvent,
@@ -736,6 +805,7 @@ describe("event editor dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Refuse" }));
 
     expect(onRespond).toHaveBeenCalledWith(attendeeEvent, "decline", "", true);
+    expect(onFindAcceptConflicts).not.toHaveBeenCalled();
   });
 
   it("shows recurring refuse scope options from the sidebar", () => {
@@ -798,9 +868,11 @@ describe("event editor dialog", () => {
 
   it("supports tentative responses with a comment from the other popup", () => {
     const attendeeEvent = createAttendeeEvent();
+    const onFindAcceptConflicts = vi.fn().mockResolvedValue([]);
     const onRespond = vi.fn().mockResolvedValue(undefined);
 
     renderDialog({
+      onFindAcceptConflicts,
       onRespond,
       state: {
         event: attendeeEvent,
@@ -820,6 +892,40 @@ describe("event editor dialog", () => {
       "Need to confirm a conflict",
       true,
     );
+    expect(onFindAcceptConflicts).not.toHaveBeenCalled();
+  });
+
+  it("preserves silent accept after confirming overlaps", async () => {
+    const attendeeEvent = createAttendeeEvent();
+    const conflict = createEvent({
+      id: "conflict-1",
+      start: "2026-03-30T09:30:00.000Z",
+      subject: "Existing busy event",
+    });
+    const onFindAcceptConflicts = vi.fn().mockResolvedValue([conflict]);
+    const onRespond = vi.fn().mockResolvedValue(undefined);
+
+    renderDialog({
+      onFindAcceptConflicts,
+      onRespond,
+      state: {
+        event: attendeeEvent,
+        mode: "edit",
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Other" }));
+    fireEvent.change(screen.getByLabelText("Comment"), {
+      target: { value: "This comment should not be sent" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Accept without sending" }));
+
+    await expect(screen.findByText("Existing busy event")).resolves.toBeInTheDocument();
+    expect(onRespond).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Accept anyway" }));
+
+    expect(onRespond).toHaveBeenCalledWith(attendeeEvent, "accept", "", false);
   });
 
   it("supports silent responses from the other popup and closes on outside click", () => {

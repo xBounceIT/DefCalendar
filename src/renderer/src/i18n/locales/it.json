@@ -406,5 +406,14 @@
       "tentative": "Provvisorio",
       "decline": "Rifiuta"
     }
+  },
+  "overlapWarning": {
+    "title": "Eventi sovrapposti",
+    "description": "Questo evento si sovrappone ad altri eventi occupati nel calendario.",
+    "subjectLabel": "Evento:",
+    "timeLabel": "Ora:",
+    "acceptAnyway": "Accetta comunque",
+    "cancel": "Annulla",
+    "lookupError": "Impossibile controllare gli eventi sovrapposti. Riprova prima di accettare."
   }
 }

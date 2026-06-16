@@ -1352,6 +1352,97 @@ button {
   border-color: rgba(221, 107, 32, 0.3);
 }
 
+.overlap-warning {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(221, 107, 32, 0.32);
+  border-radius: 8px;
+  background: rgba(221, 107, 32, 0.08);
+  color: var(--ink);
+}
+
+.overlap-warning__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #9a3412;
+}
+
+.overlap-warning__description {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-secondary);
+}
+
+.overlap-warning__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.overlap-warning__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid rgba(221, 107, 32, 0.2);
+}
+
+.overlap-warning__subject {
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.overlap-warning__time {
+  font-size: 12px;
+  color: var(--ink-secondary);
+}
+
+.overlap-warning__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.overlap-warning__button {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.overlap-warning__button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.overlap-warning__button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.overlap-warning__button--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+.overlap-warning__button--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
 .day-events-table {
   background: var(--surface);
   border-bottom: var(--border);

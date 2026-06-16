@@ -406,5 +406,14 @@
       "tentative": "Tentative",
       "decline": "Decline"
     }
+  },
+  "overlapWarning": {
+    "title": "Overlapping events",
+    "description": "This event overlaps with other busy events in your calendar.",
+    "subjectLabel": "Event:",
+    "timeLabel": "Time:",
+    "acceptAnyway": "Accept anyway",
+    "cancel": "Cancel",
+    "lookupError": "Unable to check for overlapping events. Try again before accepting."
   }
 }
