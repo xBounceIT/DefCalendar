@@ -19,6 +19,7 @@ import {
   storedAccountSchema,
   userSettingsSchema,
 } from "@shared/schema-values";
+import { isDeclinedEventResponse } from "@shared/event-response";
 import { dirname, join } from "pathe";
 import Database from "better-sqlite3";
 import { app } from "electron";
@@ -657,7 +658,7 @@ class AppDatabase {
       const baseKey = readStringProperty(row, "base_key");
       const reminderMinutes = event.reminderMinutesBeforeStart;
 
-      if (event.cancelled) {
+      if (event.cancelled || isDeclinedEventResponse(event.responseStatus?.response)) {
         continue;
       }
 
@@ -709,7 +710,9 @@ class AppDatabase {
     return statement
       .all(windowStart, windowEnd, ...visibleCalendarIds)
       .map((row) => parseStoredEvent(readStringProperty(row, "payload_json")))
-      .filter((event) => !event.cancelled);
+      .filter(
+        (event) => !event.cancelled && !isDeclinedEventResponse(event.responseStatus?.response),
+      );
   }
 
   getReminderState(dedupeKey: string): null | ReminderStateSnapshot {

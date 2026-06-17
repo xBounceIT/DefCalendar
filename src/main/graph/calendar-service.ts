@@ -15,6 +15,7 @@ import type {
 } from "@shared/schemas";
 import type { AppConfig } from "@main/config";
 import type MsalAuthService from "@main/auth/msal-auth-service";
+import { normalizeEventResponseValue as normalizeGraphResponseValue } from "@shared/event-response";
 import delay from "delay";
 
 interface ParsedGraphCollection {
@@ -1528,27 +1529,6 @@ function getGraphContactDisplayName(contact: GraphContact): null | string {
     trimOrNull(contact.fileAs);
 
   return preferred;
-}
-
-function normalizeGraphResponseValue(value: null | string | undefined): null | string {
-  const normalized = value?.trim().toLowerCase();
-  if (!normalized) {
-    return null;
-  }
-
-  if (normalized === "accepted" || normalized === "declined" || normalized === "tentative") {
-    return normalized;
-  }
-
-  if (normalized === "tentativelyaccepted") {
-    return "tentative";
-  }
-
-  if (normalized === "none" || normalized === "notresponded" || normalized === "organizer") {
-    return "none";
-  }
-
-  return normalized;
 }
 
 function parseResponseStatus(value?: GraphResponseStatus): null | ParticipantResponseStatus {

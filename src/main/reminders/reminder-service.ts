@@ -3,6 +3,7 @@ import type ReminderWindowManager from "@main/reminders/reminder-window";
 import type SettingsService from "@main/settings/settings-service";
 import { app, powerMonitor } from "@main/electron-runtime";
 import { resolveMainLocale } from "@main/i18n";
+import { isDeclinedEventResponse } from "@shared/event-response";
 import type { ReminderDialogItem, ReminderDialogState } from "@shared/ipc";
 import type { LocalReminderRule, UserSettings } from "@shared/schemas";
 import { REMINDER_TYPE } from "@shared/schema-values";
@@ -171,6 +172,13 @@ class ReminderService {
     const staleKeys: string[] = [];
 
     for (const candidate of candidates) {
+      if (
+        candidate.event.cancelled ||
+        isDeclinedEventResponse(candidate.event.responseStatus?.response)
+      ) {
+        continue;
+      }
+
       if (candidate.dismissedAt) {
         continue;
       }
@@ -285,6 +293,10 @@ class ReminderService {
     }[] = [];
     const allDedupeKeys: string[] = [];
     for (const event of events) {
+      if (event.cancelled || isDeclinedEventResponse(event.responseStatus?.response)) {
+        continue;
+      }
+
       const eventStart = new Date(event.start).getTime();
       if (Number.isNaN(eventStart)) {
         continue;

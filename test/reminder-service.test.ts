@@ -18,11 +18,13 @@ vi.mock(import("@main/electron-runtime"), () => ({
 
 function createCandidate(overrides?: {
   calendarId?: string;
+  cancelled?: boolean;
   dedupeKey?: string;
   dismissedAt?: null | string;
   id?: string;
   reminderMinutesBeforeStart?: number;
   reminderType?: "pre" | "start";
+  responseStatus?: null | { response: null | string; time: null | string };
   snoozedUntil?: null | string;
   start?: string;
   subject?: string;
@@ -36,11 +38,13 @@ function createCandidate(overrides?: {
     dismissedAt: overrides?.dismissedAt ?? null,
     event: {
       calendarId,
+      cancelled: overrides?.cancelled ?? false,
       end: "2026-03-30T10:30:00.000Z",
       id: overrides?.id ?? "event-1",
       isAllDay: false,
       location: "Room 3",
       reminderMinutesBeforeStart: overrides?.reminderMinutesBeforeStart ?? 15,
+      responseStatus: overrides?.responseStatus ?? null,
       start,
       subject: overrides?.subject ?? "Planning",
     },
@@ -54,11 +58,13 @@ function createFixture(args?: {
   hasWindow?: boolean;
   localEvents?: {
     calendarId: string;
+    cancelled?: boolean;
     end: string;
     id: string;
     isAllDay: boolean;
     location: string;
     reminderMinutesBeforeStart: null | number;
+    responseStatus?: null | { response: null | string; time: null | string };
     start: string;
     subject: string;
   }[];
@@ -194,6 +200,34 @@ describe("reminder service", () => {
       },
       true,
     );
+  });
+
+  it("does not show synced reminders for declined events", async () => {
+    expect.assertions(2);
+
+    const fixture = createFixture({
+      candidates: [
+        createCandidate({
+          responseStatus: { response: "declined", time: "2026-03-29T09:00:00.000Z" },
+        }),
+      ],
+    });
+
+    await fixture.service.checkNow();
+
+    expect(fixture.reminderManager.show).not.toHaveBeenCalled();
+    expect(fixture.reminderManager.close).toHaveBeenCalledOnce();
+  });
+
+  it("does not show synced reminders for cancelled events", async () => {
+    expect.assertions(2);
+
+    const fixture = createFixture({ candidates: [createCandidate({ cancelled: true })] });
+
+    await fixture.service.checkNow();
+
+    expect(fixture.reminderManager.show).not.toHaveBeenCalled();
+    expect(fixture.reminderManager.close).toHaveBeenCalledOnce();
   });
 
   it("schedules the next check at the exact reminder offset", async () => {
@@ -444,6 +478,62 @@ describe("reminder service", () => {
       }),
       true,
     );
+  });
+
+  it("does not show local override or start-time reminders for declined events", async () => {
+    expect.assertions(2);
+
+    vi.setSystemTime(new Date("2026-03-30T10:00:00.000Z"));
+    const fixture = createFixture({
+      localEvents: [
+        {
+          calendarId: "calendar-1",
+          end: "2026-03-30T10:30:00.000Z",
+          id: "event-1",
+          isAllDay: false,
+          location: "Room 3",
+          reminderMinutesBeforeStart: null,
+          responseStatus: { response: "declined", time: "2026-03-29T09:00:00.000Z" },
+          start: "2026-03-30T10:00:00.000Z",
+          subject: "Planning",
+        },
+      ],
+      localReminderOverrideEnabled: true,
+      localReminderRules: [{ minutes: 15, when: "before" }],
+    });
+
+    await fixture.service.checkNow();
+
+    expect(fixture.reminderManager.show).not.toHaveBeenCalled();
+    expect(fixture.reminderManager.close).toHaveBeenCalledOnce();
+  });
+
+  it("does not show local override or start-time reminders for cancelled events", async () => {
+    expect.assertions(2);
+
+    vi.setSystemTime(new Date("2026-03-30T10:00:00.000Z"));
+    const fixture = createFixture({
+      localEvents: [
+        {
+          calendarId: "calendar-1",
+          cancelled: true,
+          end: "2026-03-30T10:30:00.000Z",
+          id: "event-1",
+          isAllDay: false,
+          location: "Room 3",
+          reminderMinutesBeforeStart: null,
+          start: "2026-03-30T10:00:00.000Z",
+          subject: "Planning",
+        },
+      ],
+      localReminderOverrideEnabled: true,
+      localReminderRules: [{ minutes: 15, when: "before" }],
+    });
+
+    await fixture.service.checkNow();
+
+    expect(fixture.reminderManager.show).not.toHaveBeenCalled();
+    expect(fixture.reminderManager.close).toHaveBeenCalledOnce();
   });
 
   it("shows after-start local reminders when they become due", async () => {

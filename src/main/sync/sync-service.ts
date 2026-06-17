@@ -7,6 +7,7 @@ import type ReminderService from "@main/reminders/reminder-service";
 import type { ReminderCheckTrigger } from "@main/reminders/reminder-service";
 import type SettingsService from "@main/settings/settings-service";
 import { DAY_MS, MINUTE_MS } from "@shared/duration";
+import { isDeclinedEventResponse } from "@shared/event-response";
 import type { CalendarEvent, CalendarSummary, SyncStatus } from "@shared/schemas";
 import type { SyncWindowDays } from "@shared/sync";
 
@@ -534,7 +535,11 @@ function compareCalendarEvents(
 function shouldPreserveDeclinedEvent(
   event: Pick<CalendarEvent, "cancelled" | "isOrganizer" | "responseStatus">,
 ): boolean {
-  return !event.cancelled && !event.isOrganizer && event.responseStatus?.response === "declined";
+  return (
+    !event.cancelled &&
+    !event.isOrganizer &&
+    isDeclinedEventResponse(event.responseStatus?.response)
+  );
 }
 
 export { SyncService, type SyncReason };
