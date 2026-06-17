@@ -6,7 +6,9 @@ function createStoredReminderEvent(overrides?: {
   calendarId?: string;
   cancelled?: boolean;
   id?: string;
+  isOrganizer?: boolean;
   reminderMinutesBeforeStart?: number;
+  responseStatus?: null | { response: null | string; time: null | string };
   start?: string;
 }) {
   return {
@@ -26,7 +28,7 @@ function createStoredReminderEvent(overrides?: {
     id: overrides?.id ?? "event-1",
     isAllDay: false,
     isOnlineMeeting: false,
-    isOrganizer: true,
+    isOrganizer: overrides?.isOrganizer ?? true,
     isReminderOn: true,
     lastModifiedDateTime: null,
     location: "Room 3",
@@ -37,7 +39,7 @@ function createStoredReminderEvent(overrides?: {
     recurrence: null,
     reminderMinutesBeforeStart: overrides?.reminderMinutesBeforeStart ?? 15,
     responseRequested: null,
-    responseStatus: null,
+    responseStatus: overrides?.responseStatus ?? null,
     seriesMasterId: null,
     start: overrides?.start ?? "2026-03-30T10:00:00.000Z",
     subject: "Planning",
@@ -273,6 +275,36 @@ describe("database", () => {
     ).toStrictEqual([]);
   });
 
+  it("excludes declined events from reminder candidates", () => {
+    const all = vi.fn().mockReturnValue([
+      {
+        base_key: "calendar-1:event-1:2026-03-30T10:00:00.000Z",
+        dismissed_at_pre: null,
+        dismissed_at_start: null,
+        payload_json: JSON.stringify(
+          createStoredReminderEvent({
+            isOrganizer: false,
+            responseStatus: { response: "declined", time: "2026-03-29T09:00:00.000Z" },
+          }),
+        ),
+        snoozed_until_pre: null,
+        snoozed_until_start: null,
+      },
+    ]);
+    const prepare = vi.fn(() => ({ all }));
+
+    const db = Object.create(AppDatabase.prototype) as AppDatabase;
+    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+
+    expect(
+      db.listReminderCandidates(
+        ["calendar-1"],
+        "2026-03-28T12:00:00.000Z",
+        "2026-03-30T12:00:00.000Z",
+      ),
+    ).toStrictEqual([]);
+  });
+
   it("excludes cancelled events from listReminderEventsByStartRange", () => {
     const all = vi.fn().mockReturnValue([
       {
@@ -280,6 +312,36 @@ describe("database", () => {
       },
       {
         payload_json: JSON.stringify(createStoredReminderEvent({ cancelled: true, id: "event-2" })),
+      },
+    ]);
+    const prepare = vi.fn(() => ({ all }));
+
+    const db = Object.create(AppDatabase.prototype) as AppDatabase;
+    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+
+    const results = db.listReminderEventsByStartRange(
+      ["calendar-1"],
+      "2026-03-28T12:00:00.000Z",
+      "2026-03-30T12:00:00.000Z",
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.id).toBe("event-1");
+  });
+
+  it("excludes declined events from listReminderEventsByStartRange", () => {
+    const all = vi.fn().mockReturnValue([
+      {
+        payload_json: JSON.stringify(createStoredReminderEvent({ id: "event-1" })),
+      },
+      {
+        payload_json: JSON.stringify(
+          createStoredReminderEvent({
+            id: "event-2",
+            isOrganizer: false,
+            responseStatus: { response: "declined", time: "2026-03-29T09:00:00.000Z" },
+          }),
+        ),
       },
     ]);
     const prepare = vi.fn(() => ({ all }));

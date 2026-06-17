@@ -1,5 +1,5 @@
-import { normalizeGraphResponseValue } from "@main/graph/calendar-service";
 import type { CalendarEvent, NewEventNotificationItem } from "@shared/schemas";
+import { normalizeEventResponseValue } from "@shared/event-response";
 
 type Listener = (items: NewEventNotificationItem[]) => void;
 
@@ -76,7 +76,7 @@ function shouldNotifyOnNewEvent(event: CalendarEvent): boolean {
     return false;
   }
 
-  const normalized = normalizeGraphResponseValue(event.responseStatus?.response);
+  const normalized = normalizeEventResponseValue(event.responseStatus?.response);
   return normalized === null || normalized === "none";
 }
 
