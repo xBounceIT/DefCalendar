@@ -249,9 +249,12 @@ class SyncService {
       const lookAheadDays = syncWindow.lookAheadDays;
       const maxLookBehindDays = GRAPH_CALENDAR_VIEW_MAX_DAYS - lookAheadDays;
       const rollingLookBehindDays = syncWindow.lookBehindDays;
-      const rollingRangeStart = new Date(Date.now() - rollingLookBehindDays * DAY_MS).toISOString();
-      const deepRangeStart = new Date(Date.now() - maxLookBehindDays * DAY_MS).toISOString();
-      const rangeEnd = new Date(Date.now() + lookAheadDays * DAY_MS).toISOString();
+      const rangeBaseTime = Date.now();
+      const rollingRangeStart = new Date(
+        rangeBaseTime - rollingLookBehindDays * DAY_MS,
+      ).toISOString();
+      const deepRangeStart = new Date(rangeBaseTime - maxLookBehindDays * DAY_MS).toISOString();
+      const rangeEnd = new Date(rangeBaseTime + lookAheadDays * DAY_MS).toISOString();
       const finishedAt = new Date().toISOString();
 
       const totalCalendars = calendarsToSync.length;
