@@ -330,6 +330,7 @@
         "description": "Manage reminder and notification preferences.",
         "newEventPopup": "Show popup when new event invitations are synced",
         "systemInviteNotifications": "Show system notifications for new event invitations",
+        "taskbarInviteNotifications": "Show taskbar badge for new event invitations",
         "overrideSynced": "Use local reminder rules instead of synced event reminders",
         "ruleTime": "Time",
         "ruleWhen": "When",

@@ -205,6 +205,20 @@ function renderPopup(props?: Partial<React.ComponentProps<typeof NewEventPopup>>
 }
 
 describe("new event popup", () => {
+  it("focuses the dialog when pending invitations are present", async () => {
+    installCalendarApi([createNotificationItem()]);
+
+    renderPopup();
+
+    const dialog = await screen.findByRole("dialog", { name: "New invitations" });
+    expect(dialog).toHaveFocus();
+
+    dialog.blur();
+    window.dispatchEvent(new Event("focus"));
+
+    expect(dialog).toHaveFocus();
+  });
+
   it("warns before accepting overlapping invitations", async () => {
     const item = createNotificationItem();
     const calendarApi = installCalendarApi([item]);

@@ -696,7 +696,8 @@ describe("app startup", () => {
   it("renders the Exchange auth screen when the preload bridge is available", async () => {
     try {
       installResizeObserverMock();
-      installCalendarApi(createCalendarApiMock());
+      const calendarApi = createCalendarApiMock();
+      installCalendarApi(calendarApi);
 
       renderApp();
 
@@ -705,6 +706,7 @@ describe("app startup", () => {
       ).resolves.not.toBeNull();
       expect(screen.getByText(/Welcome to DefCalendar/i)).not.toBeNull();
       expect(screen.getByText(/Your personal calendar companion\./i)).not.toBeNull();
+      expect(calendarApi.newEventNotifications.get).not.toHaveBeenCalled();
     } finally {
       restoreCalendarApi();
       restoreResizeObserver();
@@ -792,6 +794,7 @@ describe("app startup", () => {
         visibleCalendarIds: ["calendar-1"],
         newEventPopupEnabled: false,
         systemInviteNotificationsEnabled: true,
+        taskbarInviteNotificationsEnabled: false,
       };
       calendarApi.settings.get = vi.fn().mockResolvedValue(settings);
       calendarApi.settings.update = vi.fn().mockResolvedValue(settings);
@@ -807,6 +810,35 @@ describe("app startup", () => {
         expect(screen.queryByText("New invitations")).toBeNull();
       });
       expect(calendarApi.newEventNotifications.get).not.toHaveBeenCalled();
+    } finally {
+      restoreCalendarApi();
+      restoreResizeObserver();
+    }
+  });
+
+  it("shows the in-app invite popup when taskbar invite notifications are enabled", async () => {
+    try {
+      installResizeObserverMock();
+      const calendarApi = createSignedInCalendarApiMock();
+      const settings = {
+        ...createDefaultSettings(),
+        selectedDate: signedInSelectedDate,
+        visibleCalendarIds: ["calendar-1"],
+        newEventPopupEnabled: false,
+        systemInviteNotificationsEnabled: false,
+        taskbarInviteNotificationsEnabled: true,
+      };
+      calendarApi.settings.get = vi.fn().mockResolvedValue(settings);
+      calendarApi.settings.update = vi.fn().mockResolvedValue(settings);
+      calendarApi.newEventNotifications.get = vi
+        .fn()
+        .mockResolvedValue([createNewEventNotificationItem()]);
+      installCalendarApi(calendarApi);
+
+      renderApp();
+
+      await expect(screen.findByText("New invitations")).resolves.not.toBeNull();
+      expect(screen.getByText("Planning invite")).not.toBeNull();
     } finally {
       restoreCalendarApi();
       restoreResizeObserver();

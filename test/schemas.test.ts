@@ -51,16 +51,19 @@ describe("shared schemas", () => {
     expect(defaults.localReminderRules).toStrictEqual([{ minutes: 15, when: "before" }]);
     expect(defaults.newEventPopupEnabled).toBe(false);
     expect(defaults.systemInviteNotificationsEnabled).toBe(false);
+    expect(defaults.taskbarInviteNotificationsEnabled).toBe(true);
     expect(defaults.visibleCalendarIds).toStrictEqual([]);
   });
 
-  it("defaults system invite notifications for legacy settings", () => {
+  it("defaults invite notification settings for legacy settings", () => {
     const legacySettings: Record<string, unknown> = { ...createDefaultSettings() };
     delete legacySettings.systemInviteNotificationsEnabled;
+    delete legacySettings.taskbarInviteNotificationsEnabled;
 
     const settings = userSettingsSchema.parse(legacySettings);
 
     expect(settings.systemInviteNotificationsEnabled).toBe(false);
+    expect(settings.taskbarInviteNotificationsEnabled).toBe(true);
   });
 
   it("does not inject defaults into sparse settings patches", () => {
@@ -75,10 +78,12 @@ describe("shared schemas", () => {
     });
     const disabledPatch = userSettingsPatchSchema.parse({
       systemInviteNotificationsEnabled: false,
+      taskbarInviteNotificationsEnabled: false,
     });
 
     expect(enabledPatch.systemInviteNotificationsEnabled).toBe(true);
     expect(disabledPatch.systemInviteNotificationsEnabled).toBe(false);
+    expect(disabledPatch.taskbarInviteNotificationsEnabled).toBe(false);
   });
 
   it("accepts calendar summaries with account ownership", () => {

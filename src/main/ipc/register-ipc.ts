@@ -37,6 +37,7 @@ import type ReminderService from "@main/reminders/reminder-service";
 import type ReminderWindowManager from "@main/reminders/reminder-window";
 import type SettingsService from "@main/settings/settings-service";
 import type SystemInviteNotificationService from "@main/notifications/system-invite-notification-service";
+import type TaskbarInviteAttentionService from "@main/notifications/taskbar-invite-attention-service";
 import type { SyncService } from "@main/sync/sync-service";
 import type UpdateService from "@main/update/update-service";
 import { app, ipcMain, shell } from "@main/electron-runtime";
@@ -53,6 +54,7 @@ interface RegisterIpcDependencies {
   reminderManager: ReminderWindowManager;
   settings: SettingsService;
   systemInviteNotifications: SystemInviteNotificationService;
+  taskbarInviteAttention: TaskbarInviteAttentionService;
   sync: SyncService;
   updates: UpdateService;
   getMainWindow: () => BrowserWindow | null;
@@ -480,6 +482,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
 
     void dependencies.reminders.checkNow();
     dependencies.systemInviteNotifications.refresh();
+    dependencies.taskbarInviteAttention.refresh();
     return updatedSettings;
   });
 

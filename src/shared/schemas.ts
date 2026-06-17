@@ -494,6 +494,7 @@ const localReminderOverrideEnabledPreferenceSchema = z.preprocess(
 
 const newEventPopupEnabledPreferenceSchema = z.boolean().default(false);
 const systemInviteNotificationsEnabledPreferenceSchema = z.boolean().default(false);
+const taskbarInviteNotificationsEnabledPreferenceSchema = z.boolean().default(true);
 
 const localReminderRulesPreferenceSchema = z.preprocess(
   (value) => (value === null ? undefined : value),
@@ -522,6 +523,7 @@ const userSettingsSchema = z.object({
   localReminderRules: localReminderRulesPreferenceSchema,
   newEventPopupEnabled: newEventPopupEnabledPreferenceSchema,
   systemInviteNotificationsEnabled: systemInviteNotificationsEnabledPreferenceSchema,
+  taskbarInviteNotificationsEnabled: taskbarInviteNotificationsEnabledPreferenceSchema,
   updateChannel: updateChannelSchema.default("stable"),
 });
 
@@ -550,6 +552,7 @@ const userSettingsPatchSchema = z.object({
     .optional(),
   newEventPopupEnabled: z.boolean().optional(),
   systemInviteNotificationsEnabled: z.boolean().optional(),
+  taskbarInviteNotificationsEnabled: z.boolean().optional(),
   updateChannel: updateChannelSchema.optional(),
 });
 
@@ -617,6 +620,7 @@ function createDefaultSettings(): UserSettings {
     localReminderRules: [{ minutes: 15, when: "before" }],
     newEventPopupEnabled: false,
     systemInviteNotificationsEnabled: false,
+    taskbarInviteNotificationsEnabled: true,
     updateChannel: "stable",
   };
 }

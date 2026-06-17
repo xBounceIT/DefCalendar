@@ -64,7 +64,9 @@ function NewEventPopup({
   const [checkingEventId, setCheckingEventId] = useState<null | string>(null);
   const [overlapErrorEventId, setOverlapErrorEventId] = useState<null | string>(null);
   const [overlapPrompt, setOverlapPrompt] = useState<PendingOverlapPrompt | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
   const lookupSequenceRef = useRef(0);
+  const hasItems = items.length > 0;
 
   useEffect(() => {
     let cancelled = false;
@@ -87,6 +89,23 @@ function NewEventPopup({
     };
   }, []);
 
+  useEffect(() => {
+    if (!hasItems) {
+      return;
+    }
+
+    const focusDialog = () => {
+      dialogRef.current?.focus({ preventScroll: true });
+    };
+
+    focusDialog();
+    window.addEventListener("focus", focusDialog);
+
+    return () => {
+      window.removeEventListener("focus", focusDialog);
+    };
+  }, [hasItems]);
+
   const respondMutation = useMutation({
     mutationFn: (args: RespondToEventArgs) => globalThis.calendarApi.events.respond(args),
     onSuccess: async () => {
@@ -94,7 +113,7 @@ function NewEventPopup({
     },
   });
 
-  if (items.length === 0) {
+  if (!hasItems) {
     return null;
   }
 
@@ -163,7 +182,9 @@ function NewEventPopup({
         aria-labelledby="new-event-popup-title"
         aria-modal="true"
         className="new-event-popup"
+        ref={dialogRef}
         role="dialog"
+        tabIndex={-1}
       >
         <header className="new-event-popup__header">
           <div>

@@ -181,12 +181,14 @@ function createFixture() {
     getSettings: vi.fn().mockReturnValue({
       newEventPopupEnabled: false,
       systemInviteNotificationsEnabled: false,
+      taskbarInviteNotificationsEnabled: false,
       syncIntervalMinutes: 15,
       visibleCalendarIds: [],
     }),
     updateSettings: vi.fn((patch: Record<string, unknown>) => ({
       newEventPopupEnabled: false,
       systemInviteNotificationsEnabled: false,
+      taskbarInviteNotificationsEnabled: false,
       syncIntervalMinutes: 15,
       visibleCalendarIds: [],
       ...patch,
@@ -222,6 +224,9 @@ function createFixture() {
   const systemInviteNotifications = {
     refresh: vi.fn(),
   };
+  const taskbarInviteAttention = {
+    refresh: vi.fn(),
+  };
 
   registerIpc({
     auth: auth as never,
@@ -234,6 +239,7 @@ function createFixture() {
     reminders: reminders as never,
     settings: settings as never,
     systemInviteNotifications: systemInviteNotifications as never,
+    taskbarInviteAttention: taskbarInviteAttention as never,
     sync: sync as never,
     updates: updates as never,
   });
@@ -250,6 +256,7 @@ function createFixture() {
     reminders,
     sync,
     systemInviteNotifications,
+    taskbarInviteAttention,
   };
 }
 
@@ -494,18 +501,21 @@ describe("register ipc", () => {
     ]);
   });
 
-  it("refreshes system invite notifications when settings change", async () => {
+  it("refreshes invite notification services when settings change", async () => {
     const fixture = createFixture();
     const invokeEvent = { sender: fixture.mainWebContents };
 
     const response = await fixture.handlers.get(IPC_CHANNELS.settingsUpdate)?.(invokeEvent, {
       systemInviteNotificationsEnabled: true,
+      taskbarInviteNotificationsEnabled: true,
     });
 
     expect(response).toMatchObject({
       systemInviteNotificationsEnabled: true,
+      taskbarInviteNotificationsEnabled: true,
     });
     expect(fixture.systemInviteNotifications.refresh).toHaveBeenCalledOnce();
+    expect(fixture.taskbarInviteAttention.refresh).toHaveBeenCalledOnce();
   });
 
   it("keeps a declined attendee event locally when Graph can no longer fetch it", async () => {

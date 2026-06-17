@@ -330,6 +330,7 @@
         "description": "Gestisci le preferenze di promemoria e notifiche.",
         "newEventPopup": "Mostra un popup quando vengono sincronizzati nuovi inviti",
         "systemInviteNotifications": "Mostra notifiche di sistema per i nuovi inviti",
+        "taskbarInviteNotifications": "Mostra un badge nella barra delle applicazioni per i nuovi inviti",
         "overrideSynced": "Usa regole di promemoria locali al posto dei promemoria sincronizzati degli eventi",
         "ruleTime": "Tempo",
         "ruleWhen": "Quando",
