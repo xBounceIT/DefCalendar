@@ -14,6 +14,8 @@ interface MainTranslations {
   inviteNotificationAccept: string;
   inviteNotificationTentative: string;
   inviteNotificationDecline: string;
+  taskbarInviteOverlayDescriptionOne: string;
+  taskbarInviteOverlayDescriptionOther: string;
   signInToSync: string;
   syncing: string;
   connecting: string;
@@ -35,6 +37,8 @@ const translations: Record<AppLocale, MainTranslations> = {
     inviteNotificationAccept: "Accept",
     inviteNotificationTentative: "Tentative",
     inviteNotificationDecline: "Decline",
+    taskbarInviteOverlayDescriptionOne: "1 pending event invitation",
+    taskbarInviteOverlayDescriptionOther: "{{count}} pending event invitations",
     signInToSync: "Sign in to sync Exchange 365.",
     syncing: "Syncing Exchange 365\u2026",
     connecting: "Connecting to Exchange 365\u2026",
@@ -54,6 +58,8 @@ const translations: Record<AppLocale, MainTranslations> = {
     inviteNotificationAccept: "Accetta",
     inviteNotificationTentative: "Provvisorio",
     inviteNotificationDecline: "Rifiuta",
+    taskbarInviteOverlayDescriptionOne: "1 invito a evento in attesa",
+    taskbarInviteOverlayDescriptionOther: "{{count}} inviti a eventi in attesa",
     signInToSync: "Accedi per sincronizzare Exchange 365.",
     syncing: "Sincronizzazione Exchange 365\u2026",
     connecting: "Connessione a Exchange 365\u2026",

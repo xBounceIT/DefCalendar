@@ -160,6 +160,10 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   });
 
   const appSettings = settingsQuery.data ?? fallbackSettings;
+  const shouldShowNewEventPopup =
+    signedIn &&
+    settingsQuery.data !== undefined &&
+    (appSettings.newEventPopupEnabled || (appSettings.taskbarInviteNotificationsEnabled ?? true));
 
   const calendarsQuery = useQuery({
     enabled: signedIn,
@@ -1098,7 +1102,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         timeFormat={appSettings.timeFormat}
       />
       <UpdateAvailablePopup />
-      {appSettings.newEventPopupEnabled && (
+      {shouldShowNewEventPopup && (
         <NewEventPopup
           onFindAcceptConflicts={findAcceptConflicts}
           timeFormat={appSettings.timeFormat}

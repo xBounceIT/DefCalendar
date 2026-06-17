@@ -11,6 +11,7 @@ import SafeStorageTokenCache from "@main/auth/cache-plugin";
 import SettingsService from "@main/settings/settings-service";
 import { SyncService } from "@main/sync/sync-service";
 import SystemInviteNotificationService from "@main/notifications/system-invite-notification-service";
+import TaskbarInviteAttentionService from "@main/notifications/taskbar-invite-attention-service";
 import TrayService from "@main/tray-service";
 import UpdateService from "@main/update/update-service";
 import { app, ipcMain } from "@main/electron-runtime";
@@ -77,6 +78,11 @@ async function bootstrap(): Promise<void> {
     newEventNotifications,
     settings,
   });
+  const taskbarInviteAttention = new TaskbarInviteAttentionService({
+    getMainWindow: () => mainWindow,
+    newEventNotifications,
+    settings,
+  });
   const updates = new UpdateService(savedSettings.updateChannel === "prerelease");
 
   ipcMain.handle(IPC_CHANNELS.appSetLocale, async (_event, locale: unknown) => {
@@ -86,6 +92,7 @@ async function bootstrap(): Promise<void> {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.setTitle(locale === "it" ? "DefCalendar" : "DefCalendar");
       }
+      taskbarInviteAttention.refresh();
       void reminders.checkNow();
     }
   });
@@ -112,6 +119,13 @@ async function bootstrap(): Promise<void> {
           mainWindow?.hide();
         }
       });
+      mainWindow.on("focus", () => {
+        taskbarInviteAttention.stopFlashing();
+      });
+      mainWindow.on("show", () => {
+        taskbarInviteAttention.stopFlashing();
+      });
+      taskbarInviteAttention.refresh();
     }
 
     return mainWindow;
@@ -149,12 +163,14 @@ async function bootstrap(): Promise<void> {
     reminderManager,
     settings,
     systemInviteNotifications,
+    taskbarInviteAttention,
     sync,
     updates,
     getMainWindow: () => mainWindow,
   });
 
   systemInviteNotifications.start();
+  taskbarInviteAttention.start();
   reminders.start();
   sync.start();
 
@@ -181,6 +197,7 @@ async function bootstrap(): Promise<void> {
     shouldQuit = true;
     reminders.stop();
     systemInviteNotifications.stop();
+    taskbarInviteAttention.stop();
     sync.stop();
     trayService?.destroy();
   });

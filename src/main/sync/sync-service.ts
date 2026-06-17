@@ -312,7 +312,9 @@ class SyncService {
       );
 
       const shouldDetectNewEvents =
-        (settings.newEventPopupEnabled || settings.systemInviteNotificationsEnabled) &&
+        (settings.newEventPopupEnabled ||
+          settings.systemInviteNotificationsEnabled ||
+          settings.taskbarInviteNotificationsEnabled) &&
         reason !== "startup" &&
         reason !== "sign-in" &&
         reason !== "switch-account";

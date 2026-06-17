@@ -148,4 +148,14 @@ describe("settings dialog", () => {
 
     expect(onSave).toHaveBeenCalledWith({ systemInviteNotificationsEnabled: true });
   });
+
+  it("saves the taskbar invite notification setting", () => {
+    const onSave = vi.fn();
+    renderDialog(null, { onSave });
+
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    fireEvent.click(screen.getByLabelText("Show taskbar badge for new event invitations"));
+
+    expect(onSave).toHaveBeenCalledWith({ taskbarInviteNotificationsEnabled: false });
+  });
 });

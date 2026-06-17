@@ -116,6 +116,7 @@ function createFixture(args?: {
   newEventPopupEnabled?: boolean;
   syncIntervalMinutes?: UserSettings["syncIntervalMinutes"];
   systemInviteNotificationsEnabled?: boolean;
+  taskbarInviteNotificationsEnabled?: boolean;
   visibleCalendarIds?: string[];
 }): SyncFixture {
   const calendars = args?.calendars ?? [createCalendar("calendar-a")];
@@ -156,12 +157,14 @@ function createFixture(args?: {
       newEventPopupEnabled: args?.newEventPopupEnabled ?? false,
       syncIntervalMinutes,
       systemInviteNotificationsEnabled: args?.systemInviteNotificationsEnabled ?? false,
+      taskbarInviteNotificationsEnabled: args?.taskbarInviteNotificationsEnabled ?? false,
       visibleCalendarIds,
     }),
     syncVisibleCalendars: vi.fn().mockReturnValue({
       newEventPopupEnabled: args?.newEventPopupEnabled ?? false,
       syncIntervalMinutes,
       systemInviteNotificationsEnabled: args?.systemInviteNotificationsEnabled ?? false,
+      taskbarInviteNotificationsEnabled: args?.taskbarInviteNotificationsEnabled ?? false,
       visibleCalendarIds,
     }),
   };
@@ -413,10 +416,21 @@ describe("sync service", () => {
     expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([invite]);
   });
 
-  it("records invite candidates once when both invite notification modes are enabled", async () => {
+  it("records invite candidates when taskbar invite notifications are enabled", async () => {
+    const fixture = createFixture({ taskbarInviteNotificationsEnabled: true });
+    const invite = createEvent({ id: "invite-1", isOrganizer: false, responseStatus: null });
+    fixture.graph.listCalendarView.mockResolvedValue([invite]);
+
+    await fixture.service.syncAll("manual");
+
+    expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([invite]);
+  });
+
+  it("records invite candidates once when multiple invite notification modes are enabled", async () => {
     const fixture = createFixture({
       newEventPopupEnabled: true,
       systemInviteNotificationsEnabled: true,
+      taskbarInviteNotificationsEnabled: true,
     });
     const invite = createEvent({ id: "invite-1", isOrganizer: false, responseStatus: null });
     fixture.graph.listCalendarView.mockResolvedValue([invite]);

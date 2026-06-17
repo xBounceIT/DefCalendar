@@ -229,6 +229,7 @@ function NotificationsSection({
   const localReminderOverrideEnabled = settings.localReminderOverrideEnabled ?? false;
   const newEventPopupEnabled = settings.newEventPopupEnabled ?? false;
   const systemInviteNotificationsEnabled = settings.systemInviteNotificationsEnabled ?? false;
+  const taskbarInviteNotificationsEnabled = settings.taskbarInviteNotificationsEnabled ?? true;
   const localReminderRules =
     settings.localReminderRules?.length > 0
       ? settings.localReminderRules
@@ -322,6 +323,17 @@ function NotificationsSection({
           />
           <span className="toggle-slider" />
           <span>{t("settings.sections.notifications.systemInviteNotifications")}</span>
+        </label>
+        <label className="toggle-field settings-notifications__toggle">
+          <input
+            checked={taskbarInviteNotificationsEnabled}
+            onChange={(e) => {
+              onSave({ taskbarInviteNotificationsEnabled: e.target.checked });
+            }}
+            type="checkbox"
+          />
+          <span className="toggle-slider" />
+          <span>{t("settings.sections.notifications.taskbarInviteNotifications")}</span>
         </label>
         <label className="toggle-field settings-notifications__toggle">
           <input
