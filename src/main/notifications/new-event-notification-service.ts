@@ -1,5 +1,5 @@
 import type { CalendarEvent, NewEventNotificationItem } from "@shared/schemas";
-import { normalizeEventResponseValue } from "@shared/event-response";
+import { isPendingEventResponse } from "@shared/event-response";
 
 type Listener = (items: NewEventNotificationItem[]) => void;
 
@@ -76,8 +76,7 @@ function shouldNotifyOnNewEvent(event: CalendarEvent): boolean {
     return false;
   }
 
-  const normalized = normalizeEventResponseValue(event.responseStatus?.response);
-  return normalized === null || normalized === "none";
+  return isPendingEventResponse(event.responseStatus?.response);
 }
 
 function toNotificationItem(event: CalendarEvent): NewEventNotificationItem {

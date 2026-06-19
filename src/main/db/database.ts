@@ -543,25 +543,6 @@ class AppDatabase {
       .map((row) => parseStoredEvent(readStringProperty(row, "payload_json")));
   }
 
-  listEventIdsForCalendarRange(args: {
-    calendarId: string;
-    end: string;
-    start: string;
-  }): Set<string> {
-    const statement = this.db.prepare(`
-      SELECT id FROM events
-      WHERE calendar_id = @calendarId
-        AND start_sort < @end
-        AND end_sort > @start
-    `);
-
-    const ids = new Set<string>();
-    for (const row of statement.all(args)) {
-      ids.add(readStringProperty(row, "id"));
-    }
-    return ids;
-  }
-
   searchEvents(args: SearchEventsArgs): CalendarEvent[] {
     const normalizedQuery = normalizeContactSearchValue(args.query);
     if (!normalizedQuery) {
