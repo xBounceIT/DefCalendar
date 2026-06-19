@@ -20,7 +20,6 @@ interface SyncFixture {
     getDeepBackfillCompletedAt: ReturnType<typeof vi.fn>;
     getLatestSyncStatus: ReturnType<typeof vi.fn>;
     listCalendarIds: ReturnType<typeof vi.fn>;
-    listEventIdsForCalendarRange: ReturnType<typeof vi.fn>;
     listEvents: ReturnType<typeof vi.fn>;
     markDeepBackfillCompleted: ReturnType<typeof vi.fn>;
     replaceContactsForAccount: ReturnType<typeof vi.fn>;
@@ -133,7 +132,6 @@ function createFixture(args?: {
       state: "idle",
     }),
     listCalendarIds: vi.fn().mockReturnValue(args?.knownCalendarIds ?? []),
-    listEventIdsForCalendarRange: vi.fn().mockReturnValue(new Set<string>()),
     listEvents: vi.fn().mockReturnValue([]),
     markDeepBackfillCompleted: vi.fn(),
     replaceContactsForAccount: vi.fn(),
@@ -439,6 +437,114 @@ describe("sync service", () => {
 
     expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledOnce();
     expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([invite]);
+  });
+
+  it("records an existing invite when organizer changes reset the attendee response", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture({ newEventPopupEnabled: true });
+    const previousInvite = createEvent({
+      id: "invite-1",
+      isOrganizer: false,
+      responseStatus: {
+        response: "accepted",
+        time: "2026-03-29T12:00:00.000Z",
+      },
+    });
+    const resetInvite = createEvent({
+      end: "2026-03-31T11:00:00.000Z",
+      id: "invite-1",
+      isOrganizer: false,
+      responseStatus: null,
+      start: "2026-03-31T10:00:00.000Z",
+    });
+    fixture.db.listEvents.mockReturnValue([previousInvite]);
+    fixture.graph.listCalendarView.mockResolvedValue([resetInvite]);
+
+    await fixture.service.syncAll("manual");
+
+    expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([resetInvite]);
+  });
+
+  it("does not record an existing invite that was already awaiting response", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture({ newEventPopupEnabled: true });
+    const previousInvite = createEvent({
+      id: "invite-1",
+      isOrganizer: false,
+      responseStatus: null,
+    });
+    const updatedInvite = createEvent({
+      end: "2026-03-31T11:00:00.000Z",
+      id: "invite-1",
+      isOrganizer: false,
+      responseStatus: {
+        response: "notResponded",
+        time: null,
+      },
+      start: "2026-03-31T10:00:00.000Z",
+    });
+    fixture.db.listEvents.mockReturnValue([previousInvite]);
+    fixture.graph.listCalendarView.mockResolvedValue([updatedInvite]);
+
+    await fixture.service.syncAll("manual");
+
+    expect(fixture.newEventNotifications.recordCandidates).not.toHaveBeenCalled();
+  });
+
+  it.each(["accepted", "tentative", "declined"] as const)(
+    "does not record an existing invite that remains %s",
+    async (response) => {
+      expect.hasAssertions();
+      const fixture = createFixture({ newEventPopupEnabled: true });
+      const previousInvite = createEvent({
+        id: "invite-1",
+        isOrganizer: false,
+        responseStatus: {
+          response: "accepted",
+          time: "2026-03-29T12:00:00.000Z",
+        },
+      });
+      const updatedInvite = createEvent({
+        end: "2026-03-31T11:00:00.000Z",
+        id: "invite-1",
+        isOrganizer: false,
+        responseStatus: {
+          response,
+          time: "2026-03-30T12:00:00.000Z",
+        },
+        start: "2026-03-31T10:00:00.000Z",
+      });
+      fixture.db.listEvents.mockReturnValue([previousInvite]);
+      fixture.graph.listCalendarView.mockResolvedValue([updatedInvite]);
+
+      await fixture.service.syncAll("manual");
+
+      expect(fixture.newEventNotifications.recordCandidates).not.toHaveBeenCalled();
+    },
+  );
+
+  it("continues to record new pending invites by id", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture({ newEventPopupEnabled: true });
+    const existingInvite = createEvent({
+      id: "invite-1",
+      isOrganizer: false,
+      responseStatus: {
+        response: "accepted",
+        time: "2026-03-29T12:00:00.000Z",
+      },
+    });
+    const newInvite = createEvent({
+      id: "invite-2",
+      isOrganizer: false,
+      responseStatus: null,
+    });
+    fixture.db.listEvents.mockReturnValue([existingInvite]);
+    fixture.graph.listCalendarView.mockResolvedValue([newInvite]);
+
+    await fixture.service.syncAll("manual");
+
+    expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([newInvite]);
   });
 
   it("keeps locally declined attendee events when calendarView omits them", async () => {

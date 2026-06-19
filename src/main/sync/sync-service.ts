@@ -7,7 +7,7 @@ import type ReminderService from "@main/reminders/reminder-service";
 import type { ReminderCheckTrigger } from "@main/reminders/reminder-service";
 import type SettingsService from "@main/settings/settings-service";
 import { DAY_MS, MINUTE_MS } from "@shared/duration";
-import { isDeclinedEventResponse } from "@shared/event-response";
+import { isDeclinedEventResponse, isPendingEventResponse } from "@shared/event-response";
 import type { CalendarEvent, CalendarSummary, SyncStatus } from "@shared/schemas";
 import type { SyncWindowDays } from "@shared/sync";
 
@@ -256,6 +256,13 @@ class SyncService {
       const deepRangeStart = new Date(rangeBaseTime - maxLookBehindDays * DAY_MS).toISOString();
       const rangeEnd = new Date(rangeBaseTime + lookAheadDays * DAY_MS).toISOString();
       const finishedAt = new Date().toISOString();
+      const shouldDetectNewEvents =
+        (settings.newEventPopupEnabled ||
+          settings.systemInviteNotificationsEnabled ||
+          settings.taskbarInviteNotificationsEnabled) &&
+        reason !== "startup" &&
+        reason !== "sign-in" &&
+        reason !== "switch-account";
 
       const totalCalendars = calendarsToSync.length;
       let processedCalendars = 0;
@@ -283,12 +290,14 @@ class SyncService {
               rangeEnd,
               calendar.homeAccountId,
             );
-            const mergedEvents = this.mergePersistedDeclinedEvents(
-              calendar.id,
-              fetchedEvents,
-              rangeStart,
-              rangeEnd,
-            );
+            const persistedEvents = this.dependencies.db.listEvents({
+              calendarIds: [calendar.id],
+              end: rangeEnd,
+              start: rangeStart,
+            });
+            const previousEventsById =
+              shouldDetectNewEvents && !isDeepBackfill ? buildEventsById(persistedEvents) : null;
+            const mergedEvents = mergePersistedDeclinedEvents(fetchedEvents, persistedEvents);
             processedCalendars += 1;
             processedEvents += mergedEvents.length;
             if (!syncFailed) {
@@ -305,6 +314,7 @@ class SyncService {
               calendarId: calendar.id,
               events: mergedEvents,
               isDeepBackfill,
+              previousEventsById,
               rangeStart,
             };
           } catch (error) {
@@ -313,31 +323,6 @@ class SyncService {
           }
         }),
       );
-
-      const shouldDetectNewEvents =
-        (settings.newEventPopupEnabled ||
-          settings.systemInviteNotificationsEnabled ||
-          settings.taskbarInviteNotificationsEnabled) &&
-        reason !== "startup" &&
-        reason !== "sign-in" &&
-        reason !== "switch-account";
-
-      const preSyncIdsByCalendar = new Map<string, Set<string>>();
-      if (shouldDetectNewEvents) {
-        for (const syncedCalendar of calendarsToStore) {
-          if (syncedCalendar.isDeepBackfill) {
-            continue;
-          }
-          preSyncIdsByCalendar.set(
-            syncedCalendar.calendarId,
-            this.dependencies.db.listEventIdsForCalendarRange({
-              calendarId: syncedCalendar.calendarId,
-              end: rangeEnd,
-              start: syncedCalendar.rangeStart,
-            }),
-          );
-        }
-      }
 
       for (const { calendarId, events, isDeepBackfill, rangeStart } of calendarsToStore) {
         this.dependencies.db.replaceEventsForCalendarRange({
@@ -361,12 +346,11 @@ class SyncService {
       if (shouldDetectNewEvents) {
         const newEvents: CalendarEvent[] = [];
         for (const syncedCalendar of calendarsToStore) {
-          const before = preSyncIdsByCalendar.get(syncedCalendar.calendarId);
-          if (!before) {
+          if (!syncedCalendar.previousEventsById) {
             continue;
           }
           for (const ev of syncedCalendar.events) {
-            if (!before.has(ev.id)) {
+            if (shouldRecordInviteCandidate(ev, syncedCalendar.previousEventsById.get(ev.id))) {
               newEvents.push(ev);
             }
           }
@@ -439,36 +423,6 @@ class SyncService {
     return this.dependencies.auth.getAccountIds();
   }
 
-  private mergePersistedDeclinedEvents(
-    calendarId: string,
-    syncedEvents: CalendarEvent[],
-    rangeStart: string,
-    rangeEnd: string,
-  ): CalendarEvent[] {
-    const persistedEvents = this.dependencies.db.listEvents({
-      calendarIds: [calendarId],
-      end: rangeEnd,
-      start: rangeStart,
-    });
-    if (persistedEvents.length === 0) {
-      return syncedEvents;
-    }
-
-    const syncedIds = new Set(syncedEvents.map((event) => event.id));
-    const syncedKeys = new Set(syncedEvents.map(buildEventIdentityKey));
-    const preservedEvents = persistedEvents.filter(
-      (event) =>
-        shouldPreserveDeclinedEvent(event) &&
-        !syncedIds.has(event.id) &&
-        !syncedKeys.has(buildEventIdentityKey(event)),
-    );
-    if (preservedEvents.length === 0) {
-      return syncedEvents;
-    }
-
-    return [...syncedEvents, ...preservedEvents].toSorted(compareCalendarEvents);
-  }
-
   private getIntervalMs(): number {
     const syncIntervalMinutes =
       this.dependencies.settings.getSettings().syncIntervalMinutes ??
@@ -535,6 +489,48 @@ function compareCalendarEvents(
     left.subject.localeCompare(right.subject) ||
     left.id.localeCompare(right.id)
   );
+}
+
+function buildEventsById(events: CalendarEvent[]): Map<string, CalendarEvent> {
+  return new Map(events.map((event) => [event.id, event]));
+}
+
+function mergePersistedDeclinedEvents(
+  syncedEvents: CalendarEvent[],
+  persistedEvents: CalendarEvent[],
+): CalendarEvent[] {
+  if (persistedEvents.length === 0) {
+    return syncedEvents;
+  }
+
+  const syncedIds = new Set(syncedEvents.map((event) => event.id));
+  const syncedKeys = new Set(syncedEvents.map(buildEventIdentityKey));
+  const preservedEvents = persistedEvents.filter(
+    (event) =>
+      shouldPreserveDeclinedEvent(event) &&
+      !syncedIds.has(event.id) &&
+      !syncedKeys.has(buildEventIdentityKey(event)),
+  );
+  if (preservedEvents.length === 0) {
+    return syncedEvents;
+  }
+
+  return [...syncedEvents, ...preservedEvents].toSorted(compareCalendarEvents);
+}
+
+function shouldRecordInviteCandidate(
+  event: CalendarEvent,
+  previous: CalendarEvent | undefined,
+): boolean {
+  if (
+    event.cancelled ||
+    event.isOrganizer ||
+    !isPendingEventResponse(event.responseStatus?.response)
+  ) {
+    return false;
+  }
+
+  return previous === undefined || !isPendingEventResponse(previous.responseStatus?.response);
 }
 
 function shouldPreserveDeclinedEvent(

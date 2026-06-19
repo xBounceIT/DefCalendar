@@ -23,4 +23,9 @@ function isDeclinedEventResponse(value: null | string | undefined): boolean {
   return normalizeEventResponseValue(value) === "declined";
 }
 
-export { isDeclinedEventResponse, normalizeEventResponseValue };
+function isPendingEventResponse(value: null | string | undefined): boolean {
+  const normalized = normalizeEventResponseValue(value);
+  return normalized === null || normalized === "none";
+}
+
+export { isDeclinedEventResponse, isPendingEventResponse, normalizeEventResponseValue };
