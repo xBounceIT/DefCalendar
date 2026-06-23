@@ -260,7 +260,6 @@ class SyncService {
         (settings.newEventPopupEnabled ||
           settings.systemInviteNotificationsEnabled ||
           settings.taskbarInviteNotificationsEnabled) &&
-        reason !== "startup" &&
         reason !== "sign-in" &&
         reason !== "switch-account";
 
