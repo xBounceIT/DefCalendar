@@ -439,6 +439,65 @@ describe("sync service", () => {
     expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([invite]);
   });
 
+  it("records new pending invite candidates on startup for already synced calendars", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture({ newEventPopupEnabled: true });
+    const invite = createEvent({ id: "invite-1", isOrganizer: false, responseStatus: null });
+    fixture.graph.listCalendarView.mockResolvedValue([invite]);
+
+    await fixture.service.syncAll("startup");
+
+    expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([invite]);
+  });
+
+  it("does not record startup invite candidates during first deep backfill", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture({ newEventPopupEnabled: true });
+    const invite = createEvent({ id: "invite-1", isOrganizer: false, responseStatus: null });
+    fixture.db.getDeepBackfillCompletedAt.mockReturnValue(null);
+    fixture.graph.listCalendarView.mockResolvedValue([invite]);
+
+    await fixture.service.syncAll("startup");
+
+    expect(fixture.newEventNotifications.recordCandidates).not.toHaveBeenCalled();
+  });
+
+  it("does not re-record a pending invite candidate on startup", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture({ newEventPopupEnabled: true });
+    const previousInvite = createEvent({
+      id: "invite-1",
+      isOrganizer: false,
+      responseStatus: null,
+    });
+    const updatedInvite = createEvent({
+      id: "invite-1",
+      isOrganizer: false,
+      responseStatus: {
+        response: "notResponded",
+        time: null,
+      },
+    });
+    fixture.db.listEvents.mockReturnValue([previousInvite]);
+    fixture.graph.listCalendarView.mockResolvedValue([updatedInvite]);
+
+    await fixture.service.syncAll("startup");
+
+    expect(fixture.newEventNotifications.recordCandidates).not.toHaveBeenCalled();
+  });
+
+  it("does not record startup invite candidates when invite notifications are disabled", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    fixture.graph.listCalendarView.mockResolvedValue([
+      createEvent({ id: "invite-1", isOrganizer: false, responseStatus: null }),
+    ]);
+
+    await fixture.service.syncAll("startup");
+
+    expect(fixture.newEventNotifications.recordCandidates).not.toHaveBeenCalled();
+  });
+
   it("records an existing invite when organizer changes reset the attendee response", async () => {
     expect.hasAssertions();
     const fixture = createFixture({ newEventPopupEnabled: true });
