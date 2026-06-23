@@ -217,6 +217,33 @@ describe("graph calendar service request handling", () => {
     expect(preferHeader).toContain('IdType="ImmutableId"');
   });
 
+  it("posts tentative responses using Graph tentativelyAccept action", async () => {
+    expect.assertions(3);
+
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 202 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const service = createService();
+
+    await service.respondToEvent(
+      {
+        action: "tentative",
+        calendarId: "calendar-1",
+        comment: "Maybe",
+        eventId: "event-1",
+        sendResponse: true,
+      },
+      "account-1",
+    );
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/me/events/event-1/tentativelyAccept");
+    expect(fetchMock.mock.calls[0][1]?.method).toBe("POST");
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toStrictEqual({
+      comment: "Maybe",
+      sendResponse: true,
+    });
+  });
+
   it("parses Zoom links from event body content", async () => {
     const joinUrl = "https://acme.zoom.us/j/123456789?pwd=abc123";
     const fetchMock = vi.fn().mockResolvedValue(
