@@ -377,8 +377,9 @@ class GraphCalendarService {
 
   async respondToEvent(args: RespondToEventArgs, homeAccountId: string): Promise<void> {
     const graphEventId = args.targetEventId ?? args.eventId;
+    const graphAction = args.action === "tentative" ? "tentativelyAccept" : args.action;
     await this.requestNoContent(
-      `/me/events/${encodeURIComponent(graphEventId)}/${args.action}`,
+      `/me/events/${encodeURIComponent(graphEventId)}/${graphAction}`,
       {
         body: JSON.stringify({
           comment: args.comment,
