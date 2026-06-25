@@ -57,11 +57,57 @@ function createEvent(overrides?: Partial<CalendarEvent>): CalendarEvent {
   };
 }
 
-function renderTable(args?: {
+function createRect(height: number): DOMRect {
+  return {
+    bottom: height,
+    height,
+    left: 0,
+    right: 100,
+    toJSON: () => ({}),
+    top: 0,
+    width: 100,
+    x: 0,
+    y: 0,
+  } as DOMRect;
+}
+
+interface RenderTableArgs {
   events?: CalendarEvent[];
   language?: "en" | "it";
-  selectedDay?: string;
-}) {
+  selectedDay?: null | string;
+}
+
+function getSelectedDay(args?: RenderTableArgs): null | string {
+  if (args && "selectedDay" in args) {
+    return args.selectedDay ?? null;
+  }
+
+  return "2026-03-30T00:00:00.000Z";
+}
+
+function mockDayEventsTableMeasurements() {
+  const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+
+  return vi
+    .spyOn(Element.prototype, "getBoundingClientRect")
+    .mockImplementation(function measureDayEventsTableElement(this: Element) {
+      if (this.classList.contains("day-events-table__header")) {
+        return createRect(32);
+      }
+
+      if (this.tagName.toLowerCase() === "thead") {
+        return createRect(24);
+      }
+
+      if (this.classList.contains("day-events-table__row")) {
+        return createRect(28);
+      }
+
+      return originalGetBoundingClientRect.call(this);
+    });
+}
+
+function renderTable(args?: RenderTableArgs) {
   const i18n = createInstance();
   void i18n.use(initReactI18next).init({
     resources: {
@@ -76,21 +122,32 @@ function renderTable(args?: {
   const onClear = vi.fn();
   const onEventClick = vi.fn();
   const onJoinMeeting = vi.fn();
+  let currentArgs = args;
 
-  render(
+  const renderContent = (renderArgs?: RenderTableArgs) => (
     <I18nextProvider i18n={i18n}>
       <DayEventsTable
-        events={args?.events ?? []}
+        events={renderArgs?.events ?? []}
         onClear={onClear}
         onEventClick={onEventClick}
         onJoinMeeting={onJoinMeeting}
-        selectedDay={args?.selectedDay ?? "2026-03-30T00:00:00.000Z"}
+        selectedDay={getSelectedDay(renderArgs)}
         timeFormat="system"
       />
-    </I18nextProvider>,
+    </I18nextProvider>
   );
 
-  return { onClear, onEventClick, onJoinMeeting };
+  const renderResult = render(renderContent(currentArgs));
+
+  return {
+    onClear,
+    onEventClick,
+    onJoinMeeting,
+    rerenderTable(nextArgs: RenderTableArgs) {
+      currentArgs = { ...currentArgs, ...nextArgs };
+      renderResult.rerender(renderContent(currentArgs));
+    },
+  };
 }
 
 describe("day events table", () => {
@@ -196,5 +253,72 @@ describe("day events table", () => {
     fireEvent.click(joinButton);
 
     expect(onJoinMeeting).toHaveBeenCalledWith(event);
+  });
+
+  it("resizes the event list height between the current height and ten rows", () => {
+    expect.assertions(4);
+
+    const getBoundingClientRectMock = mockDayEventsTableMeasurements();
+    let panel: Element | null = null;
+
+    try {
+      const events = Array.from({ length: 12 }, (_, index) =>
+        createEvent({ id: `event-${index}`, subject: `Event ${index}` }),
+      );
+      renderTable({ events });
+
+      const resizeHandle = screen.getByRole("separator", { name: "Resize event list" });
+      panel = resizeHandle.closest(".day-events-table");
+      expect(panel).toHaveStyle({ height: "160px" });
+      expect([
+        resizeHandle.getAttribute("aria-valuemin"),
+        resizeHandle.getAttribute("aria-valuemax"),
+      ]).toStrictEqual(["160", "344"]);
+
+      fireEvent.mouseDown(resizeHandle, { clientY: 0 });
+      fireEvent.mouseMove(document, { clientY: 1000 });
+
+      expect(panel).toHaveStyle({ height: "344px" });
+
+      fireEvent.mouseMove(document, { clientY: -1000 });
+      fireEvent.mouseUp(document);
+    } finally {
+      getBoundingClientRectMock.mockRestore();
+    }
+
+    expect(panel).toHaveStyle({ height: "160px" });
+  });
+
+  it("resets resized height after the event list closes", () => {
+    expect.assertions(2);
+
+    const getBoundingClientRectMock = mockDayEventsTableMeasurements();
+    let reopenedPanel: Element | null = null;
+
+    try {
+      const events = Array.from({ length: 12 }, (_, index) =>
+        createEvent({ id: `event-${index}`, subject: `Event ${index}` }),
+      );
+      const { rerenderTable } = renderTable({ events });
+
+      const resizeHandle = screen.getByRole("separator", { name: "Resize event list" });
+      const panel = resizeHandle.closest(".day-events-table");
+      fireEvent.mouseDown(resizeHandle, { clientY: 0 });
+      fireEvent.mouseMove(document, { clientY: 1000 });
+      fireEvent.mouseUp(document);
+
+      expect(panel).toHaveStyle({ height: "344px" });
+
+      rerenderTable({ selectedDay: null });
+      rerenderTable({ selectedDay: "2026-03-30T00:00:00.000Z" });
+
+      reopenedPanel = screen
+        .getByRole("separator", { name: "Resize event list" })
+        .closest(".day-events-table");
+    } finally {
+      getBoundingClientRectMock.mockRestore();
+    }
+
+    expect(reopenedPanel).toHaveStyle({ height: "160px" });
   });
 });

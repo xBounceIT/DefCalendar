@@ -1446,9 +1446,18 @@ button {
 .day-events-table {
   background: var(--surface);
   border-bottom: var(--border);
+  display: flex;
+  flex-direction: column;
   height: 160px;
-  overflow-y: auto;
+  min-height: 160px;
+  overflow: hidden;
   flex-shrink: 0;
+}
+
+.day-events-table__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .day-events-table__header {
@@ -1496,6 +1505,39 @@ button {
 .day-events-table__close:hover {
   background: var(--surface-hover);
   color: var(--ink);
+}
+
+.day-events-table__height-resize-handle {
+  position: relative;
+  flex: 0 0 8px;
+  border-top: var(--border);
+  background: var(--surface);
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.day-events-table__height-resize-handle::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--line-strong);
+  transform: translate(-50%, -50%);
+}
+
+.day-events-table__height-resize-handle:hover::before,
+.day-events-table__height-resize-handle:active::before,
+.day-events-table__height-resize-handle:focus-visible::before {
+  background: var(--accent);
+}
+
+.day-events-table--height-resizing,
+.day-events-table--height-resizing * {
+  cursor: row-resize;
+  user-select: none;
 }
 
 .day-events-table__table {
