@@ -121,6 +121,7 @@
     "responsePending": "In attesa di risposta",
     "responseOwner": "Sei tu il proprietario",
     "noEvents": "Nessun evento in questo giorno",
+    "resizeHeight": "Ridimensiona elenco eventi",
     "eventsCount_one": "{{count}} evento",
     "eventsCount_other": "{{count}} eventi"
   },

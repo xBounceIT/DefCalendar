@@ -8,6 +8,14 @@ type SortColumn = "start" | "end" | "title" | "category";
 type SortDirection = "asc" | "desc";
 type EventResponseState = "accepted" | "declined" | "owner" | "pending" | "tentative";
 
+const DAY_EVENTS_TABLE_MIN_HEIGHT = 160;
+const DAY_EVENTS_TABLE_MAX_VISIBLE_ROWS = 10;
+const DAY_EVENTS_TABLE_FALLBACK_HEADER_HEIGHT = 32;
+const DAY_EVENTS_TABLE_FALLBACK_TABLE_HEADER_HEIGHT = 28;
+const DAY_EVENTS_TABLE_FALLBACK_ROW_HEIGHT = 30;
+const DAY_EVENTS_TABLE_HEIGHT_HANDLE_HEIGHT = 8;
+const DAY_EVENTS_TABLE_KEYBOARD_RESIZE_STEP = 16;
+
 interface SortState {
   column: SortColumn;
   direction: SortDirection;
@@ -182,6 +190,137 @@ function sortEvents(
   });
 
   return sorted;
+}
+
+function getMeasuredHeight(element: Element | null, fallback: number): number {
+  const measuredHeight = element?.getBoundingClientRect().height ?? 0;
+  if (measuredHeight > 0) {
+    return measuredHeight;
+  }
+
+  return fallback;
+}
+
+function clampDayEventsTableHeight(value: number, maxHeight: number): number {
+  return Math.min(Math.max(value, DAY_EVENTS_TABLE_MIN_HEIGHT), maxHeight);
+}
+
+function useResizableHeight(isVisible: boolean) {
+  const [height, setHeight] = React.useState(DAY_EVENTS_TABLE_MIN_HEIGHT);
+  const [maxHeight, setMaxHeight] = React.useState(DAY_EVENTS_TABLE_MIN_HEIGHT);
+  const [resizing, setResizing] = React.useState<{
+    maxHeight: number;
+    startHeight: number;
+    startY: number;
+  } | null>(null);
+  const headerRef = React.useRef<HTMLDivElement | null>(null);
+  const tableHeaderRef = React.useRef<HTMLTableSectionElement | null>(null);
+  const firstRowRef = React.useRef<HTMLTableRowElement | null>(null);
+  const maxHeightRef = React.useRef(DAY_EVENTS_TABLE_MIN_HEIGHT);
+
+  React.useEffect(() => {
+    if (isVisible) {
+      return;
+    }
+
+    setHeight(DAY_EVENTS_TABLE_MIN_HEIGHT);
+    setResizing(null);
+  }, [isVisible]);
+
+  const measureMaxHeight = React.useCallback(() => {
+    const measuredMaxHeight =
+      getMeasuredHeight(headerRef.current, DAY_EVENTS_TABLE_FALLBACK_HEADER_HEIGHT) +
+      getMeasuredHeight(tableHeaderRef.current, DAY_EVENTS_TABLE_FALLBACK_TABLE_HEADER_HEIGHT) +
+      getMeasuredHeight(firstRowRef.current, DAY_EVENTS_TABLE_FALLBACK_ROW_HEIGHT) *
+        DAY_EVENTS_TABLE_MAX_VISIBLE_ROWS +
+      DAY_EVENTS_TABLE_HEIGHT_HANDLE_HEIGHT;
+
+    return Math.max(DAY_EVENTS_TABLE_MIN_HEIGHT, Math.ceil(measuredMaxHeight));
+  }, []);
+
+  React.useLayoutEffect(() => {
+    const nextMaxHeight = measureMaxHeight();
+    maxHeightRef.current = nextMaxHeight;
+    setMaxHeight(nextMaxHeight);
+    setHeight((current) => clampDayEventsTableHeight(current, nextMaxHeight));
+  });
+
+  const handleMouseDown = React.useCallback(
+    (event: React.MouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const nextMaxHeight = measureMaxHeight();
+      maxHeightRef.current = nextMaxHeight;
+      setMaxHeight(nextMaxHeight);
+      setResizing({
+        maxHeight: nextMaxHeight,
+        startHeight: height,
+        startY: event.clientY,
+      });
+    },
+    [height, measureMaxHeight],
+  );
+
+  const handleKeyDown = React.useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Home") {
+      event.preventDefault();
+      setHeight(DAY_EVENTS_TABLE_MIN_HEIGHT);
+      return;
+    }
+
+    if (event.key === "End") {
+      event.preventDefault();
+      setHeight(maxHeightRef.current);
+      return;
+    }
+
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") {
+      return;
+    }
+
+    event.preventDefault();
+    const delta =
+      event.key === "ArrowDown"
+        ? DAY_EVENTS_TABLE_KEYBOARD_RESIZE_STEP
+        : -DAY_EVENTS_TABLE_KEYBOARD_RESIZE_STEP;
+
+    setHeight((current) => clampDayEventsTableHeight(current + delta, maxHeightRef.current));
+  }, []);
+
+  React.useEffect(() => {
+    if (!resizing) {
+      return;
+    }
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const nextHeight = resizing.startHeight + event.clientY - resizing.startY;
+      setHeight(clampDayEventsTableHeight(nextHeight, resizing.maxHeight));
+    };
+
+    const handleMouseUp = () => {
+      setResizing(null);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [resizing]);
+
+  return {
+    firstRowRef,
+    handleKeyDown,
+    handleMouseDown,
+    headerRef,
+    height,
+    isResizing: resizing !== null,
+    maxHeight,
+    tableHeaderRef,
+  };
 }
 
 function useResizableColumns() {
@@ -379,6 +518,16 @@ function DayEventsTable({
     () => sortEvents(filteredEvents, sort, timeFormat),
     [filteredEvents, sort, timeFormat],
   );
+  const {
+    firstRowRef,
+    handleKeyDown: handleHeightKeyDown,
+    handleMouseDown: handleHeightMouseDown,
+    headerRef,
+    height,
+    isResizing: isHeightResizing,
+    maxHeight,
+    tableHeaderRef,
+  } = useResizableHeight(Boolean(selectedDay));
 
   const handleSort = (column: SortColumn) => {
     if (consumeSortSuppression()) {
@@ -411,170 +560,189 @@ function DayEventsTable({
     timeFormat,
   );
 
-  return (
-    <div className="day-events-table">
-      <div className="day-events-table__header">
-        <div className="day-events-table__header-info">
-          <span className="day-events-table__date">{formattedDate}</span>
-          <span className="day-events-table__count">
-            {t("dayEventsTable.eventsCount", { count: filteredEvents.length })}
-          </span>
-        </div>
-        <button
-          aria-label={t("common.close")}
-          className="day-events-table__close"
-          onClick={onClear}
-          type="button"
-        >
-          <CloseIcon />
-        </button>
-      </div>
-      {sortedEvents.length === 0 ? (
-        <div className="day-events-table__empty">{t("dayEventsTable.noEvents")}</div>
-      ) : (
-        <table
-          className={`day-events-table__table${isResizing ? " day-events-table--resizing" : ""}`}
-          ref={tableRef}
-        >
-          <thead>
-            <tr>
-              <th
-                className="day-events-table__th"
-                style={{ width: `${widths.title}%` }}
-                onClick={() => handleSort("title")}
-              >
-                <div className="day-events-table__th-content">
-                  <span>{t("dayEventsTable.title")}</span>
-                  {sort.column === "title" && <SortArrow direction={sort.direction} />}
-                </div>
-                <div
-                  className="day-events-table__resize-handle"
-                  onMouseDown={(e) => handleMouseDown(e, "title", "start")}
-                  role="separator"
-                />
-              </th>
-              <th
-                className="day-events-table__th"
-                style={{ width: `${widths.start}%` }}
-                onClick={() => handleSort("start")}
-              >
-                <div className="day-events-table__th-content">
-                  <span>{t("dayEventsTable.start")}</span>
-                  {sort.column === "start" && <SortArrow direction={sort.direction} />}
-                </div>
-                <div
-                  className="day-events-table__resize-handle"
-                  onMouseDown={(e) => handleMouseDown(e, "start", "end")}
-                  role="separator"
-                />
-              </th>
-              <th
-                className="day-events-table__th"
-                style={{ width: `${widths.end}%` }}
-                onClick={() => handleSort("end")}
-              >
-                <div className="day-events-table__th-content">
-                  <span>{t("dayEventsTable.end")}</span>
-                  {sort.column === "end" && <SortArrow direction={sort.direction} />}
-                </div>
-                <div
-                  className="day-events-table__resize-handle"
-                  onMouseDown={(e) => handleMouseDown(e, "end", "category")}
-                  role="separator"
-                />
-              </th>
-              <th
-                className="day-events-table__th"
-                style={{ width: `${widths.category}%` }}
-                onClick={() => handleSort("category")}
-              >
-                <div className="day-events-table__th-content">
-                  <span>{t("dayEventsTable.category")}</span>
-                  {sort.column === "category" && <SortArrow direction={sort.direction} />}
-                </div>
-                <div
-                  className="day-events-table__resize-handle"
-                  onMouseDown={(e) => handleMouseDown(e, "category", "action")}
-                  role="separator"
-                />
-              </th>
-              <th
-                className="day-events-table__th day-events-table__th--action"
-                style={{ width: `${widths.action}%` }}
-              >
-                <span>{t("dayEventsTable.action")}</span>
-                <div
-                  className="day-events-table__resize-handle"
-                  onMouseDown={(e) => handleMouseDown(e, "action", "meeting")}
-                  role="separator"
-                />
-              </th>
-              <th
-                className="day-events-table__th day-events-table__th--meeting"
-                style={{ width: `${widths.meeting}%` }}
-              >
-                <span>{t("dayEventsTable.meeting")}</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {sortedEvents.map((event) => {
-              const responseState = getEventResponseState(event);
+  const className = `day-events-table${
+    isHeightResizing ? " day-events-table--height-resizing" : ""
+  }`;
 
-              return (
-                <tr
-                  className="day-events-table__row"
-                  key={`${event.calendarId}:${event.id}`}
-                  onClick={() => handleRowClick(event)}
+  return (
+    <div className={className} style={{ height: `${height}px` }}>
+      <div className="day-events-table__scroll">
+        <div className="day-events-table__header" ref={headerRef}>
+          <div className="day-events-table__header-info">
+            <span className="day-events-table__date">{formattedDate}</span>
+            <span className="day-events-table__count">
+              {t("dayEventsTable.eventsCount", { count: filteredEvents.length })}
+            </span>
+          </div>
+          <button
+            aria-label={t("common.close")}
+            className="day-events-table__close"
+            onClick={onClear}
+            type="button"
+          >
+            <CloseIcon />
+          </button>
+        </div>
+        {sortedEvents.length === 0 ? (
+          <div className="day-events-table__empty">{t("dayEventsTable.noEvents")}</div>
+        ) : (
+          <table
+            className={`day-events-table__table${isResizing ? " day-events-table--resizing" : ""}`}
+            ref={tableRef}
+          >
+            <thead ref={tableHeaderRef}>
+              <tr>
+                <th
+                  className="day-events-table__th"
+                  style={{ width: `${widths.title}%` }}
+                  onClick={() => handleSort("title")}
                 >
-                  <td className="day-events-table__td">
-                    {event.subject || t("reminder.untitledEvent")}
-                  </td>
-                  <td className="day-events-table__td">
-                    {event.isAllDay
-                      ? t("eventEditor.allDay")
-                      : formatEventTime(event.start, timeFormat)}
-                  </td>
-                  <td className="day-events-table__td">
-                    {event.isAllDay
-                      ? t("eventEditor.allDay")
-                      : formatEventTime(event.end, timeFormat)}
-                  </td>
-                  <td className="day-events-table__td">
-                    {event.categories.length > 0 ? (
-                      <span className="day-events-table__category">{event.categories[0]}</span>
-                    ) : (
-                      ""
-                    )}
-                  </td>
-                  <td className="day-events-table__td day-events-table__td--action">
-                    <span
-                      className={`day-events-table__response day-events-table__response--${responseState}`}
-                    >
-                      {getEventResponseLabel(t, responseState)}
-                    </span>
-                  </td>
-                  <td className="day-events-table__td day-events-table__td--meeting">
-                    {event.onlineMeeting?.joinUrl && (
-                      <button
-                        className="day-events-table__join-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onJoinMeeting?.(event);
-                        }}
-                        type="button"
+                  <div className="day-events-table__th-content">
+                    <span>{t("dayEventsTable.title")}</span>
+                    {sort.column === "title" && <SortArrow direction={sort.direction} />}
+                  </div>
+                  <div
+                    className="day-events-table__resize-handle"
+                    onMouseDown={(e) => handleMouseDown(e, "title", "start")}
+                    role="separator"
+                  />
+                </th>
+                <th
+                  className="day-events-table__th"
+                  style={{ width: `${widths.start}%` }}
+                  onClick={() => handleSort("start")}
+                >
+                  <div className="day-events-table__th-content">
+                    <span>{t("dayEventsTable.start")}</span>
+                    {sort.column === "start" && <SortArrow direction={sort.direction} />}
+                  </div>
+                  <div
+                    className="day-events-table__resize-handle"
+                    onMouseDown={(e) => handleMouseDown(e, "start", "end")}
+                    role="separator"
+                  />
+                </th>
+                <th
+                  className="day-events-table__th"
+                  style={{ width: `${widths.end}%` }}
+                  onClick={() => handleSort("end")}
+                >
+                  <div className="day-events-table__th-content">
+                    <span>{t("dayEventsTable.end")}</span>
+                    {sort.column === "end" && <SortArrow direction={sort.direction} />}
+                  </div>
+                  <div
+                    className="day-events-table__resize-handle"
+                    onMouseDown={(e) => handleMouseDown(e, "end", "category")}
+                    role="separator"
+                  />
+                </th>
+                <th
+                  className="day-events-table__th"
+                  style={{ width: `${widths.category}%` }}
+                  onClick={() => handleSort("category")}
+                >
+                  <div className="day-events-table__th-content">
+                    <span>{t("dayEventsTable.category")}</span>
+                    {sort.column === "category" && <SortArrow direction={sort.direction} />}
+                  </div>
+                  <div
+                    className="day-events-table__resize-handle"
+                    onMouseDown={(e) => handleMouseDown(e, "category", "action")}
+                    role="separator"
+                  />
+                </th>
+                <th
+                  className="day-events-table__th day-events-table__th--action"
+                  style={{ width: `${widths.action}%` }}
+                >
+                  <span>{t("dayEventsTable.action")}</span>
+                  <div
+                    className="day-events-table__resize-handle"
+                    onMouseDown={(e) => handleMouseDown(e, "action", "meeting")}
+                    role="separator"
+                  />
+                </th>
+                <th
+                  className="day-events-table__th day-events-table__th--meeting"
+                  style={{ width: `${widths.meeting}%` }}
+                >
+                  <span>{t("dayEventsTable.meeting")}</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedEvents.map((event, index) => {
+                const responseState = getEventResponseState(event);
+
+                return (
+                  <tr
+                    className="day-events-table__row"
+                    key={`${event.calendarId}:${event.id}`}
+                    onClick={() => handleRowClick(event)}
+                    ref={index === 0 ? firstRowRef : undefined}
+                  >
+                    <td className="day-events-table__td">
+                      {event.subject || t("reminder.untitledEvent")}
+                    </td>
+                    <td className="day-events-table__td">
+                      {event.isAllDay
+                        ? t("eventEditor.allDay")
+                        : formatEventTime(event.start, timeFormat)}
+                    </td>
+                    <td className="day-events-table__td">
+                      {event.isAllDay
+                        ? t("eventEditor.allDay")
+                        : formatEventTime(event.end, timeFormat)}
+                    </td>
+                    <td className="day-events-table__td">
+                      {event.categories.length > 0 ? (
+                        <span className="day-events-table__category">{event.categories[0]}</span>
+                      ) : (
+                        ""
+                      )}
+                    </td>
+                    <td className="day-events-table__td day-events-table__td--action">
+                      <span
+                        className={`day-events-table__response day-events-table__response--${responseState}`}
                       >
-                        <MeetingIcon url={event.onlineMeeting.joinUrl} />
-                        <span>{t("eventEditor.joinMeeting")}</span>
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
+                        {getEventResponseLabel(t, responseState)}
+                      </span>
+                    </td>
+                    <td className="day-events-table__td day-events-table__td--meeting">
+                      {event.onlineMeeting?.joinUrl && (
+                        <button
+                          className="day-events-table__join-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onJoinMeeting?.(event);
+                          }}
+                          type="button"
+                        >
+                          <MeetingIcon url={event.onlineMeeting.joinUrl} />
+                          <span>{t("eventEditor.joinMeeting")}</span>
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <div
+        aria-label={t("dayEventsTable.resizeHeight")}
+        aria-orientation="horizontal"
+        aria-valuemax={maxHeight}
+        aria-valuemin={DAY_EVENTS_TABLE_MIN_HEIGHT}
+        aria-valuenow={height}
+        className="day-events-table__height-resize-handle"
+        onKeyDown={handleHeightKeyDown}
+        onMouseDown={handleHeightMouseDown}
+        role="separator"
+        tabIndex={0}
+      />
     </div>
   );
 }
