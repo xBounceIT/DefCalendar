@@ -89,6 +89,11 @@ function formatEventTime(isoString: string, timeFormat: UserSettings["timeFormat
   );
 }
 
+function isEventCompleted(event: CalendarEvent, nowMs: number): boolean {
+  const endMs = Date.parse(event.end);
+  return !Number.isNaN(endMs) && endMs <= nowMs;
+}
+
 function normalizeResponseValue(response: null | string | undefined): null | string {
   const normalized = response?.trim().toLowerCase();
   if (!normalized) {
@@ -480,8 +485,24 @@ function DayEventsTable({
     column: "start",
     direction: "asc",
   });
+  const [nowMs, setNowMs] = React.useState(() => Date.now());
   const { widths, handleMouseDown, tableRef, isResizing, consumeSortSuppression } =
     useResizableColumns();
+
+  React.useEffect(() => {
+    if (!selectedDay) {
+      return;
+    }
+
+    setNowMs(Date.now());
+    const intervalId = globalThis.setInterval(() => {
+      setNowMs(Date.now());
+    }, 60_000);
+
+    return () => {
+      globalThis.clearInterval(intervalId);
+    };
+  }, [selectedDay]);
 
   const filteredEvents = React.useMemo(() => {
     if (!selectedDay) {
@@ -674,10 +695,13 @@ function DayEventsTable({
             <tbody>
               {sortedEvents.map((event, index) => {
                 const responseState = getEventResponseState(event);
+                const rowClassName = `day-events-table__row${
+                  isEventCompleted(event, nowMs) ? " day-events-table__row--completed" : ""
+                }`;
 
                 return (
                   <tr
-                    className="day-events-table__row"
+                    className={rowClassName}
                     key={`${event.calendarId}:${event.id}`}
                     onClick={() => handleRowClick(event)}
                     ref={index === 0 ? firstRowRef : undefined}

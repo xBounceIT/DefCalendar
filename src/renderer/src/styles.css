@@ -1620,6 +1620,16 @@ button {
   background: var(--surface-hover);
 }
 
+.day-events-table__row--completed .day-events-table__td {
+  background: var(--surface-hover);
+  color: var(--ink-secondary);
+}
+
+.day-events-table__row--completed:hover,
+.day-events-table__row--completed:hover .day-events-table__td {
+  background: var(--surface-active);
+}
+
 .day-events-table__empty {
   padding: 24px;
   text-align: center;

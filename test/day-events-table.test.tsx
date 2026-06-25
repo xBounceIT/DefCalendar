@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createInstance } from "i18next";
 import React from "react";
 import { I18nextProvider, initReactI18next } from "react-i18next";
@@ -11,7 +11,10 @@ import enTranslations from "../src/renderer/src/i18n/locales/en.json";
 import itTranslations from "../src/renderer/src/i18n/locales/it.json";
 import type { CalendarEvent } from "../src/shared/schemas";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 function createEvent(overrides?: Partial<CalendarEvent>): CalendarEvent {
   return {
@@ -173,6 +176,41 @@ describe("day events table", () => {
     });
 
     expect(screen.getByText("Multi-day timed event")).toBeInTheDocument();
+  });
+
+  it("marks ended events as completed and refreshes every minute", () => {
+    expect.assertions(3);
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-30T10:00:00.000Z"));
+
+    renderTable({
+      events: [
+        createEvent({
+          end: "2026-03-30T10:00:00.000Z",
+          id: "ended-now",
+          start: "2026-03-30T09:00:00.000Z",
+          subject: "Ended now",
+        }),
+        createEvent({
+          end: "2026-03-30T10:01:00.000Z",
+          id: "ends-soon",
+          start: "2026-03-30T09:30:00.000Z",
+          subject: "Ends soon",
+        }),
+      ],
+    });
+
+    const endedRow = screen.getByText("Ended now").closest("tr");
+    const futureRow = screen.getByText("Ends soon").closest("tr");
+
+    expect(endedRow).toHaveClass("day-events-table__row--completed");
+    expect(futureRow).not.toHaveClass("day-events-table__row--completed");
+
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+
+    expect(futureRow).toHaveClass("day-events-table__row--completed");
   });
 
   it("opens event on row click without clearing table", () => {
