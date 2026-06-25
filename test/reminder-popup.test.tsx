@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import i18n from "i18next";
 import React from "react";
 import ReminderPopup from "../src/renderer/src/reminder-popup";
 import type { CalendarApi } from "../src/shared/ipc";
-import type { ReminderDialogItem } from "../src/shared/schemas";
+import type { ReminderDialogItem, ReminderDialogState } from "../src/shared/schemas";
 
 const originalCalendarApiDescriptor = Object.getOwnPropertyDescriptor(globalThis, "calendarApi");
 
@@ -26,7 +27,10 @@ function createReminder(overrides: Partial<ReminderDialogItem> = {}): ReminderDi
   };
 }
 
-function installCalendarApi(item: ReminderDialogItem): CalendarApi {
+function installCalendarApi(
+  item: ReminderDialogItem,
+  stateOverrides: Partial<Pick<ReminderDialogState, "locale" | "timeFormat">> = {},
+): CalendarApi {
   const calendarApi = {
     events: {
       openInApp: vi.fn().mockResolvedValue(undefined),
@@ -37,8 +41,8 @@ function installCalendarApi(item: ReminderDialogItem): CalendarApi {
       dismissAll: vi.fn().mockResolvedValue(undefined),
       getState: vi.fn().mockResolvedValue({
         items: [item],
-        locale: "en",
-        timeFormat: "system",
+        locale: stateOverrides.locale ?? "en",
+        timeFormat: stateOverrides.timeFormat ?? "system",
       }),
       minimizeWindow: vi.fn().mockResolvedValue(undefined),
       onState: vi.fn().mockReturnValue(() => undefined),
@@ -57,6 +61,9 @@ function installCalendarApi(item: ReminderDialogItem): CalendarApi {
 
 function restoreCalendarApi(): void {
   cleanup();
+  void i18n.changeLanguage("en");
+  vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.clearAllMocks();
 
   if (originalCalendarApiDescriptor) {
@@ -72,7 +79,63 @@ describe("reminder popup", () => {
     restoreCalendarApi();
   });
 
+  it("renders the future start countdown", async () => {
+    expect.hasAssertions();
+    vi.spyOn(Date, "now").mockReturnValue(new Date("2026-03-30T09:45:00.000Z").getTime());
+    const item = createReminder();
+    installCalendarApi(item);
+
+    render(<ReminderPopup />);
+
+    await expect(screen.findByText("starts in 15 min")).resolves.not.toBeNull();
+  });
+
+  it("renders ADESSO for meetings starting now in Italian", async () => {
+    expect.hasAssertions();
+    vi.spyOn(Date, "now").mockReturnValue(new Date("2026-03-30T10:00:00.000Z").getTime());
+    const item = createReminder();
+    installCalendarApi(item, { locale: "it" });
+
+    render(<ReminderPopup />);
+
+    const status = await screen.findByText("ADESSO");
+    expect(status.className).toContain("reminder-item-start-status--now");
+  });
+
+  it("renders elapsed text for meetings that already started", async () => {
+    expect.hasAssertions();
+    vi.spyOn(Date, "now").mockReturnValue(new Date("2026-03-30T10:06:30.000Z").getTime());
+    const item = createReminder();
+    installCalendarApi(item);
+
+    render(<ReminderPopup />);
+
+    await expect(screen.findByText("started 6 min ago")).resolves.not.toBeNull();
+  });
+
+  it("updates the start status while the popup remains open", async () => {
+    expect.hasAssertions();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-30T09:58:59.000Z"));
+    const item = createReminder();
+    installCalendarApi(item);
+
+    render(<ReminderPopup />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("starts in 2 min")).not.toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(screen.getByText("NOW")).not.toBeNull();
+  });
+
   it("opens the reminder event in the main app on row double click", async () => {
+    expect.hasAssertions();
     const item = createReminder();
     const calendarApi = installCalendarApi(item);
 
@@ -88,6 +151,7 @@ describe("reminder popup", () => {
   });
 
   it("does not open the event modal when the join meeting button is double-clicked", async () => {
+    expect.hasAssertions();
     const item = createReminder({
       onlineMeeting: {
         joinUrl: "https://teams.microsoft.com/l/meetup-join/example",

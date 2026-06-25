@@ -214,6 +214,19 @@ body {
   line-height: 1.3;
 }
 
+.reminder-item-start-status {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1.3;
+}
+
+.reminder-item-start-status--now {
+  font-size: 12px;
+  font-weight: 800;
+  color: #c5221f;
+}
+
 .reminder-item-time {
   font-size: 11px;
   color: var(--ink-secondary);
