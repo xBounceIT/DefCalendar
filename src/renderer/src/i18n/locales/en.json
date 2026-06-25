@@ -265,7 +265,12 @@
     "snoozeTomorrow": "Tomorrow",
     "minutes": "{{count}} min",
     "hours": "{{count}} h",
-    "zeroMinutes": "0 min"
+    "zeroMinutes": "0 min",
+    "startsInMinutes": "starts in {{count}} min",
+    "startsInHours": "starts in {{count}} h",
+    "startsNow": "NOW",
+    "startedMinutesAgo": "started {{count}} min ago",
+    "startedHoursAgo": "started {{count}} h ago"
   },
   "dateFormatting": {
     "fallbackCalendar": "Calendar",

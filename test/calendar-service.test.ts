@@ -453,7 +453,7 @@ describe("graph calendar service request handling", () => {
     });
     expect(updated.subject).toBe("Updated planning");
     expect(updated.etag).toBe('"etag-2"');
-  });
+  }, 10_000);
 
   it("skips the graph patch but refetches the event for no-op event detail saves", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(

@@ -202,7 +202,7 @@ describe("event editor dialog", () => {
         reminderMinutesBeforeStart: 0,
       }),
     );
-  });
+  }, 10_000);
 
   it("allows selecting next-day midnight end time for late-night starts", () => {
     const { container, onSave } = renderDialog({

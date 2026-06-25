@@ -265,7 +265,12 @@
     "snoozeTomorrow": "Domani",
     "minutes": "{{count}} min",
     "hours": "{{count}} h",
-    "zeroMinutes": "0 min"
+    "zeroMinutes": "0 min",
+    "startsInMinutes": "inizia tra {{count}} min",
+    "startsInHours": "inizia tra {{count}} h",
+    "startsNow": "ADESSO",
+    "startedMinutesAgo": "iniziata {{count}} min fa",
+    "startedHoursAgo": "iniziata {{count}} h fa"
   },
   "dateFormatting": {
     "fallbackCalendar": "Calendario",

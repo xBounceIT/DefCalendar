@@ -15,6 +15,11 @@ const EMPTY_STATE: ReminderDialogState = {
   timeFormat: "system",
 };
 
+interface ReminderStartStatus {
+  isNow: boolean;
+  text: string;
+}
+
 void i18n.use(initReactI18next).init({
   resources: {
     en: { translation: en },
@@ -25,8 +30,57 @@ void i18n.use(initReactI18next).init({
   interpolation: { escapeValue: false },
 });
 
+function formatReminderStartStatus(
+  item: ReminderDialogItem,
+  nowMs: number,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): null | ReminderStartStatus {
+  const startMs = new Date(item.start).getTime();
+  if (Number.isNaN(startMs)) {
+    return null;
+  }
+
+  const deltaMs = startMs - nowMs;
+  const absoluteSeconds = Math.abs(deltaMs) / 1000;
+  if (absoluteSeconds <= 60) {
+    return {
+      isNow: true,
+      text: t("reminder.startsNow"),
+    };
+  }
+
+  if (deltaMs > 0) {
+    const minutes = Math.ceil(deltaMs / 60_000);
+    if (minutes < 60) {
+      return {
+        isNow: false,
+        text: t("reminder.startsInMinutes", { count: minutes }),
+      };
+    }
+
+    return {
+      isNow: false,
+      text: t("reminder.startsInHours", { count: Math.ceil(minutes / 60) }),
+    };
+  }
+
+  const minutes = Math.floor(Math.abs(deltaMs) / 60_000);
+  if (minutes < 60) {
+    return {
+      isNow: false,
+      text: t("reminder.startedMinutesAgo", { count: minutes }),
+    };
+  }
+
+  return {
+    isNow: false,
+    text: t("reminder.startedHoursAgo", { count: Math.floor(minutes / 60) }),
+  };
+}
+
 function ReminderPopup() {
   const { t } = useTranslation();
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [snoozeMinutes, setSnoozeMinutes] = useState(5);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [state, setState] = useState<ReminderDialogState>(EMPTY_STATE);
@@ -38,6 +92,11 @@ function ReminderPopup() {
   useEffect(() => {
     void i18n.changeLanguage(state.locale);
   }, [state.locale]);
+
+  useEffect(() => {
+    const timer = globalThis.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => globalThis.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!calendarApi) {
@@ -159,6 +218,7 @@ function ReminderPopup() {
         <div className="reminder-list" role="list">
           {state.items.map((item) => {
             const isSelected = selectedReminder?.dedupeKey === item.dedupeKey;
+            const startStatus = formatReminderStartStatus(item, nowMs, t);
 
             return (
               <div
@@ -177,6 +237,15 @@ function ReminderPopup() {
                     <span className="reminder-item-subject">
                       {item.subject || t("reminder.untitledEvent")}
                     </span>
+                    {startStatus && (
+                      <span
+                        className={`reminder-item-start-status${
+                          startStatus.isNow ? " reminder-item-start-status--now" : ""
+                        }`}
+                      >
+                        {startStatus.text}
+                      </span>
+                    )}
                     <span className="reminder-item-time">
                       {formatEventTimeRange(item, state.timeFormat)}
                     </span>
