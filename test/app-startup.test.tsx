@@ -1042,6 +1042,23 @@ describe("app startup", () => {
       );
       expect(calendarEvents[1]?.backgroundColor).toBeUndefined();
       expect(calendarEvents[1]?.borderColor).toBeUndefined();
+
+      act(() => {
+        useUiStore.getState().setSelectedDayForTable("2026-03-30T00:00:00.000Z");
+      });
+
+      const categoryBadge = await screen.findByText("Blue category");
+      expect({
+        backgroundColor: categoryBadge.style.backgroundColor,
+        borderColor: categoryBadge.style.borderColor,
+        color: categoryBadge.style.color,
+        missingStyle: screen.getByText("Missing category").getAttribute("style"),
+      }).toStrictEqual({
+        backgroundColor: "rgb(37, 99, 235)",
+        borderColor: "rgb(37, 99, 235)",
+        color: "rgb(255, 255, 255)",
+        missingStyle: null,
+      });
     } finally {
       restoreCalendarApi();
       restoreResizeObserver();

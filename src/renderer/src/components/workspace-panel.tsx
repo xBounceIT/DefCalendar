@@ -1,22 +1,15 @@
-import { CALENDAR_VIEW_ORDER } from "@shared/calendar";
-import type {
-  CalendarEvent,
-  DateClickArg,
-  DatesSetArg,
-  EventClickArg,
-  EventDropArg,
-  EventInput,
-} from "@fullcalendar/core";
-import type { CalendarView, UserSettings } from "@shared/schemas";
-import type { EventResizeDoneArg } from "@fullcalendar/interaction";
+import type { DatesSetArg, EventClickArg, EventDropArg, EventInput } from "@fullcalendar/core";
+import type { DateClickArg, EventResizeDoneArg } from "@fullcalendar/interaction";
 import type FullCalendar from "@fullcalendar/react";
+import React from "react";
+import { useTranslation } from "react-i18next";
+import { CALENDAR_VIEW_ORDER } from "@shared/calendar";
+import type { CalendarEvent, CalendarView, UserSettings } from "@shared/schemas";
 
+import { formatHeaderDate } from "../date-formatting";
 import CalendarBoard from "./calendar-board";
 import DayEventsTable from "./day-events-table";
-import React from "react";
 import SearchIcon from "./search-icon";
-import { formatHeaderDate } from "../date-formatting";
-import { useTranslation } from "react-i18next";
 
 interface WorkspacePanelProps {
   activeView: CalendarView;
@@ -25,6 +18,7 @@ interface WorkspacePanelProps {
   calendarRef: React.RefObject<FullCalendar | null>;
   canCreateEvent: boolean;
   events: CalendarEvent[];
+  getEventCategoryColor: (event: CalendarEvent) => null | string;
   hasVisibleCalendars: boolean;
   onClearDaySelection: () => void;
   onCreateEvent: () => void;
@@ -292,6 +286,7 @@ function WorkspacePanel(props: WorkspacePanelProps) {
       <Banner message={props.bannerMessage} />
       <DayEventsTable
         events={props.events}
+        getEventCategoryColor={props.getEventCategoryColor}
         onClear={props.onClearDaySelection}
         onEventClick={handleTableEventClick}
         onJoinMeeting={props.onJoinMeeting}

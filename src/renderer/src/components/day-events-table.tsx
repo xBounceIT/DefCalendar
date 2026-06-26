@@ -1,8 +1,8 @@
-import type { CalendarEvent, UserSettings } from "@shared/schemas";
 import React from "react";
+import { useTranslation } from "react-i18next";
+import type { CalendarEvent, UserSettings } from "@shared/schemas";
 import { formatLocalizedDate } from "../date-formatting";
 import { MeetingIcon } from "./meeting-icon";
-import { useTranslation } from "react-i18next";
 
 type SortColumn = "start" | "end" | "title" | "category";
 type SortDirection = "asc" | "desc";
@@ -23,12 +23,16 @@ interface SortState {
 
 interface DayEventsTableProps {
   events: CalendarEvent[];
+  getEventCategoryColor: (event: CalendarEvent) => null | string;
   onClear: () => void;
   onEventClick: (event: CalendarEvent) => void;
   onJoinMeeting?: (event: CalendarEvent) => void;
   selectedDay: null | string;
   timeFormat: UserSettings["timeFormat"];
 }
+
+const DARK_CATEGORY_TEXT_COLOR = "#111827";
+const LIGHT_CATEGORY_TEXT_COLOR = "#ffffff";
 
 function CloseIcon() {
   return (
@@ -153,6 +157,69 @@ function getEventResponseLabel(
   }
 
   return t("dayEventsTable.responsePending");
+}
+
+function parseHexColor(color: string): null | { blue: number; green: number; red: number } {
+  const normalized = color.trim().replace(/^#/, "");
+  if (!/^[0-9a-f]{6}$/i.test(normalized)) {
+    return null;
+  }
+
+  return {
+    blue: Number.parseInt(normalized.slice(4, 6), 16),
+    green: Number.parseInt(normalized.slice(2, 4), 16),
+    red: Number.parseInt(normalized.slice(0, 2), 16),
+  };
+}
+
+function toLinearChannel(channel: number): number {
+  const normalized = channel / 255;
+  if (normalized <= 0.039_28) {
+    return normalized / 12.92;
+  }
+
+  return ((normalized + 0.055) / 1.055) ** 2.4;
+}
+
+function getRelativeLuminance(color: { blue: number; green: number; red: number }): number {
+  return (
+    0.2126 * toLinearChannel(color.red) +
+    0.7152 * toLinearChannel(color.green) +
+    0.0722 * toLinearChannel(color.blue)
+  );
+}
+
+function getContrastRatio(leftLuminance: number, rightLuminance: number): number {
+  const lighter = Math.max(leftLuminance, rightLuminance);
+  const darker = Math.min(leftLuminance, rightLuminance);
+
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function getContrastingTextColor(backgroundColor: string): string {
+  const background = parseHexColor(backgroundColor);
+  const darkText = parseHexColor(DARK_CATEGORY_TEXT_COLOR);
+  if (!background || !darkText) {
+    return LIGHT_CATEGORY_TEXT_COLOR;
+  }
+
+  const backgroundLuminance = getRelativeLuminance(background);
+  const darkContrast = getContrastRatio(backgroundLuminance, getRelativeLuminance(darkText));
+  const lightContrast = getContrastRatio(backgroundLuminance, 1);
+
+  return darkContrast > lightContrast ? DARK_CATEGORY_TEXT_COLOR : LIGHT_CATEGORY_TEXT_COLOR;
+}
+
+function getCategoryBadgeStyle(categoryColor: null | string): React.CSSProperties | undefined {
+  if (!categoryColor) {
+    return undefined;
+  }
+
+  return {
+    backgroundColor: categoryColor,
+    borderColor: categoryColor,
+    color: getContrastingTextColor(categoryColor),
+  };
 }
 
 function sortEvents(
@@ -474,6 +541,7 @@ function useResizableColumns() {
 
 function DayEventsTable({
   events,
+  getEventCategoryColor,
   onClear,
   onEventClick,
   onJoinMeeting,
@@ -695,6 +763,9 @@ function DayEventsTable({
             <tbody>
               {sortedEvents.map((event, index) => {
                 const responseState = getEventResponseState(event);
+                const categoryColor =
+                  event.categories.length > 0 ? getEventCategoryColor(event) : null;
+                const categoryStyle = getCategoryBadgeStyle(categoryColor);
                 const rowClassName = `day-events-table__row${
                   isEventCompleted(event, nowMs) ? " day-events-table__row--completed" : ""
                 }`;
@@ -721,7 +792,9 @@ function DayEventsTable({
                     </td>
                     <td className="day-events-table__td">
                       {event.categories.length > 0 ? (
-                        <span className="day-events-table__category">{event.categories[0]}</span>
+                        <span className="day-events-table__category" style={categoryStyle}>
+                          {event.categories[0]}
+                        </span>
                       ) : (
                         ""
                       )}
