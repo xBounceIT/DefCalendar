@@ -2,7 +2,7 @@ import type { DatesSetArg, EventClickArg, EventDropArg, EventInput } from "@full
 import type { DateClickArg, EventResizeDoneArg } from "@fullcalendar/interaction";
 import type FullCalendar from "@fullcalendar/react";
 import { endOfMonth, endOfWeek, startOfMonth, startOfWeek } from "date-fns";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addMinutesToIso,
   buildEventDayKeys,
@@ -473,6 +473,11 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   const calendarEvents = useMemo(
     () => buildCalendarEvents(events, calendarMap, categoryColorsByAccount),
     [calendarMap, categoryColorsByAccount, events],
+  );
+  const getEventCategoryColor = useCallback(
+    (event: CalendarEvent) =>
+      resolveFirstCategoryColor(event, calendarMap.get(event.calendarId), categoryColorsByAccount),
+    [calendarMap, categoryColorsByAccount],
   );
   const miniCalendarEventDayKeys = useMemo(
     () => buildEventDayKeys(miniCalendarEventsQuery.data ?? EMPTY_EVENTS),
@@ -1025,6 +1030,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         calendarRef={calendarRef}
         canCreateEvent={Boolean(editableCalendar)}
         events={events}
+        getEventCategoryColor={getEventCategoryColor}
         hasVisibleCalendars={visibleCalendarIds.length > 0}
         onClearDaySelection={clearSelectedDayForTable}
         onCreateEvent={openSelectedDateComposer}

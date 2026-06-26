@@ -1640,6 +1640,7 @@ button {
 .day-events-table__category {
   display: inline-block;
   padding: 2px 8px;
+  border: 1px solid transparent;
   border-radius: 4px;
   font-size: 12px;
   background: var(--accent-soft);

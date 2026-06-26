@@ -35,6 +35,7 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof WorkspacePan
     calendarRef: { current: null },
     canCreateEvent: true,
     events: [],
+    getEventCategoryColor: vi.fn(() => null),
     hasVisibleCalendars: true,
     onClearDaySelection: vi.fn(),
     onCreateEvent: vi.fn(),

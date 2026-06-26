@@ -76,6 +76,7 @@ function createRect(height: number): DOMRect {
 
 interface RenderTableArgs {
   events?: CalendarEvent[];
+  getEventCategoryColor?: (event: CalendarEvent) => null | string;
   language?: "en" | "it";
   selectedDay?: null | string;
 }
@@ -131,6 +132,7 @@ function renderTable(args?: RenderTableArgs) {
     <I18nextProvider i18n={i18n}>
       <DayEventsTable
         events={renderArgs?.events ?? []}
+        getEventCategoryColor={renderArgs?.getEventCategoryColor ?? (() => null)}
         onClear={onClear}
         onEventClick={onEventClick}
         onJoinMeeting={onJoinMeeting}
@@ -176,6 +178,40 @@ describe("day events table", () => {
     });
 
     expect(screen.getByText("Multi-day timed event")).toBeInTheDocument();
+  });
+
+  it("colors category badges from the supplied category color resolver", () => {
+    expect.assertions(2);
+
+    renderTable({
+      events: [
+        createEvent({
+          categories: ["Blue category"],
+          id: "blue-event",
+          subject: "Blue event",
+        }),
+        createEvent({
+          categories: ["Yellow category"],
+          end: "2026-03-30T16:00:00.000Z",
+          id: "yellow-event",
+          start: "2026-03-30T15:00:00.000Z",
+          subject: "Yellow event",
+        }),
+      ],
+      getEventCategoryColor: (event) =>
+        event.id === "yellow-event" ? "#facc15" : "#2563eb",
+    });
+
+    expect(screen.getByText("Blue category")).toHaveStyle({
+      backgroundColor: "rgb(37, 99, 235)",
+      borderColor: "rgb(37, 99, 235)",
+      color: "rgb(255, 255, 255)",
+    });
+    expect(screen.getByText("Yellow category")).toHaveStyle({
+      backgroundColor: "rgb(250, 204, 21)",
+      borderColor: "rgb(250, 204, 21)",
+      color: "rgb(17, 24, 39)",
+    });
   });
 
   it("marks ended events as completed and refreshes every minute", () => {
