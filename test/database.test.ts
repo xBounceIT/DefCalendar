@@ -300,27 +300,11 @@ describe("database", () => {
       },
     ]);
   });
-  it("preserves unfetched portions when recording overlapping sync range coverage", () => {
+  it("replaces overlapping calendar sync range coverage before recording fetched range", () => {
     expect.hasAssertions();
-    const all = vi.fn().mockReturnValue([
-      {
-        last_synced_at: "2026-07-01T12:00:00.000Z",
-        range_end: "2026-11-10T00:00:00.000Z",
-        range_start: "2026-11-01T00:00:00.000Z",
-      },
-      {
-        last_synced_at: "2026-06-30T12:00:00.000Z",
-        range_end: "2026-12-15T00:00:00.000Z",
-        range_start: "2026-11-25T00:00:00.000Z",
-      },
-    ]);
     const deleteRun = vi.fn();
     const insertRun = vi.fn();
     const prepare = vi.fn((sql: string) => {
-      if (sql.includes("SELECT range_start, range_end")) {
-        return { all };
-      }
-
       if (sql.includes("DELETE FROM calendar_sync_ranges")) {
         return { run: deleteRun };
       }
@@ -350,26 +334,12 @@ describe("database", () => {
       "2026-11-05T00:00:00.000Z",
       "2026-11-30T23:00:00.000Z",
     );
-    expect(insertRun.mock.calls).toStrictEqual([
-      [
-        "calendar-1",
-        "2026-11-01T00:00:00.000Z",
-        "2026-11-05T00:00:00.000Z",
-        "2026-07-01T12:00:00.000Z",
-      ],
-      [
-        "calendar-1",
-        "2026-11-30T23:00:00.000Z",
-        "2026-12-15T00:00:00.000Z",
-        "2026-06-30T12:00:00.000Z",
-      ],
-      [
-        "calendar-1",
-        "2026-11-05T00:00:00.000Z",
-        "2026-11-30T23:00:00.000Z",
-        "2026-07-02T12:00:00.000Z",
-      ],
-    ]);
+    expect(insertRun).toHaveBeenCalledWith(
+      "calendar-1",
+      "2026-11-05T00:00:00.000Z",
+      "2026-11-30T23:00:00.000Z",
+      "2026-07-02T12:00:00.000Z",
+    );
   });
   it("returns pre and start candidates for events with reminderMinutesBeforeStart > 0", () => {
     const all = vi.fn().mockReturnValue([
