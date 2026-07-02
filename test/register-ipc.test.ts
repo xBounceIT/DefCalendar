@@ -288,6 +288,26 @@ describe("register ipc", () => {
     expect(response).toStrictEqual([storedEvent]);
   });
 
+  it("falls back to cached events when range fetching fails", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const invokeEvent = { sender: fixture.mainWebContents };
+    const args = {
+      calendarIds: ["calendar-1"],
+      end: "2026-11-30T23:00:00.000Z",
+      start: "2026-11-01T00:00:00.000Z",
+    };
+    const storedEvent = createCalendarEvent();
+    fixture.sync.ensureEventsRange.mockRejectedValue(new Error("Graph unavailable"));
+    fixture.db.listEvents.mockReturnValue([storedEvent]);
+
+    const response = await fixture.handlers.get(IPC_CHANNELS.eventsList)?.(invokeEvent, args);
+
+    expect(fixture.sync.ensureEventsRange).toHaveBeenCalledWith(args);
+    expect(fixture.db.listEvents).toHaveBeenCalledWith(args);
+    expect(response).toStrictEqual([storedEvent]);
+  });
+
   it("refreshes reminders before the background sync after reminder-affecting event mutations", async () => {
     const fixture = createFixture();
     const invokeEvent = { sender: fixture.mainWebContents };

@@ -119,12 +119,17 @@ class SyncService {
         }
 
         for (const range of uncoveredRanges) {
-          const fetchedEvents = await this.dependencies.graph.listCalendarView(
-            calendarId,
-            range.rangeStart,
-            range.rangeEnd,
-            homeAccountId,
-          );
+          let fetchedEvents: CalendarEvent[];
+          try {
+            fetchedEvents = await this.dependencies.graph.listCalendarView(
+              calendarId,
+              range.rangeStart,
+              range.rangeEnd,
+              homeAccountId,
+            );
+          } catch {
+            continue;
+          }
           const persistedEvents = this.dependencies.db.listEvents({
             calendarIds: [calendarId],
             end: range.rangeEnd,
@@ -303,6 +308,12 @@ class SyncService {
           state: "idle",
         };
         return this.setStatus(nextStatus);
+      }
+
+      if (reason === "manual") {
+        this.dependencies.db.clearCalendarSyncRanges(
+          calendarsToSync.map((calendar) => calendar.id),
+        );
       }
 
       const syncWindow = this.getSyncWindow();

@@ -17,6 +17,7 @@ const FIXTURE_SYNC_WINDOW = {
 
 interface SyncFixture {
   db: {
+    clearCalendarSyncRanges: ReturnType<typeof vi.fn>;
     getDeepBackfillCompletedAt: ReturnType<typeof vi.fn>;
     getCalendarHomeAccountId: ReturnType<typeof vi.fn>;
     getLatestSyncStatus: ReturnType<typeof vi.fn>;
@@ -126,6 +127,7 @@ function createFixture(args?: {
   const syncIntervalMinutes = args?.syncIntervalMinutes ?? 15;
 
   const db = {
+    clearCalendarSyncRanges: vi.fn(),
     getDeepBackfillCompletedAt: vi.fn().mockReturnValue("2026-01-01T00:00:00.000Z"),
     getCalendarHomeAccountId: vi.fn().mockReturnValue("account-1"),
     getLatestSyncStatus: vi.fn().mockReturnValue({
@@ -285,6 +287,7 @@ describe("sync service", () => {
     const status = await fixture.service.syncAll("manual");
 
     expect(status.counts).toStrictEqual({ calendars: 2, events: 0 });
+    expect(fixture.db.clearCalendarSyncRanges).toHaveBeenCalledWith(["calendar-a", "calendar-b"]);
     expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(2);
     expect(fixture.graph.listContacts).toHaveBeenCalledTimes(2);
     expect(fixture.graph.listCalendars.mock.calls.map(([accountId]) => accountId)).toStrictEqual([
@@ -955,6 +958,23 @@ describe("sync service", () => {
     });
 
     expect(fixture.graph.listCalendarView).not.toHaveBeenCalled();
+    expect(fixture.db.replaceEventsForCalendarRange).not.toHaveBeenCalled();
+    expect(fixture.db.recordCalendarSyncRange).not.toHaveBeenCalled();
+  });
+
+  it("does not reject on-demand range checks when Graph fetch fails", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    fixture.graph.listCalendarView.mockRejectedValue(new Error("Graph unavailable"));
+
+    await expect(
+      fixture.service.ensureEventsRange({
+        calendarIds: ["calendar-a"],
+        end: "2026-11-30T23:00:00.000Z",
+        start: "2026-11-01T00:00:00.000Z",
+      }),
+    ).resolves.toBeUndefined();
+
     expect(fixture.db.replaceEventsForCalendarRange).not.toHaveBeenCalled();
     expect(fixture.db.recordCalendarSyncRange).not.toHaveBeenCalled();
   });

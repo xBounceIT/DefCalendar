@@ -848,6 +848,22 @@ class AppDatabase {
     return this.listUncoveredCalendarSyncRanges(calendarId, rangeStart, rangeEnd).length === 0;
   }
 
+  clearCalendarSyncRanges(calendarIds: string[]): void {
+    if (calendarIds.length === 0) {
+      return;
+    }
+
+    const placeholders = calendarIds.map((_calendarId, index) => `@calendar_${index}`);
+    const parameters: Record<string, string> = {};
+    calendarIds.forEach((calendarId, index) => {
+      parameters[`calendar_${index}`] = calendarId;
+    });
+
+    this.db
+      .prepare(`DELETE FROM calendar_sync_ranges WHERE calendar_id IN (${placeholders.join(", ")})`)
+      .run(parameters);
+  }
+
   recordCalendarSyncRange(args: RecordCalendarSyncRangeArgs): void {
     const { calendarId, rangeEnd, rangeStart, syncedAt } = args;
     const rows = this.db
