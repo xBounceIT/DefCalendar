@@ -341,6 +341,78 @@ describe("database", () => {
       "2026-07-02T12:00:00.000Z",
     );
   });
+  it("preserves unfetched coverage portions when requested", () => {
+    expect.hasAssertions();
+    const all = vi.fn().mockReturnValue([
+      {
+        last_synced_at: "2026-07-01T12:00:00.000Z",
+        range_end: "2026-11-10T00:00:00.000Z",
+        range_start: "2026-11-01T00:00:00.000Z",
+      },
+      {
+        last_synced_at: "2026-06-30T12:00:00.000Z",
+        range_end: "2026-12-15T00:00:00.000Z",
+        range_start: "2026-11-25T00:00:00.000Z",
+      },
+    ]);
+    const deleteRun = vi.fn();
+    const insertRun = vi.fn();
+    const prepare = vi.fn((sql: string) => {
+      if (sql.includes("SELECT range_start, range_end")) {
+        return { all };
+      }
+
+      if (sql.includes("DELETE FROM calendar_sync_ranges")) {
+        return { run: deleteRun };
+      }
+
+      if (sql.includes("INSERT INTO calendar_sync_ranges")) {
+        return { run: insertRun };
+      }
+
+      throw new Error(`Unexpected SQL: ${sql}`);
+    });
+    const transaction = vi.fn((execute: () => void) => execute);
+    const db = Object.create(AppDatabase.prototype) as AppDatabase;
+    (db as unknown as { db: { prepare: typeof prepare; transaction: typeof transaction } }).db = {
+      prepare,
+      transaction,
+    };
+
+    db.recordCalendarSyncRange({
+      calendarId: "calendar-1",
+      preserveOverlappingCoverage: true,
+      rangeEnd: "2026-11-30T23:00:00.000Z",
+      rangeStart: "2026-11-05T00:00:00.000Z",
+      syncedAt: "2026-07-02T12:00:00.000Z",
+    });
+
+    expect(deleteRun).toHaveBeenCalledWith(
+      "calendar-1",
+      "2026-11-05T00:00:00.000Z",
+      "2026-11-30T23:00:00.000Z",
+    );
+    expect(insertRun.mock.calls).toStrictEqual([
+      [
+        "calendar-1",
+        "2026-11-01T00:00:00.000Z",
+        "2026-11-05T00:00:00.000Z",
+        "2026-07-01T12:00:00.000Z",
+      ],
+      [
+        "calendar-1",
+        "2026-11-30T23:00:00.000Z",
+        "2026-12-15T00:00:00.000Z",
+        "2026-06-30T12:00:00.000Z",
+      ],
+      [
+        "calendar-1",
+        "2026-11-05T00:00:00.000Z",
+        "2026-11-30T23:00:00.000Z",
+        "2026-07-02T12:00:00.000Z",
+      ],
+    ]);
+  });
   it("returns pre and start candidates for events with reminderMinutesBeforeStart > 0", () => {
     const all = vi.fn().mockReturnValue([
       {

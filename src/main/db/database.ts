@@ -46,6 +46,7 @@ interface SaveSyncStateArgs {
 
 interface RecordCalendarSyncRangeArgs {
   calendarId: string;
+  preserveOverlappingCoverage?: boolean;
   rangeEnd: string;
   rangeStart: string;
   syncedAt: string;
@@ -880,7 +881,60 @@ class AppDatabase {
   }
 
   recordCalendarSyncRange(args: RecordCalendarSyncRangeArgs): void {
-    const { calendarId, rangeEnd, rangeStart, syncedAt } = args;
+    const {
+      calendarId,
+      preserveOverlappingCoverage = false,
+      rangeEnd,
+      rangeStart,
+      syncedAt,
+    } = args;
+    let rangesToInsert: Array<CalendarSyncRange & { syncedAt: string }> = [
+      { rangeEnd, rangeStart, syncedAt },
+    ];
+
+    if (preserveOverlappingCoverage) {
+      const rows = this.db
+        .prepare(
+          `
+            SELECT range_start, range_end, last_synced_at
+            FROM calendar_sync_ranges
+            WHERE calendar_id = ?
+              AND range_end > ?
+              AND range_start < ?
+            ORDER BY range_start ASC, range_end ASC
+          `,
+        )
+        .all(calendarId, rangeStart, rangeEnd);
+
+      rangesToInsert = [
+        ...rows.flatMap((row): Array<CalendarSyncRange & { syncedAt: string }> => {
+          const currentStart = readStringProperty(row, "range_start");
+          const currentEnd = readStringProperty(row, "range_end");
+          const currentSyncedAt = readStringProperty(row, "last_synced_at");
+          const preservedRanges: Array<CalendarSyncRange & { syncedAt: string }> = [];
+
+          if (currentStart < rangeStart) {
+            preservedRanges.push({
+              rangeEnd: rangeStart,
+              rangeStart: currentStart,
+              syncedAt: currentSyncedAt,
+            });
+          }
+
+          if (currentEnd > rangeEnd) {
+            preservedRanges.push({
+              rangeEnd: currentEnd,
+              rangeStart: rangeEnd,
+              syncedAt: currentSyncedAt,
+            });
+          }
+
+          return preservedRanges;
+        }),
+        { rangeEnd, rangeStart, syncedAt },
+      ];
+    }
+
     const transaction = this.db.transaction(() => {
       this.db
         .prepare(
@@ -892,14 +946,16 @@ class AppDatabase {
           `,
         )
         .run(calendarId, rangeStart, rangeEnd);
-      this.db
-        .prepare(
-          `
-            INSERT INTO calendar_sync_ranges (calendar_id, range_start, range_end, last_synced_at)
-            VALUES (?, ?, ?, ?)
-          `,
-        )
-        .run(calendarId, rangeStart, rangeEnd, syncedAt);
+      const insert = this.db.prepare(
+        `
+          INSERT INTO calendar_sync_ranges (calendar_id, range_start, range_end, last_synced_at)
+          VALUES (?, ?, ?, ?)
+        `,
+      );
+
+      for (const range of rangesToInsert) {
+        insert.run(calendarId, range.rangeStart, range.rangeEnd, range.syncedAt);
+      }
     });
 
     transaction();

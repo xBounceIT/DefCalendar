@@ -1046,6 +1046,7 @@ describe("sync service", () => {
     });
     expect(fixture.db.recordCalendarSyncRange).toHaveBeenCalledWith({
       calendarId: "calendar-a",
+      preserveOverlappingCoverage: true,
       rangeEnd: "2026-11-30T23:00:00.000Z",
       rangeStart: "2026-11-01T00:00:00.000Z",
       syncedAt: expect.any(String),
@@ -1089,6 +1090,7 @@ describe("sync service", () => {
     });
     expect(fixture.db.recordCalendarSyncRange).toHaveBeenCalledWith({
       calendarId: "calendar-a",
+      preserveOverlappingCoverage: true,
       rangeEnd: "2026-11-20T00:00:00.000Z",
       rangeStart: "2026-11-10T00:00:00.000Z",
       syncedAt: expect.any(String),

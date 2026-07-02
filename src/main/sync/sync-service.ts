@@ -148,6 +148,7 @@ class SyncService {
           });
           this.dependencies.db.recordCalendarSyncRange({
             calendarId,
+            preserveOverlappingCoverage: true,
             rangeEnd: range.rangeEnd,
             rangeStart: range.rangeStart,
             syncedAt,
