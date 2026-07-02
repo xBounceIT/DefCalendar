@@ -26,6 +26,7 @@ interface CalendarBoardProps {
   calendarEvents: EventInput[];
   calendarRef: React.RefObject<FullCalendar | null>;
   hasVisibleCalendars: boolean;
+  isLoadingEvents: boolean;
   onDateClick: (clickInfo: DateClickArg) => void;
   onDateDoubleClick: (clickInfo: DateClickArg) => void;
   onDatesSet: (dates: DatesSetArg) => void;
@@ -307,7 +308,7 @@ function CalendarSurface({
   selectedDate,
   selectedDayForTable,
   timeFormat,
-}: Omit<CalendarBoardProps, "hasVisibleCalendars">) {
+}: Omit<CalendarBoardProps, "hasVisibleCalendars" | "isLoadingEvents">) {
   const { t, i18n } = useTranslation();
   const tooltipShowTimeoutRef = React.useRef<null | ReturnType<typeof globalThis.setTimeout>>(null);
   const [hoverTooltip, setHoverTooltip] = React.useState<null | {
@@ -469,8 +470,8 @@ function CalendarSurface({
 }
 
 function CalendarBoard(props: CalendarBoardProps) {
+  const { t } = useTranslation();
   const surfaceRef = React.useRef<HTMLDivElement | null>(null);
-
   React.useEffect(() => {
     if (!props.hasVisibleCalendars) {
       return;
@@ -513,6 +514,11 @@ function CalendarBoard(props: CalendarBoardProps) {
 
   let content: React.JSX.Element = (
     <div className="calendar-board__surface" ref={surfaceRef}>
+      {props.isLoadingEvents && (
+        <div className="calendar-board__loading" role="status">
+          {t("common.loading")}
+        </div>
+      )}
       <CalendarSurface
         activeView={props.activeView}
         calendarEvents={props.calendarEvents}

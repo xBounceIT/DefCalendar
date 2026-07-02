@@ -227,6 +227,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   ipcMain.handle(IPC_CHANNELS.eventsList, async (event, input) => {
     validateMainSender(event);
     const args = eventListArgsSchema.parse(input);
+    await dependencies.sync.ensureEventsRange(args);
     return dependencies.db.listEvents(args);
   });
 

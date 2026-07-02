@@ -44,6 +44,18 @@ interface SaveSyncStateArgs {
   rangeStart: string;
 }
 
+interface RecordCalendarSyncRangeArgs {
+  calendarId: string;
+  rangeEnd: string;
+  rangeStart: string;
+  syncedAt: string;
+}
+
+interface CalendarSyncRange {
+  rangeEnd: string;
+  rangeStart: string;
+}
+
 interface ReminderCandidate {
   dedupeKey: string;
   dismissedAt: null | string;
@@ -361,6 +373,7 @@ class AppDatabase {
           this.db
             .prepare(String.raw`DELETE FROM notification_state WHERE dedupe_key LIKE ? ESCAPE '\'`)
             .run(`${escapeLikePattern(calendarId)}:%`);
+          this.db.prepare("DELETE FROM calendar_sync_ranges WHERE calendar_id = ?").run(calendarId);
           this.db.prepare("DELETE FROM calendars WHERE id = ?").run(calendarId);
           this.db.prepare("DELETE FROM events WHERE calendar_id = ?").run(calendarId);
           this.db.prepare("DELETE FROM sync_state WHERE calendar_id = ?").run(calendarId);
@@ -777,6 +790,114 @@ class AppDatabase {
       .run(calendarId, lastSyncedAt, rangeStart, rangeEnd, errorMessage);
   }
 
+  listUncoveredCalendarSyncRanges(
+    calendarId: string,
+    rangeStart: string,
+    rangeEnd: string,
+  ): CalendarSyncRange[] {
+    const rows = this.db
+      .prepare(
+        `
+          SELECT range_start, range_end
+          FROM calendar_sync_ranges
+          WHERE calendar_id = ?
+            AND range_end >= ?
+            AND range_start <= ?
+          ORDER BY range_start ASC, range_end ASC
+        `,
+      )
+      .all(calendarId, rangeStart, rangeEnd);
+
+    const uncoveredRanges: CalendarSyncRange[] = [];
+    let coveredUntil = rangeStart;
+    for (const row of rows) {
+      const currentStart = readStringProperty(row, "range_start");
+      const currentEnd = readStringProperty(row, "range_end");
+
+      if (currentEnd <= coveredUntil) {
+        continue;
+      }
+
+      if (currentStart > coveredUntil) {
+        uncoveredRanges.push({
+          rangeEnd: currentStart < rangeEnd ? currentStart : rangeEnd,
+          rangeStart: coveredUntil,
+        });
+      }
+
+      if (currentEnd > coveredUntil) {
+        coveredUntil = currentEnd;
+      }
+
+      if (coveredUntil >= rangeEnd) {
+        break;
+      }
+    }
+
+    if (coveredUntil < rangeEnd) {
+      uncoveredRanges.push({
+        rangeEnd,
+        rangeStart: coveredUntil,
+      });
+    }
+
+    return uncoveredRanges;
+  }
+
+  isCalendarSyncRangeCovered(calendarId: string, rangeStart: string, rangeEnd: string): boolean {
+    return this.listUncoveredCalendarSyncRanges(calendarId, rangeStart, rangeEnd).length === 0;
+  }
+
+  recordCalendarSyncRange(args: RecordCalendarSyncRangeArgs): void {
+    const { calendarId, rangeEnd, rangeStart, syncedAt } = args;
+    const rows = this.db
+      .prepare(
+        `
+          SELECT range_start, range_end
+          FROM calendar_sync_ranges
+          WHERE calendar_id = ?
+            AND range_end >= ?
+            AND range_start <= ?
+          ORDER BY range_start ASC, range_end ASC
+        `,
+      )
+      .all(calendarId, rangeStart, rangeEnd);
+
+    const mergedRange = rows.reduce(
+      (range, row) => {
+        const currentStart = readStringProperty(row, "range_start");
+        const currentEnd = readStringProperty(row, "range_end");
+        return {
+          rangeEnd: currentEnd > range.rangeEnd ? currentEnd : range.rangeEnd,
+          rangeStart: currentStart < range.rangeStart ? currentStart : range.rangeStart,
+        };
+      },
+      { rangeEnd, rangeStart },
+    );
+
+    const transaction = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `
+            DELETE FROM calendar_sync_ranges
+            WHERE calendar_id = ?
+              AND range_end >= ?
+              AND range_start <= ?
+          `,
+        )
+        .run(calendarId, rangeStart, rangeEnd);
+      this.db
+        .prepare(
+          `
+            INSERT INTO calendar_sync_ranges (calendar_id, range_start, range_end, last_synced_at)
+            VALUES (?, ?, ?, ?)
+          `,
+        )
+        .run(calendarId, mergedRange.rangeStart, mergedRange.rangeEnd, syncedAt);
+    });
+
+    transaction();
+  }
   getDeepBackfillCompletedAt(calendarId: string): null | string {
     const row = this.db
       .prepare("SELECT deep_backfill_completed_at FROM sync_state WHERE calendar_id = ?")
@@ -969,6 +1090,11 @@ class AppDatabase {
           .run(accountId);
         this.db
           .prepare(
+            "DELETE FROM calendar_sync_ranges WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
+          )
+          .run(accountId);
+        this.db
+          .prepare(
             "DELETE FROM events WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
           )
           .run(accountId);
@@ -984,6 +1110,7 @@ class AppDatabase {
       DELETE FROM reminder_state;
       DELETE FROM notification_state;
       DELETE FROM sync_state;
+      DELETE FROM calendar_sync_ranges;
       DELETE FROM events;
       DELETE FROM contacts;
       DELETE FROM calendars;
@@ -1115,6 +1242,17 @@ class AppDatabase {
         FOREIGN KEY (calendar_id) REFERENCES calendars(id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS calendar_sync_ranges (
+        calendar_id TEXT NOT NULL,
+        range_start TEXT NOT NULL,
+        range_end TEXT NOT NULL,
+        last_synced_at TEXT NOT NULL,
+        PRIMARY KEY (calendar_id, range_start, range_end),
+        FOREIGN KEY (calendar_id) REFERENCES calendars(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_calendar_sync_ranges_lookup
+        ON calendar_sync_ranges (calendar_id, range_start, range_end);
       CREATE TABLE IF NOT EXISTS notification_state (
         dedupe_key TEXT PRIMARY KEY,
         fired_at TEXT NOT NULL

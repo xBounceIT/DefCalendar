@@ -195,6 +195,7 @@ function createFixture() {
     })),
   };
   const sync = {
+    ensureEventsRange: vi.fn().mockResolvedValue(undefined),
     getStatus: vi.fn().mockReturnValue(syncStatus),
     onStatus: vi.fn(),
     refreshSchedule: vi.fn(),
@@ -263,6 +264,28 @@ function createFixture() {
 describe("register ipc", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("ensures the requested event range before listing cached events", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const invokeEvent = { sender: fixture.mainWebContents };
+    const args = {
+      calendarIds: ["calendar-1"],
+      end: "2026-11-30T23:00:00.000Z",
+      start: "2026-11-01T00:00:00.000Z",
+    };
+    const storedEvent = createCalendarEvent();
+    fixture.db.listEvents.mockReturnValue([storedEvent]);
+
+    const response = await fixture.handlers.get(IPC_CHANNELS.eventsList)?.(invokeEvent, args);
+
+    expect(fixture.sync.ensureEventsRange).toHaveBeenCalledWith(args);
+    expect(fixture.db.listEvents).toHaveBeenCalledWith(args);
+    expect(fixture.sync.ensureEventsRange.mock.invocationCallOrder[0]).toBeLessThan(
+      fixture.db.listEvents.mock.invocationCallOrder[0],
+    );
+    expect(response).toStrictEqual([storedEvent]);
   });
 
   it("refreshes reminders before the background sync after reminder-affecting event mutations", async () => {

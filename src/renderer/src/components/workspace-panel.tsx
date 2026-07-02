@@ -20,6 +20,7 @@ interface WorkspacePanelProps {
   events: CalendarEvent[];
   getEventCategoryColor: (event: CalendarEvent) => null | string;
   hasVisibleCalendars: boolean;
+  isLoadingEvents: boolean;
   onClearDaySelection: () => void;
   onCreateEvent: () => void;
   onDateClick: (clickInfo: DateClickArg) => void;
@@ -298,6 +299,7 @@ function WorkspacePanel(props: WorkspacePanelProps) {
         calendarEvents={props.calendarEvents}
         calendarRef={props.calendarRef}
         hasVisibleCalendars={props.hasVisibleCalendars}
+        isLoadingEvents={props.isLoadingEvents}
         onDateClick={props.onDateClick}
         onDateDoubleClick={props.onDateDoubleClick}
         onDatesSet={props.onDatesSet}

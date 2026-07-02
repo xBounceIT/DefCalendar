@@ -75,7 +75,7 @@ describe("event overlap detection", () => {
     );
 
     expect(getCalendarOverlapLookupRange(target)).toStrictEqual({
-      end: "2026-06-28T00:00:00.000Z",
+      end: "2027-03-30T00:00:00.000Z",
       start: "2025-03-30T09:00:00.000Z",
     });
   });

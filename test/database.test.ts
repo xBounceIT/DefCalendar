@@ -95,6 +95,7 @@ describe("database", () => {
       String.raw`DELETE FROM reminder_state WHERE dedupe_key LIKE ? ESCAPE '\'`,
       String.raw`DELETE FROM notification_state WHERE dedupe_key LIKE ? ESCAPE '\'`,
       "DELETE FROM sync_state WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
+      "DELETE FROM calendar_sync_ranges WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
       "DELETE FROM events WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
       "DELETE FROM contacts WHERE home_account_id = ?",
       "DELETE FROM calendars WHERE home_account_id = ?",
@@ -113,6 +114,11 @@ describe("database", () => {
     expect(
       runs.get(
         "DELETE FROM sync_state WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
+      ),
+    ).toHaveBeenCalledWith(targetAccountId);
+    expect(
+      runs.get(
+        "DELETE FROM calendar_sync_ranges WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
       ),
     ).toHaveBeenCalledWith(targetAccountId);
     expect(
@@ -184,6 +190,142 @@ describe("database", () => {
         userColor: null,
       },
     ]);
+  });
+
+  it("detects calendar sync range coverage across adjacent rows", () => {
+    expect.hasAssertions();
+    const all = vi.fn().mockReturnValue([
+      {
+        range_end: "2026-11-10T00:00:00.000Z",
+        range_start: "2026-11-01T00:00:00.000Z",
+      },
+      {
+        range_end: "2026-11-30T23:00:00.000Z",
+        range_start: "2026-11-10T00:00:00.000Z",
+      },
+    ]);
+    const prepare = vi.fn(() => ({ all }));
+    const db = Object.create(AppDatabase.prototype) as AppDatabase;
+    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+
+    expect(
+      db.isCalendarSyncRangeCovered(
+        "calendar-1",
+        "2026-11-01T00:00:00.000Z",
+        "2026-11-30T23:00:00.000Z",
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects calendar sync range coverage when there is a gap", () => {
+    expect.hasAssertions();
+    const all = vi.fn().mockReturnValue([
+      {
+        range_end: "2026-11-10T00:00:00.000Z",
+        range_start: "2026-11-01T00:00:00.000Z",
+      },
+      {
+        range_end: "2026-11-30T23:00:00.000Z",
+        range_start: "2026-11-11T00:00:00.000Z",
+      },
+    ]);
+    const prepare = vi.fn(() => ({ all }));
+    const db = Object.create(AppDatabase.prototype) as AppDatabase;
+    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+
+    expect(
+      db.isCalendarSyncRangeCovered(
+        "calendar-1",
+        "2026-11-01T00:00:00.000Z",
+        "2026-11-30T23:00:00.000Z",
+      ),
+    ).toBe(false);
+  });
+
+  it("returns missing calendar sync ranges between covered rows", () => {
+    expect.hasAssertions();
+    const all = vi.fn().mockReturnValue([
+      {
+        range_end: "2026-11-10T00:00:00.000Z",
+        range_start: "2026-11-01T00:00:00.000Z",
+      },
+      {
+        range_end: "2026-11-30T23:00:00.000Z",
+        range_start: "2026-11-20T00:00:00.000Z",
+      },
+    ]);
+    const prepare = vi.fn(() => ({ all }));
+    const db = Object.create(AppDatabase.prototype) as AppDatabase;
+    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+
+    expect(
+      db.listUncoveredCalendarSyncRanges(
+        "calendar-1",
+        "2026-11-01T00:00:00.000Z",
+        "2026-11-30T23:00:00.000Z",
+      ),
+    ).toStrictEqual([
+      {
+        rangeEnd: "2026-11-20T00:00:00.000Z",
+        rangeStart: "2026-11-10T00:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("merges overlapping calendar sync ranges before recording coverage", () => {
+    expect.hasAssertions();
+    const all = vi.fn().mockReturnValue([
+      {
+        range_end: "2026-11-10T00:00:00.000Z",
+        range_start: "2026-11-01T00:00:00.000Z",
+      },
+      {
+        range_end: "2026-12-15T00:00:00.000Z",
+        range_start: "2026-11-25T00:00:00.000Z",
+      },
+    ]);
+    const deleteRun = vi.fn();
+    const insertRun = vi.fn();
+    const prepare = vi.fn((sql: string) => {
+      if (sql.includes("SELECT range_start, range_end")) {
+        return { all };
+      }
+
+      if (sql.includes("DELETE FROM calendar_sync_ranges")) {
+        return { run: deleteRun };
+      }
+
+      if (sql.includes("INSERT INTO calendar_sync_ranges")) {
+        return { run: insertRun };
+      }
+
+      throw new Error(`Unexpected SQL: ${sql}`);
+    });
+    const transaction = vi.fn((execute: () => void) => execute);
+    const db = Object.create(AppDatabase.prototype) as AppDatabase;
+    (db as unknown as { db: { prepare: typeof prepare; transaction: typeof transaction } }).db = {
+      prepare,
+      transaction,
+    };
+
+    db.recordCalendarSyncRange({
+      calendarId: "calendar-1",
+      rangeEnd: "2026-11-30T23:00:00.000Z",
+      rangeStart: "2026-11-05T00:00:00.000Z",
+      syncedAt: "2026-07-02T12:00:00.000Z",
+    });
+
+    expect(deleteRun).toHaveBeenCalledWith(
+      "calendar-1",
+      "2026-11-05T00:00:00.000Z",
+      "2026-11-30T23:00:00.000Z",
+    );
+    expect(insertRun).toHaveBeenCalledWith(
+      "calendar-1",
+      "2026-11-01T00:00:00.000Z",
+      "2026-12-15T00:00:00.000Z",
+      "2026-07-02T12:00:00.000Z",
+    );
   });
 
   it("returns pre and start candidates for events with reminderMinutesBeforeStart > 0", () => {

@@ -8,7 +8,7 @@ import type { ReminderCheckTrigger } from "@main/reminders/reminder-service";
 import type SettingsService from "@main/settings/settings-service";
 import { DAY_MS, MINUTE_MS } from "@shared/duration";
 import { isDeclinedEventResponse, isPendingEventResponse } from "@shared/event-response";
-import type { CalendarEvent, CalendarSummary, SyncStatus } from "@shared/schemas";
+import type { CalendarEvent, CalendarSummary, EventListArgs, SyncStatus } from "@shared/schemas";
 import type { SyncWindowDays } from "@shared/sync";
 
 type SyncReason = "startup" | "sign-in" | "switch-account" | "manual" | "interval" | "mutation";
@@ -88,6 +88,66 @@ class SyncService {
     };
   }
 
+  async ensureEventsRange(args: EventListArgs): Promise<void> {
+    if (
+      !this.dependencies.auth.hasSession() ||
+      !args.calendarIds?.length ||
+      args.start >= args.end
+    ) {
+      return;
+    }
+
+    const calendarIds = [...new Set(args.calendarIds)].toSorted((left, right) =>
+      left.localeCompare(right),
+    );
+    const syncedAt = new Date().toISOString();
+
+    await Promise.all(
+      calendarIds.map(async (calendarId) => {
+        const uncoveredRanges = this.dependencies.db.listUncoveredCalendarSyncRanges(
+          calendarId,
+          args.start,
+          args.end,
+        );
+        if (uncoveredRanges.length === 0) {
+          return;
+        }
+
+        const homeAccountId = this.dependencies.db.getCalendarHomeAccountId(calendarId);
+        if (!homeAccountId) {
+          return;
+        }
+
+        for (const range of uncoveredRanges) {
+          const fetchedEvents = await this.dependencies.graph.listCalendarView(
+            calendarId,
+            range.rangeStart,
+            range.rangeEnd,
+            homeAccountId,
+          );
+          const persistedEvents = this.dependencies.db.listEvents({
+            calendarIds: [calendarId],
+            end: range.rangeEnd,
+            start: range.rangeStart,
+          });
+          const mergedEvents = mergePersistedDeclinedEvents(fetchedEvents, persistedEvents);
+
+          this.dependencies.db.replaceEventsForCalendarRange({
+            calendarId,
+            events: mergedEvents,
+            rangeEnd: range.rangeEnd,
+            rangeStart: range.rangeStart,
+          });
+          this.dependencies.db.recordCalendarSyncRange({
+            calendarId,
+            rangeEnd: range.rangeEnd,
+            rangeStart: range.rangeStart,
+            syncedAt,
+          });
+        }
+      }),
+    );
+  }
   async syncAll(reason: SyncReason, homeAccountId?: string): Promise<SyncStatus> {
     if (this.inFlight) {
       if (reason === "mutation") {
@@ -336,6 +396,12 @@ class SyncService {
           lastSyncedAt: finishedAt,
           rangeEnd,
           rangeStart,
+        });
+        this.dependencies.db.recordCalendarSyncRange({
+          calendarId,
+          rangeEnd,
+          rangeStart,
+          syncedAt: finishedAt,
         });
         if (isDeepBackfill) {
           this.dependencies.db.markDeepBackfillCompleted(calendarId, finishedAt);

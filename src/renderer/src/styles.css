@@ -1727,6 +1727,7 @@ button {
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+  position: relative;
   background: #ffffff;
 }
 
@@ -1748,6 +1749,19 @@ button {
   height: 100%;
   min-width: 0;
   min-height: 0;
+}
+.calendar-board__loading {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 5;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--ink-secondary);
+  font-size: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .empty-state {

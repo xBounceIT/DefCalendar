@@ -1032,6 +1032,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         events={events}
         getEventCategoryColor={getEventCategoryColor}
         hasVisibleCalendars={visibleCalendarIds.length > 0}
+        isLoadingEvents={eventsQuery.isFetching}
         onClearDaySelection={clearSelectedDayForTable}
         onCreateEvent={openSelectedDateComposer}
         onDateClick={handleDateClick}
