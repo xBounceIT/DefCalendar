@@ -14,6 +14,7 @@ import type { SyncWindowDays } from "@shared/sync";
 type SyncReason = "startup" | "sign-in" | "switch-account" | "manual" | "interval" | "mutation";
 
 const GRAPH_CALENDAR_VIEW_MAX_DAYS = 1825;
+const ON_DEMAND_SYNC_RANGE_FRESHNESS_MS = DAY_MS;
 
 interface SyncServiceDependencies {
   auth: MsalAuthService;
@@ -101,6 +102,7 @@ class SyncService {
       left.localeCompare(right),
     );
     const syncedAt = new Date().toISOString();
+    const freshAfter = new Date(Date.now() - ON_DEMAND_SYNC_RANGE_FRESHNESS_MS).toISOString();
 
     await Promise.all(
       calendarIds.map(async (calendarId) => {
@@ -108,6 +110,7 @@ class SyncService {
           calendarId,
           args.start,
           args.end,
+          freshAfter,
         );
         if (uncoveredRanges.length === 0) {
           return;

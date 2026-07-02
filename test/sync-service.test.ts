@@ -962,6 +962,32 @@ describe("sync service", () => {
     expect(fixture.db.recordCalendarSyncRange).not.toHaveBeenCalled();
   });
 
+  it("checks on-demand coverage freshness before skipping a range", async () => {
+    expect.hasAssertions();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-02T12:00:00.000Z"));
+
+    try {
+      const fixture = createFixture();
+      fixture.db.listUncoveredCalendarSyncRanges.mockReturnValue([]);
+
+      await fixture.service.ensureEventsRange({
+        calendarIds: ["calendar-a"],
+        end: "2026-11-30T23:00:00.000Z",
+        start: "2026-11-01T00:00:00.000Z",
+      });
+
+      expect(fixture.db.listUncoveredCalendarSyncRanges).toHaveBeenCalledWith(
+        "calendar-a",
+        "2026-11-01T00:00:00.000Z",
+        "2026-11-30T23:00:00.000Z",
+        "2026-07-01T12:00:00.000Z",
+      );
+      expect(fixture.graph.listCalendarView).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("does not reject on-demand range checks when Graph fetch fails", async () => {
     expect.hasAssertions();
     const fixture = createFixture();

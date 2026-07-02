@@ -56,6 +56,10 @@ interface CalendarSyncRange {
   rangeStart: string;
 }
 
+interface StoredCalendarSyncRange extends CalendarSyncRange {
+  syncedAt: string;
+}
+
 interface ReminderCandidate {
   dedupeKey: string;
   dismissedAt: null | string;
@@ -794,7 +798,13 @@ class AppDatabase {
     calendarId: string,
     rangeStart: string,
     rangeEnd: string,
+    freshAfter?: string,
   ): CalendarSyncRange[] {
+    const parameters = [calendarId, rangeStart, rangeEnd];
+    if (freshAfter !== undefined) {
+      parameters.push(freshAfter);
+    }
+
     const rows = this.db
       .prepare(
         `
@@ -803,10 +813,11 @@ class AppDatabase {
           WHERE calendar_id = ?
             AND range_end >= ?
             AND range_start <= ?
+            ${freshAfter === undefined ? "" : "AND last_synced_at >= ?"}
           ORDER BY range_start ASC, range_end ASC
         `,
       )
-      .all(calendarId, rangeStart, rangeEnd);
+      .all(...parameters);
 
     const uncoveredRanges: CalendarSyncRange[] = [];
     let coveredUntil = rangeStart;
@@ -844,8 +855,16 @@ class AppDatabase {
     return uncoveredRanges;
   }
 
-  isCalendarSyncRangeCovered(calendarId: string, rangeStart: string, rangeEnd: string): boolean {
-    return this.listUncoveredCalendarSyncRanges(calendarId, rangeStart, rangeEnd).length === 0;
+  isCalendarSyncRangeCovered(
+    calendarId: string,
+    rangeStart: string,
+    rangeEnd: string,
+    freshAfter?: string,
+  ): boolean {
+    return (
+      this.listUncoveredCalendarSyncRanges(calendarId, rangeStart, rangeEnd, freshAfter).length ===
+      0
+    );
   }
 
   clearCalendarSyncRanges(calendarIds: string[]): void {
@@ -869,27 +888,43 @@ class AppDatabase {
     const rows = this.db
       .prepare(
         `
-          SELECT range_start, range_end
+          SELECT range_start, range_end, last_synced_at
           FROM calendar_sync_ranges
           WHERE calendar_id = ?
-            AND range_end >= ?
-            AND range_start <= ?
+            AND range_end > ?
+            AND range_start < ?
           ORDER BY range_start ASC, range_end ASC
         `,
       )
       .all(calendarId, rangeStart, rangeEnd);
 
-    const mergedRange = rows.reduce(
-      (range, row) => {
+    const rangesToInsert: StoredCalendarSyncRange[] = [
+      ...rows.flatMap((row): StoredCalendarSyncRange[] => {
         const currentStart = readStringProperty(row, "range_start");
         const currentEnd = readStringProperty(row, "range_end");
-        return {
-          rangeEnd: currentEnd > range.rangeEnd ? currentEnd : range.rangeEnd,
-          rangeStart: currentStart < range.rangeStart ? currentStart : range.rangeStart,
-        };
-      },
-      { rangeEnd, rangeStart },
-    );
+        const currentSyncedAt = readStringProperty(row, "last_synced_at");
+        const preservedRanges: StoredCalendarSyncRange[] = [];
+
+        if (currentStart < rangeStart) {
+          preservedRanges.push({
+            rangeEnd: rangeStart,
+            rangeStart: currentStart,
+            syncedAt: currentSyncedAt,
+          });
+        }
+
+        if (currentEnd > rangeEnd) {
+          preservedRanges.push({
+            rangeEnd: currentEnd,
+            rangeStart: rangeEnd,
+            syncedAt: currentSyncedAt,
+          });
+        }
+
+        return preservedRanges;
+      }),
+      { rangeEnd, rangeStart, syncedAt },
+    ];
 
     const transaction = this.db.transaction(() => {
       this.db
@@ -897,19 +932,21 @@ class AppDatabase {
           `
             DELETE FROM calendar_sync_ranges
             WHERE calendar_id = ?
-              AND range_end >= ?
-              AND range_start <= ?
+              AND range_end > ?
+              AND range_start < ?
           `,
         )
         .run(calendarId, rangeStart, rangeEnd);
-      this.db
-        .prepare(
-          `
-            INSERT INTO calendar_sync_ranges (calendar_id, range_start, range_end, last_synced_at)
-            VALUES (?, ?, ?, ?)
-          `,
-        )
-        .run(calendarId, mergedRange.rangeStart, mergedRange.rangeEnd, syncedAt);
+      const insert = this.db.prepare(
+        `
+          INSERT INTO calendar_sync_ranges (calendar_id, range_start, range_end, last_synced_at)
+          VALUES (?, ?, ?, ?)
+        `,
+      );
+
+      for (const range of rangesToInsert) {
+        insert.run(calendarId, range.rangeStart, range.rangeEnd, range.syncedAt);
+      }
     });
 
     transaction();
