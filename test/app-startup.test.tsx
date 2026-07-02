@@ -982,7 +982,7 @@ describe("app startup", () => {
       expect(overlapCall?.[0].calendarIds).toStrictEqual(["calendar-1"]);
       expect(overlapCall?.[0].start).toBe("2025-03-30T09:00:00.000Z");
       expect(new Date(overlapCall?.[0].end ?? "").getTime()).toBeLessThan(
-        new Date("2026-06-28T00:01:00.000Z").getTime(),
+        new Date("2027-03-30T00:01:00.000Z").getTime(),
       );
       expect(calendarApi.events.respond).not.toHaveBeenCalled();
     } finally {

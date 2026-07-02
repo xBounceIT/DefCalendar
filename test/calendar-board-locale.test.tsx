@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { EventContentArg, EventInput } from "@fullcalendar/core";
 import React from "react";
 import i18n from "i18next";
@@ -52,6 +52,8 @@ async function renderBoard(language: "en" | "it") {
       calendarEvents={events}
       calendarRef={calendarRef}
       hasVisibleCalendars
+      isLoadingEvents={false}
+      onEventCopy={vi.fn()}
       onDateClick={vi.fn()}
       onDateDoubleClick={vi.fn()}
       onDatesSet={vi.fn()}
@@ -240,5 +242,33 @@ describe("calendar board locale", () => {
     await waitFor(() => {
       expect(document.querySelector(".calendar-event-tooltip")).toBeNull();
     });
+  });
+
+  it("renders a loading status while event ranges are fetched", async () => {
+    expect.hasAssertions();
+    await i18n.changeLanguage("en");
+    const calendarRef = React.createRef<any>();
+
+    render(
+      <CalendarBoard
+        activeView={"timeGridWeek" as CalendarView}
+        calendarEvents={[]}
+        calendarRef={calendarRef}
+        hasVisibleCalendars
+        isLoadingEvents
+        onDateClick={vi.fn()}
+        onDateDoubleClick={vi.fn()}
+        onDatesSet={vi.fn()}
+        onEventClick={vi.fn()}
+        onEventCopy={vi.fn()}
+        onEventDrop={vi.fn()}
+        onEventResize={vi.fn()}
+        selectedDate="2026-03-29T00:00:00.000Z"
+        selectedDayForTable={null}
+        timeFormat="system"
+      />,
+    );
+
+    expect(screen.getByRole("status").textContent).toContain("Loading");
   });
 });

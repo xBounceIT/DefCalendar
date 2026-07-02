@@ -48,11 +48,18 @@ describe("app config", () => {
     expect(config.authority).toBe(bundledMsalApp.authority);
   });
 
-  it("defaults sync window days to a year back and 90 days forward", () => {
+  it("defaults sync window days to a year back and one year forward", () => {
     const config = resolveAppConfig({});
 
     expect(config.syncLookBehindDays).toBe(365);
-    expect(config.syncLookAheadDays).toBe(90);
+    expect(config.syncLookAheadDays).toBe(365);
+  });
+
+  it("uses the SYNC_LOOKAHEAD_DAYS override", () => {
+    expect.hasAssertions();
+    const config = resolveAppConfig({ SYNC_LOOKAHEAD_DAYS: "120" });
+
+    expect(config.syncLookAheadDays).toBe(120);
   });
 
   it("accepts SYNC_LOOKBEHIND_DAYS up to the 3650-day maximum", () => {

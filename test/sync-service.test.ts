@@ -17,12 +17,16 @@ const FIXTURE_SYNC_WINDOW = {
 
 interface SyncFixture {
   db: {
+    clearCalendarSyncRanges: ReturnType<typeof vi.fn>;
     getDeepBackfillCompletedAt: ReturnType<typeof vi.fn>;
+    getCalendarHomeAccountId: ReturnType<typeof vi.fn>;
     getLatestSyncStatus: ReturnType<typeof vi.fn>;
     listCalendarIds: ReturnType<typeof vi.fn>;
+    listUncoveredCalendarSyncRanges: ReturnType<typeof vi.fn>;
     listEvents: ReturnType<typeof vi.fn>;
     markDeepBackfillCompleted: ReturnType<typeof vi.fn>;
     replaceContactsForAccount: ReturnType<typeof vi.fn>;
+    recordCalendarSyncRange: ReturnType<typeof vi.fn>;
     replaceEventsForCalendarRange: ReturnType<typeof vi.fn>;
     saveSyncState: ReturnType<typeof vi.fn>;
     upsertCalendars: ReturnType<typeof vi.fn>;
@@ -123,7 +127,9 @@ function createFixture(args?: {
   const syncIntervalMinutes = args?.syncIntervalMinutes ?? 15;
 
   const db = {
+    clearCalendarSyncRanges: vi.fn(),
     getDeepBackfillCompletedAt: vi.fn().mockReturnValue("2026-01-01T00:00:00.000Z"),
+    getCalendarHomeAccountId: vi.fn().mockReturnValue("account-1"),
     getLatestSyncStatus: vi.fn().mockReturnValue({
       lastSyncedAt: null,
       message: "Sign in to sync Exchange 365.",
@@ -131,9 +137,15 @@ function createFixture(args?: {
       counts: null,
       state: "idle",
     }),
+    listUncoveredCalendarSyncRanges: vi
+      .fn()
+      .mockImplementation((_calendarId: string, rangeStart: string, rangeEnd: string) => [
+        { rangeEnd, rangeStart },
+      ]),
     listCalendarIds: vi.fn().mockReturnValue(args?.knownCalendarIds ?? []),
     listEvents: vi.fn().mockReturnValue([]),
     markDeepBackfillCompleted: vi.fn(),
+    recordCalendarSyncRange: vi.fn(),
     replaceContactsForAccount: vi.fn(),
     replaceEventsForCalendarRange: vi.fn(),
     saveSyncState: vi.fn(),
@@ -275,6 +287,7 @@ describe("sync service", () => {
     const status = await fixture.service.syncAll("manual");
 
     expect(status.counts).toStrictEqual({ calendars: 2, events: 0 });
+    expect(fixture.db.clearCalendarSyncRanges).toHaveBeenCalledWith(["calendar-a", "calendar-b"]);
     expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(2);
     expect(fixture.graph.listContacts).toHaveBeenCalledTimes(2);
     expect(fixture.graph.listCalendars.mock.calls.map(([accountId]) => accountId)).toStrictEqual([
@@ -916,5 +929,185 @@ describe("sync service", () => {
       "calendar-b",
       expect.any(String),
     );
+  });
+
+  it("skips on-demand event range fetches when no calendar ids are provided", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+
+    await fixture.service.ensureEventsRange({
+      end: "2026-11-30T23:00:00.000Z",
+      start: "2026-11-01T00:00:00.000Z",
+    });
+
+    expect(fixture.db.listUncoveredCalendarSyncRanges).not.toHaveBeenCalled();
+    expect(fixture.graph.listCalendarView).not.toHaveBeenCalled();
+    expect(fixture.db.replaceEventsForCalendarRange).not.toHaveBeenCalled();
+    expect(fixture.db.recordCalendarSyncRange).not.toHaveBeenCalled();
+  });
+
+  it("skips on-demand event range fetches when the range is already covered", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    fixture.db.listUncoveredCalendarSyncRanges.mockReturnValue([]);
+
+    await fixture.service.ensureEventsRange({
+      calendarIds: ["calendar-a"],
+      end: "2026-11-30T23:00:00.000Z",
+      start: "2026-11-01T00:00:00.000Z",
+    });
+
+    expect(fixture.graph.listCalendarView).not.toHaveBeenCalled();
+    expect(fixture.db.replaceEventsForCalendarRange).not.toHaveBeenCalled();
+    expect(fixture.db.recordCalendarSyncRange).not.toHaveBeenCalled();
+  });
+
+  it("checks on-demand coverage freshness before skipping a range", async () => {
+    expect.hasAssertions();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-02T12:00:00.000Z"));
+
+    try {
+      const fixture = createFixture();
+      fixture.db.listUncoveredCalendarSyncRanges.mockReturnValue([]);
+
+      await fixture.service.ensureEventsRange({
+        calendarIds: ["calendar-a"],
+        end: "2026-11-30T23:00:00.000Z",
+        start: "2026-11-01T00:00:00.000Z",
+      });
+
+      expect(fixture.db.listUncoveredCalendarSyncRanges).toHaveBeenCalledWith(
+        "calendar-a",
+        "2026-11-01T00:00:00.000Z",
+        "2026-11-30T23:00:00.000Z",
+        "2026-07-01T12:00:00.000Z",
+      );
+      expect(fixture.graph.listCalendarView).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("does not reject on-demand range checks when Graph fetch fails", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    fixture.graph.listCalendarView.mockRejectedValue(new Error("Graph unavailable"));
+
+    await expect(
+      fixture.service.ensureEventsRange({
+        calendarIds: ["calendar-a"],
+        end: "2026-11-30T23:00:00.000Z",
+        start: "2026-11-01T00:00:00.000Z",
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(fixture.db.replaceEventsForCalendarRange).not.toHaveBeenCalled();
+    expect(fixture.db.recordCalendarSyncRange).not.toHaveBeenCalled();
+  });
+
+  it("fetches uncovered on-demand event ranges and records coverage", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const fetchedEvent = createEvent({
+      id: "fetched-event",
+      start: "2026-11-19T09:00:00.000Z",
+      end: "2026-11-19T09:30:00.000Z",
+    });
+    const declinedEvent = createEvent({
+      id: "declined-event",
+      isOrganizer: false,
+      responseStatus: {
+        response: "declined",
+        time: "2026-11-01T09:00:00.000Z",
+      },
+      start: "2026-11-20T09:00:00.000Z",
+      end: "2026-11-20T09:30:00.000Z",
+    });
+    fixture.graph.listCalendarView.mockResolvedValue([fetchedEvent]);
+    fixture.db.listEvents.mockReturnValue([declinedEvent]);
+
+    await fixture.service.ensureEventsRange({
+      calendarIds: ["calendar-a"],
+      end: "2026-11-30T23:00:00.000Z",
+      start: "2026-11-01T00:00:00.000Z",
+    });
+
+    expect(fixture.graph.listCalendarView).toHaveBeenCalledWith(
+      "calendar-a",
+      "2026-11-01T00:00:00.000Z",
+      "2026-11-30T23:00:00.000Z",
+      "account-1",
+    );
+    expect(fixture.db.replaceEventsForCalendarRange).toHaveBeenCalledWith({
+      calendarId: "calendar-a",
+      events: [fetchedEvent, declinedEvent],
+      rangeEnd: "2026-11-30T23:00:00.000Z",
+      rangeStart: "2026-11-01T00:00:00.000Z",
+    });
+    expect(fixture.db.recordCalendarSyncRange).toHaveBeenCalledWith({
+      calendarId: "calendar-a",
+      preserveOverlappingCoverage: true,
+      rangeEnd: "2026-11-30T23:00:00.000Z",
+      rangeStart: "2026-11-01T00:00:00.000Z",
+      syncedAt: expect.any(String),
+    });
+    expect(fixture.newEventNotifications.recordCandidates).not.toHaveBeenCalled();
+  });
+
+  it("fetches only uncovered slices for partially covered on-demand ranges", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const fetchedEvent = createEvent({
+      id: "partial-range-event",
+      start: "2026-11-15T09:00:00.000Z",
+      end: "2026-11-15T09:30:00.000Z",
+    });
+    fixture.db.listUncoveredCalendarSyncRanges.mockReturnValue([
+      {
+        rangeEnd: "2026-11-20T00:00:00.000Z",
+        rangeStart: "2026-11-10T00:00:00.000Z",
+      },
+    ]);
+    fixture.graph.listCalendarView.mockResolvedValue([fetchedEvent]);
+
+    await fixture.service.ensureEventsRange({
+      calendarIds: ["calendar-a"],
+      end: "2026-11-30T23:00:00.000Z",
+      start: "2026-11-01T00:00:00.000Z",
+    });
+
+    expect(fixture.graph.listCalendarView).toHaveBeenCalledWith(
+      "calendar-a",
+      "2026-11-10T00:00:00.000Z",
+      "2026-11-20T00:00:00.000Z",
+      "account-1",
+    );
+    expect(fixture.db.replaceEventsForCalendarRange).toHaveBeenCalledWith({
+      calendarId: "calendar-a",
+      events: [fetchedEvent],
+      rangeEnd: "2026-11-20T00:00:00.000Z",
+      rangeStart: "2026-11-10T00:00:00.000Z",
+    });
+    expect(fixture.db.recordCalendarSyncRange).toHaveBeenCalledWith({
+      calendarId: "calendar-a",
+      preserveOverlappingCoverage: true,
+      rangeEnd: "2026-11-20T00:00:00.000Z",
+      rangeStart: "2026-11-10T00:00:00.000Z",
+      syncedAt: expect.any(String),
+    });
+  });
+
+  it("records sync range coverage during regular sync", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+
+    await fixture.service.syncAll("manual");
+
+    expect(fixture.db.recordCalendarSyncRange).toHaveBeenCalledWith({
+      calendarId: "calendar-a",
+      rangeEnd: expect.any(String),
+      rangeStart: expect.any(String),
+      syncedAt: expect.any(String),
+    });
   });
 });

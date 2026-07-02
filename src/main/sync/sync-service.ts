@@ -8,12 +8,13 @@ import type { ReminderCheckTrigger } from "@main/reminders/reminder-service";
 import type SettingsService from "@main/settings/settings-service";
 import { DAY_MS, MINUTE_MS } from "@shared/duration";
 import { isDeclinedEventResponse, isPendingEventResponse } from "@shared/event-response";
-import type { CalendarEvent, CalendarSummary, SyncStatus } from "@shared/schemas";
+import type { CalendarEvent, CalendarSummary, EventListArgs, SyncStatus } from "@shared/schemas";
 import type { SyncWindowDays } from "@shared/sync";
 
 type SyncReason = "startup" | "sign-in" | "switch-account" | "manual" | "interval" | "mutation";
 
 const GRAPH_CALENDAR_VIEW_MAX_DAYS = 1825;
+const ON_DEMAND_SYNC_RANGE_FRESHNESS_MS = DAY_MS;
 
 interface SyncServiceDependencies {
   auth: MsalAuthService;
@@ -88,6 +89,74 @@ class SyncService {
     };
   }
 
+  async ensureEventsRange(args: EventListArgs): Promise<void> {
+    if (
+      !this.dependencies.auth.hasSession() ||
+      !args.calendarIds?.length ||
+      args.start >= args.end
+    ) {
+      return;
+    }
+
+    const calendarIds = [...new Set(args.calendarIds)].toSorted((left, right) =>
+      left.localeCompare(right),
+    );
+    const syncedAt = new Date().toISOString();
+    const freshAfter = new Date(Date.now() - ON_DEMAND_SYNC_RANGE_FRESHNESS_MS).toISOString();
+
+    await Promise.all(
+      calendarIds.map(async (calendarId) => {
+        const uncoveredRanges = this.dependencies.db.listUncoveredCalendarSyncRanges(
+          calendarId,
+          args.start,
+          args.end,
+          freshAfter,
+        );
+        if (uncoveredRanges.length === 0) {
+          return;
+        }
+
+        const homeAccountId = this.dependencies.db.getCalendarHomeAccountId(calendarId);
+        if (!homeAccountId) {
+          return;
+        }
+
+        for (const range of uncoveredRanges) {
+          let fetchedEvents: CalendarEvent[];
+          try {
+            fetchedEvents = await this.dependencies.graph.listCalendarView(
+              calendarId,
+              range.rangeStart,
+              range.rangeEnd,
+              homeAccountId,
+            );
+          } catch {
+            continue;
+          }
+          const persistedEvents = this.dependencies.db.listEvents({
+            calendarIds: [calendarId],
+            end: range.rangeEnd,
+            start: range.rangeStart,
+          });
+          const mergedEvents = mergePersistedDeclinedEvents(fetchedEvents, persistedEvents);
+
+          this.dependencies.db.replaceEventsForCalendarRange({
+            calendarId,
+            events: mergedEvents,
+            rangeEnd: range.rangeEnd,
+            rangeStart: range.rangeStart,
+          });
+          this.dependencies.db.recordCalendarSyncRange({
+            calendarId,
+            preserveOverlappingCoverage: true,
+            rangeEnd: range.rangeEnd,
+            rangeStart: range.rangeStart,
+            syncedAt,
+          });
+        }
+      }),
+    );
+  }
   async syncAll(reason: SyncReason, homeAccountId?: string): Promise<SyncStatus> {
     if (this.inFlight) {
       if (reason === "mutation") {
@@ -245,6 +314,12 @@ class SyncService {
         return this.setStatus(nextStatus);
       }
 
+      if (reason === "manual") {
+        this.dependencies.db.clearCalendarSyncRanges(
+          calendarsToSync.map((calendar) => calendar.id),
+        );
+      }
+
       const syncWindow = this.getSyncWindow();
       const lookAheadDays = syncWindow.lookAheadDays;
       const maxLookBehindDays = GRAPH_CALENDAR_VIEW_MAX_DAYS - lookAheadDays;
@@ -336,6 +411,12 @@ class SyncService {
           lastSyncedAt: finishedAt,
           rangeEnd,
           rangeStart,
+        });
+        this.dependencies.db.recordCalendarSyncRange({
+          calendarId,
+          rangeEnd,
+          rangeStart,
+          syncedAt: finishedAt,
         });
         if (isDeepBackfill) {
           this.dependencies.db.markDeepBackfillCompleted(calendarId, finishedAt);

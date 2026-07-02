@@ -1,5 +1,5 @@
 import type { BrowserWindow, IpcMainInvokeEvent } from "electron";
-import type { CalendarEvent, EventAttachment } from "@shared/schemas";
+import type { CalendarEvent, EventAttachment, EventListArgs } from "@shared/schemas";
 import {
   appUpdateStatusSchema,
   attachmentDeleteArgsSchema,
@@ -120,6 +120,14 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     }
   };
 
+  const ensureEventsRangeForList = async (args: EventListArgs) => {
+    try {
+      await dependencies.sync.ensureEventsRange(args);
+    } catch {
+      return;
+    }
+  };
+
   const validateReminderSender = (event: IpcMainInvokeEvent) => {
     const mainWindow = dependencies.getMainWindow();
     if (
@@ -227,6 +235,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   ipcMain.handle(IPC_CHANNELS.eventsList, async (event, input) => {
     validateMainSender(event);
     const args = eventListArgsSchema.parse(input);
+    await ensureEventsRangeForList(args);
     return dependencies.db.listEvents(args);
   });
 
