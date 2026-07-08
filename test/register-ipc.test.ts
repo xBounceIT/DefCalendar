@@ -1,24 +1,33 @@
+import { readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import EventActionService from "../src/main/events/event-action-service";
 import registerIpc from "../src/main/ipc/register-ipc";
 import { IPC_CHANNELS } from "../src/shared/ipc";
 
-const { app, ipcMain, shell } = vi.hoisted(() => ({
+const { app, dialog, ipcMain, shell } = vi.hoisted(() => ({
   app: {
     getLocale: vi.fn().mockReturnValue("en-US"),
+    getPath: vi.fn().mockReturnValue(String.raw`C:\tmp`),
     getVersion: vi.fn().mockReturnValue("0.1.0"),
+  },
+  dialog: {
+    showSaveDialog: vi.fn(),
   },
   ipcMain: {
     handle: vi.fn(),
   },
   shell: {
     openExternal: vi.fn(),
+    openPath: vi.fn().mockResolvedValue(""),
   },
 }));
 
 vi.mock(import("@main/electron-runtime"), () => ({
   app,
+  dialog,
   ipcMain,
   shell,
 }));
@@ -158,6 +167,26 @@ function createFixture() {
     forwardEvent: vi.fn().mockResolvedValue(undefined),
     listContacts: vi.fn().mockResolvedValue([]),
     getEvent: vi.fn().mockResolvedValue(storedEvent),
+    getAttachmentContent: vi.fn().mockResolvedValue({
+      attachment: {
+        attachmentType: "file",
+        contentType: "text/plain",
+        id: "attachment-1",
+        isInline: false,
+        name: "agenda.txt",
+        size: 5,
+      },
+      buffer: Buffer.from("hello"),
+      contentType: "text/plain",
+    }),
+    getAttachmentMetadata: vi.fn().mockResolvedValue({
+      attachmentType: "file",
+      contentType: "text/plain",
+      id: "attachment-1",
+      isInline: false,
+      name: "agenda.txt",
+      size: 5,
+    }),
     listAttachments: vi.fn().mockResolvedValue([]),
     listOutlookCategories: vi
       .fn()
@@ -687,6 +716,125 @@ describe("register ipc", () => {
     );
     expect(fixture.reminders.checkNow).not.toHaveBeenCalled();
     expect(fixture.sync.syncAll).toHaveBeenCalledWith("mutation", "account-1");
+  });
+
+  it("opens attachments through the default app from trusted main senders", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const invokeEvent = { sender: fixture.mainWebContents };
+
+    await fixture.handlers.get(IPC_CHANNELS.eventsOpenAttachment)?.(invokeEvent, {
+      attachmentId: "attachment-1",
+      calendarId: "calendar-1",
+      eventId: "event-1",
+    });
+
+    expect(fixture.graph.getAttachmentContent).toHaveBeenCalledWith(
+      "calendar-1",
+      "event-1",
+      "attachment-1",
+      "account-1",
+    );
+    expect(shell.openPath).toHaveBeenCalledOnce();
+    expect(String(shell.openPath.mock.calls[0]?.[0])).toMatch(/agenda\.txt$/);
+  });
+
+  it("rejects attachment open requests from untrusted senders", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+
+    await expect(
+      fixture.handlers.get(IPC_CHANNELS.eventsOpenAttachment)?.(
+        { sender: {} },
+        {
+          attachmentId: "attachment-1",
+          calendarId: "calendar-1",
+          eventId: "event-1",
+        },
+      ),
+    ).rejects.toThrow("Rejected IPC request from an untrusted sender.");
+    expect(shell.openPath).not.toHaveBeenCalled();
+  });
+
+  it("returns false when attachment download is cancelled", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const invokeEvent = { sender: fixture.mainWebContents };
+    dialog.showSaveDialog.mockResolvedValueOnce({ canceled: true });
+
+    const response = await fixture.handlers.get(IPC_CHANNELS.eventsDownloadAttachment)?.(
+      invokeEvent,
+      {
+        attachmentId: "attachment-1",
+        calendarId: "calendar-1",
+        eventId: "event-1",
+      },
+    );
+
+    expect(response).toBe(false);
+    expect(fixture.graph.getAttachmentMetadata).toHaveBeenCalledWith(
+      "calendar-1",
+      "event-1",
+      "attachment-1",
+      "account-1",
+    );
+    expect(fixture.graph.getAttachmentContent).not.toHaveBeenCalled();
+    expect(dialog.showSaveDialog).toHaveBeenCalledOnce();
+  });
+
+  it("rejects reference attachment downloads before prompting for a save location", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const invokeEvent = { sender: fixture.mainWebContents };
+    fixture.graph.getAttachmentMetadata.mockResolvedValueOnce({
+      attachmentType: "reference",
+      contentType: null,
+      id: "reference-1",
+      isInline: false,
+      name: "cloud-file.docx",
+      size: 0,
+    });
+
+    await expect(
+      fixture.handlers.get(IPC_CHANNELS.eventsDownloadAttachment)?.(invokeEvent, {
+        attachmentId: "reference-1",
+        calendarId: "calendar-1",
+        eventId: "event-1",
+      }),
+    ).rejects.toThrow("Cloud link attachments cannot be downloaded directly.");
+    expect(dialog.showSaveDialog).not.toHaveBeenCalled();
+    expect(fixture.graph.getAttachmentContent).not.toHaveBeenCalled();
+  });
+
+  it("writes selected attachment downloads", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const invokeEvent = { sender: fixture.mainWebContents };
+    const filePath = path.join(
+      tmpdir(),
+      `defcalendar-attachment-${Date.now()}-${Math.random().toString(16).slice(2)}.txt`,
+    );
+    dialog.showSaveDialog.mockResolvedValueOnce({ canceled: false, filePath });
+
+    let response: unknown = null;
+    try {
+      response = await fixture.handlers.get(IPC_CHANNELS.eventsDownloadAttachment)?.(invokeEvent, {
+        attachmentId: "attachment-1",
+        calendarId: "calendar-1",
+        eventId: "event-1",
+      });
+      await expect(readFile(filePath, "utf8")).resolves.toBe("hello");
+    } finally {
+      await rm(filePath, { force: true });
+    }
+    expect(response).toBe(true);
+    expect(fixture.graph.getAttachmentContent).toHaveBeenCalledWith(
+      "calendar-1",
+      "event-1",
+      "attachment-1",
+      "account-1",
+      expect.objectContaining({ id: "attachment-1" }),
+    );
   });
 
   it("returns cached attachments when Graph reports the event is gone", async () => {

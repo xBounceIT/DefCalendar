@@ -6,6 +6,7 @@ const electron = require("electron") as typeof import("electron");
 export const {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   Menu,
   Notification,

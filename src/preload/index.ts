@@ -54,6 +54,8 @@ const calendarApi: CalendarApi = {
     listAttachments: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsListAttachments, args),
     addAttachment: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsAddAttachment, args),
     removeAttachment: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsRemoveAttachment, args),
+    openAttachment: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsOpenAttachment, args),
+    downloadAttachment: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsDownloadAttachment, args),
     openInApp: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsOpenInApp, args),
     onOpenInApp: (listener) => {
       const wrapped = (_event: Electron.IpcRendererEvent, event: CalendarEvent) => listener(event);

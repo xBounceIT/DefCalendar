@@ -217,6 +217,146 @@ describe("graph calendar service request handling", () => {
     expect(preferHeader).toContain('IdType="ImmutableId"');
   });
 
+  it("parses Graph attachment metadata types", async () => {
+    expect.hasAssertions();
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        value: [
+          {
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            contentType: "text/plain",
+            id: "file-1",
+            isInline: false,
+            name: "agenda.txt",
+            size: 12,
+          },
+          {
+            "@odata.type": "#microsoft.graph.referenceAttachment",
+            contentType: null,
+            id: "reference-1",
+            isInline: false,
+            name: "cloud-file.docx",
+            size: 0,
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const service = createService();
+    const attachments = await service.listAttachments("calendar-1", "event-1", "account-1");
+
+    expect(attachments).toMatchObject([
+      { attachmentType: "file", id: "file-1" },
+      { attachmentType: "reference", id: "reference-1" },
+    ]);
+  });
+
+  it("downloads raw attachment content through Graph value endpoint", async () => {
+    expect.hasAssertions();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          "@odata.type": "#microsoft.graph.fileAttachment",
+          contentType: "text/plain",
+          id: "attachment-1",
+          isInline: false,
+          name: "agenda.txt",
+          size: 5,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response("hello", {
+          headers: { "Content-Type": "text/plain" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const service = createService();
+    const content = await service.getAttachmentContent(
+      "calendar-1",
+      "event-1",
+      "attachment-1",
+      "account-1",
+    );
+
+    expect(String(fetchMock.mock.calls[1][0])).toContain(
+      "/me/events/event-1/attachments/attachment-1/$value",
+    );
+    expect(new Headers(fetchMock.mock.calls[1][1]?.headers).get("Accept")).toBe("text/plain");
+    expect(content.attachment).toMatchObject({ attachmentType: "file", id: "attachment-1" });
+    expect(content.buffer.toString("utf8")).toBe("hello");
+    expect(content.contentType).toBe("text/plain");
+  });
+
+  it("rejects reference attachments before requesting raw content", async () => {
+    expect.hasAssertions();
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        "@odata.type": "#microsoft.graph.referenceAttachment",
+        contentType: null,
+        id: "reference-1",
+        isInline: false,
+        name: "cloud-file.docx",
+        size: 0,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const service = createService();
+
+    await expect(
+      service.getAttachmentContent("calendar-1", "event-1", "reference-1", "account-1"),
+    ).rejects.toThrow("Cloud link attachments cannot be downloaded directly.");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("uploads small file attachments to Graph", async () => {
+    expect.hasAssertions();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ id: "attachment-1" }))
+      .mockResolvedValueOnce(
+        Response.json({
+          value: [
+            {
+              "@odata.type": "#microsoft.graph.fileAttachment",
+              contentType: "text/plain",
+              id: "attachment-1",
+              isInline: false,
+              name: "agenda.txt",
+              size: 5,
+            },
+          ],
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const service = createService();
+    const attachments = await service.addAttachment(
+      "calendar-1",
+      "event-1",
+      {
+        contentBytes: "aGVsbG8=",
+        contentType: "text/plain",
+        name: "agenda.txt",
+        size: 5,
+      },
+      "account-1",
+    );
+
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/me/events/event-1/attachments");
+    expect(fetchMock.mock.calls[0][1]?.method).toBe("POST");
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toStrictEqual({
+      "@odata.type": "#microsoft.graph.fileAttachment",
+      contentBytes: "aGVsbG8=",
+      contentType: "text/plain",
+      name: "agenda.txt",
+    });
+    expect(attachments).toMatchObject([{ attachmentType: "file", id: "attachment-1" }]);
+  });
+
   it("posts tentative responses using Graph tentativelyAccept action", async () => {
     expect.assertions(3);
 

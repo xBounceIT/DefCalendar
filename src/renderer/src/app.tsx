@@ -17,6 +17,7 @@ import { createDefaultSettings } from "@shared/schemas";
 import type {
   AccountSummary,
   AttachmentDeleteArgs,
+  AttachmentReferenceArgs,
   AttachmentUploadArgs,
   AuthSignInMode,
   CalendarEvent,
@@ -855,11 +856,23 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   }
 
   async function addEventAttachment(args: AttachmentUploadArgs) {
-    return calendarApi.events.addAttachment(args);
+    const attachments = await calendarApi.events.addAttachment(args);
+    await invalidateEventQueries(queryClient);
+    return attachments;
   }
 
   async function removeEventAttachment(args: AttachmentDeleteArgs) {
-    return calendarApi.events.removeAttachment(args);
+    const attachments = await calendarApi.events.removeAttachment(args);
+    await invalidateEventQueries(queryClient);
+    return attachments;
+  }
+
+  async function openEventAttachment(args: AttachmentReferenceArgs): Promise<void> {
+    await calendarApi.events.openAttachment(args);
+  }
+
+  async function downloadEventAttachment(args: AttachmentReferenceArgs): Promise<boolean> {
+    return calendarApi.events.downloadAttachment(args);
   }
 
   function dismissEditor(): void {
@@ -1098,7 +1111,9 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         onDelete={deleteDraft}
         onDismiss={dismissEditor}
         onDuplicate={handleDuplicate}
+        onDownloadAttachment={downloadEventAttachment}
         onForward={forwardEvent}
+        onOpenAttachment={openEventAttachment}
         onOpenInOutlook={openExternalEvent}
         onRemoveAttachment={removeEventAttachment}
         onRespond={respondToMeeting}

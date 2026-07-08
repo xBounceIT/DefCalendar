@@ -10,7 +10,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import EventEditorDialog from "../src/renderer/src/components/event-editor-dialog";
 import enTranslations from "../src/renderer/src/i18n/locales/en.json";
 import type { EditorState } from "../src/renderer/src/event-editor-state";
-import type { CalendarEvent, CalendarSummary, EventParticipant } from "../src/shared/schemas";
+import type {
+  CalendarEvent,
+  CalendarSummary,
+  EventAttachment,
+  EventParticipant,
+} from "../src/shared/schemas";
 
 afterEach(() => {
   cleanup();
@@ -102,6 +107,18 @@ function createAttendeeEvent(overrides: Partial<CalendarEvent> = {}): CalendarEv
   });
 }
 
+function createAttachment(overrides: Partial<EventAttachment> = {}): EventAttachment {
+  return {
+    attachmentType: "file",
+    contentType: "text/plain",
+    id: "attachment-1",
+    isInline: false,
+    name: "agenda.txt",
+    size: 1234,
+    ...overrides,
+  };
+}
+
 function renderDialog(props?: Partial<React.ComponentProps<typeof EventEditorDialog>>) {
   const i18n = createInstance();
   void i18n.use(initReactI18next).init({
@@ -111,58 +128,85 @@ function renderDialog(props?: Partial<React.ComponentProps<typeof EventEditorDia
     interpolation: { escapeValue: false },
   });
 
+  const onAddAttachment = props?.onAddAttachment ?? vi.fn().mockResolvedValue([]);
+  const onDownloadAttachment = props?.onDownloadAttachment ?? vi.fn().mockResolvedValue(true);
+  const onFindAcceptConflicts = props?.onFindAcceptConflicts ?? vi.fn().mockResolvedValue([]);
+  const onListAttachments = props?.onListAttachments ?? vi.fn().mockResolvedValue([]);
+  const onOpenAttachment = props?.onOpenAttachment ?? vi.fn().mockResolvedValue(undefined);
+  const onRemoveAttachment = props?.onRemoveAttachment ?? vi.fn().mockResolvedValue([]);
   const onSave = props?.onSave ?? vi.fn().mockResolvedValue(undefined);
   const onSearchContacts = props?.onSearchContacts ?? vi.fn().mockResolvedValue([]);
-  const onFindAcceptConflicts = props?.onFindAcceptConflicts ?? vi.fn().mockResolvedValue([]);
   const state: EditorState = props?.state ?? {
     event: createEvent(),
     mode: "edit",
   };
 
-  const view = render(
-    <I18nextProvider i18n={i18n}>
-      <EventEditorDialog
-        accounts={[
-          {
-            color: "#5b7cfa",
-            homeAccountId: "account-1",
-            name: "Test User",
-            tenantId: "tenant-1",
-            username: "user@example.com",
-          },
-        ]}
-        availableCategoriesByAccount={{
-          "account-1": [
-            { color: "preset7", displayName: "Blue category" },
-            { color: "preset4", displayName: "Green category" },
-            { color: "preset0", displayName: "Red category" },
-          ],
-        }}
-        busy={false}
-        calendars={[createCalendar()]}
-        categoriesLoading={false}
-        errorMessage={null}
-        onAddAttachment={vi.fn().mockResolvedValue([])}
-        onCancelMeeting={vi.fn().mockResolvedValue(undefined)}
-        onDelete={vi.fn().mockResolvedValue(undefined)}
-        onDismiss={vi.fn()}
-        onDuplicate={vi.fn()}
-        onFindAcceptConflicts={onFindAcceptConflicts}
-        onForward={vi.fn().mockResolvedValue(undefined)}
-        onListAttachments={vi.fn().mockResolvedValue([])}
-        onOpenInOutlook={vi.fn().mockResolvedValue(undefined)}
-        onRemoveAttachment={vi.fn().mockResolvedValue([])}
-        onRespond={vi.fn().mockResolvedValue(undefined)}
-        onSearchContacts={onSearchContacts}
-        onSave={onSave}
-        state={state}
-        timeFormat="system"
-        {...props}
-      />
-    </I18nextProvider>,
-  );
+  const baseProps = props ?? {};
+  const renderElement = (
+    overrides: Partial<React.ComponentProps<typeof EventEditorDialog>> = {},
+  ) => {
+    const mergedProps = { ...baseProps, ...overrides };
+    return (
+      <I18nextProvider i18n={i18n}>
+        <EventEditorDialog
+          accounts={[
+            {
+              color: "#5b7cfa",
+              homeAccountId: "account-1",
+              name: "Test User",
+              tenantId: "tenant-1",
+              username: "user@example.com",
+            },
+          ]}
+          availableCategoriesByAccount={{
+            "account-1": [
+              { color: "preset7", displayName: "Blue category" },
+              { color: "preset4", displayName: "Green category" },
+              { color: "preset0", displayName: "Red category" },
+            ],
+          }}
+          busy={false}
+          calendars={[createCalendar()]}
+          categoriesLoading={false}
+          errorMessage={null}
+          onAddAttachment={onAddAttachment}
+          onCancelMeeting={vi.fn().mockResolvedValue(undefined)}
+          onDelete={vi.fn().mockResolvedValue(undefined)}
+          onDismiss={vi.fn()}
+          onDownloadAttachment={onDownloadAttachment}
+          onDuplicate={vi.fn()}
+          onFindAcceptConflicts={onFindAcceptConflicts}
+          onForward={vi.fn().mockResolvedValue(undefined)}
+          onListAttachments={onListAttachments}
+          onOpenAttachment={onOpenAttachment}
+          onOpenInOutlook={vi.fn().mockResolvedValue(undefined)}
+          onRemoveAttachment={onRemoveAttachment}
+          onRespond={vi.fn().mockResolvedValue(undefined)}
+          onSearchContacts={onSearchContacts}
+          onSave={onSave}
+          state={state}
+          timeFormat="system"
+          {...mergedProps}
+        />
+      </I18nextProvider>
+    );
+  };
 
-  return { ...view, onFindAcceptConflicts, onSave, onSearchContacts };
+  const view = render(renderElement());
+
+  return {
+    ...view,
+    onAddAttachment,
+    onDownloadAttachment,
+    onFindAcceptConflicts,
+    onListAttachments,
+    onOpenAttachment,
+    onRemoveAttachment,
+    rerenderDialog: (nextProps: Partial<React.ComponentProps<typeof EventEditorDialog>>) =>
+      view.rerender(renderElement(nextProps)),
+    onSave,
+    onSearchContacts,
+  };
 }
 
 function openSchedulingSection(container: HTMLElement) {
@@ -188,6 +232,177 @@ afterEach(() => {
 });
 
 describe("event editor dialog", () => {
+  it("lists and manages event attachments", async () => {
+    expect.hasAssertions();
+    const attachment = createAttachment();
+    const onDownloadAttachment = vi.fn().mockResolvedValue(true);
+    const onListAttachments = vi.fn().mockResolvedValue([attachment]);
+    const onOpenAttachment = vi.fn().mockResolvedValue(undefined);
+    const onRemoveAttachment = vi.fn().mockResolvedValue([]);
+
+    renderDialog({
+      onDownloadAttachment,
+      onListAttachments,
+      onOpenAttachment,
+      onRemoveAttachment,
+      state: {
+        event: createEvent({ attachments: [attachment], hasAttachments: true }),
+        mode: "edit",
+      },
+    });
+
+    await expect(screen.findByText("agenda.txt")).resolves.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open agenda.txt" }));
+    await waitFor(() => {
+      expect(onOpenAttachment).toHaveBeenCalledWith({
+        attachmentId: "attachment-1",
+        calendarId: "calendar-1",
+        eventId: "event-1",
+      });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Download agenda.txt" }));
+    await waitFor(() => {
+      expect(onDownloadAttachment).toHaveBeenCalledWith({
+        attachmentId: "attachment-1",
+        calendarId: "calendar-1",
+        eventId: "event-1",
+      });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove agenda.txt" }));
+    await waitFor(() => {
+      expect(onRemoveAttachment).toHaveBeenCalledWith({
+        attachmentId: "attachment-1",
+        calendarId: "calendar-1",
+        eventId: "event-1",
+      });
+    });
+    expect(onRemoveAttachment).toHaveBeenCalledOnce();
+  });
+
+  it("clears attachment loading when switching to an event without attachments", async () => {
+    expect.hasAssertions();
+    let resolveAttachments: (attachments: EventAttachment[]) => void = () => {};
+    const loadingAttachments = new Promise<EventAttachment[]>((resolve) => {
+      resolveAttachments = resolve;
+    });
+    const onListAttachments = vi.fn().mockReturnValue(loadingAttachments);
+    const { rerenderDialog } = renderDialog({
+      onListAttachments,
+      state: {
+        event: createEvent({
+          attachments: [createAttachment()],
+          hasAttachments: true,
+          id: "event-with-attachments",
+        }),
+        mode: "edit",
+      },
+    });
+
+    await expect(screen.findByText("Loading…")).resolves.toBeInTheDocument();
+
+    rerenderDialog({
+      state: {
+        event: createEvent({
+          attachments: [],
+          hasAttachments: false,
+          id: "event-without-attachments",
+        }),
+        mode: "edit",
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("No attachments")).toBeInTheDocument();
+    resolveAttachments([]);
+    expect(onListAttachments).toHaveBeenCalledOnce();
+  });
+
+  it("adds attachment files", async () => {
+    expect.hasAssertions();
+    const returnedAttachment = createAttachment({ name: "notes.txt", size: 5 });
+    const onAddAttachment = vi.fn().mockResolvedValue([returnedAttachment]);
+    const { container } = renderDialog({ onAddAttachment });
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+
+    expect(input).not.toBeNull();
+    if (!input) {
+      throw new Error("File input not found");
+    }
+    fireEvent.change(input, {
+      target: {
+        files: [new File(["hello"], "notes.txt", { type: "text/plain" })],
+      },
+    });
+
+    await waitFor(() => {
+      expect(onAddAttachment).toHaveBeenCalledWith({
+        attachment: {
+          contentBytes: "aGVsbG8=",
+          contentType: "text/plain",
+          name: "notes.txt",
+          size: 5,
+        },
+        calendarId: "calendar-1",
+        eventId: "event-1",
+      });
+    });
+    await expect(screen.findByText("notes.txt")).resolves.toBeInTheDocument();
+  });
+
+  it("blocks attachment files above three megabytes", async () => {
+    expect.hasAssertions();
+    const onAddAttachment = vi.fn().mockResolvedValue([]);
+    const { container } = renderDialog({ onAddAttachment });
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+    const largeFile = new File([new Uint8Array(3 * 1024 * 1024 + 1)], "large.pdf", {
+      type: "application/pdf",
+    });
+
+    expect(input).not.toBeNull();
+    if (!input) {
+      throw new Error("File input not found");
+    }
+    fireEvent.change(input, {
+      target: {
+        files: [largeFile],
+      },
+    });
+
+    await expect(
+      screen.findByText("large.pdf must be smaller than 3 MB."),
+    ).resolves.toBeInTheDocument();
+    expect(onAddAttachment).not.toHaveBeenCalled();
+  });
+
+  it("shows reference attachments without local open or download actions", async () => {
+    expect.hasAssertions();
+    const attachment = createAttachment({
+      attachmentType: "reference",
+      contentType: null,
+      id: "reference-1",
+      name: "cloud-file.docx",
+      size: 0,
+    });
+
+    renderDialog({
+      onListAttachments: vi.fn().mockResolvedValue([attachment]),
+      state: {
+        event: createEvent({ attachments: [attachment], hasAttachments: true }),
+        mode: "edit",
+      },
+    });
+
+    await expect(screen.findByText("cloud-file.docx")).resolves.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open cloud-file.docx" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Download cloud-file.docx" })).toBeDisabled();
+    expect(screen.getByText("Open from Outlook")).toBeInTheDocument();
+  });
+
   it("shows and preserves a zero-minute reminder", async () => {
     const { onSave } = renderDialog();
 

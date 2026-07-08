@@ -1,8 +1,13 @@
+import { promises as fs } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type { BrowserWindow, IpcMainInvokeEvent } from "electron";
+import { z } from "zod";
 import type { CalendarEvent, EventAttachment, EventListArgs } from "@shared/schemas";
 import {
   appUpdateStatusSchema,
   attachmentDeleteArgsSchema,
+  attachmentReferenceArgsSchema,
   attachmentUploadArgsSchema,
   authSignInRequestSchema,
   cancelEventArgsSchema,
@@ -26,7 +31,6 @@ import {
   syncStatusSchema,
   userSettingsPatchSchema,
 } from "@shared/schemas";
-import { z } from "zod";
 import type AppDatabase from "@main/db/database";
 import type EventActionService from "@main/events/event-action-service";
 import { isMissingGraphItemError } from "@main/graph/calendar-service";
@@ -40,7 +44,7 @@ import type SystemInviteNotificationService from "@main/notifications/system-inv
 import type TaskbarInviteAttentionService from "@main/notifications/taskbar-invite-attention-service";
 import type { SyncService } from "@main/sync/sync-service";
 import type UpdateService from "@main/update/update-service";
-import { app, ipcMain, shell } from "@main/electron-runtime";
+import { app, dialog, ipcMain, shell } from "@main/electron-runtime";
 import { showAndFocusMainWindow } from "@main/window";
 import { IPC_CHANNELS } from "@shared/ipc";
 
@@ -417,6 +421,64 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     return attachments;
   });
 
+  ipcMain.handle(IPC_CHANNELS.eventsOpenAttachment, async (event, input) => {
+    validateMainSender(event);
+    const args = attachmentReferenceArgsSchema.parse(input);
+    const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
+    const content = await dependencies.graph.getAttachmentContent(
+      args.calendarId,
+      args.eventId,
+      args.attachmentId,
+      homeAccountId,
+    );
+    const directory = await fs.mkdtemp(path.join(tmpdir(), "defcalendar-attachment-"));
+    const filePath = path.join(directory, sanitizeAttachmentFileName(content.attachment.name));
+    await fs.writeFile(filePath, content.buffer);
+    const openError = await shell.openPath(filePath);
+    if (openError) {
+      throw new Error(openError);
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.eventsDownloadAttachment, async (event, input) => {
+    validateMainSender(event);
+    const args = attachmentReferenceArgsSchema.parse(input);
+    const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
+    const attachment = await dependencies.graph.getAttachmentMetadata(
+      args.calendarId,
+      args.eventId,
+      args.attachmentId,
+      homeAccountId,
+    );
+    if (attachment.attachmentType === "reference") {
+      throw new Error("Cloud link attachments cannot be downloaded directly.");
+    }
+
+    const fileName = sanitizeAttachmentFileName(attachment.name);
+    const options = {
+      defaultPath: path.join(app.getPath("downloads"), fileName),
+      properties: ["showOverwriteConfirmation" as const],
+    };
+    const window = dependencies.getMainWindow();
+    const result =
+      window && !window.isDestroyed()
+        ? await dialog.showSaveDialog(window, options)
+        : await dialog.showSaveDialog(options);
+    if (result.canceled || !result.filePath) {
+      return false;
+    }
+
+    const content = await dependencies.graph.getAttachmentContent(
+      args.calendarId,
+      args.eventId,
+      args.attachmentId,
+      homeAccountId,
+      attachment,
+    );
+    await fs.writeFile(result.filePath, content.buffer);
+    return true;
+  });
+
   ipcMain.handle(IPC_CHANNELS.eventsOpenInApp, async (event, input) => {
     validateReminderSender(event);
     const args = eventReferenceArgsSchema.parse(input);
@@ -562,6 +624,24 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   dependencies.updates.onStatus((status) => {
     broadcast(IPC_CHANNELS.updatesStatusChanged, appUpdateStatusSchema.parse(status));
   });
+}
+
+function sanitizeAttachmentFileName(name: string): string {
+  const forbidden = new Set(["<", ">", ":", '"', "/", "\\", "|", "?", "*"]);
+  const sanitized = Array.from(name, (character) =>
+    forbidden.has(character) || character.charCodeAt(0) < 32 ? "_" : character,
+  )
+    .join("")
+    .replace(/[. ]+$/g, "")
+    .trim();
+
+  if (!sanitized) {
+    return "attachment";
+  }
+
+  return /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i.test(sanitized)
+    ? `_${sanitized}`
+    : sanitized;
 }
 
 export default registerIpc;

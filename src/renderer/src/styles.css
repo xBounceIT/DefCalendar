@@ -3439,6 +3439,131 @@ button {
   font-weight: 600;
   color: var(--ink-secondary);
 }
+.attachments-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.attachments-section__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.attachments-section__header .slide-panel__section-title {
+  margin-bottom: 0;
+}
+
+.attachments-section__input {
+  display: none;
+}
+
+.attachments-section__add {
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.attachments-section__add svg {
+  width: 15px;
+  height: 15px;
+}
+
+.attachments-section__note,
+.attachments-section__error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+
+.attachments-section__error {
+  color: var(--danger);
+}
+
+.attachments-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.attachment-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-elevated);
+}
+
+.attachment-item > svg {
+  width: 18px;
+  height: 18px;
+  color: var(--ink-secondary);
+  justify-self: center;
+}
+
+.attachment-item__content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.attachment-item__name {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.attachment-item__name:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.attachment-item__name:disabled {
+  color: var(--ink-secondary);
+  cursor: not-allowed;
+}
+
+.attachment-item__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+.attachment-item__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.attachment-item__action {
+  width: 30px;
+  height: 30px;
+}
+
+.attachment-item__action--danger:hover:not(:disabled) {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
 
 /* Event Toolbar */
 .event-toolbar {
