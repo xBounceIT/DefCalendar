@@ -152,16 +152,27 @@ const availabilitySchema = z.enum([
 const sensitivitySchema = z.enum(["normal", "personal", "private", "confidential"]);
 const eventResponseActionSchema = z.enum(["accept", "tentative", "decline"]);
 
-const attachmentUploadSchema = z.object({
-  contentBytes: z.string().min(1),
-  contentType: z.string().min(1),
-  name: z.string().min(1),
-  size: z
-    .number()
-    .int()
-    .nonnegative()
-    .max(MAX_ATTACHMENT_UPLOAD_BYTES - 1),
-});
+const attachmentUploadSchema = z
+  .object({
+    contentBytes: z.string().min(1),
+    contentType: z.string().min(1),
+    name: z.string().min(1),
+    size: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(MAX_ATTACHMENT_UPLOAD_BYTES - 1),
+  })
+  .superRefine((attachment, context) => {
+    const decodedLength = getBase64DecodedByteLength(attachment.contentBytes);
+    if (decodedLength === null || decodedLength >= MAX_ATTACHMENT_UPLOAD_BYTES) {
+      context.addIssue({
+        code: "custom",
+        message: "Attachment content must be smaller than 3 MB.",
+        path: ["contentBytes"],
+      });
+    }
+  });
 
 const calendarEventSchema = z.object({
   id: z.string(),
@@ -621,6 +632,21 @@ type LocalReminderRule = z.infer<typeof localReminderRuleSchema>;
 type UserSettings = z.infer<typeof userSettingsSchema>;
 type UserSettingsPatch = z.infer<typeof userSettingsPatchSchema>;
 type UpdateChannel = z.infer<typeof updateChannelSchema>;
+
+function getBase64DecodedByteLength(value: string): null | number {
+  const normalized = value.replace(/\s/g, "");
+  const padding = normalized.endsWith("==") ? 2 : normalized.endsWith("=") ? 1 : 0;
+  if (
+    normalized.length === 0 ||
+    normalized.length % 4 === 1 ||
+    (padding > 0 && normalized.length % 4 !== 0) ||
+    !/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)
+  ) {
+    return null;
+  }
+
+  return Math.floor((normalized.length * 3) / 4) - padding;
+}
 
 function createDefaultSettings(): UserSettings {
   return {

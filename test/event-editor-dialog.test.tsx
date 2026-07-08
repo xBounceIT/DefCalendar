@@ -398,6 +398,36 @@ describe("event editor dialog", () => {
     await expect(screen.findByText("notes.txt")).resolves.toBeInTheDocument();
   });
 
+  it("preserves successful attachment uploads when a later file fails", async () => {
+    expect.hasAssertions();
+    const returnedAttachment = createAttachment({ name: "first.txt", size: 5 });
+    const onAddAttachment = vi
+      .fn()
+      .mockResolvedValueOnce([returnedAttachment])
+      .mockRejectedValueOnce(new Error("Upload failed"));
+    const { container } = renderDialog({ onAddAttachment });
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]');
+
+    expect(input).not.toBeNull();
+    if (!input) {
+      throw new Error("File input not found");
+    }
+    fireEvent.change(input, {
+      target: {
+        files: [
+          new File(["first"], "first.txt", { type: "text/plain" }),
+          new File(["second"], "second.txt", { type: "text/plain" }),
+        ],
+      },
+    });
+
+    await waitFor(() => {
+      expect(onAddAttachment).toHaveBeenCalledTimes(2);
+    });
+    expect(await screen.findByText("first.txt")).toBeInTheDocument();
+    expect(screen.getByText("Upload failed")).toBeInTheDocument();
+  });
+
   it("blocks attachment files above three megabytes", async () => {
     expect.hasAssertions();
     const onAddAttachment = vi.fn().mockResolvedValue([]);

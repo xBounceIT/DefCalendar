@@ -294,16 +294,15 @@ function EventEditorDialog(props: EventEditorDialogProps) {
     setAttachmentsBusy(true);
     setAttachmentError(null);
     try {
-      let nextAttachments = attachments;
       for (const file of selectedFiles) {
         const attachment = await readFileAsAttachment(file);
-        nextAttachments = await props.onAddAttachment({
+        const nextAttachments = await props.onAddAttachment({
           attachment,
           calendarId: editedEvent.calendarId,
           eventId: editedEvent.id,
         });
+        setAttachments(nextAttachments);
       }
-      setAttachments(nextAttachments);
     } catch (error) {
       setAttachmentError(toAttachmentErrorMessage(error, t("app.unexpectedError")));
     } finally {

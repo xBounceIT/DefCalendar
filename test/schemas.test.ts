@@ -1,5 +1,6 @@
 import {
   appUpdateStatusSchema,
+  attachmentUploadSchema,
   calendarSummarySchema,
   createDefaultSettings,
   eventDraftSchema,
@@ -101,6 +102,18 @@ describe("shared schemas", () => {
     });
 
     expect(calendar.homeAccountId).toBe("account-1");
+  });
+
+  it("rejects attachment uploads when decoded content reaches three megabytes", () => {
+    expect.hasAssertions();
+    expect(() =>
+      attachmentUploadSchema.parse({
+        contentBytes: "A".repeat(4 * 1024 * 1024),
+        contentType: "application/octet-stream",
+        name: "large.bin",
+        size: 1,
+      }),
+    ).toThrow(/3 MB/);
   });
 
   it("accepts a valid app update status payload", () => {
