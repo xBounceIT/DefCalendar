@@ -281,6 +281,9 @@ describe("graph calendar service request handling", () => {
       "account-1",
     );
 
+    expect(new URL(String(fetchMock.mock.calls[0][0])).searchParams.get("$select")).toBe(
+      "id,name,contentType,size,isInline",
+    );
     expect(String(fetchMock.mock.calls[1][0])).toContain(
       "/me/events/event-1/attachments/attachment-1/$value",
     );

@@ -108,6 +108,8 @@ interface AttachmentContent {
   contentType: null | string;
 }
 
+const ATTACHMENT_METADATA_SELECT = "id,name,contentType,size,isInline";
+
 class GraphRequestError extends Error {
   readonly code: null | string;
   readonly status: number;
@@ -429,7 +431,7 @@ class GraphCalendarService {
     homeAccountId: string,
   ): Promise<EventAttachment[]> {
     const query = new URLSearchParams({
-      $select: "id,name,contentType,size,isInline",
+      $select: ATTACHMENT_METADATA_SELECT,
     });
     const response = parseGraphCollection(
       await this.requestJson(
@@ -526,9 +528,12 @@ class GraphCalendarService {
     homeAccountId: string,
   ): Promise<EventAttachment> {
     void calendarId;
+    const query = new URLSearchParams({
+      $select: ATTACHMENT_METADATA_SELECT,
+    });
     return parseGraphAttachment(
       await this.requestJson(
-        `/me/events/${encodeURIComponent(eventId)}/attachments/${encodeURIComponent(attachmentId)}`,
+        `/me/events/${encodeURIComponent(eventId)}/attachments/${encodeURIComponent(attachmentId)}?${query.toString()}`,
         {},
         homeAccountId,
       ),
