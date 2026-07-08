@@ -322,6 +322,50 @@ describe("event editor dialog", () => {
     expect(onListAttachments).toHaveBeenCalledOnce();
   });
 
+  it("does not show stale attachments while loading a different event", async () => {
+    expect.hasAssertions();
+    let resolveSecondLoad: (attachments: EventAttachment[]) => void = () => {};
+    const secondLoad = new Promise<EventAttachment[]>((resolve) => {
+      resolveSecondLoad = resolve;
+    });
+    const firstAttachment = createAttachment({ id: "first-attachment", name: "first.txt" });
+    const onListAttachments = vi
+      .fn()
+      .mockResolvedValueOnce([firstAttachment])
+      .mockReturnValueOnce(secondLoad);
+    const { rerenderDialog } = renderDialog({
+      onListAttachments,
+      state: {
+        event: createEvent({
+          attachments: [firstAttachment],
+          hasAttachments: true,
+          id: "first-event",
+        }),
+        mode: "edit",
+      },
+    });
+
+    await expect(screen.findByText("first.txt")).resolves.toBeInTheDocument();
+
+    rerenderDialog({
+      state: {
+        event: createEvent({
+          attachments: [],
+          hasAttachments: true,
+          id: "second-event",
+        }),
+        mode: "edit",
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("first.txt")).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
+    resolveSecondLoad([]);
+    expect(onListAttachments).toHaveBeenCalledTimes(2);
+  });
+
   it("adds attachment files", async () => {
     expect.hasAssertions();
     const returnedAttachment = createAttachment({ name: "notes.txt", size: 5 });

@@ -221,6 +221,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
     }
 
     let cancelled = false;
+    setAttachments(event.attachments);
     setAttachmentsBusy(true);
     void props
       .onListAttachments(event)
