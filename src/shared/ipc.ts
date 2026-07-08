@@ -1,5 +1,6 @@
 import type {
   AttachmentDeleteArgs,
+  AttachmentReferenceArgs,
   AttachmentUploadArgs,
   AppUpdateStatus,
   AuthSignInMode,
@@ -57,6 +58,8 @@ export const IPC_CHANNELS = {
   eventsListAttachments: "events:list-attachments",
   eventsAddAttachment: "events:add-attachment",
   eventsRemoveAttachment: "events:remove-attachment",
+  eventsOpenAttachment: "events:open-attachment",
+  eventsDownloadAttachment: "events:download-attachment",
   eventsOpenInApp: "events:open-in-app",
   eventsOpenInAppRequested: "events:open-in-app-requested",
   eventsOpenWebLink: "events:open-web-link",
@@ -118,6 +121,8 @@ interface CalendarApi {
     listAttachments: (args: EventReferenceArgs) => Promise<EventAttachment[]>;
     addAttachment: (args: AttachmentUploadArgs) => Promise<EventAttachment[]>;
     removeAttachment: (args: AttachmentDeleteArgs) => Promise<EventAttachment[]>;
+    openAttachment: (args: AttachmentReferenceArgs) => Promise<void>;
+    downloadAttachment: (args: AttachmentReferenceArgs) => Promise<boolean>;
     openInApp: (args: EventReferenceArgs) => Promise<void>;
     onOpenInApp: (listener: (event: CalendarEvent) => void) => () => void;
     openWebLink: (url: string) => Promise<void>;

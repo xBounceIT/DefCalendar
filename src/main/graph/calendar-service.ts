@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import type {
   AttachmentUpload,
   CalendarEvent,
@@ -100,6 +101,14 @@ interface GraphResponseStatus {
   response?: string;
   time?: string;
 }
+
+interface AttachmentContent {
+  attachment: EventAttachment;
+  buffer: Buffer;
+  contentType: null | string;
+}
+
+const ATTACHMENT_METADATA_SELECT = "id,name,contentType,size,isInline";
 
 class GraphRequestError extends Error {
   readonly code: null | string;
@@ -422,7 +431,7 @@ class GraphCalendarService {
     homeAccountId: string,
   ): Promise<EventAttachment[]> {
     const query = new URLSearchParams({
-      $select: "id,name,contentType,size,isInline",
+      $select: ATTACHMENT_METADATA_SELECT,
     });
     const response = parseGraphCollection(
       await this.requestJson(
@@ -433,6 +442,40 @@ class GraphCalendarService {
     );
 
     return response.value.map(parseGraphAttachment);
+  }
+
+  async getAttachmentContent(
+    calendarId: string,
+    eventId: string,
+    attachmentId: string,
+    homeAccountId: string,
+    knownAttachment?: EventAttachment,
+  ): Promise<AttachmentContent> {
+    const attachment =
+      knownAttachment ??
+      (await this.getAttachmentMetadata(calendarId, eventId, attachmentId, homeAccountId));
+    if (attachment.attachmentType === "reference") {
+      throw new Error("Cloud link attachments cannot be downloaded directly.");
+    }
+
+    const response = await this.sendRequest({
+      homeAccountId,
+      init: {
+        headers: {
+          Accept: attachment.contentType ?? "application/octet-stream",
+        },
+      },
+      pathOrUrl: `/me/events/${encodeURIComponent(eventId)}/attachments/${encodeURIComponent(attachmentId)}/$value`,
+    });
+    if (!response.ok) {
+      throw await this.createRequestError(response);
+    }
+
+    return {
+      attachment,
+      buffer: Buffer.from(await response.arrayBuffer()),
+      contentType: response.headers.get("Content-Type") ?? attachment.contentType,
+    };
   }
 
   async addAttachment(
@@ -476,6 +519,25 @@ class GraphCalendarService {
     );
 
     return this.listAttachments(calendarId, eventId, homeAccountId);
+  }
+
+  async getAttachmentMetadata(
+    calendarId: string,
+    eventId: string,
+    attachmentId: string,
+    homeAccountId: string,
+  ): Promise<EventAttachment> {
+    void calendarId;
+    const query = new URLSearchParams({
+      $select: ATTACHMENT_METADATA_SELECT,
+    });
+    return parseGraphAttachment(
+      await this.requestJson(
+        `/me/events/${encodeURIComponent(eventId)}/attachments/${encodeURIComponent(attachmentId)}?${query.toString()}`,
+        {},
+        homeAccountId,
+      ),
+    );
   }
 
   private async syncAttachmentOperations(
@@ -541,7 +603,9 @@ class GraphCalendarService {
   private async sendRequest(args: SendRequestArgs): Promise<Response> {
     const { forceRefresh = false, homeAccountId, init = {}, pathOrUrl, retryCount = 0 } = args;
     const headers = new Headers(init.headers);
-    headers.set("Accept", "application/json");
+    if (!headers.has("Accept")) {
+      headers.set("Accept", "application/json");
+    }
     const accessToken = homeAccountId
       ? await this.auth.getAccessTokenForAccount(homeAccountId, forceRefresh)
       : await this.auth.getAccessToken(forceRefresh);
@@ -1058,12 +1122,30 @@ function parseGraphAttachment(value: unknown): EventAttachment {
   }
 
   return {
+    attachmentType: parseGraphAttachmentType(readOptionalString(value, "@odata.type")),
     contentType: readOptionalString(value, "contentType") ?? null,
     id: readRequiredString(value, "id"),
     isInline: Boolean(readOptionalBoolean(value, "isInline")),
     name: trimOrFallback(readOptionalString(value, "name"), "Attachment"),
     size: readOptionalNumber(value, "size") ?? 0,
   };
+}
+
+function parseGraphAttachmentType(value?: string): EventAttachment["attachmentType"] {
+  const normalized = value?.trim().toLowerCase() ?? "";
+  if (normalized.endsWith(".fileattachment")) {
+    return "file";
+  }
+
+  if (normalized.endsWith(".itemattachment")) {
+    return "item";
+  }
+
+  if (normalized.endsWith(".referenceattachment")) {
+    return "reference";
+  }
+
+  return "unknown";
 }
 
 function parseGraphAttendees(value?: unknown[]): GraphAttendee[] | undefined {

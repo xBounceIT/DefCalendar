@@ -84,7 +84,11 @@ const eventParticipantSchema = z.object({
   status: participantResponseStatusSchema.nullable().optional(),
 });
 
+const eventAttachmentTypeSchema = z.enum(["file", "item", "reference", "unknown"]);
+const MAX_ATTACHMENT_UPLOAD_BYTES = 3 * 1024 * 1024;
+
 const eventAttachmentSchema = z.object({
+  attachmentType: eventAttachmentTypeSchema.default("unknown"),
   contentType: z.string().nullable(),
   id: z.string(),
   isInline: z.boolean(),
@@ -148,12 +152,27 @@ const availabilitySchema = z.enum([
 const sensitivitySchema = z.enum(["normal", "personal", "private", "confidential"]);
 const eventResponseActionSchema = z.enum(["accept", "tentative", "decline"]);
 
-const attachmentUploadSchema = z.object({
-  contentBytes: z.string().min(1),
-  contentType: z.string().min(1),
-  name: z.string().min(1),
-  size: z.number().int().nonnegative(),
-});
+const attachmentUploadSchema = z
+  .object({
+    contentBytes: z.string().min(1),
+    contentType: z.string().min(1),
+    name: z.string().min(1),
+    size: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(MAX_ATTACHMENT_UPLOAD_BYTES - 1),
+  })
+  .superRefine((attachment, context) => {
+    const decodedLength = getBase64DecodedByteLength(attachment.contentBytes);
+    if (decodedLength === null || decodedLength >= MAX_ATTACHMENT_UPLOAD_BYTES) {
+      context.addIssue({
+        code: "custom",
+        message: "Attachment content must be smaller than 3 MB.",
+        path: ["contentBytes"],
+      });
+    }
+  });
 
 const calendarEventSchema = z.object({
   id: z.string(),
@@ -360,6 +379,12 @@ const attachmentUploadArgsSchema = z.object({
 });
 
 const attachmentDeleteArgsSchema = z.object({
+  attachmentId: z.string(),
+  calendarId: z.string(),
+  eventId: z.string(),
+});
+
+const attachmentReferenceArgsSchema = z.object({
   attachmentId: z.string(),
   calendarId: z.string(),
   eventId: z.string(),
@@ -593,6 +618,7 @@ type ForwardEventArgs = z.infer<typeof forwardEventArgsSchema>;
 type CancelEventArgs = z.infer<typeof cancelEventArgsSchema>;
 type AttachmentUploadArgs = z.infer<typeof attachmentUploadArgsSchema>;
 type AttachmentDeleteArgs = z.infer<typeof attachmentDeleteArgsSchema>;
+type AttachmentReferenceArgs = z.infer<typeof attachmentReferenceArgsSchema>;
 type ReminderSnoozeArgs = z.infer<typeof reminderSnoozeArgsSchema>;
 type ReminderDismissArgs = z.infer<typeof reminderDismissArgsSchema>;
 type ReminderDialogItem = z.infer<typeof reminderDialogItemSchema>;
@@ -606,6 +632,21 @@ type LocalReminderRule = z.infer<typeof localReminderRuleSchema>;
 type UserSettings = z.infer<typeof userSettingsSchema>;
 type UserSettingsPatch = z.infer<typeof userSettingsPatchSchema>;
 type UpdateChannel = z.infer<typeof updateChannelSchema>;
+
+function getBase64DecodedByteLength(value: string): null | number {
+  const normalized = value.replace(/\s/g, "");
+  const padding = normalized.endsWith("==") ? 2 : normalized.endsWith("=") ? 1 : 0;
+  if (
+    normalized.length === 0 ||
+    normalized.length % 4 === 1 ||
+    (padding > 0 && normalized.length % 4 !== 0) ||
+    !/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)
+  ) {
+    return null;
+  }
+
+  return Math.floor((normalized.length * 3) / 4) - padding;
+}
 
 function createDefaultSettings(): UserSettings {
   return {
@@ -641,6 +682,7 @@ export {
   deleteEventArgsSchema,
   eventReferenceArgsSchema,
   attachmentDeleteArgsSchema,
+  attachmentReferenceArgsSchema,
   attachmentUploadArgsSchema,
   attachmentUploadSchema,
   attendeeTypeSchema,
@@ -685,6 +727,7 @@ export {
   userSettingsSchema,
   type AccountSummary,
   type AttachmentDeleteArgs,
+  type AttachmentReferenceArgs,
   type AttachmentUpload,
   type AttachmentUploadArgs,
   type AttendeeType,

@@ -1,6 +1,7 @@
 import type {
   AccountSummary,
   AttachmentDeleteArgs,
+  AttachmentReferenceArgs,
   AttachmentUploadArgs,
   BodyContentType,
   CalendarEvent,
@@ -46,10 +47,12 @@ interface EventEditorDialogProps {
   onCancelMeeting: (event: CalendarEvent, comment: string) => Promise<void>;
   onDelete: (event: CalendarEvent, targetEventId?: string) => Promise<void>;
   onDismiss: () => void;
+  onDownloadAttachment: (args: AttachmentReferenceArgs) => Promise<boolean>;
   onDuplicate: (draft: EventDraft) => void;
   onForward: (args: ForwardEventArgs) => Promise<void>;
   onFindAcceptConflicts: (target: CalendarOverlapTarget) => Promise<CalendarEvent[]>;
   onListAttachments: (event: CalendarEvent) => Promise<EventAttachment[]>;
+  onOpenAttachment: (args: AttachmentReferenceArgs) => Promise<void>;
   onOpenInOutlook: (url: string) => Promise<void>;
   onRemoveAttachment: (args: AttachmentDeleteArgs) => Promise<EventAttachment[]>;
   onRespond: (
@@ -163,6 +166,8 @@ const _formFieldCoverageCheck: [_UncoveredFormFields] extends [never]
   : _UncoveredFormFields = true;
 void _formFieldCoverageCheck;
 
+const MAX_ATTACHMENT_SIZE_BYTES = 3 * 1024 * 1024;
+
 function getSavableFormFingerprint(form: EditorFormState): string {
   return JSON.stringify(SAVABLE_FORM_FIELDS.map((key) => form[key]));
 }
@@ -184,6 +189,7 @@ function buildAccountParticipant(account: AccountSummary | null): EventParticipa
 function EventEditorDialog(props: EventEditorDialogProps) {
   const { t } = useTranslation();
   const [attachments, setAttachments] = useState<EventAttachment[]>([]);
+  const [attachmentError, setAttachmentError] = useState<null | string>(null);
   const [attachmentsBusy, setAttachmentsBusy] = useState(false);
   const [form, setForm] = useState<EditorFormState | null>(null);
   const [initialForm, setInitialForm] = useState<EditorFormState | null>(null);
@@ -197,18 +203,25 @@ function EventEditorDialog(props: EventEditorDialogProps) {
   const attachmentSourceEvent = props.state?.mode === "edit" ? props.state.event : null;
 
   useEffect(() => {
+    setAttachmentError(null);
+  }, [attachmentSourceEvent?.calendarId, attachmentSourceEvent?.id]);
+
+  useEffect(() => {
     const event = attachmentSourceEvent;
     if (!event) {
       setAttachments([]);
+      setAttachmentsBusy(false);
       return;
     }
 
     if (!event.hasAttachments && event.attachments.length === 0) {
       setAttachments([]);
+      setAttachmentsBusy(false);
       return;
     }
 
     let cancelled = false;
+    setAttachments(event.attachments);
     setAttachmentsBusy(true);
     void props
       .onListAttachments(event)
@@ -257,6 +270,108 @@ function EventEditorDialog(props: EventEditorDialogProps) {
       )
     : null;
 
+  const canModifyAttachments = Boolean(
+    editedEvent && !readOnlyForAttendee && !editedEvent.cancelled,
+  );
+
+  async function addAttachmentFiles(files: FileList | null): Promise<void> {
+    if (!editedEvent || !files || files.length === 0) {
+      return;
+    }
+
+    const selectedFiles = [...files];
+    const oversizedFile = selectedFiles.find((file) => file.size >= MAX_ATTACHMENT_SIZE_BYTES);
+    if (oversizedFile) {
+      setAttachmentError(
+        t("eventEditor.attachmentTooLarge", {
+          limit: formatAttachmentSize(MAX_ATTACHMENT_SIZE_BYTES),
+          name: oversizedFile.name,
+        }),
+      );
+      return;
+    }
+
+    setAttachmentsBusy(true);
+    setAttachmentError(null);
+    try {
+      for (const file of selectedFiles) {
+        const attachment = await readFileAsAttachment(file);
+        const nextAttachments = await props.onAddAttachment({
+          attachment,
+          calendarId: editedEvent.calendarId,
+          eventId: editedEvent.id,
+        });
+        setAttachments(nextAttachments);
+      }
+    } catch (error) {
+      setAttachmentError(toAttachmentErrorMessage(error, t("app.unexpectedError")));
+    } finally {
+      setAttachmentsBusy(false);
+    }
+  }
+
+  async function removeAttachment(attachment: EventAttachment): Promise<void> {
+    if (!editedEvent) {
+      return;
+    }
+
+    setAttachmentsBusy(true);
+    setAttachmentError(null);
+    try {
+      const nextAttachments = await props.onRemoveAttachment({
+        attachmentId: attachment.id,
+        calendarId: editedEvent.calendarId,
+        eventId: editedEvent.id,
+      });
+      setAttachments(nextAttachments);
+    } catch (error) {
+      setAttachmentError(toAttachmentErrorMessage(error, t("app.unexpectedError")));
+    } finally {
+      setAttachmentsBusy(false);
+    }
+  }
+
+  async function openAttachment(attachment: EventAttachment): Promise<void> {
+    if (!editedEvent || attachment.attachmentType === "reference") {
+      setAttachmentError(t("eventEditor.attachmentUnsupported"));
+      return;
+    }
+
+    setAttachmentsBusy(true);
+    setAttachmentError(null);
+    try {
+      await props.onOpenAttachment({
+        attachmentId: attachment.id,
+        calendarId: editedEvent.calendarId,
+        eventId: editedEvent.id,
+      });
+    } catch (error) {
+      setAttachmentError(toAttachmentErrorMessage(error, t("app.unexpectedError")));
+    } finally {
+      setAttachmentsBusy(false);
+    }
+  }
+
+  async function downloadAttachment(attachment: EventAttachment): Promise<void> {
+    if (!editedEvent || attachment.attachmentType === "reference") {
+      setAttachmentError(t("eventEditor.attachmentUnsupported"));
+      return;
+    }
+
+    setAttachmentsBusy(true);
+    setAttachmentError(null);
+    try {
+      await props.onDownloadAttachment({
+        attachmentId: attachment.id,
+        calendarId: editedEvent.calendarId,
+        eventId: editedEvent.id,
+      });
+    } catch (error) {
+      setAttachmentError(toAttachmentErrorMessage(error, t("app.unexpectedError")));
+    } finally {
+      setAttachmentsBusy(false);
+    }
+  }
   return (
     <div className="slide-panel-backdrop">
       <button
@@ -452,6 +567,27 @@ function EventEditorDialog(props: EventEditorDialogProps) {
           </div>
 
           <div className="slide-panel__section">
+            <AttachmentsSection
+              attachments={attachments}
+              busy={attachmentsBusy}
+              canModify={canModifyAttachments}
+              errorMessage={attachmentError}
+              event={editedEvent}
+              onAddFiles={(files) => {
+                void addAttachmentFiles(files);
+              }}
+              onDownload={(attachment) => {
+                void downloadAttachment(attachment);
+              }}
+              onOpen={(attachment) => {
+                void openAttachment(attachment);
+              }}
+              onRemove={(attachment) => {
+                void removeAttachment(attachment);
+              }}
+            />
+          </div>
+          <div className="slide-panel__section">
             <h4 className="slide-panel__section-title">{t("eventEditor.notes")}</h4>
             <NotesSection disabled={readOnlyForAttendee} form={form} onChange={setForm} />
           </div>
@@ -521,6 +657,138 @@ function EventEditorDialog(props: EventEditorDialogProps) {
   );
 }
 
+function AttachmentsSection({
+  attachments,
+  busy,
+  canModify,
+  errorMessage,
+  event,
+  onAddFiles,
+  onDownload,
+  onOpen,
+  onRemove,
+}: {
+  attachments: EventAttachment[];
+  busy: boolean;
+  canModify: boolean;
+  errorMessage: null | string;
+  event: CalendarEvent | null;
+  onAddFiles: (files: FileList | null) => void;
+  onDownload: (attachment: EventAttachment) => void;
+  onOpen: (attachment: EventAttachment) => void;
+  onRemove: (attachment: EventAttachment) => void;
+}) {
+  const { t } = useTranslation();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const visibleAttachments = attachments.filter((attachment) => !attachment.isInline);
+
+  return (
+    <div className="attachments-section">
+      <div className="attachments-section__header">
+        <h4 className="slide-panel__section-title">{t("eventEditor.attachments")}</h4>
+        {event && canModify && (
+          <>
+            <input
+              className="attachments-section__input"
+              multiple
+              onChange={(changeEvent) => {
+                onAddFiles(changeEvent.currentTarget.files);
+                changeEvent.currentTarget.value = "";
+              }}
+              ref={fileInputRef}
+              type="file"
+            />
+            <button
+              className="ghost-button attachments-section__add"
+              disabled={busy}
+              onClick={() => fileInputRef.current?.click()}
+              type="button"
+            >
+              <UploadIcon />
+              <span>{t("eventEditor.addFile")}</span>
+            </button>
+          </>
+        )}
+      </div>
+
+      {!event && (
+        <p className="attachments-section__note">{t("eventEditor.saveBeforeAttachments")}</p>
+      )}
+      {event && busy && <p className="attachments-section__note">{t("common.loading")}</p>}
+      {event && !busy && visibleAttachments.length === 0 && (
+        <p className="attachments-section__note">{t("eventEditor.noAttachments")}</p>
+      )}
+
+      {event && visibleAttachments.length > 0 && (
+        <ul className="attachments-list">
+          {visibleAttachments.map((attachment) => {
+            const canDownload = attachment.attachmentType !== "reference";
+            return (
+              <li className="attachment-item" key={attachment.id}>
+                <AttachmentIcon />
+                <div className="attachment-item__content">
+                  <button
+                    className="attachment-item__name"
+                    disabled={busy || !canDownload}
+                    onClick={() => onOpen(attachment)}
+                    title={canDownload ? attachment.name : t("eventEditor.attachmentUnsupported")}
+                    type="button"
+                  >
+                    {attachment.name}
+                  </button>
+                  <div className="attachment-item__meta">
+                    <span>{formatAttachmentSize(attachment.size)}</span>
+                    {!canDownload && <span>{t("eventEditor.attachmentUnsupported")}</span>}
+                  </div>
+                </div>
+                <div className="attachment-item__actions">
+                  <button
+                    aria-label={t("eventEditor.openAttachmentAria", { name: attachment.name })}
+                    className="icon-button attachment-item__action"
+                    disabled={busy || !canDownload}
+                    onClick={() => onOpen(attachment)}
+                    title={t("eventEditor.openAttachment")}
+                    type="button"
+                  >
+                    <OpenAttachmentIcon />
+                  </button>
+                  <button
+                    aria-label={t("eventEditor.downloadAttachmentAria", {
+                      name: attachment.name,
+                    })}
+                    className="icon-button attachment-item__action"
+                    disabled={busy || !canDownload}
+                    onClick={() => onDownload(attachment)}
+                    title={t("eventEditor.downloadAttachment")}
+                    type="button"
+                  >
+                    <DownloadIcon />
+                  </button>
+                  {canModify && (
+                    <button
+                      aria-label={t("eventEditor.removeAttachmentAria", {
+                        name: attachment.name,
+                      })}
+                      className="icon-button attachment-item__action attachment-item__action--danger"
+                      disabled={busy}
+                      onClick={() => onRemove(attachment)}
+                      title={t("eventEditor.removeAttachment")}
+                      type="button"
+                    >
+                      <TrashIcon />
+                    </button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {errorMessage && <div className="attachments-section__error">{errorMessage}</div>}
+    </div>
+  );
+}
 function EventToolbar({
   busy,
   availableCategories,
@@ -2191,6 +2459,68 @@ function NotesSection({
   );
 }
 
+function AttachmentIcon() {
+  return (
+    <svg className="attachment-icon" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M7 12.5 13.9 5.6a4.1 4.1 0 0 1 5.8 5.8l-8.4 8.4a5.8 5.8 0 0 1-8.2-8.2l8.1-8.1"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <path
+        d="m8.6 14.1 7.5-7.5a1.9 1.9 0 0 1 2.7 2.7l-7.9 7.9a3.3 3.3 0 0 1-4.7-4.7l7.9-7.9"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
+
+function UploadIcon() {
+  return (
+    <svg fill="none" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M12 16V4m0 0 4 4m-4-4-4 4M5 16v3h14v-3"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
+
+function DownloadIcon() {
+  return (
+    <svg fill="none" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M12 4v12m0 0 4-4m-4 4-4-4M5 20h14"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
+
+function OpenAttachmentIcon() {
+  return (
+    <svg fill="none" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M14 4h6v6m0-6-9 9M20 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+}
 function CloseIcon() {
   return (
     <svg aria-hidden="true" fill="none" viewBox="0 0 24 24" width="20" height="20">
@@ -3590,12 +3920,24 @@ function addDays(value: string, days: number): string {
   return new Date(new Date(value).getTime() + days * 24 * 60 * 60 * 1000).toISOString();
 }
 
+function toAttachmentErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return fallback;
+}
+
 function formatAttachmentSize(size: number): string {
   if (size < 1024) {
     return `${size} B`;
   }
 
-  return `${Math.round((size / 1024) * 10) / 10} KB`;
+  if (size < 1024 * 1024) {
+    return `${Math.round((size / 1024) * 10) / 10} KB`;
+  }
+
+  return `${Math.round((size / (1024 * 1024)) * 10) / 10} MB`;
 }
 
 function getResponseStatusLabel(
