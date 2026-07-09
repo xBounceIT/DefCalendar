@@ -217,6 +217,60 @@ describe("graph calendar service request handling", () => {
     expect(preferHeader).toContain('IdType="ImmutableId"');
   });
 
+  it("searches Graph people as contact suggestions", async () => {
+    expect.hasAssertions();
+
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        value: [
+          {
+            displayName: "Volpe Francesco",
+            scoredEmailAddresses: [
+              { address: "invalid-address", relevanceScore: 20 },
+              { address: "FRANCESCO1.VOLPE@TELECOMITALIA.IT", relevanceScore: 10 },
+            ],
+            userPrincipalName: "francesco1.volpe@telecomitalia.it",
+          },
+          {
+            givenName: "Fallback",
+            surname: "Person",
+            userPrincipalName: "fallback@example.com",
+          },
+          {
+            displayName: "Duplicate",
+            scoredEmailAddresses: [
+              { address: "francesco1.volpe@telecomitalia.it", relevanceScore: 8 },
+            ],
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const service = createService();
+
+    await expect(service.searchPeople("account-1", "vol pe", 5)).resolves.toStrictEqual([
+      { email: "francesco1.volpe@telecomitalia.it", name: "Volpe Francesco" },
+      { email: "fallback@example.com", name: "Fallback Person" },
+    ]);
+
+    const requestUrl = new URL(String(fetchMock.mock.calls[0][0]));
+    const requestHeaders = new Headers(fetchMock.mock.calls[0][1]?.headers);
+    expect({
+      pathname: requestUrl.pathname,
+      querySources: requestHeaders.get("X-PeopleQuery-QuerySources"),
+      search: requestUrl.searchParams.get("$search"),
+      select: requestUrl.searchParams.get("$select"),
+      top: requestUrl.searchParams.get("$top"),
+    }).toStrictEqual({
+      pathname: "/v1.0/me/people",
+      querySources: "Mailbox,Directory",
+      search: '"vol pe"',
+      select: "displayName,givenName,surname,userPrincipalName,scoredEmailAddresses",
+      top: "5",
+    });
+  });
+
   it("parses Graph attachment metadata types", async () => {
     expect.hasAssertions();
     const fetchMock = vi.fn().mockResolvedValue(

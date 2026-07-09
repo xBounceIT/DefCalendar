@@ -17,6 +17,7 @@ describe("app config", () => {
       "Calendars.ReadWrite",
       "MailboxSettings.Read",
       "Contacts.Read",
+      "People.Read",
     ]);
   });
 
