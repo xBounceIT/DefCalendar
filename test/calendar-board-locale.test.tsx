@@ -17,7 +17,7 @@ const TOOLTIP_GAP_PX = 8;
 const TOOLTIP_MAX_WIDTH_PX = 320;
 const TOOLTIP_SHOW_DELAY_MS = 900;
 const TOOLTIP_TEST_HEIGHT = 32;
-const TOOLTIP_TEST_WIDTH = TOOLTIP_MAX_WIDTH_PX;
+const TOOLTIP_VIEWPORT_SIDE_MARGIN_PX = 12;
 
 vi.mock<{
   default: unknown;
@@ -107,10 +107,18 @@ function readPx(value: string): number {
   return parsed;
 }
 
+function getTooltipTestWidth(): number {
+  return Math.min(
+    TOOLTIP_MAX_WIDTH_PX,
+    Math.max(0, globalThis.innerWidth - TOOLTIP_VIEWPORT_SIDE_MARGIN_PX * 2),
+  );
+}
+
 function getTooltipTestRect(tooltip: HTMLElement): DOMRect {
+  const width = getTooltipTestWidth();
   const left = tooltip.style.left
     ? readPx(tooltip.style.left)
-    : globalThis.innerWidth - readPx(tooltip.style.right) - TOOLTIP_TEST_WIDTH;
+    : globalThis.innerWidth - readPx(tooltip.style.right) - width;
   const top = tooltip.style.top
     ? readPx(tooltip.style.top)
     : globalThis.innerHeight - readPx(tooltip.style.bottom) - TOOLTIP_TEST_HEIGHT;
@@ -119,7 +127,7 @@ function getTooltipTestRect(tooltip: HTMLElement): DOMRect {
     height: TOOLTIP_TEST_HEIGHT,
     left,
     top,
-    width: TOOLTIP_TEST_WIDTH,
+    width,
   });
 }
 
@@ -452,7 +460,7 @@ describe("calendar board locale", () => {
     expect(rectsIntersect(getTooltipTestRect(tooltip), eventRect)).toBe(false);
   });
 
-  it("uses a side fallback when above would leave the viewport", async () => {
+  it("uses an in-viewport fallback when no outside placement fits", async () => {
     vi.useFakeTimers();
     setViewportSize(300, 100);
     await renderBoard("en");
@@ -461,12 +469,17 @@ describe("calendar board locale", () => {
     renderCalendarEvent({ eventRect, response: "accepted" });
 
     const tooltip = showTooltip();
+    const tooltipRect = getTooltipTestRect(tooltip);
 
-    expect(tooltip.style.left).toBe(`${eventRect.right + TOOLTIP_GAP_PX}px`);
+    expect(tooltip.style.left).toBe(`${TOOLTIP_GAP_PX}px`);
     expect(tooltip.style.right).toBe("");
     expect(tooltip.style.top).toBe(`${eventRect.top}px`);
     expect(tooltip.style.bottom).toBe("");
-    expect(rectsIntersect(getTooltipTestRect(tooltip), eventRect)).toBe(false);
+    expect(tooltipRect.left).toBeGreaterThanOrEqual(TOOLTIP_GAP_PX);
+    expect(tooltipRect.right).toBeLessThanOrEqual(
+      globalThis.innerWidth - TOOLTIP_VIEWPORT_SIDE_MARGIN_PX,
+    );
+    expect(tooltipRect.bottom).toBeLessThanOrEqual(globalThis.innerHeight - TOOLTIP_GAP_PX);
   });
 
   it("renders a loading status while event ranges are fetched", async () => {

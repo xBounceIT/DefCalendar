@@ -297,15 +297,8 @@ function getTooltipPosition(eventRect: DOMRect, tooltipSize: TooltipSize): Toolt
     };
   }
 
-  if (eventRect.left - TOOLTIP_GAP_PX >= 0 && rightPlacement > viewportWidth) {
-    return {
-      right: leftPlacement,
-      top,
-    };
-  }
-
   return {
-    left: rightPlacement,
+    left,
     top,
   };
 }
