@@ -1986,7 +1986,6 @@ button {
 .calendar-event-tooltip {
   position: fixed;
   z-index: 3000;
-  transform: translateY(-100%);
   pointer-events: none;
   max-width: min(320px, calc(100vw - 24px));
   padding: 6px 8px;

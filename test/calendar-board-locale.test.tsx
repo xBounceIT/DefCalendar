@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import type { EventContentArg, EventInput } from "@fullcalendar/core";
 import React from "react";
 import i18n from "i18next";
@@ -10,6 +10,14 @@ import type { CalendarView } from "../src/shared/schemas";
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 
 let capturedCalendarProps: Record<string, unknown> | null = null;
+
+const DEFAULT_VIEWPORT_HEIGHT = 768;
+const DEFAULT_VIEWPORT_WIDTH = 1024;
+const TOOLTIP_GAP_PX = 8;
+const TOOLTIP_MAX_WIDTH_PX = 320;
+const TOOLTIP_SHOW_DELAY_MS = 900;
+const TOOLTIP_TEST_HEIGHT = 32;
+const TOOLTIP_VIEWPORT_SIDE_MARGIN_PX = 12;
 
 vi.mock<{
   default: unknown;
@@ -33,8 +41,104 @@ vi.mock<{
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
+  setViewportSize(DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT);
   capturedCalendarProps = null;
 });
+
+function setViewportSize(width: number, height: number): void {
+  Object.defineProperty(globalThis, "innerWidth", {
+    configurable: true,
+    value: width,
+  });
+  Object.defineProperty(globalThis, "innerHeight", {
+    configurable: true,
+    value: height,
+  });
+}
+
+function createRect(
+  options?: Partial<Pick<DOMRect, "height" | "left" | "top" | "width">>,
+): DOMRect {
+  const height = options?.height ?? 24;
+  const left = options?.left ?? 120;
+  const top = options?.top ?? 80;
+  const width = options?.width ?? 160;
+
+  return {
+    bottom: top + height,
+    height,
+    left,
+    right: left + width,
+    toJSON: () => ({}),
+    top,
+    width,
+    x: left,
+    y: top,
+  } as DOMRect;
+}
+
+function advanceTooltipDelay(ms = TOOLTIP_SHOW_DELAY_MS): void {
+  act(() => {
+    vi.advanceTimersByTime(ms);
+  });
+}
+
+function getRenderedTooltip(): HTMLElement {
+  const tooltip = document.querySelector(".calendar-event-tooltip");
+  if (!(tooltip instanceof HTMLElement)) {
+    throw new Error("Tooltip was not rendered");
+  }
+
+  return tooltip;
+}
+
+function showTooltip(): HTMLElement {
+  advanceTooltipDelay();
+  return getRenderedTooltip();
+}
+
+function readPx(value: string): number {
+  const parsed = Number.parseFloat(value);
+  if (Number.isNaN(parsed)) {
+    throw new Error(`Invalid pixel value: ${value}`);
+  }
+
+  return parsed;
+}
+
+function getTooltipTestWidth(): number {
+  return Math.min(
+    TOOLTIP_MAX_WIDTH_PX,
+    Math.max(0, globalThis.innerWidth - TOOLTIP_VIEWPORT_SIDE_MARGIN_PX * 2),
+  );
+}
+
+function getTooltipTestRect(tooltip: HTMLElement): DOMRect {
+  const width = getTooltipTestWidth();
+  const left = tooltip.style.left
+    ? readPx(tooltip.style.left)
+    : globalThis.innerWidth - readPx(tooltip.style.right) - width;
+  const top = tooltip.style.top
+    ? readPx(tooltip.style.top)
+    : globalThis.innerHeight - readPx(tooltip.style.bottom) - TOOLTIP_TEST_HEIGHT;
+
+  return createRect({
+    height: TOOLTIP_TEST_HEIGHT,
+    left,
+    top,
+    width,
+  });
+}
+
+function rectsIntersect(left: DOMRect, right: DOMRect): boolean {
+  return (
+    left.left < right.right &&
+    left.right > right.left &&
+    left.top < right.bottom &&
+    left.bottom > right.top
+  );
+}
 
 async function renderBoard(language: "en" | "it") {
   if (language === "it") {
@@ -68,10 +172,12 @@ async function renderBoard(language: "en" | "it") {
 }
 
 function renderCalendarEvent(options?: {
+  eventRect?: DOMRect;
   isOrganizer?: boolean;
   isReminderOn?: boolean;
   response?: null | string;
 }) {
+  const eventRect = options?.eventRect ?? createRect();
   const isOrganizer = options?.isOrganizer ?? false;
   const isReminderOn = options?.isReminderOn ?? false;
   const response = options?.response ?? null;
@@ -111,27 +217,34 @@ function renderCalendarEvent(options?: {
     </>,
   );
 
-  const container = rendered.container.querySelector(".calendar-event-content");
-  if (container instanceof HTMLElement) {
-    act(() => {
-      eventDidMount?.({
-        el: container,
-        event,
-      });
-      eventMouseEnter?.({
-        el: container,
-        event,
-        jsEvent: new MouseEvent("mouseenter", {
-          bubbles: true,
-          clientX: 120,
-          clientY: 80,
-        }),
-      });
-    });
+  const eventElement = rendered.container.querySelector(".calendar-event-content");
+  if (!(eventElement instanceof HTMLElement)) {
+    throw new Error("Calendar event content was not rendered");
   }
+
+  eventElement.setAttribute("title", "native event title");
+  eventElement.querySelector(".fc-event-title")?.setAttribute("title", "native title");
+  vi.spyOn(eventElement, "getBoundingClientRect").mockReturnValue(eventRect);
+
+  act(() => {
+    eventDidMount?.({
+      el: eventElement,
+      event,
+    });
+    eventMouseEnter?.({
+      el: eventElement,
+      event,
+      jsEvent: new MouseEvent("mouseenter", {
+        bubbles: true,
+        clientX: 120,
+        clientY: 80,
+      }),
+    });
+  });
 
   return {
     ...rendered,
+    eventElement,
     hideTooltip: () => {
       eventMouseLeave?.();
     },
@@ -187,61 +300,186 @@ describe("calendar board locale", () => {
     expect(container.querySelector(".calendar-event-content__icon")).toBeNull();
   });
 
-  it("renders attendee response tooltip text", async () => {
+  it("waits before rendering attendee response tooltip text", async () => {
+    vi.useFakeTimers();
     await renderBoard("en");
 
-    const { queryByTitle } = renderCalendarEvent({ response: " Accepted " });
+    const { eventElement } = renderCalendarEvent({ response: " Accepted " });
 
-    expect(queryByTitle("Your response: Accepted")).toBeNull();
-    await waitFor(() => {
-      expect(document.querySelector(".calendar-event-tooltip")?.textContent).toBe(
-        "Your response: Accepted",
-      );
-    });
+    expect(eventElement.hasAttribute("title")).toBe(false);
+    expect(eventElement.querySelector("[title]")).toBeNull();
+    expect(document.querySelector(".calendar-event-tooltip")).toBeNull();
+
+    advanceTooltipDelay(TOOLTIP_SHOW_DELAY_MS - 1);
+
+    expect(document.querySelector(".calendar-event-tooltip")).toBeNull();
+
+    advanceTooltipDelay(1);
+
+    expect(getRenderedTooltip().textContent).toBe("Your response: Accepted");
   });
 
   it("renders organizer ownership tooltip text", async () => {
+    vi.useFakeTimers();
     await renderBoard("en");
 
-    const { queryByTitle } = renderCalendarEvent({ isOrganizer: true });
+    renderCalendarEvent({ isOrganizer: true });
 
-    expect(queryByTitle("You're the owner")).toBeNull();
-    await waitFor(() => {
-      expect(document.querySelector(".calendar-event-tooltip")?.textContent).toBe(
-        "You're the owner",
-      );
-    });
+    expect(showTooltip().textContent).toBe("You're the owner");
   });
 
   it("renders organizer ownership tooltip text in Italian", async () => {
+    vi.useFakeTimers();
     await renderBoard("it");
 
-    const { queryByTitle } = renderCalendarEvent({ isOrganizer: true });
+    renderCalendarEvent({ isOrganizer: true });
 
-    expect(queryByTitle("Sei il proprietario")).toBeNull();
-    await waitFor(() => {
-      expect(document.querySelector(".calendar-event-tooltip")?.textContent).toBe(
-        "Sei il proprietario",
-      );
-    });
+    expect(showTooltip().textContent).toBe("Sei il proprietario");
   });
 
   it("hides the custom tooltip on mouse leave", async () => {
+    vi.useFakeTimers();
     await renderBoard("en");
 
     const { hideTooltip } = renderCalendarEvent({ response: "accepted" });
 
-    await waitFor(() => {
-      expect(document.querySelector(".calendar-event-tooltip")).not.toBeNull();
-    });
+    showTooltip();
 
     act(() => {
       hideTooltip();
     });
 
-    await waitFor(() => {
-      expect(document.querySelector(".calendar-event-tooltip")).toBeNull();
-    });
+    expect(document.querySelector(".calendar-event-tooltip")).toBeNull();
+  });
+
+  it("hides a visible tooltip while waiting to show the next hovered event", async () => {
+    vi.useFakeTimers();
+    await renderBoard("en");
+
+    renderCalendarEvent({ response: "accepted" });
+
+    expect(showTooltip().textContent).toBe("Your response: Accepted");
+
+    renderCalendarEvent({ eventRect: createRect({ left: 300 }), isOrganizer: true });
+
+    expect(document.querySelector(".calendar-event-tooltip")).toBeNull();
+
+    advanceTooltipDelay();
+
+    expect(getRenderedTooltip().textContent).toBe("You're the owner");
+  });
+
+  it("positions the tooltip to the right of the event when there is room", async () => {
+    vi.useFakeTimers();
+    setViewportSize(800, 600);
+    await renderBoard("en");
+
+    const eventRect = createRect({ left: 100, top: 80, width: 120 });
+    renderCalendarEvent({ eventRect, response: "accepted" });
+
+    const tooltip = showTooltip();
+
+    expect(tooltip.style.left).toBe(`${eventRect.right + TOOLTIP_GAP_PX}px`);
+    expect(tooltip.style.top).toBe(`${eventRect.top}px`);
+    expect(tooltip.style.right).toBe("");
+    expect(tooltip.style.bottom).toBe("");
+    expect(rectsIntersect(getTooltipTestRect(tooltip), eventRect)).toBe(false);
+  });
+
+  it("keeps a side-positioned tooltip inside the viewport bottom", async () => {
+    vi.useFakeTimers();
+    setViewportSize(800, 200);
+    await renderBoard("en");
+
+    const eventRect = createRect({ height: 16, left: 100, top: 180, width: 120 });
+    renderCalendarEvent({ eventRect, response: "accepted" });
+
+    const tooltip = showTooltip();
+    const tooltipRect = getTooltipTestRect(tooltip);
+
+    expect(tooltip.style.left).toBe(`${eventRect.right + TOOLTIP_GAP_PX}px`);
+    expect(tooltip.style.top).toBe(
+      `${globalThis.innerHeight - TOOLTIP_TEST_HEIGHT - TOOLTIP_GAP_PX}px`,
+    );
+    expect(tooltipRect.bottom).toBeLessThanOrEqual(globalThis.innerHeight - TOOLTIP_GAP_PX);
+    expect(rectsIntersect(tooltipRect, eventRect)).toBe(false);
+  });
+
+  it("positions the tooltip to the left when the right side is unavailable", async () => {
+    vi.useFakeTimers();
+    setViewportSize(520, 600);
+    await renderBoard("en");
+
+    const eventRect = createRect({ left: 392, top: 80, width: 120 });
+    renderCalendarEvent({ eventRect, response: "accepted" });
+
+    const tooltip = showTooltip();
+
+    expect(tooltip.style.left).toBe("");
+    expect(tooltip.style.right).toBe(
+      `${globalThis.innerWidth - eventRect.left + TOOLTIP_GAP_PX}px`,
+    );
+    expect(tooltip.style.top).toBe(`${eventRect.top}px`);
+    expect(tooltip.style.bottom).toBe("");
+    expect(rectsIntersect(getTooltipTestRect(tooltip), eventRect)).toBe(false);
+  });
+
+  it("positions the tooltip below when neither side is available", async () => {
+    vi.useFakeTimers();
+    setViewportSize(300, 300);
+    await renderBoard("en");
+
+    const eventRect = createRect({ height: 20, left: 0, top: 100, width: 300 });
+    renderCalendarEvent({ eventRect, response: "accepted" });
+
+    const tooltip = showTooltip();
+
+    expect(tooltip.style.left).toBe(`${TOOLTIP_GAP_PX}px`);
+    expect(tooltip.style.right).toBe("");
+    expect(tooltip.style.top).toBe(`${eventRect.bottom + TOOLTIP_GAP_PX}px`);
+    expect(tooltip.style.bottom).toBe("");
+    expect(rectsIntersect(getTooltipTestRect(tooltip), eventRect)).toBe(false);
+  });
+
+  it("positions the tooltip above when every preferred side is unavailable", async () => {
+    vi.useFakeTimers();
+    setViewportSize(300, 150);
+    await renderBoard("en");
+
+    const eventRect = createRect({ height: 50, left: 0, top: 100, width: 300 });
+    renderCalendarEvent({ eventRect, response: "accepted" });
+
+    const tooltip = showTooltip();
+
+    expect(tooltip.style.left).toBe(`${TOOLTIP_GAP_PX}px`);
+    expect(tooltip.style.right).toBe("");
+    expect(tooltip.style.top).toBe("");
+    expect(tooltip.style.bottom).toBe(
+      `${globalThis.innerHeight - eventRect.top + TOOLTIP_GAP_PX}px`,
+    );
+    expect(rectsIntersect(getTooltipTestRect(tooltip), eventRect)).toBe(false);
+  });
+
+  it("uses an in-viewport fallback when no outside placement fits", async () => {
+    vi.useFakeTimers();
+    setViewportSize(300, 100);
+    await renderBoard("en");
+
+    const eventRect = createRect({ height: 60, left: 0, top: 20, width: 300 });
+    renderCalendarEvent({ eventRect, response: "accepted" });
+
+    const tooltip = showTooltip();
+    const tooltipRect = getTooltipTestRect(tooltip);
+
+    expect(tooltip.style.left).toBe(`${TOOLTIP_GAP_PX}px`);
+    expect(tooltip.style.right).toBe("");
+    expect(tooltip.style.top).toBe(`${eventRect.top}px`);
+    expect(tooltip.style.bottom).toBe("");
+    expect(tooltipRect.left).toBeGreaterThanOrEqual(TOOLTIP_GAP_PX);
+    expect(tooltipRect.right).toBeLessThanOrEqual(
+      globalThis.innerWidth - TOOLTIP_VIEWPORT_SIDE_MARGIN_PX,
+    );
+    expect(tooltipRect.bottom).toBeLessThanOrEqual(globalThis.innerHeight - TOOLTIP_GAP_PX);
   });
 
   it("renders a loading status while event ranges are fetched", async () => {
