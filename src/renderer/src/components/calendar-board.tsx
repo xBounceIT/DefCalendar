@@ -266,17 +266,19 @@ function getTooltipPosition(eventRect: DOMRect, tooltipSize: TooltipSize): Toolt
   );
   const top = clamp(eventRect.top, TOOLTIP_GAP_PX, verticalMax);
   const left = clamp(eventRect.left, TOOLTIP_GAP_PX, horizontalMax);
+  const rightPlacement = eventRect.right + TOOLTIP_GAP_PX;
+  const leftPlacement = viewportWidth - eventRect.left + TOOLTIP_GAP_PX;
 
-  if (eventRect.right + TOOLTIP_GAP_PX + tooltipSize.width <= viewportWidth) {
+  if (rightPlacement + tooltipSize.width <= viewportWidth) {
     return {
-      left: eventRect.right + TOOLTIP_GAP_PX,
+      left: rightPlacement,
       top,
     };
   }
 
   if (eventRect.left - TOOLTIP_GAP_PX - tooltipSize.width >= 0) {
     return {
-      right: viewportWidth - eventRect.left + TOOLTIP_GAP_PX,
+      right: leftPlacement,
       top,
     };
   }
@@ -288,9 +290,23 @@ function getTooltipPosition(eventRect: DOMRect, tooltipSize: TooltipSize): Toolt
     };
   }
 
+  if (eventRect.top - TOOLTIP_GAP_PX - tooltipSize.height >= TOOLTIP_GAP_PX) {
+    return {
+      bottom: viewportHeight - eventRect.top + TOOLTIP_GAP_PX,
+      left,
+    };
+  }
+
+  if (eventRect.left - TOOLTIP_GAP_PX >= 0 && rightPlacement > viewportWidth) {
+    return {
+      right: leftPlacement,
+      top,
+    };
+  }
+
   return {
-    bottom: viewportHeight - eventRect.top + TOOLTIP_GAP_PX,
-    left,
+    left: rightPlacement,
+    top,
   };
 }
 

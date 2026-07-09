@@ -452,6 +452,23 @@ describe("calendar board locale", () => {
     expect(rectsIntersect(getTooltipTestRect(tooltip), eventRect)).toBe(false);
   });
 
+  it("uses a side fallback when above would leave the viewport", async () => {
+    vi.useFakeTimers();
+    setViewportSize(300, 100);
+    await renderBoard("en");
+
+    const eventRect = createRect({ height: 60, left: 0, top: 20, width: 300 });
+    renderCalendarEvent({ eventRect, response: "accepted" });
+
+    const tooltip = showTooltip();
+
+    expect(tooltip.style.left).toBe(`${eventRect.right + TOOLTIP_GAP_PX}px`);
+    expect(tooltip.style.right).toBe("");
+    expect(tooltip.style.top).toBe(`${eventRect.top}px`);
+    expect(tooltip.style.bottom).toBe("");
+    expect(rectsIntersect(getTooltipTestRect(tooltip), eventRect)).toBe(false);
+  });
+
   it("renders a loading status while event ranges are fetched", async () => {
     expect.hasAssertions();
     await i18n.changeLanguage("en");
