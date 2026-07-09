@@ -1979,6 +1979,7 @@ button {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  user-select: text;
   white-space: nowrap;
 }
 
@@ -3890,7 +3891,7 @@ button {
   font-size: 15px;
   padding: 0;
   outline: none;
-  user-select: none;
+  user-select: text;
 }
 
 .field-input::placeholder {
@@ -3898,7 +3899,8 @@ button {
 }
 
 .field-input::selection {
-  background: transparent;
+  background: var(--accent);
+  color: #ffffff;
 }
 
 .field-input:focus-visible {
