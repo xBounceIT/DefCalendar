@@ -14,9 +14,10 @@ let capturedCalendarProps: Record<string, unknown> | null = null;
 const DEFAULT_VIEWPORT_HEIGHT = 768;
 const DEFAULT_VIEWPORT_WIDTH = 1024;
 const TOOLTIP_GAP_PX = 8;
+const TOOLTIP_MAX_WIDTH_PX = 320;
 const TOOLTIP_SHOW_DELAY_MS = 900;
 const TOOLTIP_TEST_HEIGHT = 32;
-const TOOLTIP_TEST_WIDTH = 120;
+const TOOLTIP_TEST_WIDTH = TOOLTIP_MAX_WIDTH_PX;
 
 vi.mock<{
   default: unknown;
@@ -379,10 +380,10 @@ describe("calendar board locale", () => {
 
   it("positions the tooltip to the left when the right side is unavailable", async () => {
     vi.useFakeTimers();
-    setViewportSize(300, 600);
+    setViewportSize(520, 600);
     await renderBoard("en");
 
-    const eventRect = createRect({ left: 180, top: 80, width: 120 });
+    const eventRect = createRect({ left: 392, top: 80, width: 120 });
     renderCalendarEvent({ eventRect, response: "accepted" });
 
     const tooltip = showTooltip();

@@ -41,7 +41,9 @@ interface CalendarBoardProps {
 
 const CALENDAR_PLUGINS = [dayGridPlugin, timeGridPlugin, interactionPlugin];
 const TOOLTIP_GAP_PX = 8;
+const TOOLTIP_MAX_WIDTH_PX = 320;
 const TOOLTIP_SHOW_DELAY_MS = 900;
+const TOOLTIP_VIEWPORT_SIDE_MARGIN_PX = 12;
 
 interface TooltipPosition {
   bottom?: number;
@@ -220,28 +222,33 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+function getTooltipReservedWidth(viewportWidth: number): number {
+  return Math.min(
+    TOOLTIP_MAX_WIDTH_PX,
+    Math.max(0, viewportWidth - TOOLTIP_VIEWPORT_SIDE_MARGIN_PX * 2),
+  );
+}
+
 function getTooltipPosition(eventRect: DOMRect): TooltipPosition {
   const viewportWidth = globalThis.innerWidth;
   const viewportHeight = globalThis.innerHeight;
+  const tooltipWidth = getTooltipReservedWidth(viewportWidth);
+  const horizontalMax = Math.max(TOOLTIP_GAP_PX, viewportWidth - tooltipWidth - TOOLTIP_GAP_PX);
   const top = clamp(
     eventRect.top,
     TOOLTIP_GAP_PX,
     Math.max(TOOLTIP_GAP_PX, viewportHeight - TOOLTIP_GAP_PX),
   );
-  const left = clamp(
-    eventRect.left,
-    TOOLTIP_GAP_PX,
-    Math.max(TOOLTIP_GAP_PX, viewportWidth - TOOLTIP_GAP_PX),
-  );
+  const left = clamp(eventRect.left, TOOLTIP_GAP_PX, horizontalMax);
 
-  if (eventRect.right + TOOLTIP_GAP_PX <= viewportWidth) {
+  if (eventRect.right + TOOLTIP_GAP_PX + tooltipWidth <= viewportWidth) {
     return {
       left: eventRect.right + TOOLTIP_GAP_PX,
       top,
     };
   }
 
-  if (eventRect.left - TOOLTIP_GAP_PX >= 0) {
+  if (eventRect.left - TOOLTIP_GAP_PX - tooltipWidth >= 0) {
     return {
       right: viewportWidth - eventRect.left + TOOLTIP_GAP_PX,
       top,
