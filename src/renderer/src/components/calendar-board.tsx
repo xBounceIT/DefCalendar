@@ -40,6 +40,7 @@ interface CalendarBoardProps {
 }
 
 const CALENDAR_PLUGINS = [dayGridPlugin, timeGridPlugin, interactionPlugin];
+const TOOLTIP_FALLBACK_HEIGHT_PX = 32;
 const TOOLTIP_GAP_PX = 8;
 const TOOLTIP_MAX_WIDTH_PX = 320;
 const TOOLTIP_SHOW_DELAY_MS = 900;
@@ -50,6 +51,11 @@ interface TooltipPosition {
   left?: number;
   right?: number;
   top?: number;
+}
+
+interface TooltipSize {
+  height: number;
+  width: number;
 }
 
 interface CalendarEventExtendedProps {
@@ -229,33 +235,53 @@ function getTooltipReservedWidth(viewportWidth: number): number {
   );
 }
 
-function getTooltipPosition(eventRect: DOMRect): TooltipPosition {
+function measureTooltipSize(text: string): TooltipSize {
+  const tooltip = document.createElement("div");
+  tooltip.className = "calendar-event-tooltip";
+  tooltip.textContent = text;
+  tooltip.style.left = "0";
+  tooltip.style.top = "0";
+  tooltip.style.visibility = "hidden";
+  document.body.append(tooltip);
+
+  const rect = tooltip.getBoundingClientRect();
+  tooltip.remove();
+
+  return {
+    height: rect.height > 0 ? rect.height : TOOLTIP_FALLBACK_HEIGHT_PX,
+    width: rect.width > 0 ? rect.width : getTooltipReservedWidth(globalThis.innerWidth),
+  };
+}
+
+function getTooltipPosition(eventRect: DOMRect, tooltipSize: TooltipSize): TooltipPosition {
   const viewportWidth = globalThis.innerWidth;
   const viewportHeight = globalThis.innerHeight;
-  const tooltipWidth = getTooltipReservedWidth(viewportWidth);
-  const horizontalMax = Math.max(TOOLTIP_GAP_PX, viewportWidth - tooltipWidth - TOOLTIP_GAP_PX);
-  const top = clamp(
-    eventRect.top,
+  const horizontalMax = Math.max(
     TOOLTIP_GAP_PX,
-    Math.max(TOOLTIP_GAP_PX, viewportHeight - TOOLTIP_GAP_PX),
+    viewportWidth - tooltipSize.width - TOOLTIP_GAP_PX,
   );
+  const verticalMax = Math.max(
+    TOOLTIP_GAP_PX,
+    viewportHeight - tooltipSize.height - TOOLTIP_GAP_PX,
+  );
+  const top = clamp(eventRect.top, TOOLTIP_GAP_PX, verticalMax);
   const left = clamp(eventRect.left, TOOLTIP_GAP_PX, horizontalMax);
 
-  if (eventRect.right + TOOLTIP_GAP_PX + tooltipWidth <= viewportWidth) {
+  if (eventRect.right + TOOLTIP_GAP_PX + tooltipSize.width <= viewportWidth) {
     return {
       left: eventRect.right + TOOLTIP_GAP_PX,
       top,
     };
   }
 
-  if (eventRect.left - TOOLTIP_GAP_PX - tooltipWidth >= 0) {
+  if (eventRect.left - TOOLTIP_GAP_PX - tooltipSize.width >= 0) {
     return {
       right: viewportWidth - eventRect.left + TOOLTIP_GAP_PX,
       top,
     };
   }
 
-  if (eventRect.bottom + TOOLTIP_GAP_PX <= viewportHeight) {
+  if (eventRect.bottom + TOOLTIP_GAP_PX + tooltipSize.height <= viewportHeight) {
     return {
       left,
       top: eventRect.bottom + TOOLTIP_GAP_PX,
@@ -404,9 +430,10 @@ function CalendarSurface({
       clearTooltipShowTimeout();
       setHoverTooltip(null);
       tooltipShowTimeoutRef.current = globalThis.setTimeout(() => {
+        const text = getEventTooltip(t, eventData);
         setHoverTooltip({
-          position: getTooltipPosition(arg.el.getBoundingClientRect()),
-          text: getEventTooltip(t, eventData),
+          position: getTooltipPosition(arg.el.getBoundingClientRect(), measureTooltipSize(text)),
+          text,
         });
         tooltipShowTimeoutRef.current = null;
       }, TOOLTIP_SHOW_DELAY_MS);

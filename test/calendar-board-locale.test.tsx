@@ -378,6 +378,25 @@ describe("calendar board locale", () => {
     expect(rectsIntersect(getTooltipTestRect(tooltip), eventRect)).toBe(false);
   });
 
+  it("keeps a side-positioned tooltip inside the viewport bottom", async () => {
+    vi.useFakeTimers();
+    setViewportSize(800, 200);
+    await renderBoard("en");
+
+    const eventRect = createRect({ height: 16, left: 100, top: 180, width: 120 });
+    renderCalendarEvent({ eventRect, response: "accepted" });
+
+    const tooltip = showTooltip();
+    const tooltipRect = getTooltipTestRect(tooltip);
+
+    expect(tooltip.style.left).toBe(`${eventRect.right + TOOLTIP_GAP_PX}px`);
+    expect(tooltip.style.top).toBe(
+      `${globalThis.innerHeight - TOOLTIP_TEST_HEIGHT - TOOLTIP_GAP_PX}px`,
+    );
+    expect(tooltipRect.bottom).toBeLessThanOrEqual(globalThis.innerHeight - TOOLTIP_GAP_PX);
+    expect(rectsIntersect(tooltipRect, eventRect)).toBe(false);
+  });
+
   it("positions the tooltip to the left when the right side is unavailable", async () => {
     vi.useFakeTimers();
     setViewportSize(520, 600);
