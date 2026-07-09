@@ -166,6 +166,7 @@ function createFixture() {
     deleteEvent: vi.fn().mockResolvedValue(undefined),
     forwardEvent: vi.fn().mockResolvedValue(undefined),
     listContacts: vi.fn().mockResolvedValue([]),
+    searchPeople: vi.fn().mockResolvedValue([]),
     getEvent: vi.fn().mockResolvedValue(storedEvent),
     getAttachmentContent: vi.fn().mockResolvedValue({
       attachment: {
@@ -553,6 +554,8 @@ describe("register ipc", () => {
   });
 
   it("searches cached contacts for an account", async () => {
+    expect.hasAssertions();
+
     const fixture = createFixture();
     const invokeEvent = { sender: fixture.mainWebContents };
 
@@ -567,6 +570,83 @@ describe("register ipc", () => {
       limit: 5,
       query: "ali",
     });
+    expect(fixture.graph.searchPeople).toHaveBeenCalledWith("account-1", "ali", 5);
+    expect(response).toStrictEqual([
+      { email: "alice@example.com", name: "Alice Example" },
+      { email: "bob@example.com", name: null },
+    ]);
+  });
+
+  it("merges cached contacts with Graph people results", async () => {
+    expect.hasAssertions();
+
+    const fixture = createFixture();
+    fixture.graph.searchPeople.mockResolvedValueOnce([
+      { email: "volpe@example.com", name: "Volpe Francesco" },
+      { email: "ALICE@example.com", name: "Alice From Graph" },
+    ]);
+    const invokeEvent = { sender: fixture.mainWebContents };
+
+    const response = await fixture.handlers.get(IPC_CHANNELS.contactsSearch)?.(invokeEvent, {
+      homeAccountId: "account-1",
+      limit: 5,
+      query: "volpe",
+    });
+
+    expect(response).toStrictEqual([
+      { email: "alice@example.com", name: "Alice Example" },
+      { email: "bob@example.com", name: null },
+      { email: "volpe@example.com", name: "Volpe Francesco" },
+    ]);
+  });
+
+  it("returns cached contacts when Graph people search fails", async () => {
+    expect.hasAssertions();
+
+    const fixture = createFixture();
+    fixture.graph.searchPeople.mockRejectedValueOnce(new Error("People unavailable"));
+    const invokeEvent = { sender: fixture.mainWebContents };
+
+    const response = await fixture.handlers.get(IPC_CHANNELS.contactsSearch)?.(invokeEvent, {
+      homeAccountId: "account-1",
+      limit: 5,
+      query: "ali",
+    });
+
+    expect(response).toStrictEqual([
+      { email: "alice@example.com", name: "Alice Example" },
+      { email: "bob@example.com", name: null },
+    ]);
+  });
+
+  it("skips Graph people search for one-character contact queries", async () => {
+    expect.hasAssertions();
+
+    const fixture = createFixture();
+    const invokeEvent = { sender: fixture.mainWebContents };
+
+    await fixture.handlers.get(IPC_CHANNELS.contactsSearch)?.(invokeEvent, {
+      homeAccountId: "account-1",
+      limit: 5,
+      query: "a",
+    });
+
+    expect(fixture.graph.searchPeople).not.toHaveBeenCalled();
+  });
+
+  it("skips Graph people search when cached contacts fill the requested limit", async () => {
+    expect.hasAssertions();
+
+    const fixture = createFixture();
+    const invokeEvent = { sender: fixture.mainWebContents };
+
+    const response = await fixture.handlers.get(IPC_CHANNELS.contactsSearch)?.(invokeEvent, {
+      homeAccountId: "account-1",
+      limit: 2,
+      query: "ali",
+    });
+
+    expect(fixture.graph.searchPeople).not.toHaveBeenCalled();
     expect(response).toStrictEqual([
       { email: "alice@example.com", name: "Alice Example" },
       { email: "bob@example.com", name: null },

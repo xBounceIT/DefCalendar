@@ -1,18 +1,19 @@
 import { Buffer } from "node:buffer";
-import type {
-  AttachmentUpload,
-  CalendarEvent,
-  CalendarSummary,
-  ContactSuggestion,
-  EventAttachment,
-  EventDraft,
-  EventParticipant,
-  ForwardEventArgs,
-  OnlineMeetingInfo,
-  OutlookCategory,
-  ParticipantResponseStatus,
-  Recurrence,
-  RespondToEventArgs,
+import {
+  contactSuggestionSchema,
+  type AttachmentUpload,
+  type CalendarEvent,
+  type CalendarSummary,
+  type ContactSuggestion,
+  type EventAttachment,
+  type EventDraft,
+  type EventParticipant,
+  type ForwardEventArgs,
+  type OnlineMeetingInfo,
+  type OutlookCategory,
+  type ParticipantResponseStatus,
+  type Recurrence,
+  type RespondToEventArgs,
 } from "@shared/schemas";
 import type { AppConfig } from "@main/config";
 import type MsalAuthService from "@main/auth/msal-auth-service";
@@ -170,6 +171,19 @@ interface GraphContact {
   tertiaryEmailAddress?: GraphEmailAddress;
 }
 
+interface GraphScoredEmailAddress {
+  address?: string;
+  relevanceScore?: number;
+}
+
+interface GraphPerson {
+  displayName?: string;
+  givenName?: string;
+  scoredEmailAddresses?: GraphScoredEmailAddress[];
+  surname?: string;
+  userPrincipalName?: string;
+}
+
 interface SendRequestArgs {
   forceRefresh?: boolean;
   homeAccountId?: string;
@@ -245,15 +259,15 @@ class GraphCalendarService {
 
     for (const contact of contacts) {
       for (const emailAddress of listGraphContactEmailAddresses(contact)) {
-        const email = trimOrNull(emailAddress.address)?.toLowerCase();
-        if (!email || suggestions.has(email)) {
+        const suggestion = toContactSuggestion(
+          emailAddress.address,
+          trimOrNull(emailAddress.name) ?? getGraphContactDisplayName(contact),
+        );
+        if (!suggestion || suggestions.has(suggestion.email)) {
           continue;
         }
 
-        suggestions.set(email, {
-          email,
-          name: trimOrNull(emailAddress.name) ?? getGraphContactDisplayName(contact),
-        });
+        suggestions.set(suggestion.email, suggestion);
       }
     }
 
@@ -262,6 +276,42 @@ class GraphCalendarService {
       const rightValue = right.name ?? right.email;
       return leftValue.localeCompare(rightValue);
     });
+  }
+
+  async searchPeople(
+    homeAccountId: string,
+    queryText: string,
+    limit: number,
+  ): Promise<ContactSuggestion[]> {
+    const search = trimOrNull(queryText);
+    if (!search) {
+      return [];
+    }
+
+    const query = new URLSearchParams({
+      $search: search,
+      $select: "displayName,givenName,surname,userPrincipalName,scoredEmailAddresses",
+      $top: String(limit),
+    });
+    const response = parseGraphCollection(
+      await this.requestJson(`/me/people?${query.toString()}`, {}, homeAccountId),
+    );
+    const suggestions = new Map<string, ContactSuggestion>();
+
+    for (const person of response.value.map(parseGraphPerson)) {
+      for (const suggestion of listGraphPersonContactSuggestions(person)) {
+        if (suggestions.has(suggestion.email)) {
+          continue;
+        }
+
+        suggestions.set(suggestion.email, suggestion);
+        if (suggestions.size >= limit) {
+          return [...suggestions.values()];
+        }
+      }
+    }
+
+    return [...suggestions.values()];
   }
 
   async listCalendarView(
@@ -1250,6 +1300,22 @@ function parseGraphContact(value: unknown): GraphContact {
   };
 }
 
+function parseGraphPerson(value: unknown): GraphPerson {
+  if (!isRecord(value)) {
+    throw new Error("Unexpected Microsoft Graph person payload.");
+  }
+
+  return {
+    displayName: readOptionalString(value, "displayName"),
+    givenName: readOptionalString(value, "givenName"),
+    scoredEmailAddresses: parseGraphScoredEmailAddresses(
+      readOptionalArray(value, "scoredEmailAddresses"),
+    ),
+    surname: readOptionalString(value, "surname"),
+    userPrincipalName: readOptionalString(value, "userPrincipalName"),
+  };
+}
+
 function parseGraphCollection(value: unknown): ParsedGraphCollection {
   if (!isRecord(value) || !Array.isArray(value.value)) {
     throw new Error("Unexpected Microsoft Graph collection payload.");
@@ -1296,6 +1362,29 @@ function parseGraphEmailAddresses(values?: unknown[]): GraphEmailAddress[] | und
   return values
     .map((entry) => (isRecord(entry) ? parseGraphEmailAddress(entry) : undefined))
     .filter((entry): entry is GraphEmailAddress => Boolean(entry));
+}
+
+function parseGraphScoredEmailAddress(
+  value?: Record<string, unknown>,
+): GraphScoredEmailAddress | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  return {
+    address: readOptionalString(value, "address"),
+    relevanceScore: readOptionalNumber(value, "relevanceScore"),
+  };
+}
+
+function parseGraphScoredEmailAddresses(values?: unknown[]): GraphScoredEmailAddress[] | undefined {
+  if (!values) {
+    return undefined;
+  }
+
+  return values
+    .map((entry) => (isRecord(entry) ? parseGraphScoredEmailAddress(entry) : undefined))
+    .filter((entry): entry is GraphScoredEmailAddress => Boolean(entry));
 }
 
 function parseGraphEvent(value: unknown): GraphEvent {
@@ -1612,6 +1701,52 @@ function getGraphContactDisplayName(contact: GraphContact): null | string {
     trimOrNull(contact.fileAs);
 
   return preferred;
+}
+
+function listGraphPersonContactSuggestions(person: GraphPerson): ContactSuggestion[] {
+  const suggestions = new Map<string, ContactSuggestion>();
+  const name = getGraphPersonDisplayName(person);
+  const scoredEmailAddresses = [...(person.scoredEmailAddresses ?? [])].toSorted(
+    (left, right) => (right.relevanceScore ?? 0) - (left.relevanceScore ?? 0),
+  );
+
+  for (const emailAddress of scoredEmailAddresses) {
+    const suggestion = toContactSuggestion(emailAddress.address, name);
+    if (suggestion && !suggestions.has(suggestion.email)) {
+      suggestions.set(suggestion.email, suggestion);
+    }
+  }
+
+  const fallback = toContactSuggestion(person.userPrincipalName, name);
+  if (fallback && !suggestions.has(fallback.email)) {
+    suggestions.set(fallback.email, fallback);
+  }
+
+  return [...suggestions.values()];
+}
+
+function getGraphPersonDisplayName(person: GraphPerson): null | string {
+  return (
+    trimOrNull(person.displayName) ??
+    trimOrNull([person.givenName, person.surname].filter(Boolean).join(" "))
+  );
+}
+
+function toContactSuggestion(
+  emailValue: null | string | undefined,
+  nameValue: null | string | undefined,
+): ContactSuggestion | null {
+  const email = trimOrNull(emailValue)?.toLowerCase();
+  if (!email) {
+    return null;
+  }
+
+  const parsed = contactSuggestionSchema.safeParse({
+    email,
+    name: trimOrNull(nameValue),
+  });
+
+  return parsed.success ? parsed.data : null;
 }
 
 function parseResponseStatus(value?: GraphResponseStatus): null | ParticipantResponseStatus {

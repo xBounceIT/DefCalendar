@@ -3,7 +3,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { BrowserWindow, IpcMainInvokeEvent } from "electron";
 import { z } from "zod";
-import type { CalendarEvent, EventAttachment, EventListArgs } from "@shared/schemas";
+import type {
+  CalendarEvent,
+  ContactSuggestion,
+  EventAttachment,
+  EventListArgs,
+} from "@shared/schemas";
 import {
   appUpdateStatusSchema,
   attachmentDeleteArgsSchema,
@@ -48,6 +53,8 @@ import { app, dialog, ipcMain, shell } from "@main/electron-runtime";
 import { showAndFocusMainWindow } from "@main/window";
 import { IPC_CHANNELS } from "@shared/ipc";
 
+const MIN_PEOPLE_SEARCH_QUERY_LENGTH = 2;
+
 interface RegisterIpcDependencies {
   auth: MsalAuthService;
   db: AppDatabase;
@@ -62,6 +69,36 @@ interface RegisterIpcDependencies {
   sync: SyncService;
   updates: UpdateService;
   getMainWindow: () => BrowserWindow | null;
+}
+
+function mergeContactSuggestions(
+  cachedContacts: ContactSuggestion[],
+  peopleContacts: ContactSuggestion[],
+  limit: number,
+): ContactSuggestion[] {
+  const suggestions = new Map<string, ContactSuggestion>();
+
+  for (const contact of [...cachedContacts, ...peopleContacts]) {
+    const parsed = contactSuggestionSchema.safeParse(contact);
+    if (!parsed.success) {
+      continue;
+    }
+
+    const email = parsed.data.email.toLowerCase();
+    if (suggestions.has(email)) {
+      continue;
+    }
+
+    suggestions.set(email, {
+      email,
+      name: parsed.data.name,
+    });
+    if (suggestions.size >= limit) {
+      return [...suggestions.values()];
+    }
+  }
+
+  return [...suggestions.values()];
 }
 
 function registerIpc(dependencies: RegisterIpcDependencies): void {
@@ -231,9 +268,24 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   ipcMain.handle(IPC_CHANNELS.contactsSearch, async (event, input) => {
     validateMainSender(event);
     const args = searchContactsArgsSchema.parse(input);
-    return dependencies.db
+    const cachedContacts = dependencies.db
       .searchContacts(args)
       .map((contact) => contactSuggestionSchema.parse(contact));
+
+    if (args.query.length < MIN_PEOPLE_SEARCH_QUERY_LENGTH || cachedContacts.length >= args.limit) {
+      return cachedContacts;
+    }
+
+    try {
+      const peopleContacts = await dependencies.graph.searchPeople(
+        args.homeAccountId,
+        args.query,
+        args.limit,
+      );
+      return mergeContactSuggestions(cachedContacts, peopleContacts, args.limit);
+    } catch {
+      return cachedContacts;
+    }
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsList, async (event, input) => {
