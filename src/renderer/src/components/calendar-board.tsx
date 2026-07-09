@@ -40,7 +40,15 @@ interface CalendarBoardProps {
 }
 
 const CALENDAR_PLUGINS = [dayGridPlugin, timeGridPlugin, interactionPlugin];
-const TOOLTIP_SHOW_DELAY_MS = 500;
+const TOOLTIP_GAP_PX = 8;
+const TOOLTIP_SHOW_DELAY_MS = 900;
+
+interface TooltipPosition {
+  bottom?: number;
+  left?: number;
+  right?: number;
+  top?: number;
+}
 
 interface CalendarEventExtendedProps {
   calendarColor?: string | null;
@@ -208,6 +216,60 @@ function handleEventClassNames(info: EventContentArg): string[] {
   return [className];
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function getTooltipPosition(eventRect: DOMRect): TooltipPosition {
+  const viewportWidth = globalThis.innerWidth;
+  const viewportHeight = globalThis.innerHeight;
+  const top = clamp(
+    eventRect.top,
+    TOOLTIP_GAP_PX,
+    Math.max(TOOLTIP_GAP_PX, viewportHeight - TOOLTIP_GAP_PX),
+  );
+  const left = clamp(
+    eventRect.left,
+    TOOLTIP_GAP_PX,
+    Math.max(TOOLTIP_GAP_PX, viewportWidth - TOOLTIP_GAP_PX),
+  );
+
+  if (eventRect.right + TOOLTIP_GAP_PX <= viewportWidth) {
+    return {
+      left: eventRect.right + TOOLTIP_GAP_PX,
+      top,
+    };
+  }
+
+  if (eventRect.left - TOOLTIP_GAP_PX >= 0) {
+    return {
+      right: viewportWidth - eventRect.left + TOOLTIP_GAP_PX,
+      top,
+    };
+  }
+
+  if (eventRect.bottom + TOOLTIP_GAP_PX <= viewportHeight) {
+    return {
+      left,
+      top: eventRect.bottom + TOOLTIP_GAP_PX,
+    };
+  }
+
+  return {
+    bottom: viewportHeight - eventRect.top + TOOLTIP_GAP_PX,
+    left,
+  };
+}
+
+function getTooltipStyle(position: TooltipPosition): React.CSSProperties {
+  return {
+    bottom: position.bottom === undefined ? undefined : `${position.bottom}px`,
+    left: position.left === undefined ? undefined : `${position.left}px`,
+    right: position.right === undefined ? undefined : `${position.right}px`,
+    top: position.top === undefined ? undefined : `${position.top}px`,
+  };
+}
+
 function isSameLocalDay(left: Date, rightIso: null | string): boolean {
   if (!rightIso) {
     return false;
@@ -312,9 +374,8 @@ function CalendarSurface({
   const { t, i18n } = useTranslation();
   const tooltipShowTimeoutRef = React.useRef<null | ReturnType<typeof globalThis.setTimeout>>(null);
   const [hoverTooltip, setHoverTooltip] = React.useState<null | {
+    position: TooltipPosition;
     text: string;
-    x: number;
-    y: number;
   }>(null);
   const locale = React.useMemo(() => (i18n.language === "it" ? "it" : "en"), [i18n.language]);
   const eventTimeFormat = React.useMemo(() => buildEventTimeFormat(timeFormat), [timeFormat]);
@@ -332,15 +393,14 @@ function CalendarSurface({
   const handleEventMouseEnter = React.useCallback(
     (arg: EventHoveringArg) => {
       const { eventData } = arg.event.extendedProps as CalendarEventExtendedProps;
-      const nextTooltip = {
-        text: getEventTooltip(t, eventData),
-        x: arg.jsEvent.clientX + 12,
-        y: arg.jsEvent.clientY + 12,
-      };
 
       clearTooltipShowTimeout();
+      setHoverTooltip(null);
       tooltipShowTimeoutRef.current = globalThis.setTimeout(() => {
-        setHoverTooltip(nextTooltip);
+        setHoverTooltip({
+          position: getTooltipPosition(arg.el.getBoundingClientRect()),
+          text: getEventTooltip(t, eventData),
+        });
         tooltipShowTimeoutRef.current = null;
       }, TOOLTIP_SHOW_DELAY_MS);
     },
@@ -385,7 +445,7 @@ function CalendarSurface({
           aria-live="polite"
           className="calendar-event-tooltip"
           role="tooltip"
-          style={{ left: `${hoverTooltip.x}px`, top: `${hoverTooltip.y}px` }}
+          style={getTooltipStyle(hoverTooltip.position)}
         >
           {hoverTooltip.text}
         </div>,
