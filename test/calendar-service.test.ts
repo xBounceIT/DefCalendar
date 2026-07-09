@@ -255,14 +255,17 @@ describe("graph calendar service request handling", () => {
     ]);
 
     const requestUrl = new URL(String(fetchMock.mock.calls[0][0]));
+    const requestHeaders = new Headers(fetchMock.mock.calls[0][1]?.headers);
     expect({
       pathname: requestUrl.pathname,
+      querySources: requestHeaders.get("X-PeopleQuery-QuerySources"),
       search: requestUrl.searchParams.get("$search"),
       select: requestUrl.searchParams.get("$select"),
       top: requestUrl.searchParams.get("$top"),
     }).toStrictEqual({
       pathname: "/v1.0/me/people",
-      search: "vol pe",
+      querySources: "Mailbox,Directory",
+      search: '"vol pe"',
       select: "displayName,givenName,surname,userPrincipalName,scoredEmailAddresses",
       top: "5",
     });

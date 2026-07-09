@@ -289,12 +289,20 @@ class GraphCalendarService {
     }
 
     const query = new URLSearchParams({
-      $search: search,
+      $search: toPeopleSearchQuery(search),
       $select: "displayName,givenName,surname,userPrincipalName,scoredEmailAddresses",
       $top: String(limit),
     });
     const response = parseGraphCollection(
-      await this.requestJson(`/me/people?${query.toString()}`, {}, homeAccountId),
+      await this.requestJson(
+        `/me/people?${query.toString()}`,
+        {
+          headers: {
+            "X-PeopleQuery-QuerySources": "Mailbox,Directory",
+          },
+        },
+        homeAccountId,
+      ),
     );
     const suggestions = new Map<string, ContactSuggestion>();
 
@@ -2009,6 +2017,10 @@ function trimOrNull(value: null | string | undefined): null | string {
   }
 
   return null;
+}
+
+function toPeopleSearchQuery(value: string): string {
+  return `"${value.replaceAll('"', "")}"`;
 }
 
 function normalizePatternType(value?: string): Recurrence["pattern"]["type"] {
