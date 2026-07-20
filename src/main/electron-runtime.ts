@@ -16,4 +16,5 @@ export const {
   safeStorage,
   screen,
   shell,
+  nativeTheme,
 } = electron;

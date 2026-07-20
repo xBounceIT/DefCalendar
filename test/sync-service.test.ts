@@ -988,6 +988,7 @@ describe("sync service", () => {
       vi.useRealTimers();
     }
   });
+
   it("does not reject on-demand range checks when Graph fetch fails", async () => {
     expect.hasAssertions();
     const fixture = createFixture();

@@ -2,9 +2,25 @@ import { app, BrowserWindow, shell } from "@main/electron-runtime";
 import { join } from "pathe";
 import { t } from "./i18n";
 
-const TITLE_BAR_BG = "#f5f5f5";
+const TITLE_BAR_HEIGHT = 40;
+const TITLE_BAR_SYMBOL_LIGHT = "#1a1a1a";
+const TITLE_BAR_SYMBOL_DARK = "#ffffff";
+const TITLE_BAR_BG_LIGHT = "#f5f5f5";
+const TITLE_BAR_BG_DARK = "#07080a";
 
-function createMainWindow(): BrowserWindow {
+interface TitleBarStyle {
+  color: string;
+  symbolColor: string;
+}
+
+function getTitleBarStyle(isDarkTheme: boolean): TitleBarStyle {
+  return isDarkTheme
+    ? { color: TITLE_BAR_BG_DARK, symbolColor: TITLE_BAR_SYMBOL_DARK }
+    : { color: TITLE_BAR_BG_LIGHT, symbolColor: TITLE_BAR_SYMBOL_LIGHT };
+}
+
+function createMainWindow(isDarkTheme: boolean): BrowserWindow {
+  const titleBarStyle = getTitleBarStyle(isDarkTheme);
   const iconPath = app.isPackaged
     ? join(process.resourcesPath, "logo.png")
     : join(process.cwd(), "resources", "logo.png");
@@ -15,16 +31,19 @@ function createMainWindow(): BrowserWindow {
     minWidth: 1160,
     minHeight: 760,
     show: false,
-    backgroundColor: TITLE_BAR_BG,
+    backgroundColor: titleBarStyle.color,
     autoHideMenuBar: true,
     icon: iconPath,
     title: t("windowTitle"),
     titleBarStyle: "hidden",
-    titleBarOverlay: {
-      color: TITLE_BAR_BG,
-      symbolColor: "#1a1a1a",
-      height: 40,
-    },
+    titleBarOverlay:
+      process.platform === "win32"
+        ? {
+            color: titleBarStyle.color,
+            symbolColor: titleBarStyle.symbolColor,
+            height: TITLE_BAR_HEIGHT,
+          }
+        : undefined,
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
       sandbox: true,
@@ -58,6 +77,20 @@ function createMainWindow(): BrowserWindow {
   return window;
 }
 
+function setTitleBarTheme(window: BrowserWindow, isDarkTheme: boolean): void {
+  if (process.platform !== "win32") {
+    return;
+  }
+
+  const titleBarStyle = getTitleBarStyle(isDarkTheme);
+  window.setBackgroundColor(titleBarStyle.color);
+  window.setTitleBarOverlay({
+    color: titleBarStyle.color,
+    symbolColor: titleBarStyle.symbolColor,
+    height: TITLE_BAR_HEIGHT,
+  });
+}
+
 function showAndFocusMainWindow(window: BrowserWindow): void {
   if (window.isMinimized()) {
     window.restore();
@@ -67,4 +100,4 @@ function showAndFocusMainWindow(window: BrowserWindow): void {
 }
 
 export default createMainWindow;
-export { showAndFocusMainWindow };
+export { setTitleBarTheme, showAndFocusMainWindow };

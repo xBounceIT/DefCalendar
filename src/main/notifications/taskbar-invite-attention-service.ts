@@ -231,12 +231,12 @@ function getGlyphStrokes(
   y: number,
   width: number,
   height: number,
-): Array<Array<[number, number]>> {
+): [number, number][][] {
   const px = (value: number) => x + width * value;
   const py = (value: number) => y + height * value;
 
   switch (char) {
-    case "0":
+    case "0": {
       return [
         [
           [px(0.5), py(0.08)],
@@ -250,7 +250,8 @@ function getGlyphStrokes(
           [px(0.5), py(0.08)],
         ],
       ];
-    case "1":
+    }
+    case "1": {
       return [
         [
           [px(0.3), py(0.25)],
@@ -262,7 +263,8 @@ function getGlyphStrokes(
           [px(0.78), py(0.88)],
         ],
       ];
-    case "2":
+    }
+    case "2": {
       return [
         [
           [px(0.18), py(0.24)],
@@ -273,7 +275,8 @@ function getGlyphStrokes(
           [px(0.84), py(0.88)],
         ],
       ];
-    case "3":
+    }
+    case "3": {
       return [
         [
           [px(0.2), py(0.14)],
@@ -287,7 +290,8 @@ function getGlyphStrokes(
           [px(0.68), py(0.5)],
         ],
       ];
-    case "4":
+    }
+    case "4": {
       return [
         [
           [px(0.78), py(0.1)],
@@ -302,7 +306,8 @@ function getGlyphStrokes(
           [px(0.66), py(0.12)],
         ],
       ];
-    case "5":
+    }
+    case "5": {
       return [
         [
           [px(0.8), py(0.14)],
@@ -314,7 +319,8 @@ function getGlyphStrokes(
           [px(0.2), py(0.88)],
         ],
       ];
-    case "6":
+    }
+    case "6": {
       return [
         [
           [px(0.78), py(0.16)],
@@ -328,7 +334,8 @@ function getGlyphStrokes(
           [px(0.18), py(0.58)],
         ],
       ];
-    case "7":
+    }
+    case "7": {
       return [
         [
           [px(0.18), py(0.14)],
@@ -336,7 +343,8 @@ function getGlyphStrokes(
           [px(0.42), py(0.9)],
         ],
       ];
-    case "8":
+    }
+    case "8": {
       return [
         [
           [px(0.5), py(0.08)],
@@ -357,7 +365,8 @@ function getGlyphStrokes(
           [px(0.5), py(0.5)],
         ],
       ];
-    case "9":
+    }
+    case "9": {
       return [
         [
           [px(0.76), py(0.42)],
@@ -371,7 +380,8 @@ function getGlyphStrokes(
           [px(0.18), py(0.84)],
         ],
       ];
-    case "+":
+    }
+    case "+": {
       return [
         [
           [px(0.18), py(0.5)],
@@ -382,12 +392,14 @@ function getGlyphStrokes(
           [px(0.5), py(0.82)],
         ],
       ];
-    default:
+    }
+    default: {
       return [];
+    }
   }
 }
 
-function drawStroke(pixels: Buffer, points: Array<[number, number]>, strokeWidth: number): void {
+function drawStroke(pixels: Buffer, points: [number, number][], strokeWidth: number): void {
   for (let index = 0; index < points.length - 1; index += 1) {
     const start = points[index]!;
     const end = points[index + 1]!;

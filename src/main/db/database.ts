@@ -888,7 +888,7 @@ class AppDatabase {
       rangeStart,
       syncedAt,
     } = args;
-    let rangesToInsert: Array<CalendarSyncRange & { syncedAt: string }> = [
+    let rangesToInsert: (CalendarSyncRange & { syncedAt: string })[] = [
       { rangeEnd, rangeStart, syncedAt },
     ];
 
@@ -907,11 +907,11 @@ class AppDatabase {
         .all(calendarId, rangeStart, rangeEnd);
 
       rangesToInsert = [
-        ...rows.flatMap((row): Array<CalendarSyncRange & { syncedAt: string }> => {
+        ...rows.flatMap((row): (CalendarSyncRange & { syncedAt: string })[] => {
           const currentStart = readStringProperty(row, "range_start");
           const currentEnd = readStringProperty(row, "range_end");
           const currentSyncedAt = readStringProperty(row, "last_synced_at");
-          const preservedRanges: Array<CalendarSyncRange & { syncedAt: string }> = [];
+          const preservedRanges: (CalendarSyncRange & { syncedAt: string })[] = [];
 
           if (currentStart < rangeStart) {
             preservedRanges.push({

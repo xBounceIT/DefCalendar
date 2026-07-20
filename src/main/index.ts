@@ -14,12 +14,13 @@ import SystemInviteNotificationService from "@main/notifications/system-invite-n
 import TaskbarInviteAttentionService from "@main/notifications/taskbar-invite-attention-service";
 import TrayService from "@main/tray-service";
 import UpdateService from "@main/update/update-service";
-import { app, ipcMain } from "@main/electron-runtime";
-import createMainWindow, { showAndFocusMainWindow } from "@main/window";
+import { app, ipcMain, nativeTheme } from "@main/electron-runtime";
+import createMainWindow, { setTitleBarTheme, showAndFocusMainWindow } from "@main/window";
 import { join } from "pathe";
 import { loadAppConfig } from "@main/config";
 import registerIpc from "@main/ipc/register-ipc";
 import { resolveMainLocale, setMainLocale } from "@main/i18n";
+import type { ThemeSetting } from "@shared/schema-values";
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
@@ -30,6 +31,18 @@ if (!hasSingleInstanceLock) {
 let mainWindow: BrowserWindow | null = null;
 let trayService: TrayService | null = null;
 let shouldQuit = false;
+let currentThemeSetting: ThemeSetting = "system";
+
+const isDarkTheme = (themeSetting: ThemeSetting): boolean =>
+  themeSetting === "dark" || (themeSetting === "system" && nativeTheme.shouldUseDarkColors);
+
+const applyWindowTitleBarTheme = () => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  setTitleBarTheme(mainWindow, isDarkTheme(currentThemeSetting));
+};
 
 async function bootstrap(): Promise<void> {
   if (process.platform === "win32" && typeof app.setAppUserModelId === "function") {
@@ -41,6 +54,7 @@ async function bootstrap(): Promise<void> {
   const settings = new SettingsService(db);
 
   const savedSettings = settings.getSettings();
+  currentThemeSetting = savedSettings.theme;
   setMainLocale(resolveMainLocale(savedSettings.language, app.getLocale()));
 
   const reminderManager = new ReminderWindowManager();
@@ -112,7 +126,7 @@ async function bootstrap(): Promise<void> {
 
   const ensureWindow = () => {
     if (!mainWindow || mainWindow.isDestroyed()) {
-      mainWindow = createMainWindow();
+      mainWindow = createMainWindow(isDarkTheme(currentThemeSetting));
       mainWindow.on("close", (event) => {
         if (!shouldQuit) {
           event.preventDefault();
@@ -130,6 +144,16 @@ async function bootstrap(): Promise<void> {
 
     return mainWindow;
   };
+
+  const handleNativeThemeUpdate = () => {
+    if (currentThemeSetting === "system") {
+      applyWindowTitleBarTheme();
+    }
+  };
+
+  if (process.platform === "win32") {
+    nativeTheme.on("updated", handleNativeThemeUpdate);
+  }
 
   ensureWindow();
 
@@ -167,6 +191,10 @@ async function bootstrap(): Promise<void> {
     sync,
     updates,
     getMainWindow: () => mainWindow,
+    onThemePreferenceChange: (theme) => {
+      currentThemeSetting = theme;
+      applyWindowTitleBarTheme();
+    },
   });
 
   systemInviteNotifications.start();
@@ -194,6 +222,10 @@ async function bootstrap(): Promise<void> {
   });
 
   app.on("before-quit", () => {
+    if (process.platform === "win32") {
+      nativeTheme.removeListener("updated", handleNativeThemeUpdate);
+    }
+
     shouldQuit = true;
     reminders.stop();
     systemInviteNotifications.stop();

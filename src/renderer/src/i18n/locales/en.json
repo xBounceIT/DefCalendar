@@ -321,6 +321,12 @@
           "system": "System",
           "12h": "12-hour",
           "24h": "24-hour"
+        },
+        "theme": "Theme",
+        "themeOptions": {
+          "light": "Light",
+          "dark": "Dark",
+          "system": "System"
         }
       },
       "calendarDefaults": {

@@ -8,7 +8,7 @@ import {
   faPalette,
 } from "@fortawesome/free-solid-svg-icons";
 import { faBell, faCalendar } from "@fortawesome/free-regular-svg-icons";
-import type { CalendarSummary, UpdateChannel, UserSettings } from "@shared/schemas";
+import type { CalendarSummary, ThemeSetting, UpdateChannel, UserSettings } from "@shared/schemas";
 import { useUpdater } from "../hooks/use-updater";
 import { useVersion } from "../hooks/use-version";
 import SafeHtmlBody from "./safe-html-body";
@@ -118,6 +118,13 @@ function AppearanceSection({ onSave, settings }: Pick<SettingsDialogProps, "onSa
     "24h": t("settings.sections.appearance.timeFormatOptions.24h"),
   };
 
+  const themeOptions: ThemeSetting[] = ["light", "dark", "system"];
+  const themeLabels: Record<ThemeSetting, string> = {
+    light: t("settings.sections.appearance.themeOptions.light"),
+    dark: t("settings.sections.appearance.themeOptions.dark"),
+    system: t("settings.sections.appearance.themeOptions.system"),
+  };
+
   return (
     <div className="settings-section">
       <h3>{t("settings.sections.appearance.title")}</h3>
@@ -134,6 +141,21 @@ function AppearanceSection({ onSave, settings }: Pick<SettingsDialogProps, "onSa
             {timeFormatOptions.map((timeFormat) => (
               <option key={timeFormat} value={timeFormat}>
                 {timeFormatLabels[timeFormat]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <span>{t("settings.sections.appearance.theme")}</span>
+          <select
+            value={settings.theme ?? "system"}
+            onChange={(e) => {
+              onSave({ theme: e.target.value as ThemeSetting });
+            }}
+          >
+            {themeOptions.map((theme) => (
+              <option key={theme} value={theme}>
+                {themeLabels[theme]}
               </option>
             ))}
           </select>

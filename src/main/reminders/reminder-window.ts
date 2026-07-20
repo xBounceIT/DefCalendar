@@ -12,6 +12,7 @@ class ReminderWindowManager {
     items: [],
     locale: "en",
     timeFormat: "system",
+    theme: "system",
   };
   private window: BrowserWindow | null = null;
   private isLoaded = false;

@@ -198,8 +198,7 @@ describe("day events table", () => {
           subject: "Yellow event",
         }),
       ],
-      getEventCategoryColor: (event) =>
-        event.id === "yellow-event" ? "#facc15" : "#2563eb",
+      getEventCategoryColor: (event) => (event.id === "yellow-event" ? "#facc15" : "#2563eb"),
     });
 
     expect(screen.getByText("Blue category")).toHaveStyle({

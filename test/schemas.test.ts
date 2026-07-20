@@ -67,6 +67,21 @@ describe("shared schemas", () => {
     expect(settings.taskbarInviteNotificationsEnabled).toBe(true);
   });
 
+  it("defaults theme for legacy settings", () => {
+    const legacySettings: Record<string, unknown> = { ...createDefaultSettings() };
+    delete legacySettings.theme;
+
+    const settings = userSettingsSchema.parse(legacySettings);
+
+    expect(settings.theme).toBe("system");
+  });
+
+  it("preserves explicit theme patch values", () => {
+    const patch = userSettingsPatchSchema.parse({ theme: "dark" });
+
+    expect(patch).toStrictEqual({ theme: "dark" });
+  });
+
   it("does not inject defaults into sparse settings patches", () => {
     const patch = userSettingsPatchSchema.parse({ activeView: "timeGridDay" });
 

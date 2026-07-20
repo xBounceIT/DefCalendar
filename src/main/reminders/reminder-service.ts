@@ -463,6 +463,7 @@ class ReminderService {
         items: dueItems.map((entry) => entry.item),
         locale: resolveMainLocale(settings.language, app.getLocale()),
         timeFormat: settings.timeFormat,
+        theme: settings.theme,
       },
     };
   }

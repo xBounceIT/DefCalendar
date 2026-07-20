@@ -13,6 +13,7 @@ export default defineConfig({
     },
   },
   test: {
+    setupFiles: ['./test/setup.ts'],
     exclude: ['node_modules/**', '.claude/**', 'out/**', 'release/**'],
     coverage: {
       provider: 'v8',

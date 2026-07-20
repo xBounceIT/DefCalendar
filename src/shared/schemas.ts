@@ -481,6 +481,7 @@ const appUpdateStatusSchema = z.object({
 });
 
 const updateChannelSchema = z.enum(["stable", "prerelease"]);
+const themeSettingSchema = z.enum(["light", "dark", "system"]);
 const languageSettingSchema = z.enum(["system", "en", "it"]);
 const timeFormatSettingSchema = z.enum(["system", "12h", "24h"]);
 const localReminderWhenSchema = z.enum(["before", "after"]);
@@ -534,7 +535,13 @@ const reminderDialogStateSchema = z.object({
   items: z.array(reminderDialogItemSchema),
   locale: z.enum(["en", "it"]),
   timeFormat: timeFormatSettingSchema,
+  theme: themeSettingSchema.optional().default("system"),
 });
+
+const themePreferenceSchema = z.preprocess(
+  (value) => (value === null ? undefined : value),
+  themeSettingSchema.default("system"),
+);
 
 const userSettingsSchema = z.object({
   activeAccountId: z.string().nullable().optional(),
@@ -543,6 +550,7 @@ const userSettingsSchema = z.object({
   selectedDate: dateTimeStringSchema,
   language: languagePreferenceSchema,
   timeFormat: timeFormatPreferenceSchema,
+  theme: themePreferenceSchema.optional().default("system"),
   syncIntervalMinutes: syncIntervalMinutesPreferenceSchema,
   localReminderOverrideEnabled: localReminderOverrideEnabledPreferenceSchema,
   localReminderRules: localReminderRulesPreferenceSchema,
@@ -562,6 +570,9 @@ const userSettingsPatchSchema = z.object({
     .optional(),
   timeFormat: z
     .preprocess((value) => (value === null ? "system" : value), timeFormatSettingSchema)
+    .optional(),
+  theme: z
+    .preprocess((value) => (value === null ? "system" : value), themeSettingSchema)
     .optional(),
   syncIntervalMinutes: z
     .preprocess((value) => (value === null ? 1 : value), syncIntervalMinutesSettingSchema)
@@ -631,6 +642,7 @@ type LocalReminderWhen = z.infer<typeof localReminderWhenSchema>;
 type LocalReminderRule = z.infer<typeof localReminderRuleSchema>;
 type UserSettings = z.infer<typeof userSettingsSchema>;
 type UserSettingsPatch = z.infer<typeof userSettingsPatchSchema>;
+type ThemeSetting = z.infer<typeof themeSettingSchema>;
 type UpdateChannel = z.infer<typeof updateChannelSchema>;
 
 function getBase64DecodedByteLength(value: string): null | number {
@@ -656,6 +668,7 @@ function createDefaultSettings(): UserSettings {
     selectedDate: new Date().toISOString(),
     language: "system",
     timeFormat: "system",
+    theme: "system",
     syncIntervalMinutes: 1,
     localReminderOverrideEnabled: false,
     localReminderRules: [{ minutes: 15, when: "before" }],
@@ -677,6 +690,7 @@ export {
   outlookCategorySchema,
   contactSuggestionSchema,
   calendarViewSchema,
+  themeSettingSchema,
   cancelEventArgsSchema,
   createDefaultSettings,
   deleteEventArgsSchema,
@@ -739,6 +753,7 @@ export {
   type CalendarEvent,
   type CalendarSummary,
   type CalendarView,
+  type ThemeSetting,
   type CancelEventArgs,
   type ContactSuggestion,
   type DeleteEventArgs,
