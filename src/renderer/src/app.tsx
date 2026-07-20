@@ -414,6 +414,24 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   }, [appSettings.language]);
 
   useEffect(() => {
+    const theme = appSettings.theme ?? "system";
+
+    function applyTheme(isDark: boolean): void {
+      document.documentElement.dataset.theme = isDark ? "dark" : "light";
+    }
+
+    if (theme === "system") {
+      const mq = globalThis.matchMedia("(prefers-color-scheme: dark)");
+      applyTheme(mq.matches);
+      const handler = (e: MediaQueryListEvent) => applyTheme(e.matches);
+      mq.addEventListener("change", handler);
+      return () => mq.removeEventListener("change", handler);
+    }
+
+    applyTheme(theme === "dark");
+  }, [appSettings.theme]);
+
+  useEffect(() => {
     if (!signedIn || !hydrated) {
       return;
     }

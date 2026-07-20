@@ -13,6 +13,7 @@ const EMPTY_STATE: ReminderDialogState = {
   items: [],
   locale: "en",
   timeFormat: "system",
+  theme: "system",
 };
 
 interface ReminderStartStatus {
@@ -92,6 +93,24 @@ function ReminderPopup() {
   useEffect(() => {
     void i18n.changeLanguage(state.locale);
   }, [state.locale]);
+
+  useEffect(() => {
+    const theme = state.theme ?? "system";
+
+    function applyTheme(isDark: boolean): void {
+      document.documentElement.dataset.theme = isDark ? "dark" : "light";
+    }
+
+    if (theme === "system") {
+      const mq = globalThis.matchMedia("(prefers-color-scheme: dark)");
+      applyTheme(mq.matches);
+      const handler = (e: MediaQueryListEvent) => applyTheme(e.matches);
+      mq.addEventListener("change", handler);
+      return () => mq.removeEventListener("change", handler);
+    }
+
+    applyTheme(theme === "dark");
+  }, [state.theme]);
 
   useEffect(() => {
     const timer = globalThis.setInterval(() => setNowMs(Date.now()), 1000);

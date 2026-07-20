@@ -34,6 +34,7 @@ import {
   setCalendarColorArgsSchema,
   setCalendarVisibilityArgsSchema,
   syncStatusSchema,
+  type ThemeSetting,
   userSettingsPatchSchema,
 } from "@shared/schemas";
 import type AppDatabase from "@main/db/database";
@@ -69,6 +70,7 @@ interface RegisterIpcDependencies {
   sync: SyncService;
   updates: UpdateService;
   getMainWindow: () => BrowserWindow | null;
+  onThemePreferenceChange: (theme: ThemeSetting) => void;
 }
 
 function mergeContactSuggestions(
@@ -601,6 +603,10 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
       patch.syncIntervalMinutes !== previousSettings.syncIntervalMinutes
     ) {
       dependencies.sync.refreshSchedule();
+    }
+
+    if (patch.theme !== previousSettings.theme && patch.theme !== undefined) {
+      dependencies.onThemePreferenceChange(patch.theme);
     }
 
     void dependencies.reminders.checkNow();

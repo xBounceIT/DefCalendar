@@ -424,7 +424,7 @@ describe("event editor dialog", () => {
     await waitFor(() => {
       expect(onAddAttachment).toHaveBeenCalledTimes(2);
     });
-    expect(await screen.findByText("first.txt")).toBeInTheDocument();
+    await expect(screen.findByText("first.txt")).resolves.toBeInTheDocument();
     expect(screen.getByText("Upload failed")).toBeInTheDocument();
   });
 

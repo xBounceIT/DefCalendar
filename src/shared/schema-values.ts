@@ -8,5 +8,7 @@ export {
   eventSearchSortSchema,
   REMINDER_TYPE,
   storedAccountSchema,
+  themeSettingSchema,
   userSettingsSchema,
 } from "./schemas";
+export type { ThemeSetting } from "./schemas";

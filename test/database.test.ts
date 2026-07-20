@@ -300,6 +300,7 @@ describe("database", () => {
       },
     ]);
   });
+
   it("replaces overlapping calendar sync range coverage before recording fetched range", () => {
     expect.hasAssertions();
     const deleteRun = vi.fn();
@@ -341,6 +342,7 @@ describe("database", () => {
       "2026-07-02T12:00:00.000Z",
     );
   });
+
   it("preserves unfetched coverage portions when requested", () => {
     expect.hasAssertions();
     const all = vi.fn().mockReturnValue([
@@ -413,6 +415,7 @@ describe("database", () => {
       ],
     ]);
   });
+
   it("returns pre and start candidates for events with reminderMinutesBeforeStart > 0", () => {
     const all = vi.fn().mockReturnValue([
       {
