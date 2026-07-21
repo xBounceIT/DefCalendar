@@ -1,24 +1,16 @@
 import type { ThemeSetting } from "@shared/schema-values";
+import { resolveVisualTheme } from "@shared/theme";
 import { useEffect } from "react";
-
-function resolveIsDarkTheme(theme: ThemeSetting): boolean {
-  if (theme === "dark") {
-    return true;
-  }
-
-  if (theme === "light") {
-    return false;
-  }
-
-  return globalThis.matchMedia("(prefers-color-scheme: dark)").matches;
-}
 
 function useTitleBarScrim(active: boolean, theme: ThemeSetting): void {
   useEffect(() => {
+    const resolveTheme = () =>
+      resolveVisualTheme(theme, globalThis.matchMedia("(prefers-color-scheme: dark)").matches);
+
     const applyScrim = () => {
       void globalThis.calendarApi?.window?.setTitleBarScrim({
         active,
-        isDarkTheme: resolveIsDarkTheme(theme),
+        visualTheme: resolveTheme(),
       });
     };
 
@@ -28,23 +20,19 @@ function useTitleBarScrim(active: boolean, theme: ThemeSetting): void {
       return () => {
         void globalThis.calendarApi?.window?.setTitleBarScrim({
           active: false,
-          isDarkTheme: resolveIsDarkTheme(theme),
+          visualTheme: resolveTheme(),
         });
       };
     }
 
     const mediaQuery = globalThis.matchMedia("(prefers-color-scheme: dark)");
-    const handleChange = () => {
-      applyScrim();
-    };
-
-    mediaQuery.addEventListener("change", handleChange);
+    mediaQuery.addEventListener("change", applyScrim);
 
     return () => {
-      mediaQuery.removeEventListener("change", handleChange);
+      mediaQuery.removeEventListener("change", applyScrim);
       void globalThis.calendarApi?.window?.setTitleBarScrim({
         active: false,
-        isDarkTheme: resolveIsDarkTheme(theme),
+        visualTheme: resolveTheme(),
       });
     };
   }, [active, theme]);

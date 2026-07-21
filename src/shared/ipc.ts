@@ -26,6 +26,7 @@ import type {
   UserSettings,
   UserSettingsPatch,
 } from "./schemas";
+import type { VisualTheme } from "./theme";
 import type {
   EventResponseAction,
   NewEventNotificationItem,
@@ -145,7 +146,7 @@ interface CalendarApi {
     update: (patch: UserSettingsPatch) => Promise<UserSettings>;
   };
   window: {
-    setTitleBarScrim: (args: { active: boolean; isDarkTheme: boolean }) => Promise<void>;
+    setTitleBarScrim: (args: { active: boolean; visualTheme: VisualTheme }) => Promise<void>;
   };
   reminder: {
     getState: () => Promise<ReminderDialogState>;

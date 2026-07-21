@@ -1,39 +1,15 @@
 import type { BrowserWindow } from "electron";
+import type { VisualTheme } from "@shared/theme";
+import { getTitleBarColors, getTitleBarScrimColors } from "@shared/theme";
 
 const TITLE_BAR_HEIGHT = 40;
-const TITLE_BAR_SYMBOL_LIGHT = "#1a1a1a";
-const TITLE_BAR_SYMBOL_DARK = "#ffffff";
-const TITLE_BAR_BG_LIGHT = "#f5f5f5";
-const TITLE_BAR_BG_DARK = "#070d1c";
-const TITLE_BAR_SCRIM_SYMBOL_LIGHT = "rgba(26, 26, 26, 0.55)";
-const TITLE_BAR_SCRIM_SYMBOL_DARK = "rgba(255, 255, 255, 0.55)";
-
-interface TitleBarOverlayStyle {
-  color: string;
-  symbolColor: string;
-}
 
 let scrimActive = false;
 
-function getTitleBarStyle(isDarkTheme: boolean): TitleBarOverlayStyle {
-  return isDarkTheme
-    ? { color: TITLE_BAR_BG_DARK, symbolColor: TITLE_BAR_SYMBOL_DARK }
-    : { color: TITLE_BAR_BG_LIGHT, symbolColor: TITLE_BAR_SYMBOL_LIGHT };
-}
+function applyTitleBarOverlay(window: BrowserWindow, visualTheme: VisualTheme): void {
+  const style = scrimActive ? getTitleBarScrimColors(visualTheme) : getTitleBarColors(visualTheme);
 
-function getTitleBarScrimStyle(isDarkTheme: boolean): TitleBarOverlayStyle {
-  return {
-    color: "rgba(0, 0, 0, 0)",
-    symbolColor: isDarkTheme ? TITLE_BAR_SCRIM_SYMBOL_DARK : TITLE_BAR_SCRIM_SYMBOL_LIGHT,
-  };
-}
-
-function applyTitleBarOverlay(window: BrowserWindow, isDarkTheme: boolean): void {
-  const style = scrimActive ? getTitleBarScrimStyle(isDarkTheme) : getTitleBarStyle(isDarkTheme);
-
-  if (!scrimActive) {
-    window.setBackgroundColor(style.color);
-  }
+  window.setBackgroundColor(style.color);
 
   window.setTitleBarOverlay({
     color: style.color,
@@ -42,25 +18,25 @@ function applyTitleBarOverlay(window: BrowserWindow, isDarkTheme: boolean): void
   });
 }
 
-function setTitleBarScrim(window: BrowserWindow, isDarkTheme: boolean, active: boolean): void {
+function setTitleBarScrim(window: BrowserWindow, visualTheme: VisualTheme, active: boolean): void {
   if (process.platform !== "win32") {
     return;
   }
 
   scrimActive = active;
-  applyTitleBarOverlay(window, isDarkTheme);
+  applyTitleBarOverlay(window, visualTheme);
 }
 
-function setTitleBarTheme(window: BrowserWindow, isDarkTheme: boolean): void {
+function setTitleBarTheme(window: BrowserWindow, visualTheme: VisualTheme): void {
   if (process.platform !== "win32") {
     return;
   }
 
-  applyTitleBarOverlay(window, isDarkTheme);
+  applyTitleBarOverlay(window, visualTheme);
 }
 
-function getInitialTitleBarStyle(isDarkTheme: boolean): TitleBarOverlayStyle {
-  return getTitleBarStyle(isDarkTheme);
+function getInitialTitleBarStyle(visualTheme: VisualTheme) {
+  return getTitleBarColors(visualTheme);
 }
 
 export { TITLE_BAR_HEIGHT, getInitialTitleBarStyle, setTitleBarScrim, setTitleBarTheme };

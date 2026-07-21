@@ -101,6 +101,87 @@
 [data-theme="dark"] {
   color-scheme: dark;
 
+  --ink-black-rgb: 0, 0, 0;
+
+  --bg: #0b0b0b;
+  --bg-secondary: #121212;
+  --bg-tertiary: #1a1a1a;
+  --surface: #1e1e1e;
+  --surface-elevated: #252525;
+  --surface-hover: #2a2a2a;
+  --surface-active: #333333;
+  --surface-disabled: #2a2a2a;
+  --fill-hover: rgba(255, 255, 255, 0.08);
+  --scrim-overlay: rgba(0, 0, 0, 0.92);
+
+  --ink: #f5f5f5;
+  --ink-secondary: #a3a3a3;
+  --ink-tertiary: #8a8a8a;
+  --muted: #737373;
+
+  --line: #2e2e2e;
+  --line-strong: #3d3d3d;
+
+  --accent: #ffffff;
+  --accent-hover: #e5e5e5;
+  --accent-light: #f5f5f5;
+  --accent-soft: rgba(255, 255, 255, 0.1);
+  --accent-bg: rgba(255, 255, 255, 0.14);
+
+  --danger: #f28b82;
+  --warning: #fdd663;
+  --success: #81c995;
+  --info: #e5e5e5;
+  --banner-error-text: #fca5a5;
+  --banner-warning-text: #fcd34d;
+  --banner-warning-title-text: #fdba74;
+  --response-accepted: #86efac;
+  --response-accepted-soft: rgba(34, 197, 94, 0.1);
+  --response-accepted-border: rgba(34, 197, 94, 0.24);
+  --response-accepted-bg-hover: rgba(34, 197, 94, 0.1);
+  --response-accepted-border-hover: rgba(34, 197, 94, 0.42);
+  --response-declined: #fca5a5;
+  --response-declined-soft: rgba(239, 68, 68, 0.1);
+  --response-declined-border: rgba(239, 68, 68, 0.24);
+  --response-declined-bg-hover: rgba(239, 68, 68, 0.1);
+  --response-declined-border-hover: rgba(239, 68, 68, 0.42);
+  --response-tentative: #fde047;
+  --response-tentative-soft: rgba(234, 179, 8, 0.12);
+  --response-pending: #a3a3a3;
+  --response-pending-soft: rgba(163, 163, 163, 0.22);
+
+  --calendar-event-blue: #60a5fa;
+  --calendar-event-blue-text: #bfdbfe;
+  --calendar-event-green: #4ade80;
+  --calendar-event-green-text: #bbf7d0;
+  --calendar-event-orange: #fbbf24;
+  --calendar-event-orange-text: #fde68a;
+  --calendar-event-purple: #c084fc;
+  --calendar-event-purple-text: #e9d5ff;
+  --calendar-event-red: #f87171;
+  --calendar-event-red-text: #fecaca;
+  --calendar-event-teal: #2dd4bf;
+  --calendar-event-teal-text: #99f6e4;
+  --calendar-event-yellow: #facc15;
+  --calendar-event-yellow-text: #fef08a;
+
+  --today-bg: rgba(255, 255, 255, 0.08);
+  --today-border: #ffffff;
+
+  --shadow-sm: none;
+  --shadow: none;
+  --shadow-lg: none;
+  --shadow-inset: none;
+
+  --border: 1px solid #2e2e2e;
+  --border-strong: 1px solid #3d3d3d;
+
+  --on-accent: #0b0b0b;
+}
+
+[data-theme="blue-navy"] {
+  color-scheme: dark;
+
   --bg: #070d1c;
   --bg-secondary: #0c1526;
   --bg-tertiary: #121d32;
@@ -755,7 +836,7 @@ button {
 }
 
 .mini-calendar-day.selected:hover {
-  background: rgba(26, 115, 232, 0.2);
+  background: var(--accent-bg);
 }
 
 .brand-panel {
@@ -1092,7 +1173,7 @@ button {
 }
 
 .sync-card--syncing {
-  border-color: rgba(91, 124, 250, 0.3);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .sync-dot {
@@ -2180,47 +2261,59 @@ button {
 }
 
 [data-theme="dark"] .fc-event {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+}
+
+[data-theme="blue-navy"] .fc-event {
   background: rgba(138, 180, 248, 0.1);
   color: var(--ink);
 }
 
-[data-theme="dark"] .fc-event.calendar-event--color-blue {
+[data-theme="dark"] .fc-event.calendar-event--color-blue,
+[data-theme="blue-navy"] .fc-event.calendar-event--color-blue {
   background: rgba(59, 130, 246, 0.1);
   border-left-color: var(--calendar-event-blue);
   color: var(--calendar-event-blue-text);
 }
 
-[data-theme="dark"] .fc-event.calendar-event--color-green {
+[data-theme="dark"] .fc-event.calendar-event--color-green,
+[data-theme="blue-navy"] .fc-event.calendar-event--color-green {
   background: rgba(34, 197, 94, 0.1);
   border-left-color: var(--calendar-event-green);
   color: var(--calendar-event-green-text);
 }
 
-[data-theme="dark"] .fc-event.calendar-event--color-orange {
+[data-theme="dark"] .fc-event.calendar-event--color-orange,
+[data-theme="blue-navy"] .fc-event.calendar-event--color-orange {
   background: rgba(245, 158, 11, 0.12);
   border-left-color: var(--calendar-event-orange);
   color: var(--calendar-event-orange-text);
 }
 
-[data-theme="dark"] .fc-event.calendar-event--color-purple {
+[data-theme="dark"] .fc-event.calendar-event--color-purple,
+[data-theme="blue-navy"] .fc-event.calendar-event--color-purple {
   background: rgba(168, 85, 247, 0.12);
   border-left-color: var(--calendar-event-purple);
   color: var(--calendar-event-purple-text);
 }
 
-[data-theme="dark"] .fc-event.calendar-event--color-red {
+[data-theme="dark"] .fc-event.calendar-event--color-red,
+[data-theme="blue-navy"] .fc-event.calendar-event--color-red {
   background: rgba(239, 68, 68, 0.12);
   border-left-color: var(--calendar-event-red);
   color: var(--calendar-event-red-text);
 }
 
-[data-theme="dark"] .fc-event.calendar-event--color-teal {
+[data-theme="dark"] .fc-event.calendar-event--color-teal,
+[data-theme="blue-navy"] .fc-event.calendar-event--color-teal {
   background: rgba(20, 184, 166, 0.12);
   border-left-color: var(--calendar-event-teal);
   color: var(--calendar-event-teal-text);
 }
 
-[data-theme="dark"] .fc-event.calendar-event--color-yellow {
+[data-theme="dark"] .fc-event.calendar-event--color-yellow,
+[data-theme="blue-navy"] .fc-event.calendar-event--color-yellow {
   background: rgba(234, 179, 8, 0.12);
   border-left-color: var(--calendar-event-yellow);
   color: var(--calendar-event-yellow-text);

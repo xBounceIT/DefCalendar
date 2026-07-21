@@ -112,10 +112,11 @@ function AppearanceSection({ onSave, settings }: Pick<SettingsDialogProps, "onSa
     "24h": t("settings.sections.appearance.timeFormatOptions.24h"),
   };
 
-  const themeOptions: ThemeSetting[] = ["light", "dark", "system"];
+  const themeOptions: ThemeSetting[] = ["light", "dark", "blue-navy", "system"];
   const themeLabels: Record<ThemeSetting, string> = {
     light: t("settings.sections.appearance.themeOptions.light"),
     dark: t("settings.sections.appearance.themeOptions.dark"),
+    "blue-navy": t("settings.sections.appearance.themeOptions.blue-navy"),
     system: t("settings.sections.appearance.themeOptions.system"),
   };
 

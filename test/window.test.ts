@@ -58,7 +58,7 @@ afterEach(() => {
 });
 
 function makeWindow(): MockBrowserWindowInstance {
-  return createMainWindow() as unknown as MockBrowserWindowInstance;
+  return createMainWindow("light") as unknown as MockBrowserWindowInstance;
 }
 
 describe("createMainWindow — security configuration", () => {
