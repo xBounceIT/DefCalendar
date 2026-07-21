@@ -2331,7 +2331,9 @@ button {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(var(--ink-black-rgb), 0.4);
+  background: rgba(var(--ink-black-rgb), 0.35);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   z-index: 1000;
 }
 

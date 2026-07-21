@@ -51,7 +51,7 @@ import type TaskbarInviteAttentionService from "@main/notifications/taskbar-invi
 import type { SyncService } from "@main/sync/sync-service";
 import type UpdateService from "@main/update/update-service";
 import { app, dialog, ipcMain, shell } from "@main/electron-runtime";
-import { showAndFocusMainWindow } from "@main/window";
+import { showAndFocusMainWindow, setTitleBarScrim } from "@main/window";
 import { IPC_CHANNELS } from "@shared/ipc";
 
 const MIN_PEOPLE_SEARCH_QUERY_LENGTH = 2;
@@ -192,6 +192,22 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     validateMainSender(event);
     const version = app.getVersion();
     return `v${version}`;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.windowSetTitleBarScrim, async (event, input) => {
+    validateMainSender(event);
+    const args = z
+      .object({
+        active: z.boolean(),
+        isDarkTheme: z.boolean(),
+      })
+      .parse(input);
+    const window = dependencies.getMainWindow();
+    if (!window || window.isDestroyed()) {
+      return;
+    }
+
+    setTitleBarScrim(window, args.isDarkTheme, args.active);
   });
 
   ipcMain.handle(IPC_CHANNELS.authGetState, async (event) => {

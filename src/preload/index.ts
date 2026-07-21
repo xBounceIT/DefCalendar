@@ -95,6 +95,9 @@ const calendarApi: CalendarApi = {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.settingsGet),
     update: (patch) => ipcRenderer.invoke(IPC_CHANNELS.settingsUpdate, patch),
   },
+  window: {
+    setTitleBarScrim: (args) => ipcRenderer.invoke(IPC_CHANNELS.windowSetTitleBarScrim, args),
+  },
   reminder: {
     getState: () => ipcRenderer.invoke(IPC_CHANNELS.reminderGetState),
     onState: (listener) => {

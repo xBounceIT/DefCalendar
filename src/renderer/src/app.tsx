@@ -54,6 +54,7 @@ import TitleBar from "./components/title-bar";
 import UpdateAvailablePopup from "./components/update-available-popup";
 import WorkspacePanel from "./components/workspace-panel";
 import useUiStore from "./store";
+import useTitleBarScrim from "./hooks/use-title-bar-scrim";
 
 interface EditorSeed {
   allDay: boolean;
@@ -161,6 +162,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   });
 
   const appSettings = settingsQuery.data ?? fallbackSettings;
+  useTitleBarScrim(isSearchOpen, appSettings.theme ?? "system");
   const shouldShowNewEventPopup =
     signedIn &&
     settingsQuery.data !== undefined &&
