@@ -329,12 +329,6 @@
           "system": "Sistema"
         }
       },
-      "calendarDefaults": {
-        "label": "Predefiniti Calendario",
-        "title": "Predefiniti Calendario",
-        "description": "Configura le impostazioni predefinite per nuovi eventi e comportamento del calendario.",
-        "defaultCalendar": "Calendario Predefinito"
-      },
       "language": {
         "label": "Lingua",
         "title": "Impostazioni Lingua",

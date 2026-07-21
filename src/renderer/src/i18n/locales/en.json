@@ -329,12 +329,6 @@
           "system": "System"
         }
       },
-      "calendarDefaults": {
-        "label": "Calendar Defaults",
-        "title": "Calendar Defaults",
-        "description": "Configure default settings for new events and calendar behavior.",
-        "defaultCalendar": "Default Calendar"
-      },
       "language": {
         "label": "Language",
         "title": "Language Settings",
