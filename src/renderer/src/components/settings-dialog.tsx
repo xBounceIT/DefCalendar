@@ -7,27 +7,21 @@ import {
   faGlobe,
   faPalette,
 } from "@fortawesome/free-solid-svg-icons";
-import { faBell, faCalendar } from "@fortawesome/free-regular-svg-icons";
-import type { CalendarSummary, ThemeSetting, UpdateChannel, UserSettings } from "@shared/schemas";
+import { faBell } from "@fortawesome/free-regular-svg-icons";
+import type { ThemeSetting, UpdateChannel, UserSettings } from "@shared/schemas";
 import { useUpdater } from "../hooks/use-updater";
 import { useVersion } from "../hooks/use-version";
 import SafeHtmlBody from "./safe-html-body";
+import SettingsSelect from "./settings-select";
 
 interface SettingsDialogProps {
   isOpen: boolean;
   onClose: () => void;
   settings: UserSettings;
-  calendars: CalendarSummary[];
   onSave: (settings: Partial<UserSettings>) => void;
 }
 
-type SettingsSection =
-  | "appearance"
-  | "calendarDefaults"
-  | "language"
-  | "notifications"
-  | "sync"
-  | "about";
+type SettingsSection = "appearance" | "language" | "notifications" | "sync" | "about";
 
 type LanguageSetting = UserSettings["language"];
 type LocalReminderRuleSetting = UserSettings["localReminderRules"][number];
@@ -126,67 +120,44 @@ function AppearanceSection({ onSave, settings }: Pick<SettingsDialogProps, "onSa
   };
 
   return (
-    <div className="settings-section">
+    <div className="settings-panel-section">
       <h3>{t("settings.sections.appearance.title")}</h3>
+      <p className="settings-description">{t("settings.sections.appearance.description")}</p>
       <div className="settings-fields">
-        <p className="settings-placeholder">{t("settings.sections.appearance.description")}</p>
-        <div className="field">
-          <span>{t("settings.sections.appearance.timeFormat")}</span>
-          <select
-            value={settings.timeFormat}
-            onChange={(e) => {
-              onSave({ timeFormat: e.target.value as TimeFormatSetting });
-            }}
-          >
-            {timeFormatOptions.map((timeFormat) => (
-              <option key={timeFormat} value={timeFormat}>
-                {timeFormatLabels[timeFormat]}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <span>{t("settings.sections.appearance.theme")}</span>
-          <select
-            value={settings.theme ?? "system"}
-            onChange={(e) => {
-              onSave({ theme: e.target.value as ThemeSetting });
-            }}
-          >
-            {themeOptions.map((theme) => (
-              <option key={theme} value={theme}>
-                {themeLabels[theme]}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CalendarDefaultsSection({ calendars }: { calendars: CalendarSummary[] }) {
-  const { t } = useTranslation();
-
-  return (
-    <div className="settings-section">
-      <h3>{t("settings.sections.calendarDefaults.title")}</h3>
-      <div className="settings-fields">
-        <p className="settings-placeholder">
-          {t("settings.sections.calendarDefaults.description")}
-        </p>
-        {calendars.length > 0 && (
-          <div className="field">
-            <span>{t("settings.sections.calendarDefaults.defaultCalendar")}</span>
-            <select>
-              {calendars.map((calendar) => (
-                <option key={calendar.id} value={calendar.id}>
-                  {calendar.name}
-                </option>
-              ))}
-            </select>
+        <div className="settings-group">
+          <div className="settings-row settings-group__row">
+            <span className="settings-row__label">
+              {t("settings.sections.appearance.timeFormat")}
+            </span>
+            <SettingsSelect
+              aria-label={t("settings.sections.appearance.timeFormat")}
+              className="settings-row__control"
+              onChange={(timeFormat) => {
+                onSave({ timeFormat });
+              }}
+              options={timeFormatOptions.map((timeFormat) => ({
+                value: timeFormat,
+                label: timeFormatLabels[timeFormat],
+              }))}
+              value={settings.timeFormat}
+            />
           </div>
-        )}
+          <div className="settings-row settings-group__row">
+            <span className="settings-row__label">{t("settings.sections.appearance.theme")}</span>
+            <SettingsSelect
+              aria-label={t("settings.sections.appearance.theme")}
+              className="settings-row__control"
+              onChange={(theme) => {
+                onSave({ theme });
+              }}
+              options={themeOptions.map((theme) => ({
+                value: theme,
+                label: themeLabels[theme],
+              }))}
+              value={settings.theme ?? "system"}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -203,23 +174,27 @@ function LanguageSection({ onSave, settings }: Pick<SettingsDialogProps, "onSave
   };
 
   return (
-    <div className="settings-section">
+    <div className="settings-panel-section">
       <h3>{t("settings.sections.language.title")}</h3>
       <div className="settings-fields">
-        <div className="field">
-          <span>{t("settings.sections.language.selectLanguage")}</span>
-          <select
-            value={settings.language}
-            onChange={(e) => {
-              onSave({ language: e.target.value as LanguageSetting });
-            }}
-          >
-            {languageOptions.map((language) => (
-              <option key={language} value={language}>
-                {languageLabels[language]}
-              </option>
-            ))}
-          </select>
+        <div className="settings-group">
+          <div className="settings-row settings-group__row">
+            <span className="settings-row__label">
+              {t("settings.sections.language.selectLanguage")}
+            </span>
+            <SettingsSelect
+              aria-label={t("settings.sections.language.selectLanguage")}
+              className="settings-row__control"
+              onChange={(language) => {
+                onSave({ language });
+              }}
+              options={languageOptions.map((language) => ({
+                value: language,
+                label: languageLabels[language],
+              }))}
+              value={settings.language}
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -320,59 +295,70 @@ function NotificationsSection({
   const canAddRule = localReminderRules.length < MAX_LOCAL_REMINDER_RULES;
 
   return (
-    <div className="settings-section">
+    <div className="settings-panel-section">
       <h3>{t("settings.sections.notifications.title")}</h3>
+      <p className="settings-description">{t("settings.sections.notifications.description")}</p>
       <div className="settings-fields">
-        <p className="settings-placeholder">{t("settings.sections.notifications.description")}</p>
-        <label className="toggle-field settings-notifications__toggle">
-          <input
-            checked={newEventPopupEnabled}
-            onChange={(e) => {
-              onSave({ newEventPopupEnabled: e.target.checked });
-            }}
-            type="checkbox"
-          />
-          <span className="toggle-slider" />
-          <span>{t("settings.sections.notifications.newEventPopup")}</span>
-        </label>
-        <label className="toggle-field settings-notifications__toggle">
-          <input
-            checked={systemInviteNotificationsEnabled}
-            onChange={(e) => {
-              onSave({ systemInviteNotificationsEnabled: e.target.checked });
-            }}
-            type="checkbox"
-          />
-          <span className="toggle-slider" />
-          <span>{t("settings.sections.notifications.systemInviteNotifications")}</span>
-        </label>
-        <label className="toggle-field settings-notifications__toggle">
-          <input
-            checked={taskbarInviteNotificationsEnabled}
-            onChange={(e) => {
-              onSave({ taskbarInviteNotificationsEnabled: e.target.checked });
-            }}
-            type="checkbox"
-          />
-          <span className="toggle-slider" />
-          <span>{t("settings.sections.notifications.taskbarInviteNotifications")}</span>
-        </label>
-        <label className="toggle-field settings-notifications__toggle">
-          <input
-            checked={localReminderOverrideEnabled}
-            onChange={(e) => {
-              onSave({ localReminderOverrideEnabled: e.target.checked });
-            }}
-            type="checkbox"
-          />
-          <span className="toggle-slider" />
-          <span>{t("settings.sections.notifications.overrideSynced")}</span>
-        </label>
+        <div className="settings-group">
+          <label className="toggle-field settings-group__row">
+            <input
+              checked={newEventPopupEnabled}
+              onChange={(e) => {
+                onSave({ newEventPopupEnabled: e.target.checked });
+              }}
+              type="checkbox"
+            />
+            <span className="toggle-slider" />
+            <span className="settings-group__label">
+              {t("settings.sections.notifications.newEventPopup")}
+            </span>
+          </label>
+          <label className="toggle-field settings-group__row">
+            <input
+              checked={systemInviteNotificationsEnabled}
+              onChange={(e) => {
+                onSave({ systemInviteNotificationsEnabled: e.target.checked });
+              }}
+              type="checkbox"
+            />
+            <span className="toggle-slider" />
+            <span className="settings-group__label">
+              {t("settings.sections.notifications.systemInviteNotifications")}
+            </span>
+          </label>
+          <label className="toggle-field settings-group__row">
+            <input
+              checked={taskbarInviteNotificationsEnabled}
+              onChange={(e) => {
+                onSave({ taskbarInviteNotificationsEnabled: e.target.checked });
+              }}
+              type="checkbox"
+            />
+            <span className="toggle-slider" />
+            <span className="settings-group__label">
+              {t("settings.sections.notifications.taskbarInviteNotifications")}
+            </span>
+          </label>
+          <label className="toggle-field settings-group__row">
+            <input
+              checked={localReminderOverrideEnabled}
+              onChange={(e) => {
+                onSave({ localReminderOverrideEnabled: e.target.checked });
+              }}
+              type="checkbox"
+            />
+            <span className="toggle-slider" />
+            <span className="settings-group__label">
+              {t("settings.sections.notifications.overrideSynced")}
+            </span>
+          </label>
+        </div>
         {localReminderOverrideEnabled && (
           <div className="settings-notifications__rules">
             <div className="settings-notifications__header">
               <span>{t("settings.sections.notifications.ruleTime")}</span>
               <span>{t("settings.sections.notifications.ruleWhen")}</span>
+              <span className="settings-notifications__header-spacer" aria-hidden="true" />
             </div>
             {localReminderRules.map((rule, index) => (
               <div className="settings-notifications__rule" key={`local-reminder-rule-${index}`}>
@@ -458,19 +444,18 @@ function NotificationsSection({
                     </div>
                   )}
                 </div>
-                <select
+                <SettingsSelect
+                  aria-label={t("settings.sections.notifications.ruleWhen")}
                   className="settings-notifications__when"
-                  onChange={(e) => {
-                    updateRule(index, { when: e.target.value as LocalReminderWhenSetting });
+                  onChange={(when) => {
+                    updateRule(index, { when });
                   }}
+                  options={whenOptions.map((when) => ({
+                    value: when,
+                    label: whenLabels[when],
+                  }))}
                   value={rule.when}
-                >
-                  {whenOptions.map((when) => (
-                    <option key={when} value={when}>
-                      {whenLabels[when]}
-                    </option>
-                  ))}
-                </select>
+                />
                 <button
                   aria-label={t("settings.sections.notifications.removeRule")}
                   className="settings-notifications__remove"
@@ -520,26 +505,26 @@ function SyncSection({ onSave, settings }: Pick<SettingsDialogProps, "onSave" | 
   const syncIntervalOptions: SyncIntervalSetting[] = [1, 5, 10, 15, 30, 60];
 
   return (
-    <div className="settings-section">
+    <div className="settings-panel-section">
       <h3>{t("settings.sections.sync.title")}</h3>
+      <p className="settings-description">{t("settings.sections.sync.description")}</p>
       <div className="settings-fields">
-        <p className="settings-placeholder">{t("settings.sections.sync.description")}</p>
-        <div className="field">
-          <span>{t("settings.sections.sync.interval")}</span>
-          <select
-            value={settings.syncIntervalMinutes}
-            onChange={(e) => {
-              onSave({
-                syncIntervalMinutes: Number.parseInt(e.target.value, 10) as SyncIntervalSetting,
-              });
-            }}
-          >
-            {syncIntervalOptions.map((syncIntervalMinutes) => (
-              <option key={syncIntervalMinutes} value={syncIntervalMinutes}>
-                {t("settings.sections.sync.intervalOption", { value: syncIntervalMinutes })}
-              </option>
-            ))}
-          </select>
+        <div className="settings-group">
+          <div className="settings-row settings-group__row">
+            <span className="settings-row__label">{t("settings.sections.sync.interval")}</span>
+            <SettingsSelect
+              aria-label={t("settings.sections.sync.interval")}
+              className="settings-row__control"
+              onChange={(syncIntervalMinutes) => {
+                onSave({ syncIntervalMinutes });
+              }}
+              options={syncIntervalOptions.map((syncIntervalMinutes) => ({
+                value: syncIntervalMinutes,
+                label: t("settings.sections.sync.intervalOption", { value: syncIntervalMinutes }),
+              }))}
+              value={settings.syncIntervalMinutes}
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -625,7 +610,7 @@ function AboutSection({ onSave, settings }: AboutSectionProps) {
   const effectiveVersion = version ?? status?.currentVersion ?? null;
 
   return (
-    <div className="settings-section">
+    <div className="settings-panel-section">
       <h3>{t("settings.sections.about.title")}</h3>
       <div className="settings-fields">
         <div className="settings-updates">
@@ -638,20 +623,20 @@ function AboutSection({ onSave, settings }: AboutSectionProps) {
                 : (effectiveVersion ?? t("settings.updates.unknownVersion"))}
             </strong>
           </div>
-          <div className="settings-updates__channel">
-            <span>{t("settings.updates.channel.label")}</span>
-            <select
-              value={settings.updateChannel}
-              onChange={(e) => {
-                onSave({ updateChannel: e.target.value as UpdateChannel });
+          <div className="settings-row settings-row--compact">
+            <span className="settings-row__label">{t("settings.updates.channel.label")}</span>
+            <SettingsSelect
+              aria-label={t("settings.updates.channel.label")}
+              className="settings-row__control"
+              onChange={(updateChannel) => {
+                onSave({ updateChannel });
               }}
-            >
-              {updateChannelOptions.map((channel) => (
-                <option key={channel} value={channel}>
-                  {updateChannelLabels[channel]}
-                </option>
-              ))}
-            </select>
+              options={updateChannelOptions.map((channel) => ({
+                value: channel,
+                label: updateChannelLabels[channel],
+              }))}
+              value={settings.updateChannel}
+            />
           </div>
           <div
             className={`settings-updates__status settings-updates__status--${status?.state ?? "idle"}`}
@@ -720,7 +705,6 @@ function AboutSection({ onSave, settings }: AboutSectionProps) {
 function SettingsDialog({
   isOpen,
   onClose,
-  calendars,
   settings,
   onSave,
 }: SettingsDialogProps): React.JSX.Element | null {
@@ -733,11 +717,6 @@ function SettingsDialog({
 
   const sections: { id: SettingsSection; label: string; icon: typeof faPalette }[] = [
     { id: "appearance", label: t("settings.sections.appearance.label"), icon: faPalette },
-    {
-      id: "calendarDefaults",
-      label: t("settings.sections.calendarDefaults.label"),
-      icon: faCalendar,
-    },
     { id: "language", label: t("settings.sections.language.label"), icon: faGlobe },
     { id: "notifications", label: t("settings.sections.notifications.label"), icon: faBell },
     { id: "sync", label: t("settings.sections.sync.label"), icon: faArrowsRotate },
@@ -748,9 +727,6 @@ function SettingsDialog({
     switch (activeSection) {
       case "appearance": {
         return <AppearanceSection onSave={onSave} settings={settings} />;
-      }
-      case "calendarDefaults": {
-        return <CalendarDefaultsSection calendars={calendars} />;
       }
       case "language": {
         return <LanguageSection onSave={onSave} settings={settings} />;

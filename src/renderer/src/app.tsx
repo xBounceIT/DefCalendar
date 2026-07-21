@@ -1093,7 +1093,6 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         settings={appSettings}
-        calendars={calendars}
         onSave={(newSettings) => {
           const previousSettings = appSettings;
           const nextSettings = { ...previousSettings, ...newSettings };

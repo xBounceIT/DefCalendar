@@ -4,7 +4,7 @@ const TITLE_BAR_HEIGHT = 40;
 const TITLE_BAR_SYMBOL_LIGHT = "#1a1a1a";
 const TITLE_BAR_SYMBOL_DARK = "#ffffff";
 const TITLE_BAR_BG_LIGHT = "#f5f5f5";
-const TITLE_BAR_BG_DARK = "#07080a";
+const TITLE_BAR_BG_DARK = "#070d1c";
 const TITLE_BAR_SCRIM_SYMBOL_LIGHT = "rgba(26, 26, 26, 0.55)";
 const TITLE_BAR_SCRIM_SYMBOL_DARK = "rgba(255, 255, 255, 0.55)";
 
