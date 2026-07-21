@@ -6,7 +6,7 @@ const TITLE_BAR_HEIGHT = 40;
 const TITLE_BAR_SYMBOL_LIGHT = "#1a1a1a";
 const TITLE_BAR_SYMBOL_DARK = "#ffffff";
 const TITLE_BAR_BG_LIGHT = "#f5f5f5";
-const TITLE_BAR_BG_DARK = "#07080a";
+const TITLE_BAR_BG_DARK = "#070d1c";
 
 interface TitleBarStyle {
   color: string;
