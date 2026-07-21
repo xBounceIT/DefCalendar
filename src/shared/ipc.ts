@@ -73,6 +73,7 @@ export const IPC_CHANNELS = {
   updatesStatusChanged: "updates:status-changed",
   settingsGet: "settings:get",
   settingsUpdate: "settings:update",
+  windowSetTitleBarScrim: "window:set-title-bar-scrim",
   reminderGetState: "reminder:get-state",
   reminderStateChanged: "reminder:state-changed",
   reminderSnooze: "reminder:snooze",
@@ -142,6 +143,9 @@ interface CalendarApi {
   settings: {
     get: () => Promise<UserSettings>;
     update: (patch: UserSettingsPatch) => Promise<UserSettings>;
+  };
+  window: {
+    setTitleBarScrim: (args: { active: boolean; isDarkTheme: boolean }) => Promise<void>;
   };
   reminder: {
     getState: () => Promise<ReminderDialogState>;
