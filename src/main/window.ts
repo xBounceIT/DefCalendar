@@ -1,5 +1,6 @@
 import { app, BrowserWindow, shell } from "@main/electron-runtime";
 import { join } from "pathe";
+import type { VisualTheme } from "@shared/theme";
 import { t } from "./i18n";
 import {
   TITLE_BAR_HEIGHT,
@@ -8,8 +9,8 @@ import {
   setTitleBarTheme,
 } from "./window/title-bar-overlay";
 
-function createMainWindow(isDarkTheme: boolean): BrowserWindow {
-  const titleBarStyle = getInitialTitleBarStyle(isDarkTheme);
+function createMainWindow(visualTheme: VisualTheme): BrowserWindow {
+  const titleBarStyle = getInitialTitleBarStyle(visualTheme);
   const iconPath = app.isPackaged
     ? join(process.resourcesPath, "logo.png")
     : join(process.cwd(), "resources", "logo.png");

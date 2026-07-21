@@ -34,6 +34,7 @@ import type {
 } from "@shared/schemas";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
+import { applyDocumentTheme } from "./apply-document-theme";
 import { resolveLocaleSettingAsync, setAppLocale } from "./i18n";
 import type { CalendarOverlapTarget } from "./event-overlap";
 import {
@@ -162,7 +163,10 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   });
 
   const appSettings = settingsQuery.data ?? fallbackSettings;
-  useTitleBarScrim(isSearchOpen, appSettings.theme ?? "system");
+  useTitleBarScrim(
+    isSearchOpen || isSettingsOpen || editorState !== null,
+    appSettings.theme ?? "system",
+  );
   const shouldShowNewEventPopup =
     signedIn &&
     settingsQuery.data !== undefined &&
@@ -416,21 +420,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   }, [appSettings.language]);
 
   useEffect(() => {
-    const theme = appSettings.theme ?? "system";
-
-    function applyTheme(isDark: boolean): void {
-      document.documentElement.dataset.theme = isDark ? "dark" : "light";
-    }
-
-    if (theme === "system") {
-      const mq = globalThis.matchMedia("(prefers-color-scheme: dark)");
-      applyTheme(mq.matches);
-      const handler = (e: MediaQueryListEvent) => applyTheme(e.matches);
-      mq.addEventListener("change", handler);
-      return () => mq.removeEventListener("change", handler);
-    }
-
-    applyTheme(theme === "dark");
+    return applyDocumentTheme(appSettings.theme ?? "system");
   }, [appSettings.theme]);
 
   useEffect(() => {

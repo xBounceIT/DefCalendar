@@ -21,6 +21,7 @@ import { loadAppConfig } from "@main/config";
 import registerIpc from "@main/ipc/register-ipc";
 import { resolveMainLocale, setMainLocale } from "@main/i18n";
 import type { ThemeSetting } from "@shared/schema-values";
+import { resolveVisualTheme } from "@shared/theme";
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
@@ -33,15 +34,15 @@ let trayService: TrayService | null = null;
 let shouldQuit = false;
 let currentThemeSetting: ThemeSetting = "system";
 
-const isDarkTheme = (themeSetting: ThemeSetting): boolean =>
-  themeSetting === "dark" || (themeSetting === "system" && nativeTheme.shouldUseDarkColors);
+const resolveCurrentVisualTheme = () =>
+  resolveVisualTheme(currentThemeSetting, nativeTheme.shouldUseDarkColors);
 
 const applyWindowTitleBarTheme = () => {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return;
   }
 
-  setTitleBarTheme(mainWindow, isDarkTheme(currentThemeSetting));
+  setTitleBarTheme(mainWindow, resolveCurrentVisualTheme());
 };
 
 async function bootstrap(): Promise<void> {
@@ -126,7 +127,7 @@ async function bootstrap(): Promise<void> {
 
   const ensureWindow = () => {
     if (!mainWindow || mainWindow.isDestroyed()) {
-      mainWindow = createMainWindow(isDarkTheme(currentThemeSetting));
+      mainWindow = createMainWindow(resolveCurrentVisualTheme());
       mainWindow.on("close", (event) => {
         if (!shouldQuit) {
           event.preventDefault();

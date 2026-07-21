@@ -37,6 +37,7 @@ import {
   type ThemeSetting,
   userSettingsPatchSchema,
 } from "@shared/schemas";
+import { visualThemeSchema } from "@shared/theme";
 import type AppDatabase from "@main/db/database";
 import type EventActionService from "@main/events/event-action-service";
 import { isMissingGraphItemError } from "@main/graph/calendar-service";
@@ -199,7 +200,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     const args = z
       .object({
         active: z.boolean(),
-        isDarkTheme: z.boolean(),
+        visualTheme: visualThemeSchema,
       })
       .parse(input);
     const window = dependencies.getMainWindow();
@@ -207,7 +208,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
       return;
     }
 
-    setTitleBarScrim(window, args.isDarkTheme, args.active);
+    setTitleBarScrim(window, args.visualTheme, args.active);
   });
 
   ipcMain.handle(IPC_CHANNELS.authGetState, async (event) => {

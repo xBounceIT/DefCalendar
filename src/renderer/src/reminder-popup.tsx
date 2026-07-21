@@ -4,6 +4,7 @@ import i18n from "i18next";
 import { initReactI18next, useTranslation } from "react-i18next";
 import type { ReminderDialogItem, ReminderDialogState } from "@shared/ipc";
 
+import { applyDocumentTheme } from "./apply-document-theme";
 import { MeetingIcon } from "./components/meeting-icon";
 import { formatEventTimeRange } from "./date-formatting";
 import en from "./i18n/locales/en.json";
@@ -95,21 +96,7 @@ function ReminderPopup() {
   }, [state.locale]);
 
   useEffect(() => {
-    const theme = state.theme ?? "system";
-
-    function applyTheme(isDark: boolean): void {
-      document.documentElement.dataset.theme = isDark ? "dark" : "light";
-    }
-
-    if (theme === "system") {
-      const mq = globalThis.matchMedia("(prefers-color-scheme: dark)");
-      applyTheme(mq.matches);
-      const handler = (e: MediaQueryListEvent) => applyTheme(e.matches);
-      mq.addEventListener("change", handler);
-      return () => mq.removeEventListener("change", handler);
-    }
-
-    applyTheme(theme === "dark");
+    return applyDocumentTheme(state.theme ?? "system");
   }, [state.theme]);
 
   useEffect(() => {

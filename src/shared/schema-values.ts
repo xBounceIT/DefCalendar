@@ -12,3 +12,11 @@ export {
   userSettingsSchema,
 } from "./schemas";
 export type { ThemeSetting } from "./schemas";
+export type { VisualTheme } from "./theme";
+export {
+  getTitleBarColors,
+  getTitleBarScrimColors,
+  isDarkVisualTheme,
+  resolveVisualTheme,
+  visualThemeSchema,
+} from "./theme";

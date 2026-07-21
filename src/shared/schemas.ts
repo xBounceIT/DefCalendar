@@ -481,7 +481,7 @@ const appUpdateStatusSchema = z.object({
 });
 
 const updateChannelSchema = z.enum(["stable", "prerelease"]);
-const themeSettingSchema = z.enum(["light", "dark", "system"]);
+const themeSettingSchema = z.enum(["light", "dark", "blue-navy", "system"]);
 const languageSettingSchema = z.enum(["system", "en", "it"]);
 const timeFormatSettingSchema = z.enum(["system", "12h", "24h"]);
 const localReminderWhenSchema = z.enum(["before", "after"]);

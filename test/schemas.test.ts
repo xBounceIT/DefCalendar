@@ -77,9 +77,11 @@ describe("shared schemas", () => {
   });
 
   it("preserves explicit theme patch values", () => {
-    const patch = userSettingsPatchSchema.parse({ theme: "dark" });
+    const darkPatch = userSettingsPatchSchema.parse({ theme: "dark" });
+    const navyPatch = userSettingsPatchSchema.parse({ theme: "blue-navy" });
 
-    expect(patch).toStrictEqual({ theme: "dark" });
+    expect(darkPatch).toStrictEqual({ theme: "dark" });
+    expect(navyPatch).toStrictEqual({ theme: "blue-navy" });
   });
 
   it("does not inject defaults into sparse settings patches", () => {

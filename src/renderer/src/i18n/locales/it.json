@@ -326,6 +326,7 @@
         "themeOptions": {
           "light": "Chiaro",
           "dark": "Scuro",
+          "blue-navy": "Blu navy",
           "system": "Sistema"
         }
       },
