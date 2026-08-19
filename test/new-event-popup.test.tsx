@@ -211,7 +211,9 @@ describe("new event popup", () => {
     renderPopup();
 
     const dialog = await screen.findByRole("dialog", { name: "New invitations" });
-    expect(dialog).toHaveFocus();
+    await waitFor(() => {
+      expect(dialog).toHaveFocus();
+    });
 
     dialog.blur();
     window.dispatchEvent(new Event("focus"));
