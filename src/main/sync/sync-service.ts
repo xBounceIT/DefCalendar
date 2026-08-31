@@ -601,6 +601,10 @@ class SyncService {
 
       const becameEligible = previous !== undefined && !isFuturePendingInvite(previous, now);
       if (becameEligible) {
+        this.dependencies.newEventNotifications.dismiss({
+          calendarId: event.calendarId,
+          eventId: event.id,
+        });
         this.dependencies.db.clearNotificationFired(notificationKey);
       }
       if (!shouldRecordCandidates) {

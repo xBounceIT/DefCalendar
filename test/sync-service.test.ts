@@ -534,6 +534,10 @@ describe("sync service", () => {
     expect(fixture.db.clearNotificationFired).toHaveBeenCalledExactlyOnceWith(
       "calendar-a:rescheduled-invite:invite",
     );
+    expect(fixture.newEventNotifications.dismiss).toHaveBeenCalledExactlyOnceWith({
+      calendarId: "calendar-a",
+      eventId: "rescheduled-invite",
+    });
     expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledExactlyOnceWith([
       rescheduledInvite,
     ]);
