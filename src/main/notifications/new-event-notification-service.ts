@@ -1,5 +1,5 @@
 import type { CalendarEvent, EventReferenceArgs, NewEventNotificationItem } from "@shared/schemas";
-import { isPendingInvite } from "@shared/event-response";
+import { isFuturePendingInvite } from "@shared/event-response";
 import buildEventReferenceKey from "@shared/event-reference";
 
 type Listener = (items: NewEventNotificationItem[]) => void;
@@ -7,6 +7,11 @@ type Listener = (items: NewEventNotificationItem[]) => void;
 class NewEventNotificationService {
   private items: NewEventNotificationItem[] = [];
   private readonly listeners = new Set<Listener>();
+  private readonly now: () => number;
+
+  constructor(now: () => number = Date.now) {
+    this.now = now;
+  }
 
   getItems(): NewEventNotificationItem[] {
     return this.items;
@@ -22,6 +27,7 @@ class NewEventNotificationService {
   recordCandidates(events: CalendarEvent[]): void {
     const existingKeys = new Set(this.items.map(buildEventReferenceKey));
     const candidates: NewEventNotificationItem[] = [];
+    const now = this.now();
 
     for (const event of events) {
       const eventKey = buildEventReferenceKey({
@@ -31,7 +37,7 @@ class NewEventNotificationService {
       if (existingKeys.has(eventKey)) {
         continue;
       }
-      if (!isPendingInvite(event)) {
+      if (!isFuturePendingInvite(event, now)) {
         continue;
       }
 

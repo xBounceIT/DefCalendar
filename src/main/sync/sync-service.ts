@@ -7,7 +7,7 @@ import type ReminderService from "@main/reminders/reminder-service";
 import type { ReminderCheckTrigger } from "@main/reminders/reminder-service";
 import type SettingsService from "@main/settings/settings-service";
 import { DAY_MS, MINUTE_MS } from "@shared/duration";
-import { isDeclinedEventResponse, isPendingInvite } from "@shared/event-response";
+import { isDeclinedEventResponse, isFuturePendingInvite } from "@shared/event-response";
 import type {
   CalendarEvent,
   CalendarSummary,
@@ -35,14 +35,16 @@ interface SyncServiceDependencies {
 class SyncService {
   private readonly dependencies: SyncServiceDependencies;
   private readonly listeners = new Set<(status: SyncStatus) => void>();
+  private readonly now: () => number;
   private timer: NodeJS.Timeout | null = null;
   private inFlight: Promise<SyncStatus> | null = null;
   private pendingMutationAllAccounts = false;
   private readonly pendingMutationAccountIds = new Set<string>();
   private status: SyncStatus;
 
-  constructor(dependencies: SyncServiceDependencies) {
+  constructor(dependencies: SyncServiceDependencies, now: () => number = Date.now) {
     this.dependencies = dependencies;
+    this.now = now;
     this.status = this.withSyncWindow(dependencies.db.getLatestSyncStatus());
   }
 
@@ -569,6 +571,7 @@ class SyncService {
   ): CalendarEvent[] {
     const candidates: CalendarEvent[] = [];
     const eventsById = buildEventsById(events);
+    const now = this.now();
 
     for (const previous of previousEventsById.values()) {
       if (eventsById.has(previous.id)) {
@@ -585,25 +588,29 @@ class SyncService {
     for (const event of eventsById.values()) {
       const notificationKey = buildInviteNotificationKey(event);
       const previous = previousEventsById.get(event.id);
-      if (!isPendingInvite(event)) {
+      if (!isFuturePendingInvite(event, now)) {
         this.dependencies.newEventNotifications.dismiss({
           calendarId: event.calendarId,
           eventId: event.id,
         });
-        if (previous === undefined || isPendingInvite(previous)) {
+        if (previous === undefined || isFuturePendingInvite(previous, now)) {
           this.dependencies.db.clearNotificationFired(notificationKey);
         }
         continue;
       }
 
-      const responseWasReset = previous !== undefined && !isPendingInvite(previous);
-      if (responseWasReset) {
+      const becameEligible = previous !== undefined && !isFuturePendingInvite(previous, now);
+      if (becameEligible) {
+        this.dependencies.newEventNotifications.dismiss({
+          calendarId: event.calendarId,
+          eventId: event.id,
+        });
         this.dependencies.db.clearNotificationFired(notificationKey);
       }
       if (!shouldRecordCandidates) {
         continue;
       }
-      if (!responseWasReset && this.dependencies.db.hasNotificationFired(notificationKey)) {
+      if (!becameEligible && this.dependencies.db.hasNotificationFired(notificationKey)) {
         continue;
       }
 

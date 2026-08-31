@@ -1119,7 +1119,7 @@ class AppDatabase {
       .run(key, untilIso);
   }
 
-  pruneNotificationState(beforeIso: string): void {
+  pruneNotificationState(beforeIso: string, nowIso: string): void {
     this.db
       .prepare(
         `DELETE FROM notification_state
@@ -1136,11 +1136,12 @@ class AppDatabase {
                  AND LOWER(TRIM(COALESCE(json_extract(
                    events.payload_json,
                    '$.responseStatus.response'
-                 ), ''))) IN ('', 'none', 'notresponded', 'organizer')
-             )
-           )`,
+                  ), ''))) IN ('', 'none', 'notresponded', 'organizer')
+                  AND julianday(events.start_sort) > julianday(?)
+              )
+            )`,
       )
-      .run(beforeIso);
+      .run(beforeIso, nowIso);
   }
 
   pruneReminderState(beforeIso: string): void {

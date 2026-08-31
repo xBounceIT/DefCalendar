@@ -118,6 +118,7 @@ function createEvent(overrides?: Partial<CalendarEvent>): CalendarEvent {
 function createFixture(args?: {
   accountIds?: string[];
   calendars?: CalendarSummary[];
+  currentTime?: string;
   knownCalendarIds?: string[];
   newEventPopupEnabled?: boolean;
   syncIntervalMinutes?: UserSettings["syncIntervalMinutes"];
@@ -199,19 +200,22 @@ function createFixture(args?: {
     recordCandidates: vi.fn(),
   };
 
-  const service = new SyncService({
-    auth: auth as never,
-    config: {
-      syncIntervalMinutes: 15,
-      syncLookAheadDays: FIXTURE_LOOKAHEAD_DAYS,
-      syncLookBehindDays: FIXTURE_LOOKBEHIND_DAYS,
-    } as never,
-    db: db as never,
-    graph: graph as never,
-    newEventNotifications: newEventNotifications as never,
-    reminders: reminders as never,
-    settings: settings as never,
-  });
+  const service = new SyncService(
+    {
+      auth: auth as never,
+      config: {
+        syncIntervalMinutes: 15,
+        syncLookAheadDays: FIXTURE_LOOKAHEAD_DAYS,
+        syncLookBehindDays: FIXTURE_LOOKBEHIND_DAYS,
+      } as never,
+      db: db as never,
+      graph: graph as never,
+      newEventNotifications: newEventNotifications as never,
+      reminders: reminders as never,
+      settings: settings as never,
+    },
+    () => new Date(args?.currentTime ?? "2026-03-30T00:00:00.000Z").getTime(),
+  );
 
   return {
     db,
@@ -456,6 +460,87 @@ describe("sync service", () => {
 
     expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledOnce();
     expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([invite]);
+  });
+
+  it("records only future unanswered invite candidates", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture({
+      currentTime: "2026-03-30T09:30:00.000Z",
+      newEventPopupEnabled: true,
+    });
+    const pastPendingInvite = createEvent({
+      end: "2026-03-30T09:30:00.000Z",
+      id: "past-pending",
+      isOrganizer: false,
+      responseStatus: null,
+      start: "2026-03-30T09:00:00.000Z",
+    });
+    const futureAcceptedInvite = createEvent({
+      id: "future-accepted",
+      isOrganizer: false,
+      responseStatus: { response: "accepted", time: "2026-03-30T09:00:00.000Z" },
+    });
+    const futurePendingInvite = createEvent({
+      id: "future-pending",
+      isOrganizer: false,
+      responseStatus: null,
+    });
+    fixture.graph.listCalendarView.mockResolvedValue([
+      pastPendingInvite,
+      futureAcceptedInvite,
+      futurePendingInvite,
+    ]);
+
+    await fixture.service.syncAll("manual");
+
+    expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledExactlyOnceWith([
+      futurePendingInvite,
+    ]);
+    expect(fixture.db.markNotificationFired).toHaveBeenCalledExactlyOnceWith(
+      "calendar-a:future-pending:invite",
+    );
+    expect(fixture.newEventNotifications.dismiss.mock.calls).toStrictEqual(
+      expect.arrayContaining([
+        [{ calendarId: "calendar-a", eventId: "past-pending" }],
+        [{ calendarId: "calendar-a", eventId: "future-accepted" }],
+      ]),
+    );
+  });
+
+  it("records a pending invite rescheduled from the past into the future", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture({
+      currentTime: "2026-03-30T09:30:00.000Z",
+      newEventPopupEnabled: true,
+    });
+    const previousInvite = createEvent({
+      end: "2026-03-30T09:30:00.000Z",
+      id: "rescheduled-invite",
+      isOrganizer: false,
+      responseStatus: null,
+      start: "2026-03-30T09:00:00.000Z",
+    });
+    const rescheduledInvite = createEvent({
+      id: "rescheduled-invite",
+      isOrganizer: false,
+      responseStatus: null,
+    });
+    fixture.db.hasNotificationFired.mockReturnValue(true);
+    fixture.db.listEvents.mockReturnValue([previousInvite]);
+    fixture.graph.listCalendarView.mockResolvedValue([rescheduledInvite]);
+
+    await fixture.service.syncAll("manual");
+
+    expect(fixture.db.clearNotificationFired).toHaveBeenCalledExactlyOnceWith(
+      "calendar-a:rescheduled-invite:invite",
+    );
+    expect(fixture.newEventNotifications.dismiss).toHaveBeenCalledExactlyOnceWith({
+      calendarId: "calendar-a",
+      eventId: "rescheduled-invite",
+    });
+    expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledExactlyOnceWith([
+      rescheduledInvite,
+    ]);
   });
 
   it("records new pending invite candidates on startup for already synced calendars", async () => {

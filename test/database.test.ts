@@ -611,7 +611,7 @@ describe("database", () => {
     expect(run).toHaveBeenCalledWith("2026-03-01T00:00:00.000Z", "2026-03-01T00:00:00.000Z");
   });
 
-  it("preserves only invite delivery markers that still belong to pending events", () => {
+  it("preserves only invite delivery markers that still belong to pending future events", () => {
     expect.hasAssertions();
     const run = vi.fn();
     let capturedSql = "";
@@ -623,7 +623,7 @@ describe("database", () => {
     const db = Object.create(AppDatabase.prototype) as AppDatabase;
     (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
 
-    db.pruneNotificationState("2026-03-01T00:00:00.000Z");
+    db.pruneNotificationState("2026-03-01T00:00:00.000Z", "2026-03-30T09:30:00.000Z");
 
     const normalizedSql = capturedSql.replace(/\s+/g, " ").trim();
     expect(normalizedSql).toContain("dedupe_key NOT LIKE '%:invite'");
@@ -637,9 +637,10 @@ describe("database", () => {
         "json_extract(events.payload_json, '$.isOrganizer')",
         "COALESCE(json_extract(",
         "IN ('', 'none', 'notresponded', 'organizer')",
+        "julianday(events.start_sort) > julianday(?)",
       ].every((fragment) => normalizedSql.includes(fragment)),
     ).toBe(true);
-    expect(run).toHaveBeenCalledWith("2026-03-01T00:00:00.000Z");
+    expect(run).toHaveBeenCalledWith("2026-03-01T00:00:00.000Z", "2026-03-30T09:30:00.000Z");
   });
 
   it("searches events across scoped fields with parameterized SQL", () => {
