@@ -50,7 +50,9 @@ function createInvite(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
 describe("new event notification service", () => {
   it("keeps pending invites with the same event id in different calendars independent", () => {
     expect.hasAssertions();
-    const service = new NewEventNotificationService();
+    const service = new NewEventNotificationService(() =>
+      new Date("2026-03-30T09:30:00.000Z").getTime(),
+    );
     const listener = vi.fn();
     service.onChange(listener);
 
@@ -67,5 +69,34 @@ describe("new event notification service", () => {
       expect.objectContaining({ calendarId: "calendar-2", eventId: "shared-event" }),
     ]);
     expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it("records only future invites that still need a response", () => {
+    expect.hasAssertions();
+    const service = new NewEventNotificationService(() =>
+      new Date("2026-03-30T09:30:00.000Z").getTime(),
+    );
+    const futurePendingInvite = createInvite({
+      end: "2026-03-30T11:00:00.000Z",
+      id: "future-pending",
+      start: "2026-03-30T10:00:00.000Z",
+    });
+
+    service.recordCandidates([
+      createInvite({
+        end: "2026-03-30T09:30:00.000Z",
+        id: "past-pending",
+        start: "2026-03-30T09:00:00.000Z",
+      }),
+      createInvite({
+        id: "future-accepted",
+        responseStatus: { response: "accepted", time: "2026-03-30T09:00:00.000Z" },
+      }),
+      futurePendingInvite,
+    ]);
+
+    expect(service.getItems()).toStrictEqual([
+      expect.objectContaining({ eventId: futurePendingInvite.id }),
+    ]);
   });
 });

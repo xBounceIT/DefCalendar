@@ -38,8 +38,16 @@ function isPendingInvite(
   );
 }
 
+function isFuturePendingInvite(
+  event: Pick<CalendarEvent, "cancelled" | "isOrganizer" | "responseStatus" | "start">,
+  now = Date.now(),
+): boolean {
+  return Date.parse(event.start) > now && isPendingInvite(event);
+}
+
 export {
   isDeclinedEventResponse,
+  isFuturePendingInvite,
   isPendingEventResponse,
   isPendingInvite,
   normalizeEventResponseValue,

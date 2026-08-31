@@ -134,6 +134,7 @@ class ReminderService {
     );
     this.db.pruneNotificationState(
       new Date(now - REMINDER_STATE_RETENTION_DAYS * DAY_MS).toISOString(),
+      new Date(now).toISOString(),
     );
   }
 
