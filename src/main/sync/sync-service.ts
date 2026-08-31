@@ -461,6 +461,19 @@ class SyncService {
         });
       }
 
+      const totalEvents = syncedCalendars.reduce((sum, sc) => sum + sc.events.length, 0);
+      if (processedEvents !== totalEvents) {
+        processedEvents = totalEvents;
+        this.setStatus({
+          lastSyncedAt: this.status.lastSyncedAt,
+          message: syncMessage,
+          messageKey: syncMessageKey,
+          counts: null,
+          progress: { processedCalendars, totalCalendars, processedEvents },
+          state: "syncing",
+        });
+      }
+
       const newEvents: CalendarEvent[] = [];
       for (const syncedCalendar of syncedCalendars) {
         newEvents.push(
@@ -476,8 +489,6 @@ class SyncService {
       const reminderTrigger: ReminderCheckTrigger =
         reason === "startup" || reason === "switch-account" ? "startup" : "tick";
       await this.dependencies.reminders.checkNow(reminderTrigger);
-
-      const totalEvents = syncedCalendars.reduce((sum, sc) => sum + sc.events.length, 0);
 
       let calendarSuffix = "s";
       if (calendarsToSync.length === 1) {

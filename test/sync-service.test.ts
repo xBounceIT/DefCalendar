@@ -819,6 +819,10 @@ describe("sync service", () => {
     });
 
     fixture.db.listEvents.mockReturnValue([declinedEvent]);
+    const statuses: SyncStatus[] = [];
+    fixture.service.onStatus((status) => {
+      statuses.push({ ...status });
+    });
 
     const status = await fixture.service.syncAll("manual");
 
@@ -828,6 +832,12 @@ describe("sync service", () => {
       rangeEnd: expect.any(String),
       rangeStart: expect.any(String),
     });
+    expect(statuses).toContainEqual(
+      expect.objectContaining({
+        progress: { processedCalendars: 1, processedEvents: 1, totalCalendars: 1 },
+        state: "syncing",
+      }),
+    );
     expect(status.counts).toStrictEqual({ calendars: 1, events: 1 });
   });
 
