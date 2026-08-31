@@ -366,10 +366,9 @@ class SyncService {
       const deepRangeStart = new Date(rangeBaseTime - maxLookBehindDays * DAY_MS).toISOString();
       const rangeEnd = new Date(rangeBaseTime + lookAheadDays * DAY_MS).toISOString();
       const finishedAt = new Date().toISOString();
+      const inviteNotificationsEnabled = areInviteNotificationsEnabled(settings);
       const shouldRecordInviteCandidates =
-        areInviteNotificationsEnabled(settings) &&
-        reason !== "sign-in" &&
-        reason !== "switch-account";
+        inviteNotificationsEnabled && reason !== "sign-in" && reason !== "switch-account";
 
       const totalCalendars = calendarsToSync.length;
       let processedCalendars = 0;
@@ -476,13 +475,18 @@ class SyncService {
 
       const newEvents: CalendarEvent[] = [];
       for (const syncedCalendar of syncedCalendars) {
-        newEvents.push(
-          ...this.findInviteCandidates(
-            syncedCalendar.events,
-            syncedCalendar.previousEventsById,
-            syncedCalendar.shouldRecordInviteCandidates,
-          ),
+        const shouldSuppressInviteCandidates =
+          inviteNotificationsEnabled && syncedCalendar.isDeepBackfill;
+        const candidates = this.findInviteCandidates(
+          syncedCalendar.events,
+          syncedCalendar.previousEventsById,
+          syncedCalendar.shouldRecordInviteCandidates || shouldSuppressInviteCandidates,
         );
+        if (shouldSuppressInviteCandidates) {
+          this.markInviteCandidatesHandled(candidates);
+        } else {
+          newEvents.push(...candidates);
+        }
       }
       this.persistInviteCandidates(newEvents);
 
@@ -549,6 +553,10 @@ class SyncService {
     }
 
     this.dependencies.newEventNotifications.recordCandidates(candidates);
+    this.markInviteCandidatesHandled(candidates);
+  }
+
+  private markInviteCandidatesHandled(candidates: CalendarEvent[]): void {
     for (const event of candidates) {
       this.dependencies.db.markNotificationFired(buildInviteNotificationKey(event));
     }

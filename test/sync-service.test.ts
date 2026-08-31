@@ -469,16 +469,27 @@ describe("sync service", () => {
     expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([invite]);
   });
 
-  it("does not record startup invite candidates during first deep backfill", async () => {
+  it("persists startup invite suppression across the first deep backfill", async () => {
     expect.hasAssertions();
     const fixture = createFixture({ newEventPopupEnabled: true });
     const invite = createEvent({ id: "invite-1", isOrganizer: false, responseStatus: null });
-    fixture.db.getDeepBackfillCompletedAt.mockReturnValue(null);
+    const firedMarkers = new Set<string>();
+    fixture.db.getDeepBackfillCompletedAt
+      .mockReturnValueOnce(null)
+      .mockReturnValue("2026-03-30T12:00:00.000Z");
+    fixture.db.hasNotificationFired.mockImplementation((key: string) => firedMarkers.has(key));
+    fixture.db.markNotificationFired.mockImplementation((key: string) => {
+      firedMarkers.add(key);
+    });
     fixture.graph.listCalendarView.mockResolvedValue([invite]);
 
     await fixture.service.syncAll("startup");
+    await fixture.service.syncAll("startup");
 
     expect(fixture.newEventNotifications.recordCandidates).not.toHaveBeenCalled();
+    expect(fixture.db.markNotificationFired).toHaveBeenCalledExactlyOnceWith(
+      "calendar-a:invite-1:invite",
+    );
   });
 
   it("does not re-record a pending invite candidate on startup", async () => {
