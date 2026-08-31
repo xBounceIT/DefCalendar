@@ -30,7 +30,10 @@ class EventActionService {
     const current = this.dependencies.db.getEvent(args.calendarId, args.eventId);
     const isSeriesTarget = targetsDifferentEvent(args.eventId, args.targetEventId);
     await this.dependencies.graph.respondToEvent(args, homeAccountId);
-    this.dependencies.newEventNotifications.dismiss(args.eventId);
+    this.dependencies.newEventNotifications.dismiss({
+      calendarId: args.calendarId,
+      eventId: args.eventId,
+    });
 
     if (isSeriesTarget) {
       await this.dependencies.reminders.checkNow();

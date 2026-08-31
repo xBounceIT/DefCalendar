@@ -17,14 +17,17 @@ const FIXTURE_SYNC_WINDOW = {
 
 interface SyncFixture {
   db: {
+    clearNotificationFired: ReturnType<typeof vi.fn>;
     clearCalendarSyncRanges: ReturnType<typeof vi.fn>;
     getDeepBackfillCompletedAt: ReturnType<typeof vi.fn>;
     getCalendarHomeAccountId: ReturnType<typeof vi.fn>;
     getLatestSyncStatus: ReturnType<typeof vi.fn>;
+    hasNotificationFired: ReturnType<typeof vi.fn>;
     listCalendarIds: ReturnType<typeof vi.fn>;
     listUncoveredCalendarSyncRanges: ReturnType<typeof vi.fn>;
     listEvents: ReturnType<typeof vi.fn>;
     markDeepBackfillCompleted: ReturnType<typeof vi.fn>;
+    markNotificationFired: ReturnType<typeof vi.fn>;
     replaceContactsForAccount: ReturnType<typeof vi.fn>;
     recordCalendarSyncRange: ReturnType<typeof vi.fn>;
     replaceEventsForCalendarRange: ReturnType<typeof vi.fn>;
@@ -127,6 +130,7 @@ function createFixture(args?: {
   const syncIntervalMinutes = args?.syncIntervalMinutes ?? 15;
 
   const db = {
+    clearNotificationFired: vi.fn(),
     clearCalendarSyncRanges: vi.fn(),
     getDeepBackfillCompletedAt: vi.fn().mockReturnValue("2026-01-01T00:00:00.000Z"),
     getCalendarHomeAccountId: vi.fn().mockReturnValue("account-1"),
@@ -137,6 +141,7 @@ function createFixture(args?: {
       counts: null,
       state: "idle",
     }),
+    hasNotificationFired: vi.fn().mockReturnValue(false),
     listUncoveredCalendarSyncRanges: vi
       .fn()
       .mockImplementation((_calendarId: string, rangeStart: string, rangeEnd: string) => [
@@ -145,6 +150,7 @@ function createFixture(args?: {
     listCalendarIds: vi.fn().mockReturnValue(args?.knownCalendarIds ?? []),
     listEvents: vi.fn().mockReturnValue([]),
     markDeepBackfillCompleted: vi.fn(),
+    markNotificationFired: vi.fn(),
     recordCalendarSyncRange: vi.fn(),
     replaceContactsForAccount: vi.fn(),
     replaceEventsForCalendarRange: vi.fn(),
@@ -463,16 +469,27 @@ describe("sync service", () => {
     expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([invite]);
   });
 
-  it("does not record startup invite candidates during first deep backfill", async () => {
+  it("persists startup invite suppression across the first deep backfill", async () => {
     expect.hasAssertions();
     const fixture = createFixture({ newEventPopupEnabled: true });
     const invite = createEvent({ id: "invite-1", isOrganizer: false, responseStatus: null });
-    fixture.db.getDeepBackfillCompletedAt.mockReturnValue(null);
+    const firedMarkers = new Set<string>();
+    fixture.db.getDeepBackfillCompletedAt
+      .mockReturnValueOnce(null)
+      .mockReturnValue("2026-03-30T12:00:00.000Z");
+    fixture.db.hasNotificationFired.mockImplementation((key: string) => firedMarkers.has(key));
+    fixture.db.markNotificationFired.mockImplementation((key: string) => {
+      firedMarkers.add(key);
+    });
     fixture.graph.listCalendarView.mockResolvedValue([invite]);
 
     await fixture.service.syncAll("startup");
+    await fixture.service.syncAll("startup");
 
     expect(fixture.newEventNotifications.recordCandidates).not.toHaveBeenCalled();
+    expect(fixture.db.markNotificationFired).toHaveBeenCalledExactlyOnceWith(
+      "calendar-a:invite-1:invite",
+    );
   });
 
   it("does not re-record a pending invite candidate on startup", async () => {
@@ -491,12 +508,33 @@ describe("sync service", () => {
         time: null,
       },
     });
+    fixture.db.hasNotificationFired.mockReturnValue(true);
     fixture.db.listEvents.mockReturnValue([previousInvite]);
     fixture.graph.listCalendarView.mockResolvedValue([updatedInvite]);
 
     await fixture.service.syncAll("startup");
 
     expect(fixture.newEventNotifications.recordCandidates).not.toHaveBeenCalled();
+  });
+
+  it("recovers a pending startup invite without a delivery marker", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture({ newEventPopupEnabled: true });
+    const invite = createEvent({
+      id: "invite-1",
+      isOrganizer: false,
+      responseStatus: {
+        response: "notResponded",
+        time: null,
+      },
+    });
+    fixture.db.listEvents.mockReturnValue([invite]);
+    fixture.graph.listCalendarView.mockResolvedValue([invite]);
+
+    await fixture.service.syncAll("startup");
+
+    expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([invite]);
+    expect(fixture.db.markNotificationFired).toHaveBeenCalledWith("calendar-a:invite-1:invite");
   });
 
   it("does not record startup invite candidates when invite notifications are disabled", async () => {
@@ -509,6 +547,73 @@ describe("sync service", () => {
     await fixture.service.syncAll("startup");
 
     expect(fixture.newEventNotifications.recordCandidates).not.toHaveBeenCalled();
+  });
+
+  it("clears a response-reset marker while invite notifications are disabled", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const acceptedInvite = createEvent({
+      id: "invite-1",
+      isOrganizer: false,
+      responseStatus: { response: "accepted", time: "2026-03-29T09:00:00.000Z" },
+    });
+    const resetInvite = createEvent({
+      id: "invite-1",
+      isOrganizer: false,
+      responseStatus: null,
+    });
+    fixture.db.listEvents.mockReturnValue([acceptedInvite]);
+    fixture.graph.listCalendarView.mockResolvedValue([resetInvite]);
+
+    await fixture.service.syncAll("manual");
+
+    expect(fixture.db.clearNotificationFired).toHaveBeenCalledWith("calendar-a:invite-1:invite");
+    expect(fixture.newEventNotifications.recordCandidates).not.toHaveBeenCalled();
+  });
+
+  it("dismisses a queued invite after it is answered outside the app", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture({ newEventPopupEnabled: true });
+    const pendingInvite = createEvent({
+      id: "invite-1",
+      isOrganizer: false,
+      responseStatus: null,
+    });
+    const acceptedInvite = createEvent({
+      id: "invite-1",
+      isOrganizer: false,
+      responseStatus: { response: "accepted", time: "2026-03-29T09:00:00.000Z" },
+    });
+    fixture.db.listEvents.mockReturnValue([pendingInvite]);
+    fixture.graph.listCalendarView.mockResolvedValue([acceptedInvite]);
+
+    await fixture.service.syncAll("manual");
+
+    expect(fixture.newEventNotifications.dismiss).toHaveBeenCalledWith({
+      calendarId: "calendar-a",
+      eventId: "invite-1",
+    });
+    expect(fixture.newEventNotifications.recordCandidates).not.toHaveBeenCalled();
+  });
+
+  it("dismisses a queued invite that is removed from the calendar", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture({ newEventPopupEnabled: true });
+    const pendingInvite = createEvent({
+      id: "invite-1",
+      isOrganizer: false,
+      responseStatus: null,
+    });
+    fixture.db.listEvents.mockReturnValue([pendingInvite]);
+    fixture.graph.listCalendarView.mockResolvedValue([]);
+
+    await fixture.service.syncAll("manual");
+
+    expect(fixture.newEventNotifications.dismiss).toHaveBeenCalledWith({
+      calendarId: "calendar-a",
+      eventId: "invite-1",
+    });
+    expect(fixture.db.clearNotificationFired).toHaveBeenCalledWith("calendar-a:invite-1:invite");
   });
 
   it("records an existing invite when organizer changes reset the attendee response", async () => {
@@ -529,12 +634,14 @@ describe("sync service", () => {
       responseStatus: null,
       start: "2026-03-31T10:00:00.000Z",
     });
+    fixture.db.hasNotificationFired.mockReturnValue(true);
     fixture.db.listEvents.mockReturnValue([previousInvite]);
     fixture.graph.listCalendarView.mockResolvedValue([resetInvite]);
 
     await fixture.service.syncAll("manual");
 
     expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([resetInvite]);
+    expect(fixture.db.clearNotificationFired).toHaveBeenCalledWith("calendar-a:invite-1:invite");
   });
 
   it("does not record an existing invite that was already awaiting response", async () => {
@@ -555,6 +662,7 @@ describe("sync service", () => {
       },
       start: "2026-03-31T10:00:00.000Z",
     });
+    fixture.db.hasNotificationFired.mockReturnValue(true);
     fixture.db.listEvents.mockReturnValue([previousInvite]);
     fixture.graph.listCalendarView.mockResolvedValue([updatedInvite]);
 
@@ -619,6 +727,96 @@ describe("sync service", () => {
     expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([newInvite]);
   });
 
+  it("uses the final event state when a paged response contains duplicate ids", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture({ newEventPopupEnabled: true });
+    const pendingInvite = createEvent({
+      id: "invite-1",
+      isOrganizer: false,
+      responseStatus: null,
+    });
+    const acceptedInvite = createEvent({
+      id: "invite-1",
+      isOrganizer: false,
+      responseStatus: { response: "accepted", time: "2026-03-29T09:00:00.000Z" },
+    });
+    fixture.graph.listCalendarView.mockResolvedValue([pendingInvite, acceptedInvite]);
+
+    await fixture.service.syncAll("manual");
+
+    expect(fixture.newEventNotifications.recordCandidates).not.toHaveBeenCalled();
+  });
+
+  it("does not restore a stale pending response after a newer acceptance", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture({ newEventPopupEnabled: true });
+    const acceptedInvite = createEvent({
+      id: "invite-1",
+      isOrganizer: false,
+      lastModifiedDateTime: "2026-03-30T09:05:00.000Z",
+      responseStatus: { response: "accepted", time: "2026-03-30T09:05:00.000Z" },
+    });
+    const stalePendingInvite = createEvent({
+      id: "invite-1",
+      isOrganizer: false,
+      lastModifiedDateTime: "2026-03-30T09:00:00.000Z",
+      responseStatus: null,
+    });
+    fixture.db.listEvents.mockReturnValue([acceptedInvite]);
+    fixture.graph.listCalendarView.mockResolvedValue([stalePendingInvite]);
+
+    await fixture.service.syncAll("manual");
+
+    expect(fixture.db.replaceEventsForCalendarRange).toHaveBeenCalledWith(
+      expect.objectContaining({ events: [acceptedInvite] }),
+    );
+    expect(fixture.newEventNotifications.recordCandidates).not.toHaveBeenCalled();
+  });
+
+  it("rechecks persisted event versions after all calendar fetches finish", async () => {
+    expect.hasAssertions();
+    const slowCalendar = createDeferred<CalendarEvent[]>();
+    const fixture = createFixture({
+      calendars: [createCalendar("calendar-a"), createCalendar("calendar-b")],
+      newEventPopupEnabled: true,
+    });
+    const stalePendingInvite = createEvent({
+      calendarId: "calendar-a",
+      id: "invite-1",
+      isOrganizer: false,
+      lastModifiedDateTime: "2026-03-30T09:00:00.000Z",
+      responseStatus: null,
+    });
+    const acceptedInvite = createEvent({
+      calendarId: "calendar-a",
+      id: "invite-1",
+      isOrganizer: false,
+      lastModifiedDateTime: "2026-03-30T09:05:00.000Z",
+      responseStatus: { response: "accepted", time: "2026-03-30T09:05:00.000Z" },
+    });
+    fixture.graph.listCalendarView.mockImplementation((calendarId: string) =>
+      calendarId === "calendar-a" ? Promise.resolve([stalePendingInvite]) : slowCalendar.promise,
+    );
+    fixture.db.listEvents.mockImplementation((args: { calendarIds?: string[] }) =>
+      args.calendarIds?.[0] === "calendar-a" ? [acceptedInvite] : [],
+    );
+
+    const syncPromise = fixture.service.syncAll("manual");
+    await vi.waitFor(() => {
+      expect(fixture.graph.listCalendarView).toHaveBeenCalledTimes(2);
+    });
+    await Promise.resolve();
+
+    expect(fixture.db.listEvents).not.toHaveBeenCalled();
+
+    slowCalendar.resolve([]);
+    await syncPromise;
+
+    expect(fixture.db.replaceEventsForCalendarRange).toHaveBeenCalledWith(
+      expect.objectContaining({ calendarId: "calendar-a", events: [acceptedInvite] }),
+    );
+  });
+
   it("keeps locally declined attendee events when calendarView omits them", async () => {
     const fixture = createFixture();
     const declinedEvent = createEvent({
@@ -632,6 +830,10 @@ describe("sync service", () => {
     });
 
     fixture.db.listEvents.mockReturnValue([declinedEvent]);
+    const statuses: SyncStatus[] = [];
+    fixture.service.onStatus((status) => {
+      statuses.push({ ...status });
+    });
 
     const status = await fixture.service.syncAll("manual");
 
@@ -641,6 +843,12 @@ describe("sync service", () => {
       rangeEnd: expect.any(String),
       rangeStart: expect.any(String),
     });
+    expect(statuses).toContainEqual(
+      expect.objectContaining({
+        progress: { processedCalendars: 1, processedEvents: 1, totalCalendars: 1 },
+        state: "syncing",
+      }),
+    );
     expect(status.counts).toStrictEqual({ calendars: 1, events: 1 });
   });
 
@@ -962,6 +1170,32 @@ describe("sync service", () => {
     expect(fixture.db.recordCalendarSyncRange).not.toHaveBeenCalled();
   });
 
+  it("recovers cached pending invites when an on-demand range is already covered", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture({ taskbarInviteNotificationsEnabled: true });
+    const invite = createEvent({
+      end: "2026-11-19T09:30:00.000Z",
+      id: "pending-invite",
+      isOrganizer: false,
+      responseStatus: null,
+      start: "2026-11-19T09:00:00.000Z",
+    });
+    fixture.db.listUncoveredCalendarSyncRanges.mockReturnValue([]);
+    fixture.db.listEvents.mockReturnValue([invite]);
+
+    await fixture.service.ensureEventsRange({
+      calendarIds: ["calendar-a"],
+      end: "2026-11-30T23:00:00.000Z",
+      start: "2026-11-01T00:00:00.000Z",
+    });
+
+    expect(fixture.graph.listCalendarView).not.toHaveBeenCalled();
+    expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([invite]);
+    expect(fixture.db.markNotificationFired).toHaveBeenCalledWith(
+      "calendar-a:pending-invite:invite",
+    );
+  });
+
   it("checks on-demand coverage freshness before skipping a range", async () => {
     expect.hasAssertions();
     vi.useFakeTimers();
@@ -1052,6 +1286,91 @@ describe("sync service", () => {
       rangeStart: "2026-11-01T00:00:00.000Z",
       syncedAt: expect.any(String),
     });
+    expect(fixture.newEventNotifications.recordCandidates).not.toHaveBeenCalled();
+  });
+
+  it("records pending invites discovered by an on-demand event range fetch", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture({ taskbarInviteNotificationsEnabled: true });
+    const invite = createEvent({
+      end: "2026-11-19T09:30:00.000Z",
+      id: "pending-invite",
+      isOrganizer: false,
+      responseStatus: {
+        response: "notResponded",
+        time: null,
+      },
+      start: "2026-11-19T09:00:00.000Z",
+    });
+    fixture.graph.listCalendarView.mockResolvedValue([invite]);
+
+    await fixture.service.ensureEventsRange({
+      calendarIds: ["calendar-a"],
+      end: "2026-11-30T23:00:00.000Z",
+      start: "2026-11-01T00:00:00.000Z",
+    });
+
+    expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([invite]);
+    expect(fixture.db.markNotificationFired).toHaveBeenCalledWith(
+      "calendar-a:pending-invite:invite",
+    );
+  });
+
+  it("recovers a stored pending invite whose notification was never recorded", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture({ taskbarInviteNotificationsEnabled: true });
+    const invite = createEvent({
+      end: "2026-11-19T09:30:00.000Z",
+      id: "pending-invite",
+      isOrganizer: false,
+      responseStatus: {
+        response: "notResponded",
+        time: null,
+      },
+      start: "2026-11-19T09:00:00.000Z",
+    });
+    fixture.db.listEvents.mockReturnValue([invite]);
+    fixture.graph.listCalendarView.mockResolvedValue([invite]);
+
+    await fixture.service.ensureEventsRange({
+      calendarIds: ["calendar-a"],
+      end: "2026-11-30T23:00:00.000Z",
+      start: "2026-11-01T00:00:00.000Z",
+    });
+
+    expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([invite]);
+    expect(fixture.db.markNotificationFired).toHaveBeenCalledWith(
+      "calendar-a:pending-invite:invite",
+    );
+  });
+
+  it("does not re-record pending invites already stored during an on-demand fetch", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture({ taskbarInviteNotificationsEnabled: true });
+    const storedInvite = createEvent({
+      end: "2026-11-19T09:30:00.000Z",
+      id: "pending-invite",
+      isOrganizer: false,
+      responseStatus: null,
+      start: "2026-11-19T09:00:00.000Z",
+    });
+    const fetchedInvite = createEvent({
+      ...storedInvite,
+      responseStatus: {
+        response: "notResponded",
+        time: null,
+      },
+    });
+    fixture.db.hasNotificationFired.mockReturnValue(true);
+    fixture.db.listEvents.mockReturnValue([storedInvite]);
+    fixture.graph.listCalendarView.mockResolvedValue([fetchedInvite]);
+
+    await fixture.service.ensureEventsRange({
+      calendarIds: ["calendar-a"],
+      end: "2026-11-30T23:00:00.000Z",
+      start: "2026-11-01T00:00:00.000Z",
+    });
+
     expect(fixture.newEventNotifications.recordCandidates).not.toHaveBeenCalled();
   });
 

@@ -1,5 +1,6 @@
-import type { CalendarEvent, NewEventNotificationItem } from "@shared/schemas";
-import { isPendingEventResponse } from "@shared/event-response";
+import type { CalendarEvent, EventReferenceArgs, NewEventNotificationItem } from "@shared/schemas";
+import { isPendingInvite } from "@shared/event-response";
+import buildEventReferenceKey from "@shared/event-reference";
 
 type Listener = (items: NewEventNotificationItem[]) => void;
 
@@ -19,19 +20,23 @@ class NewEventNotificationService {
   }
 
   recordCandidates(events: CalendarEvent[]): void {
-    const existingIds = new Set(this.items.map((item) => item.eventId));
+    const existingKeys = new Set(this.items.map(buildEventReferenceKey));
     const candidates: NewEventNotificationItem[] = [];
 
     for (const event of events) {
-      if (existingIds.has(event.id)) {
+      const eventKey = buildEventReferenceKey({
+        calendarId: event.calendarId,
+        eventId: event.id,
+      });
+      if (existingKeys.has(eventKey)) {
         continue;
       }
-      if (!shouldNotifyOnNewEvent(event)) {
+      if (!isPendingInvite(event)) {
         continue;
       }
 
       candidates.push(toNotificationItem(event));
-      existingIds.add(event.id);
+      existingKeys.add(eventKey);
     }
 
     if (candidates.length === 0) {
@@ -42,8 +47,13 @@ class NewEventNotificationService {
     this.broadcast();
   }
 
-  dismiss(eventId: string): void {
-    const nextItems = this.items.filter((item) => item.eventId !== eventId);
+  dismiss(reference: EventReferenceArgs): void {
+    if (this.items.length === 0) {
+      return;
+    }
+
+    const eventKey = buildEventReferenceKey(reference);
+    const nextItems = this.items.filter((item) => buildEventReferenceKey(item) !== eventKey);
     if (nextItems.length === this.items.length) {
       return;
     }
@@ -66,17 +76,6 @@ class NewEventNotificationService {
       listener(this.items);
     }
   }
-}
-
-function shouldNotifyOnNewEvent(event: CalendarEvent): boolean {
-  if (event.cancelled) {
-    return false;
-  }
-  if (event.isOrganizer) {
-    return false;
-  }
-
-  return isPendingEventResponse(event.responseStatus?.response);
 }
 
 function toNotificationItem(event: CalendarEvent): NewEventNotificationItem {

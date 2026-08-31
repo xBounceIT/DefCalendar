@@ -4,6 +4,7 @@ import { getMainLocale, t } from "@main/i18n";
 import type NewEventNotificationService from "@main/notifications/new-event-notification-service";
 import type SettingsService from "@main/settings/settings-service";
 import type { EventResponseAction, NewEventNotificationItem, UserSettings } from "@shared/schemas";
+import buildEventReferenceKey from "@shared/event-reference";
 
 type InviteNotification = InstanceType<typeof Notification>;
 
@@ -19,7 +20,7 @@ interface SystemInviteNotificationDependencies {
 class SystemInviteNotificationService {
   private readonly activeNotifications = new Map<string, InviteNotification>();
   private readonly dependencies: SystemInviteNotificationDependencies;
-  private readonly suppressedEventIds = new Set<string>();
+  private readonly suppressedEventKeys = new Set<string>();
   private unsubscribe: null | (() => void) = null;
 
   constructor(dependencies: SystemInviteNotificationDependencies) {
@@ -41,7 +42,7 @@ class SystemInviteNotificationService {
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.closeAll();
-    this.suppressedEventIds.clear();
+    this.suppressedEventKeys.clear();
   }
 
   refresh(): void {
@@ -52,30 +53,31 @@ class SystemInviteNotificationService {
     const settings = this.dependencies.settings.getSettings();
     if (!settings.systemInviteNotificationsEnabled) {
       this.closeAll();
-      this.suppressedEventIds.clear();
+      this.suppressedEventKeys.clear();
       return;
     }
 
     if (!Notification.isSupported()) {
       this.closeAll();
-      this.suppressedEventIds.clear();
+      this.suppressedEventKeys.clear();
       return;
     }
 
-    const nextEventIds = new Set(items.map((item) => item.eventId));
-    for (const eventId of this.activeNotifications.keys()) {
-      if (!nextEventIds.has(eventId)) {
-        this.close(eventId);
+    const nextEventKeys = new Set(items.map(buildEventReferenceKey));
+    for (const eventKey of this.activeNotifications.keys()) {
+      if (!nextEventKeys.has(eventKey)) {
+        this.close(eventKey);
       }
     }
-    for (const eventId of this.suppressedEventIds) {
-      if (!nextEventIds.has(eventId)) {
-        this.suppressedEventIds.delete(eventId);
+    for (const eventKey of this.suppressedEventKeys) {
+      if (!nextEventKeys.has(eventKey)) {
+        this.suppressedEventKeys.delete(eventKey);
       }
     }
 
     for (const item of items) {
-      if (this.activeNotifications.has(item.eventId) || this.suppressedEventIds.has(item.eventId)) {
+      const eventKey = buildEventReferenceKey(item);
+      if (this.activeNotifications.has(eventKey) || this.suppressedEventKeys.has(eventKey)) {
         continue;
       }
 
@@ -107,7 +109,7 @@ class SystemInviteNotificationService {
       });
     });
 
-    this.activeNotifications.set(item.eventId, notification);
+    this.activeNotifications.set(buildEventReferenceKey(item), notification);
     notification.show();
   }
 
@@ -128,8 +130,9 @@ class SystemInviteNotificationService {
           eventId: item.eventId,
         })
       ) {
-        this.suppressedEventIds.add(item.eventId);
-        this.close(item.eventId);
+        const eventKey = buildEventReferenceKey(item);
+        this.suppressedEventKeys.add(eventKey);
+        this.close(eventKey);
       }
       return;
     }
@@ -143,7 +146,7 @@ class SystemInviteNotificationService {
         sendResponse: true,
       })
       .then(() => {
-        this.close(item.eventId);
+        this.close(buildEventReferenceKey(item));
       })
       .catch(() => {
         this.dependencies.eventActions.openInApp({
@@ -153,19 +156,19 @@ class SystemInviteNotificationService {
       });
   }
 
-  private close(eventId: string): void {
-    const notification = this.activeNotifications.get(eventId);
+  private close(eventKey: string): void {
+    const notification = this.activeNotifications.get(eventKey);
     if (!notification) {
       return;
     }
 
-    this.activeNotifications.delete(eventId);
+    this.activeNotifications.delete(eventKey);
     notification.close();
   }
 
   private closeAll(): void {
-    for (const eventId of this.activeNotifications.keys()) {
-      this.close(eventId);
+    for (const eventKey of this.activeNotifications.keys()) {
+      this.close(eventKey);
     }
   }
 }

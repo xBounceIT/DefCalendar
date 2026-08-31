@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createInstance } from "i18next";
 import React from "react";
 import { I18nextProvider, initReactI18next } from "react-i18next";
@@ -305,5 +305,54 @@ describe("new event popup", () => {
       screen.findByText("Unable to check for overlapping events. Try again before accepting."),
     ).resolves.toBeInTheDocument();
     expect(calendarApi.events.respond).not.toHaveBeenCalled();
+  });
+
+  it("dismisses only the selected invite when event ids match across calendars", async () => {
+    expect.hasAssertions();
+    const first = createNotificationItem({ calendarId: "calendar-1", eventId: "shared-event" });
+    const second = createNotificationItem({
+      calendarId: "calendar-2",
+      eventId: "shared-event",
+      subject: "Second planning invite",
+    });
+    const calendarApi = installCalendarApi([first, second]);
+
+    renderPopup();
+
+    const firstInvite = await screen.findByText("Planning invite");
+    fireEvent.click(
+      firstInvite.closest(".new-event-popup__item")?.querySelector("button") as HTMLElement,
+    );
+
+    expect(calendarApi.newEventNotifications.dismiss).toHaveBeenCalledWith({
+      calendarId: "calendar-1",
+      eventId: "shared-event",
+    });
+  });
+
+  it("does not let a stale initial response replace a newer notification update", async () => {
+    expect.hasAssertions();
+    let changeListener: ((items: NewEventNotificationItem[]) => void) | null = null;
+    let resolveInitial: (items: NewEventNotificationItem[]) => void = () => undefined;
+    const initialResponse = new Promise<NewEventNotificationItem[]>((resolve) => {
+      resolveInitial = resolve;
+    });
+    const freshItem = createNotificationItem({ subject: "Fresh planning invite" });
+    const calendarApi = installCalendarApi([]);
+    vi.spyOn(calendarApi.newEventNotifications, "get").mockReturnValue(initialResponse);
+    vi.spyOn(calendarApi.newEventNotifications, "onChanged").mockImplementation((listener) => {
+      changeListener = listener;
+      return () => undefined;
+    });
+
+    renderPopup();
+
+    await act(async () => {
+      changeListener?.([freshItem]);
+      resolveInitial([]);
+      await initialResponse;
+    });
+
+    expect(screen.getByText("Fresh planning invite")).toBeInTheDocument();
   });
 });

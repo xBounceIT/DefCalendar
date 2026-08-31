@@ -282,6 +282,7 @@ function createFixture() {
     handlers,
     mainWebContents,
     mainWindow,
+    newEventNotifications,
     reminderManager,
     reminderWebContents,
     reminders,
@@ -316,6 +317,19 @@ describe("register ipc", () => {
       fixture.db.listEvents.mock.invocationCallOrder[0],
     );
     expect(response).toStrictEqual([storedEvent]);
+  });
+
+  it("dismisses one invite through a validated calendar and event reference", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const invokeEvent = { sender: fixture.mainWebContents };
+    const args = { calendarId: "calendar-1", eventId: "event-1" };
+    const handler = fixture.handlers.get(IPC_CHANNELS.newEventNotificationsDismiss);
+
+    await handler?.(invokeEvent, args);
+
+    expect(fixture.newEventNotifications.dismiss).toHaveBeenCalledWith(args);
+    await expect(handler?.(invokeEvent, "event-1")).rejects.toThrow();
   });
 
   it("falls back to cached events when range fetching fails", async () => {

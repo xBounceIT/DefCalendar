@@ -124,8 +124,7 @@ const calendarApi: CalendarApi = {
         ipcRenderer.removeListener(IPC_CHANNELS.newEventNotificationsChanged, wrapped);
       };
     },
-    dismiss: (eventId: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.newEventNotificationsDismiss, eventId),
+    dismiss: (args) => ipcRenderer.invoke(IPC_CHANNELS.newEventNotificationsDismiss, args),
     dismissAll: () => ipcRenderer.invoke(IPC_CHANNELS.newEventNotificationsDismissAll),
   },
 };
