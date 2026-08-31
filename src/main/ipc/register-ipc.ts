@@ -666,8 +666,8 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
 
   ipcMain.handle(IPC_CHANNELS.newEventNotificationsDismiss, async (event, input) => {
     validateMainSender(event);
-    const eventId = z.string().min(1).parse(input);
-    dependencies.newEventNotifications.dismiss(eventId);
+    const args = eventReferenceArgsSchema.parse(input);
+    dependencies.newEventNotifications.dismiss(args);
   });
 
   ipcMain.handle(IPC_CHANNELS.newEventNotificationsDismissAll, async (event) => {

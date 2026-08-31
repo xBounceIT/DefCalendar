@@ -1,3 +1,5 @@
+import type { CalendarEvent } from "./schemas";
+
 function normalizeEventResponseValue(value: null | string | undefined): null | string {
   const normalized = value?.trim().toLowerCase();
   if (!normalized) {
@@ -28,4 +30,17 @@ function isPendingEventResponse(value: null | string | undefined): boolean {
   return normalized === null || normalized === "none";
 }
 
-export { isDeclinedEventResponse, isPendingEventResponse, normalizeEventResponseValue };
+function isPendingInvite(
+  event: Pick<CalendarEvent, "cancelled" | "isOrganizer" | "responseStatus">,
+): boolean {
+  return (
+    !event.cancelled && !event.isOrganizer && isPendingEventResponse(event.responseStatus?.response)
+  );
+}
+
+export {
+  isDeclinedEventResponse,
+  isPendingEventResponse,
+  isPendingInvite,
+  normalizeEventResponseValue,
+};

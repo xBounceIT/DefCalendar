@@ -1072,6 +1072,10 @@ class AppDatabase {
       .run(key, new Date().toISOString());
   }
 
+  clearNotificationFired(key: string): void {
+    this.db.prepare("DELETE FROM notification_state WHERE dedupe_key = ?").run(key);
+  }
+
   dismissReminder(key: string): void {
     this.dismissReminders([key]);
   }
@@ -1116,7 +1120,27 @@ class AppDatabase {
   }
 
   pruneNotificationState(beforeIso: string): void {
-    this.db.prepare("DELETE FROM notification_state WHERE fired_at < ?").run(beforeIso);
+    this.db
+      .prepare(
+        `DELETE FROM notification_state
+         WHERE fired_at < ?
+           AND (
+             dedupe_key NOT LIKE '%:invite'
+             OR NOT EXISTS (
+               SELECT 1
+               FROM events
+               WHERE notification_state.dedupe_key =
+                 events.calendar_id || ':' || events.id || ':invite'
+                 AND COALESCE(json_extract(events.payload_json, '$.cancelled'), 0) = 0
+                 AND COALESCE(json_extract(events.payload_json, '$.isOrganizer'), 0) = 0
+                 AND LOWER(TRIM(COALESCE(json_extract(
+                   events.payload_json,
+                   '$.responseStatus.response'
+                 ), ''))) IN ('', 'none', 'notresponded', 'organizer')
+             )
+           )`,
+      )
+      .run(beforeIso);
   }
 
   pruneReminderState(beforeIso: string): void {

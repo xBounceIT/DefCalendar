@@ -159,7 +159,7 @@ interface CalendarApi {
   newEventNotifications: {
     get: () => Promise<NewEventNotificationItem[]>;
     onChanged: (listener: (items: NewEventNotificationItem[]) => void) => () => void;
-    dismiss: (eventId: string) => Promise<void>;
+    dismiss: (args: EventReferenceArgs) => Promise<void>;
     dismissAll: () => Promise<void>;
   };
 }

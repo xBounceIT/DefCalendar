@@ -276,4 +276,25 @@ describe("system invite notification service", () => {
 
     expect(notificationMock.instances[0].close).toHaveBeenCalledOnce();
   });
+
+  it("keeps notifications with the same event id in different calendars independent", () => {
+    expect.hasAssertions();
+    resetNotificationMock();
+    const first = createItem({ calendarId: "calendar-1", eventId: "shared-event" });
+    const second = createItem({ calendarId: "calendar-2", eventId: "shared-event" });
+    const { service } = createService();
+
+    service.sync([first, second]);
+    service.sync([second]);
+
+    expect(notificationMock.instances).toHaveLength(2);
+    expect(notificationMock.instances[0].options).toMatchObject({
+      id: "invite:calendar-1:shared-event",
+    });
+    expect(notificationMock.instances[1].options).toMatchObject({
+      id: "invite:calendar-2:shared-event",
+    });
+    expect(notificationMock.instances[0].close).toHaveBeenCalledOnce();
+    expect(notificationMock.instances[1].close).not.toHaveBeenCalled();
+  });
 });

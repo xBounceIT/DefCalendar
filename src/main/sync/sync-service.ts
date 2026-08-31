@@ -7,8 +7,14 @@ import type ReminderService from "@main/reminders/reminder-service";
 import type { ReminderCheckTrigger } from "@main/reminders/reminder-service";
 import type SettingsService from "@main/settings/settings-service";
 import { DAY_MS, MINUTE_MS } from "@shared/duration";
-import { isDeclinedEventResponse, isPendingEventResponse } from "@shared/event-response";
-import type { CalendarEvent, CalendarSummary, EventListArgs, SyncStatus } from "@shared/schemas";
+import { isDeclinedEventResponse, isPendingInvite } from "@shared/event-response";
+import type {
+  CalendarEvent,
+  CalendarSummary,
+  EventListArgs,
+  SyncStatus,
+  UserSettings,
+} from "@shared/schemas";
 import type { SyncWindowDays } from "@shared/sync";
 
 type SyncReason = "startup" | "sign-in" | "switch-account" | "manual" | "interval" | "mutation";
@@ -103,6 +109,10 @@ class SyncService {
     );
     const syncedAt = new Date().toISOString();
     const freshAfter = new Date(Date.now() - ON_DEMAND_SYNC_RANGE_FRESHNESS_MS).toISOString();
+    const settings = this.dependencies.settings.getSettings();
+    const shouldRecordInviteCandidates = areInviteNotificationsEnabled(settings);
+    const shouldReconcileCoveredEvents =
+      shouldRecordInviteCandidates || this.dependencies.newEventNotifications.getItems().length > 0;
 
     await Promise.all(
       calendarIds.map(async (calendarId) => {
@@ -112,6 +122,24 @@ class SyncService {
           args.end,
           freshAfter,
         );
+        if (shouldReconcileCoveredEvents) {
+          const coveredEvents = this.dependencies.db
+            .listEvents({
+              calendarIds: [calendarId],
+              end: args.end,
+              start: args.start,
+            })
+            .filter((event) =>
+              uncoveredRanges.every(
+                (range) => event.start >= range.rangeEnd || event.end <= range.rangeStart,
+              ),
+            );
+          this.recordInviteCandidates(
+            coveredEvents,
+            buildEventsById(coveredEvents),
+            shouldRecordInviteCandidates,
+          );
+        }
         if (uncoveredRanges.length === 0) {
           return;
         }
@@ -138,7 +166,8 @@ class SyncService {
             end: range.rangeEnd,
             start: range.rangeStart,
           });
-          const mergedEvents = mergePersistedDeclinedEvents(fetchedEvents, persistedEvents);
+          const previousEventsById = buildEventsById(persistedEvents);
+          const mergedEvents = mergeFetchedAndPersistedEvents(fetchedEvents, persistedEvents);
 
           this.dependencies.db.replaceEventsForCalendarRange({
             calendarId,
@@ -153,6 +182,12 @@ class SyncService {
             rangeStart: range.rangeStart,
             syncedAt,
           });
+
+          this.recordInviteCandidates(
+            mergedEvents,
+            previousEventsById,
+            shouldRecordInviteCandidates,
+          );
         }
       }),
     );
@@ -331,10 +366,8 @@ class SyncService {
       const deepRangeStart = new Date(rangeBaseTime - maxLookBehindDays * DAY_MS).toISOString();
       const rangeEnd = new Date(rangeBaseTime + lookAheadDays * DAY_MS).toISOString();
       const finishedAt = new Date().toISOString();
-      const shouldDetectNewEvents =
-        (settings.newEventPopupEnabled ||
-          settings.systemInviteNotificationsEnabled ||
-          settings.taskbarInviteNotificationsEnabled) &&
+      const shouldRecordInviteCandidates =
+        areInviteNotificationsEnabled(settings) &&
         reason !== "sign-in" &&
         reason !== "switch-account";
 
@@ -364,16 +397,8 @@ class SyncService {
               rangeEnd,
               calendar.homeAccountId,
             );
-            const persistedEvents = this.dependencies.db.listEvents({
-              calendarIds: [calendar.id],
-              end: rangeEnd,
-              start: rangeStart,
-            });
-            const previousEventsById =
-              shouldDetectNewEvents && !isDeepBackfill ? buildEventsById(persistedEvents) : null;
-            const mergedEvents = mergePersistedDeclinedEvents(fetchedEvents, persistedEvents);
             processedCalendars += 1;
-            processedEvents += mergedEvents.length;
+            processedEvents += fetchedEvents.length;
             if (!syncFailed) {
               this.setStatus({
                 lastSyncedAt: this.status.lastSyncedAt,
@@ -386,10 +411,10 @@ class SyncService {
             }
             return {
               calendarId: calendar.id,
-              events: mergedEvents,
+              fetchedEvents,
               isDeepBackfill,
-              previousEventsById,
               rangeStart,
+              shouldRecordInviteCandidates: shouldRecordInviteCandidates && !isDeepBackfill,
             };
           } catch (error) {
             syncFailed = true;
@@ -398,7 +423,15 @@ class SyncService {
         }),
       );
 
-      for (const { calendarId, events, isDeepBackfill, rangeStart } of calendarsToStore) {
+      const syncedCalendars = [];
+      for (const syncedCalendar of calendarsToStore) {
+        const { calendarId, fetchedEvents, isDeepBackfill, rangeStart } = syncedCalendar;
+        const persistedEvents = this.dependencies.db.listEvents({
+          calendarIds: [calendarId],
+          end: rangeEnd,
+          start: rangeStart,
+        });
+        const events = mergeFetchedAndPersistedEvents(fetchedEvents, persistedEvents);
         this.dependencies.db.replaceEventsForCalendarRange({
           calendarId,
           events,
@@ -421,31 +454,30 @@ class SyncService {
         if (isDeepBackfill) {
           this.dependencies.db.markDeepBackfillCompleted(calendarId, finishedAt);
         }
+        syncedCalendars.push({
+          ...syncedCalendar,
+          events,
+          previousEventsById: buildEventsById(persistedEvents),
+        });
       }
 
-      if (shouldDetectNewEvents) {
-        const newEvents: CalendarEvent[] = [];
-        for (const syncedCalendar of calendarsToStore) {
-          if (!syncedCalendar.previousEventsById) {
-            continue;
-          }
-          for (const ev of syncedCalendar.events) {
-            if (shouldRecordInviteCandidate(ev, syncedCalendar.previousEventsById.get(ev.id))) {
-              newEvents.push(ev);
-            }
-          }
-        }
-
-        if (newEvents.length > 0) {
-          this.dependencies.newEventNotifications.recordCandidates(newEvents);
-        }
+      const newEvents: CalendarEvent[] = [];
+      for (const syncedCalendar of syncedCalendars) {
+        newEvents.push(
+          ...this.findInviteCandidates(
+            syncedCalendar.events,
+            syncedCalendar.previousEventsById,
+            syncedCalendar.shouldRecordInviteCandidates,
+          ),
+        );
       }
+      this.persistInviteCandidates(newEvents);
 
       const reminderTrigger: ReminderCheckTrigger =
         reason === "startup" || reason === "switch-account" ? "startup" : "tick";
       await this.dependencies.reminders.checkNow(reminderTrigger);
 
-      const totalEvents = calendarsToStore.reduce((sum, sc) => sum + sc.events.length, 0);
+      const totalEvents = syncedCalendars.reduce((sum, sc) => sum + sc.events.length, 0);
 
       let calendarSuffix = "s";
       if (calendarsToSync.length === 1) {
@@ -488,6 +520,78 @@ class SyncService {
       };
       return this.setStatus(nextStatus);
     }
+  }
+
+  private recordInviteCandidates(
+    events: CalendarEvent[],
+    previousEventsById: Map<string, CalendarEvent>,
+    shouldRecordCandidates: boolean,
+  ): void {
+    this.persistInviteCandidates(
+      this.findInviteCandidates(events, previousEventsById, shouldRecordCandidates),
+    );
+  }
+
+  private persistInviteCandidates(candidates: CalendarEvent[]): void {
+    if (candidates.length === 0) {
+      return;
+    }
+
+    this.dependencies.newEventNotifications.recordCandidates(candidates);
+    for (const event of candidates) {
+      this.dependencies.db.markNotificationFired(buildInviteNotificationKey(event));
+    }
+  }
+
+  private findInviteCandidates(
+    events: CalendarEvent[],
+    previousEventsById: Map<string, CalendarEvent>,
+    shouldRecordCandidates: boolean,
+  ): CalendarEvent[] {
+    const candidates: CalendarEvent[] = [];
+    const eventsById = buildEventsById(events);
+
+    for (const previous of previousEventsById.values()) {
+      if (eventsById.has(previous.id)) {
+        continue;
+      }
+
+      this.dependencies.newEventNotifications.dismiss({
+        calendarId: previous.calendarId,
+        eventId: previous.id,
+      });
+      this.dependencies.db.clearNotificationFired(buildInviteNotificationKey(previous));
+    }
+
+    for (const event of eventsById.values()) {
+      const notificationKey = buildInviteNotificationKey(event);
+      const previous = previousEventsById.get(event.id);
+      if (!isPendingInvite(event)) {
+        this.dependencies.newEventNotifications.dismiss({
+          calendarId: event.calendarId,
+          eventId: event.id,
+        });
+        if (previous === undefined || isPendingInvite(previous)) {
+          this.dependencies.db.clearNotificationFired(notificationKey);
+        }
+        continue;
+      }
+
+      const responseWasReset = previous !== undefined && !isPendingInvite(previous);
+      if (responseWasReset) {
+        this.dependencies.db.clearNotificationFired(notificationKey);
+      }
+      if (!shouldRecordCandidates) {
+        continue;
+      }
+      if (!responseWasReset && this.dependencies.db.hasNotificationFired(notificationKey)) {
+        continue;
+      }
+
+      candidates.push(event);
+    }
+
+    return candidates;
   }
 
   private resolveAccountIds(reason: SyncReason, homeAccountId?: string): string[] {
@@ -598,19 +702,47 @@ function mergePersistedDeclinedEvents(
   return [...syncedEvents, ...preservedEvents].toSorted(compareCalendarEvents);
 }
 
-function shouldRecordInviteCandidate(
-  event: CalendarEvent,
-  previous: CalendarEvent | undefined,
-): boolean {
-  if (
-    event.cancelled ||
-    event.isOrganizer ||
-    !isPendingEventResponse(event.responseStatus?.response)
-  ) {
+function mergeFetchedAndPersistedEvents(
+  fetchedEvents: CalendarEvent[],
+  persistedEvents: CalendarEvent[],
+): CalendarEvent[] {
+  const persistedEventsById = buildEventsById(persistedEvents);
+  const newestEvents = fetchedEvents.map((event) => {
+    const persisted = persistedEventsById.get(event.id);
+    return persisted && shouldPreservePersistedEvent(persisted, event) ? persisted : event;
+  });
+  return mergePersistedDeclinedEvents(newestEvents, persistedEvents);
+}
+
+function shouldPreservePersistedEvent(persisted: CalendarEvent, fetched: CalendarEvent): boolean {
+  if (!persisted.lastModifiedDateTime) {
     return false;
   }
+  const persistedModifiedAt = Date.parse(persisted.lastModifiedDateTime);
+  if (Number.isNaN(persistedModifiedAt)) {
+    return false;
+  }
+  if (!fetched.lastModifiedDateTime) {
+    return true;
+  }
+  const fetchedModifiedAt = Date.parse(fetched.lastModifiedDateTime);
+  if (Number.isNaN(fetchedModifiedAt)) {
+    return true;
+  }
 
-  return previous === undefined || !isPendingEventResponse(previous.responseStatus?.response);
+  return persistedModifiedAt >= fetchedModifiedAt;
+}
+
+function buildInviteNotificationKey(event: Pick<CalendarEvent, "calendarId" | "id">): string {
+  return `${event.calendarId}:${event.id}:invite`;
+}
+
+function areInviteNotificationsEnabled(settings: UserSettings): boolean {
+  return (
+    settings.newEventPopupEnabled ||
+    settings.systemInviteNotificationsEnabled ||
+    settings.taskbarInviteNotificationsEnabled
+  );
 }
 
 function shouldPreserveDeclinedEvent(
