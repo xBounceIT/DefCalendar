@@ -126,6 +126,16 @@
     "eventsCount_other": "{{count}} events"
   },
   "eventEditor": {
+    "attendeeAvailability": {
+      "loading": "Checking…",
+      "free": "Available",
+      "busy": "Busy",
+      "tentative": "Tentative",
+      "oof": "Out of office",
+      "workingElsewhere": "Working elsewhere",
+      "unknown": "Unknown"
+    },
+    "availabilityUnknownHint": "Calendar unavailable or not shared with this account. Availability could not be checked.",
     "newEventEyebrow": "New Exchange event",
     "newEventTitle": "Create event",
     "editEventEyebrow": "Event details",

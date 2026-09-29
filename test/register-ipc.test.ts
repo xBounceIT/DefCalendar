@@ -160,6 +160,9 @@ function createFixture() {
     upsertEvent: vi.fn(),
   };
   const graph = {
+    getAttendeeAvailability: vi
+      .fn()
+      .mockResolvedValue([{ email: "coworker@example.com", status: "busy" }]),
     addAttachment: vi.fn().mockResolvedValue([]),
     cancelEvent: vi.fn().mockResolvedValue(undefined),
     createEvent: vi.fn().mockResolvedValue(storedEvent),
@@ -295,6 +298,54 @@ function createFixture() {
 describe("register ipc", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("validates availability requests and resolves the account from the selected calendar", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    fixture.db.getCalendarHomeAccountId.mockReturnValue("account-2");
+    const handler = fixture.handlers.get(IPC_CHANNELS.attendeesGetAvailability)!;
+    const args = {
+      calendarId: "calendar-2",
+      emails: ["coworker@example.com"],
+      start: "2026-09-29T09:00:00Z",
+      end: "2026-09-29T10:00:00Z",
+    };
+    expect(await handler({ sender: fixture.mainWebContents }, args)).toEqual([
+      { email: "coworker@example.com", status: "busy" },
+    ]);
+    expect(fixture.graph.getAttendeeAvailability).toHaveBeenCalledWith(args, "account-2");
+    await expect(handler({ sender: fixture.reminderWebContents }, args)).rejects.toThrow();
+    await expect(
+      handler({ sender: fixture.mainWebContents }, { ...args, end: args.start }),
+    ).rejects.toThrow();
+    expect(fixture.graph.getAttendeeAvailability).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves availability failure flags but strips meeting details at the IPC boundary", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    fixture.graph.getAttendeeAvailability.mockResolvedValueOnce([
+      {
+        email: "coworker@example.com",
+        status: "unknown",
+        error: "requestFailed",
+        subject: "Private meeting",
+        accessToken: "secret",
+      },
+    ] as never);
+    const result = await fixture.handlers.get(IPC_CHANNELS.attendeesGetAvailability)!(
+      { sender: fixture.mainWebContents },
+      {
+        calendarId: "calendar-1",
+        emails: ["coworker@example.com"],
+        start: "2026-09-29T09:00:00Z",
+        end: "2026-09-29T10:00:00Z",
+      },
+    );
+    expect(result).toEqual([
+      { email: "coworker@example.com", status: "unknown", error: "requestFailed" },
+    ]);
   });
 
   it("ensures the requested event range before listing cached events", async () => {

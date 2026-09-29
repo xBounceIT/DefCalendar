@@ -27,6 +27,7 @@ import type {
   UserSettingsPatch,
 } from "./schemas";
 import type { VisualTheme } from "./theme";
+import type { AttendeeAvailability, AttendeeAvailabilityArgs } from "./attendee-availability";
 import type {
   EventResponseAction,
   NewEventNotificationItem,
@@ -48,6 +49,7 @@ export const IPC_CHANNELS = {
   calendarsSetVisibility: "calendars:set-visibility",
   categoriesList: "categories:list",
   contactsSearch: "contacts:search",
+  attendeesGetAvailability: "attendees:get-availability",
   eventsList: "events:list",
   eventsSearch: "events:search",
   eventsCreate: "events:create",
@@ -112,6 +114,7 @@ interface CalendarApi {
     search: (args: SearchContactsArgs) => Promise<ContactSuggestion[]>;
   };
   events: {
+    getAttendeeAvailability: (args: AttendeeAvailabilityArgs) => Promise<AttendeeAvailability[]>;
     list: (args: EventListArgs) => Promise<CalendarEvent[]>;
     search: (args: SearchEventsArgs) => Promise<CalendarEvent[]>;
     create: (draft: EventDraft) => Promise<CalendarEvent>;
