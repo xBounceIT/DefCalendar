@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import EventActionService from "../src/main/events/event-action-service";
 import registerIpc from "../src/main/ipc/register-ipc";
 import { IPC_CHANNELS } from "../src/shared/ipc";
+import { createDefaultSettings, type ContactSuggestion } from "../src/shared/schemas";
 
 const { app, dialog, ipcMain, shell } = vi.hoisted(() => ({
   app: {
@@ -108,7 +109,16 @@ function createFixture() {
     string,
     (event: { sender: unknown }, input?: unknown) => Promise<unknown>
   >();
-  const mainWebContents = { send: vi.fn() };
+  const spellingSession = {
+    on: vi.fn(),
+    addWordToSpellCheckerDictionary: vi.fn().mockReturnValue(true),
+    availableSpellCheckerLanguages: ["en-US", "it", "fr"],
+    listWordsInSpellCheckerDictionary: vi.fn().mockResolvedValue(["DefCalendar"]),
+    removeWordFromSpellCheckerDictionary: vi.fn().mockReturnValue(true),
+    setSpellCheckerLanguages: vi.fn(),
+    setSpellCheckerEnabled: vi.fn(),
+  };
+  const mainWebContents = { send: vi.fn(), session: spellingSession };
   const reminderWebContents = {};
   const mainWindow = {
     focus: vi.fn(),
@@ -152,6 +162,9 @@ function createFixture() {
     clearUserData: vi.fn(),
     deleteEvent: vi.fn(),
     getCalendarHomeAccountId: vi.fn().mockReturnValue("account-1"),
+    getContactByEmail: vi
+      .fn<(homeAccountId: string, email: string) => ContactSuggestion | null>()
+      .mockReturnValue(null),
     getEvent: vi.fn().mockReturnValue(storedEvent),
     listCalendars: vi.fn().mockReturnValue([]),
     listEvents: vi.fn(),
@@ -163,6 +176,7 @@ function createFixture() {
     upsertEvent: vi.fn(),
   };
   const graph = {
+    getContactPhoto: vi.fn().mockResolvedValue("data:image/jpeg;base64,cGhvdG8="),
     getAttendeeAvailability: vi
       .fn()
       .mockResolvedValue([{ email: "coworker@example.com", status: "busy" }]),
@@ -215,6 +229,7 @@ function createFixture() {
   };
   const settings = {
     getSettings: vi.fn().mockReturnValue({
+      ...createDefaultSettings(),
       newEventPopupEnabled: false,
       systemInviteNotificationsEnabled: false,
       taskbarInviteNotificationsEnabled: false,
@@ -222,6 +237,7 @@ function createFixture() {
       visibleCalendarIds: [],
     }),
     updateSettings: vi.fn((patch: Record<string, unknown>) => ({
+      ...createDefaultSettings(),
       newEventPopupEnabled: false,
       systemInviteNotificationsEnabled: false,
       taskbarInviteNotificationsEnabled: false,
@@ -285,6 +301,7 @@ function createFixture() {
   return {
     assertAccountSession,
     auth,
+    settings,
     db,
     graph,
     handlers,
@@ -301,6 +318,39 @@ function createFixture() {
 }
 
 describe("register ipc", () => {
+  it("does not persist spelling settings when a native setter fails", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    fixture.mainWebContents.session.setSpellCheckerEnabled.mockImplementationOnce(() => {
+      throw new Error("Native setter failed");
+    });
+    await expect(
+      fixture.handlers.get(IPC_CHANNELS.settingsUpdate)!(
+        { sender: fixture.mainWebContents },
+        { spellcheckEnabled: false },
+      ),
+    ).rejects.toThrow("Native setter failed");
+    expect(fixture.settings.updateSettings).not.toHaveBeenCalled();
+    expect(fixture.mainWebContents.session.setSpellCheckerEnabled).toHaveBeenLastCalledWith(true);
+  });
+
+  it("restores native spelling settings when persistence fails", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    fixture.settings.updateSettings.mockImplementationOnce(() => {
+      throw new Error("Database write failed");
+    });
+    await expect(
+      fixture.handlers.get(IPC_CHANNELS.settingsUpdate)!(
+        { sender: fixture.mainWebContents },
+        { spellcheckEnabled: false },
+      ),
+    ).rejects.toThrow("Database write failed");
+    expect(fixture.mainWebContents.session.setSpellCheckerEnabled.mock.calls).toStrictEqual([
+      [false],
+      [true],
+    ]);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -522,6 +572,83 @@ describe("register ipc", () => {
       { email: "coworker@example.com", status: "unknown", error: "requestFailed" },
     ]);
   });
+
+  it("lists and removes dictionary words only for the main window", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const event = { sender: fixture.mainWebContents };
+    const get = fixture.handlers.get(IPC_CHANNELS.spellcheckGetDictionaries)!;
+    const remove = fixture.handlers.get(IPC_CHANNELS.spellcheckRemoveWord)!;
+    await expect(get(event)).resolves.toMatchObject({
+      availableLanguages: ["en-US", "it", "fr"],
+      customWords: ["DefCalendar"],
+    });
+    await remove(event, "DefCalendar");
+    expect(
+      fixture.mainWebContents.session.removeWordFromSpellCheckerDictionary,
+    ).toHaveBeenCalledWith("DefCalendar");
+    await expect(get({ sender: {} })).rejects.toThrow("untrusted sender");
+    await expect(remove({ sender: {} }, "DefCalendar")).rejects.toThrow("untrusted sender");
+    await expect(remove(event, "two words")).rejects.toThrow();
+  });
+
+  it("adds dictionary words through the main window and reports native failures", async () => {
+    const fixture = createFixture();
+    const add = fixture.handlers.get(IPC_CHANNELS.spellcheckAddWord)!;
+    const nativeAdd = fixture.mainWebContents.session.addWordToSpellCheckerDictionary;
+    const event = { sender: fixture.mainWebContents };
+    await expect(add(event, "  CaffèTech  ")).resolves.toBeUndefined();
+    expect(nativeAdd).toHaveBeenCalledWith("CaffèTech");
+    nativeAdd.mockClear();
+    await expect(add({ sender: {} }, "Contoso")).rejects.toThrow("untrusted sender");
+    expect(nativeAdd).not.toHaveBeenCalled();
+    nativeAdd.mockReturnValue(false);
+    await expect(add(event, "Contoso")).rejects.toThrow("Could not add word to dictionary");
+  });
+
+  it.each([
+    "",
+    "   ",
+    "two words",
+    "two\nwords",
+    "bad\u0000word",
+    "bad\u0007word",
+    "x".repeat(257),
+    null,
+    123,
+  ])("rejects invalid dictionary input %j before calling the native API", async (input) => {
+    const fixture = createFixture();
+    const add = fixture.handlers.get(IPC_CHANNELS.spellcheckAddWord)!;
+    await expect(add({ sender: fixture.mainWebContents }, input)).rejects.toThrow();
+    expect(fixture.mainWebContents.session.addWordToSpellCheckerDictionary).not.toHaveBeenCalled();
+  });
+
+  it("defers applying dictionaries until spell checking is enabled", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const update = fixture.handlers.get(IPC_CHANNELS.settingsUpdate)!;
+    const event = { sender: fixture.mainWebContents };
+    await update(event, { spellcheckLanguages: ["it"], spellcheckEnabled: false });
+    expect(fixture.mainWebContents.session.setSpellCheckerEnabled).toHaveBeenCalledWith(false);
+    expect(fixture.mainWebContents.session.setSpellCheckerLanguages).not.toHaveBeenCalled();
+    await update(event, { spellcheckLanguages: ["it"], spellcheckEnabled: true });
+    expect(fixture.mainWebContents.session.setSpellCheckerEnabled).toHaveBeenLastCalledWith(true);
+    expect(fixture.mainWebContents.session.setSpellCheckerLanguages.mock.calls).toStrictEqual(
+      process.platform === "darwin" ? [] : [[["it"]]],
+    );
+  });
+
+  it.skipIf(process.platform === "darwin")(
+    "rejects unsupported language dictionaries",
+    async () => {
+      expect.hasAssertions();
+      const fixture = createFixture();
+      const update = fixture.handlers.get(IPC_CHANNELS.settingsUpdate)!;
+      await expect(
+        update({ sender: fixture.mainWebContents }, { spellcheckLanguages: ["xx"] }),
+      ).rejects.toThrow("Unsupported spelling dictionary");
+    },
+  );
 
   it("ensures the requested event range before listing cached events", async () => {
     expect.hasAssertions();
@@ -810,6 +937,68 @@ describe("register ipc", () => {
     expect(fixture.db.searchEvents).not.toHaveBeenCalled();
   });
 
+  it("browses all cached contacts without a query and preserves photo identifiers", async () => {
+    const fixture = createFixture();
+    fixture.db.searchContacts.mockReturnValue([
+      { contactId: "contact-1", email: "alice@example.com", name: "Alice" },
+    ]);
+    const response = await fixture.handlers.get(IPC_CHANNELS.contactsSearch)?.(
+      { sender: fixture.mainWebContents },
+      { homeAccountId: "account-1", limit: null, query: "" },
+    );
+    expect(response).toEqual([
+      { contactId: "contact-1", email: "alice@example.com", name: "Alice" },
+    ]);
+    expect(fixture.graph.searchPeople).not.toHaveBeenCalled();
+  });
+
+  it("loads a photo for the validated contact and account", async () => {
+    const fixture = createFixture();
+    const args = {
+      contactId: "contact-1",
+      email: "alice@example.com",
+      homeAccountId: "account-1",
+      name: "Alice",
+    };
+    const response = await fixture.handlers.get(IPC_CHANNELS.contactsGetPhoto)?.(
+      { sender: fixture.mainWebContents },
+      args,
+    );
+    expect(response).toBe("data:image/jpeg;base64,cGhvdG8=");
+    expect(fixture.graph.getContactPhoto).toHaveBeenCalledWith("account-1", args);
+  });
+
+  it("uses the saved contact photo identity for fuzzy people results and event participants", async () => {
+    const fixture = createFixture();
+    const contact = {
+      contactId: "personal-andra",
+      email: "andra.pantea@example.com",
+      name: null,
+    };
+    fixture.db.getContactByEmail.mockReturnValue(contact);
+    fixture.db.searchContacts.mockReturnValue([]);
+    fixture.graph.searchPeople.mockResolvedValue([{ email: contact.email, name: "Andra Pantea" }]);
+    const event = { sender: fixture.mainWebContents };
+    const results = await fixture.handlers.get(IPC_CHANNELS.contactsSearch)?.(event, {
+      homeAccountId: "account-1",
+      limit: null,
+      query: "andra.panta",
+    });
+    expect(results).toEqual([{ email: contact.email, name: "Andra Pantea" }]);
+    for (const name of ["Andra Pantea", null]) {
+      await fixture.handlers.get(IPC_CHANNELS.contactsGetPhoto)?.(event, {
+        email: contact.email,
+        homeAccountId: "account-1",
+        name,
+      });
+      expect(fixture.db.getContactByEmail).toHaveBeenLastCalledWith("account-1", contact.email);
+      expect(fixture.graph.getContactPhoto).toHaveBeenLastCalledWith("account-1", {
+        ...contact,
+        homeAccountId: "account-1",
+      });
+    }
+  });
+
   it("searches cached contacts for an account", async () => {
     expect.hasAssertions();
 
@@ -827,7 +1016,12 @@ describe("register ipc", () => {
       limit: 5,
       query: "ali",
     });
-    expect(fixture.graph.searchPeople).toHaveBeenCalledWith("account-1", "ali", 5);
+    expect(fixture.graph.searchPeople).toHaveBeenCalledWith(
+      "account-1",
+      "ali",
+      5,
+      expect.any(AbortSignal),
+    );
     expect(response).toStrictEqual([
       { email: "alice@example.com", name: "Alice Example" },
       { email: "bob@example.com", name: null },
@@ -840,7 +1034,11 @@ describe("register ipc", () => {
     const fixture = createFixture();
     fixture.graph.searchPeople.mockResolvedValueOnce([
       { email: "volpe@example.com", name: "Volpe Francesco" },
-      { email: "ALICE@example.com", name: "Alice From Graph" },
+      {
+        email: "ALICE@example.com",
+        name: "Alice From Graph",
+        userPrincipalName: "alice@tenant.onmicrosoft.com",
+      },
     ]);
     const invokeEvent = { sender: fixture.mainWebContents };
 
@@ -851,7 +1049,11 @@ describe("register ipc", () => {
     });
 
     expect(response).toStrictEqual([
-      { email: "alice@example.com", name: "Alice Example" },
+      {
+        email: "alice@example.com",
+        name: "Alice Example",
+        userPrincipalName: "alice@tenant.onmicrosoft.com",
+      },
       { email: "bob@example.com", name: null },
       { email: "volpe@example.com", name: "Volpe Francesco" },
     ]);
@@ -874,6 +1076,65 @@ describe("register ipc", () => {
       { email: "alice@example.com", name: "Alice Example" },
       { email: "bob@example.com", name: null },
     ]);
+  });
+
+  it.each([
+    { cached: [{ email: "alice@example.com", name: "Alice" }], deadline: 500 },
+    { cached: [], deadline: 5_000 },
+  ])(
+    "bounds the directory wait to $deadline ms when Graph does not settle",
+    async ({ cached, deadline }) => {
+      vi.useFakeTimers();
+      try {
+        const fixture = createFixture();
+        fixture.db.searchContacts.mockReturnValue(cached);
+        const people = createDeferred<ContactSuggestion[]>();
+        fixture.graph.searchPeople.mockReturnValue(people.promise);
+        const response = fixture.handlers.get(IPC_CHANNELS.contactsSearch)?.(
+          { sender: fixture.mainWebContents },
+          { homeAccountId: "account-1", limit: null, query: "alice" },
+        );
+        let settled = false;
+        void response?.then(() => {
+          settled = true;
+        });
+        await vi.advanceTimersByTimeAsync(deadline - 1);
+        expect(settled).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        const result = await response;
+        expect(result).toEqual(cached);
+        expect(fixture.graph.searchPeople.mock.calls[0][3].aborted).toBe(true);
+        expect(vi.getTimerCount()).toBe(0);
+        people.resolve([{ email: "late@example.com", name: "Late Directory Match" }]);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(result).toEqual(cached);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("merges a prompt directory result and cancels its deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = createFixture();
+      fixture.graph.searchPeople.mockResolvedValueOnce([
+        { email: "remote@example.com", name: "Remote" },
+      ]);
+      const result = await fixture.handlers.get(IPC_CHANNELS.contactsSearch)?.(
+        { sender: fixture.mainWebContents },
+        { homeAccountId: "account-1", limit: null, query: "remote" },
+      );
+      expect(result).toEqual([
+        { email: "alice@example.com", name: "Alice Example" },
+        { email: "bob@example.com", name: null },
+        { email: "remote@example.com", name: "Remote" },
+      ]);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(fixture.graph.searchPeople.mock.calls[0][3].aborted).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("skips Graph people search for one-character contact queries", async () => {

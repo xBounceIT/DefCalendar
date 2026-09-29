@@ -1,7 +1,9 @@
-import { app, BrowserWindow, shell } from "@main/electron-runtime";
+import type { BrowserWindow } from "electron";
 import { join } from "pathe";
+import { app, BrowserWindow as ElectronBrowserWindow, shell } from "@main/electron-runtime";
 import type { VisualTheme } from "@shared/theme";
 import { t } from "./i18n";
+import { installSpellingContextMenu } from "./spellcheck";
 import {
   TITLE_BAR_HEIGHT,
   getInitialTitleBarStyle,
@@ -15,7 +17,7 @@ function createMainWindow(visualTheme: VisualTheme): BrowserWindow {
     ? join(process.resourcesPath, "logo.png")
     : join(process.cwd(), "resources", "logo.png");
 
-  const window = new BrowserWindow({
+  const window = new ElectronBrowserWindow({
     width: 1480,
     height: 940,
     minWidth: 1160,
@@ -39,8 +41,11 @@ function createMainWindow(visualTheme: VisualTheme): BrowserWindow {
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      spellcheck: true,
     },
   });
+
+  installSpellingContextMenu(window);
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);

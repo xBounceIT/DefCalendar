@@ -300,6 +300,7 @@ function WorkspacePanel(props: WorkspacePanelProps) {
         calendarRef={props.calendarRef}
         hasVisibleCalendars={props.hasVisibleCalendars}
         isLoadingEvents={props.isLoadingEvents}
+        onJoinMeeting={props.onJoinMeeting}
         onDateClick={props.onDateClick}
         onDateDoubleClick={props.onDateDoubleClick}
         onDatesSet={props.onDatesSet}

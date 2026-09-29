@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faClock, faPaperPlane, faUser } from "@fortawesome/free-regular-svg-icons";
@@ -42,6 +42,7 @@ import { MeetingIcon, TeamsIcon } from "./meeting-icon";
 import DatePicker from "./date-picker";
 import OverlapWarning from "./overlap-warning";
 import SafeHtmlBody from "./safe-html-body";
+import ContactAvatar from "./contact-avatar";
 import SettingsSelect from "./settings-select";
 import useAttendeeAvailability from "../hooks/use-attendee-availability";
 
@@ -476,6 +477,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
                 onChange={(event) => updateForm(setForm, { subject: event.target.value })}
                 placeholder={t("eventEditor.subject")}
                 readOnly={readOnlyForAttendee}
+                spellCheck
                 type="text"
                 value={form.subject}
               />
@@ -486,7 +488,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
               <AttendeePillsInput
                 availability={props.state?.mode === "create" ? availability : undefined}
                 attendees={getAttendeesByType(form.attendees, "required")}
-                disabled={readOnlyForAttendee}
+                disabled={readOnlyForAttendee || !selectedCalendar?.canEdit}
                 homeAccountId={selectedCalendar?.homeAccountId ?? null}
                 inputValue={form.requiredAttendeesInput}
                 label={t("eventEditor.requiredAttendees")}
@@ -521,7 +523,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
               <AttendeePillsInput
                 availability={props.state?.mode === "create" ? availability : undefined}
                 attendees={getAttendeesByType(form.attendees, "optional")}
-                disabled={readOnlyForAttendee}
+                disabled={readOnlyForAttendee || !selectedCalendar?.canEdit}
                 homeAccountId={selectedCalendar?.homeAccountId ?? null}
                 inputValue={form.optionalAttendeesInput}
                 label={t("eventEditor.optionalAttendees")}
@@ -558,6 +560,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
                 disabled={readOnlyForAttendee}
                 onChange={(event) => updateForm(setForm, { location: event.target.value })}
                 placeholder={t("eventEditor.location")}
+                spellCheck
                 type="text"
                 value={form.location}
               />
@@ -648,6 +651,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
             event={editedEvent}
             attendees={form.attendees}
             form={form}
+            homeAccountId={selectedCalendar?.homeAccountId}
             onDelete={props.onDelete}
             onFindAcceptConflicts={props.onFindAcceptConflicts}
             organizer={organizer}
@@ -1089,6 +1093,7 @@ function EventToolbar({
                 <label className="field field--full event-toolbar__popup-field">
                   <span>{t("eventEditor.comment")}</span>
                   <textarea
+                    spellCheck
                     disabled={busy}
                     onChange={(event) => setForwardComment(event.target.value)}
                     rows={4}
@@ -1939,6 +1944,7 @@ function AttendeesSidebar({
   event,
   attendees,
   form,
+  homeAccountId,
   onDelete,
   onFindAcceptConflicts,
   organizer,
@@ -1951,6 +1957,7 @@ function AttendeesSidebar({
   event: CalendarEvent | null;
   attendees: EventParticipant[];
   form: EditorFormState;
+  homeAccountId: string | undefined;
   onDelete: (event: CalendarEvent, targetEventId?: string) => Promise<void>;
   onFindAcceptConflicts: (target: CalendarOverlapTarget) => Promise<CalendarEvent[]>;
   organizer: EventParticipant | null;
@@ -2336,6 +2343,7 @@ function AttendeesSidebar({
                 <label className="field field--full attendees-sidebar__response-comment">
                   <span>{t("eventEditor.comment")}</span>
                   <textarea
+                    spellCheck
                     onChange={(eventValue) => onResponseCommentChange(eventValue.target.value)}
                     rows={4}
                     value={form.responseComment}
@@ -2422,11 +2430,20 @@ function AttendeesSidebar({
                           key={`${attendee.email ?? "attendee"}-${index}`}
                           className="attendees-sidebar__attendee"
                         >
-                          <div
-                            className={`attendees-sidebar__attendee-avatar ${getAttendeeAvatarClass(getEffectiveAttendeeResponse(attendee))}`}
-                          >
-                            {getInitials(attendee.name, attendee.email)}
-                          </div>
+                          {attendee.email ? (
+                            <ContactAvatar
+                              className={`attendees-sidebar__attendee-avatar ${getAttendeeAvatarClass(getEffectiveAttendeeResponse(attendee))}`}
+                              contact={{ email: attendee.email, name: attendee.name }}
+                              fallbackInitials={getInitials(attendee.name, attendee.email)}
+                              homeAccountId={homeAccountId}
+                            />
+                          ) : (
+                            <div
+                              className={`attendees-sidebar__attendee-avatar ${getAttendeeAvatarClass(getEffectiveAttendeeResponse(attendee))}`}
+                            >
+                              {getInitials(attendee.name, attendee.email)}
+                            </div>
+                          )}
                           <div className="attendees-sidebar__attendee-info">
                             <span className="attendees-sidebar__attendee-name">
                               {attendee.name || attendee.email}
@@ -2473,6 +2490,7 @@ function NotesSection({
             </div>
           ) : (
             <textarea
+              spellCheck
               disabled={disabled}
               onChange={(eventValue) =>
                 updateForm(onChange, {
@@ -2656,8 +2674,8 @@ function AttendeePillsInput({
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listboxId = useId();
   const [highlightedIndex, setHighlightedIndex] = useState(0);
-  const [isFocused, setIsFocused] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [suggestions, setSuggestions] = useState<ContactSuggestion[]>([]);
@@ -2679,7 +2697,7 @@ function AttendeePillsInput({
   }, [isOpen]);
 
   useEffect(() => {
-    if (disabled || !homeAccountId || !isFocused) {
+    if (disabled || !homeAccountId || !isOpen) {
       setIsLoading(false);
       setIsOpen(false);
       setSuggestions([]);
@@ -2687,12 +2705,6 @@ function AttendeePillsInput({
     }
 
     const query = inputValue.trim();
-    if (!query) {
-      setIsLoading(false);
-      setIsOpen(false);
-      setSuggestions([]);
-      return;
-    }
 
     const selectedEmails = new Set(
       selectedAttendees
@@ -2701,38 +2713,54 @@ function AttendeePillsInput({
     );
 
     let cancelled = false;
-    const timeoutId = globalThis.setTimeout(() => {
-      setIsLoading(true);
-      void onSearchContacts({ homeAccountId, limit: 8, query })
-        .then((results) => {
-          if (cancelled) {
-            return;
-          }
+    setIsLoading(true);
+    setSuggestions([]);
+    const timeoutId = globalThis.setTimeout(
+      () => {
+        void onSearchContacts({ homeAccountId, limit: null, query })
+          .then((results) => {
+            if (cancelled) {
+              return;
+            }
 
-          const filtered = results.filter(
-            (contact) => !selectedEmails.has(normalizeAttendeeEmail(contact.email)!),
-          );
-          setSuggestions(filtered);
-          setHighlightedIndex(0);
-          setIsOpen(filtered.length > 0);
-          setIsLoading(false);
-        })
-        .catch(() => {
-          if (cancelled) {
-            return;
-          }
+            const filtered = results
+              .filter((contact) => !selectedEmails.has(normalizeAttendeeEmail(contact.email)!))
+              .toSorted(
+                (left, right) =>
+                  (left.name ?? left.email).localeCompare(right.name ?? right.email, undefined, {
+                    sensitivity: "base",
+                  }) || left.email.localeCompare(right.email),
+              );
+            setSuggestions(filtered);
+            setHighlightedIndex(0);
+            setIsLoading(false);
+          })
+          .catch(() => {
+            if (cancelled) {
+              return;
+            }
 
-          setSuggestions([]);
-          setIsOpen(false);
-          setIsLoading(false);
-        });
-    }, 180);
+            setSuggestions([]);
+            setIsOpen(false);
+            setIsLoading(false);
+          });
+      },
+      query ? 180 : 0,
+    );
 
     return () => {
       cancelled = true;
       globalThis.clearTimeout(timeoutId);
     };
-  }, [disabled, homeAccountId, inputValue, isFocused, onSearchContacts, selectedAttendees]);
+  }, [disabled, homeAccountId, inputValue, isOpen, onSearchContacts, selectedAttendees]);
+
+  useEffect(() => {
+    if (isOpen && !isLoading) {
+      containerRef.current
+        ?.querySelector('[aria-selected="true"]')
+        ?.scrollIntoView?.({ block: "nearest" });
+    }
+  }, [highlightedIndex, isLoading, isOpen]);
 
   const commitInputValue = (value: string) => {
     if (!value.trim()) {
@@ -2755,8 +2783,17 @@ function AttendeePillsInput({
     <div className="attendee-pills-wrapper attendee-field" ref={containerRef}>
       <div
         className={`attendee-pills-container ${disabled ? "attendee-pills-container--disabled" : ""}`}
-        onClick={() => inputRef.current?.focus()}
-        onKeyDown={() => inputRef.current?.focus()}
+        onClick={() => {
+          if (!disabled) {
+            inputRef.current?.focus();
+            setIsOpen(true);
+          }
+        }}
+        onKeyDown={(event) => {
+          if (event.target === event.currentTarget && !disabled) {
+            inputRef.current?.focus();
+          }
+        }}
         role="group"
       >
         {attendees.map((attendee, index) => {
@@ -2803,19 +2840,31 @@ function AttendeePillsInput({
         })}
         <input
           aria-autocomplete="list"
+          aria-controls={isOpen ? listboxId : undefined}
+          aria-expanded={isOpen}
+          aria-activedescendant={
+            isOpen && !isLoading && suggestions.length > 0
+              ? `${listboxId}-${highlightedIndex}`
+              : undefined
+          }
           aria-haspopup="listbox"
           aria-label={label}
           className="attendee-pills-input"
           disabled={disabled}
-          onChange={(event) => onInputChange(event.target.value)}
+          onChange={(event) => {
+            setIsOpen(true);
+            onInputChange(event.target.value);
+          }}
           onBlur={() => {
-            setIsFocused(false);
             setIsOpen(false);
           }}
           onFocus={() => {
-            setIsFocused(true);
+            setIsOpen(true);
           }}
           onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing) {
+              return;
+            }
             if (event.key === "Escape") {
               setIsOpen(false);
               return;
@@ -2836,7 +2885,7 @@ function AttendeePillsInput({
                 return;
               }
 
-              if (event.key === "Enter" || event.key === "Tab") {
+              if (event.key === "Enter" || (event.key === "Tab" && inputValue.trim())) {
                 event.preventDefault();
                 const selectedSuggestion = suggestions[highlightedIndex];
                 if (selectedSuggestion) {
@@ -2874,33 +2923,48 @@ function AttendeePillsInput({
           }}
           placeholder={attendees.length === 0 ? label : ""}
           ref={inputRef}
+          role="combobox"
           type="text"
           value={inputValue}
         />
       </div>
-      {(isLoading || isOpen) && (
-        <div className="event-toolbar__dropdown attendee-field__dropdown" role="listbox">
+      {isOpen && !disabled && homeAccountId && (
+        <div
+          className="event-toolbar__dropdown attendee-field__dropdown"
+          id={listboxId}
+          aria-label={label}
+          aria-busy={isLoading}
+          role="listbox"
+        >
           {isLoading && <div className="event-toolbar__dropdown-note">{t("common.loading")}</div>}
+          {!isLoading && suggestions.length === 0 && (
+            <div className="event-toolbar__dropdown-note">{t("eventEditor.noContacts")}</div>
+          )}
           {!isLoading &&
             suggestions.map((contact, index) => {
               const selected = index === highlightedIndex;
               return (
                 <button
                   key={contact.email}
+                  id={`${listboxId}-${index}`}
                   className={`event-toolbar__dropdown-item attendee-field__suggestion ${selected ? "event-toolbar__dropdown-item--selected" : ""}`}
                   onClick={() => selectSuggestion(contact)}
                   onMouseDown={(event) => event.preventDefault()}
                   onMouseEnter={() => setHighlightedIndex(index)}
                   aria-selected={selected}
                   role="option"
+                  tabIndex={-1}
                   type="button"
                 >
-                  <span className="attendee-field__suggestion-name">
-                    {contact.name ?? contact.email}
+                  <ContactAvatar contact={contact} homeAccountId={homeAccountId} />
+                  <span className="attendee-field__suggestion-details">
+                    <span className="attendee-field__suggestion-name">
+                      {contact.name ?? contact.email}
+                    </span>
+                    {contact.name && (
+                      <span className="attendee-field__suggestion-email">{contact.email}</span>
+                    )}
                   </span>
-                  {contact.name && (
-                    <span className="attendee-field__suggestion-email">{contact.email}</span>
-                  )}
                 </button>
               );
             })}
@@ -3294,6 +3358,7 @@ function ResponsesSection({
       <label className="field field--full">
         <span>{t("eventEditor.comment")}</span>
         <textarea
+          spellCheck
           onChange={(eventValue) => onResponseCommentChange(eventValue.target.value)}
           rows={4}
           value={form.responseComment}

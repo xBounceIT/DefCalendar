@@ -161,6 +161,7 @@ class AppDatabase {
         email,
         normalized_email,
         name,
+        contact_id,
         normalized_name,
         search_text,
         updated_at
@@ -169,6 +170,7 @@ class AppDatabase {
         @email,
         @normalized_email,
         @name,
+        @contact_id,
         @normalized_name,
         @search_text,
         @updated_at
@@ -189,6 +191,7 @@ class AppDatabase {
       }
 
       deduped.set(normalizedEmail, {
+        ...(contact.contactId ? { contactId: contact.contactId } : {}),
         email: normalizedEmail,
         name: name ?? existing?.name ?? null,
       });
@@ -206,6 +209,7 @@ class AppDatabase {
 
         const normalizedName = normalizeContactSearchValue(contact.name);
         insert.run({
+          contact_id: contact.contactId ?? null,
           email: normalizedEmail,
           home_account_id: homeAccountId,
           name: normalizeContactName(contact.name),
@@ -220,16 +224,31 @@ class AppDatabase {
     transaction([...deduped.values()]);
   }
 
+  getContactByEmail(homeAccountId: string, email: string): ContactSuggestion | null {
+    const row = this.db
+      .prepare(
+        "SELECT email, name, contact_id FROM contacts WHERE home_account_id = ? AND normalized_email = ?",
+      )
+      .get(homeAccountId, normalizeContactEmail(email));
+    if (!row) {
+      return null;
+    }
+
+    const contactId = readNullableStringProperty(row, "contact_id");
+    return contactSuggestionSchema.parse({
+      ...(contactId ? { contactId } : {}),
+      email: readStringProperty(row, "email"),
+      name: readNullableStringProperty(row, "name"),
+    });
+  }
+
   searchContacts(args: SearchContactsArgs): ContactSuggestion[] {
     const normalizedQuery = normalizeContactSearchValue(args.query);
-    if (!normalizedQuery) {
-      return [];
-    }
 
     const rows = this.db
       .prepare(
         String.raw`
-          SELECT email, name
+          SELECT email, name, contact_id
           FROM contacts
           WHERE home_account_id = @home_account_id
             AND search_text LIKE @contains ESCAPE '\'
@@ -251,12 +270,15 @@ class AppDatabase {
         contains: `%${escapeLikePattern(normalizedQuery)}%`,
         exact: normalizedQuery,
         home_account_id: args.homeAccountId,
-        limit: args.limit,
+        limit: args.limit ?? -1,
         prefix: `${escapeLikePattern(normalizedQuery)}%`,
       });
 
     return rows.map((row) =>
       contactSuggestionSchema.parse({
+        ...(readNullableStringProperty(row, "contact_id")
+          ? { contactId: readNullableStringProperty(row, "contact_id") }
+          : {}),
         email: readStringProperty(row, "email"),
         name: readNullableStringProperty(row, "name"),
       }),
@@ -1368,6 +1390,9 @@ class AppDatabase {
       );
     `);
     this.migrateCalendarsTable();
+    if (!this.hasColumn("contacts", "contact_id")) {
+      this.db.exec("ALTER TABLE contacts ADD COLUMN contact_id TEXT");
+    }
     this.migrateCalendarsUserColor();
     this.migrateReminderStateTable(hadReminderStateTable);
     this.migrateReminderStateKeyFormat();

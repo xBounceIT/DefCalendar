@@ -10,6 +10,25 @@ import {
 import { describe, expect, it } from "vitest";
 
 describe("shared schemas", () => {
+  it("enables English and Italian when migrating legacy settings", () => {
+    expect.hasAssertions();
+    const legacy: Record<string, unknown> = { ...createDefaultSettings() };
+    delete legacy.spellcheckEnabled;
+    delete legacy.spellcheckLanguages;
+    delete legacy.spellcheckOnboardingSeen;
+    expect(userSettingsSchema.parse(legacy)).toMatchObject({
+      spellcheckEnabled: true,
+      spellcheckLanguages: ["en-US", "it"],
+      spellcheckOnboardingSeen: false,
+    });
+  });
+
+  it("preserves disabled spelling and an empty dictionary selection", () => {
+    expect.hasAssertions();
+    expect(
+      userSettingsPatchSchema.parse({ spellcheckEnabled: false, spellcheckLanguages: [] }),
+    ).toStrictEqual({ spellcheckEnabled: false, spellcheckLanguages: [] });
+  });
   it("accepts a valid event draft", () => {
     const draft = eventDraftSchema.parse({
       calendarId: "calendar-1",

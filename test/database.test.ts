@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { DatabaseSync } from "node:sqlite";
 
 import AppDatabase from "../src/main/db/database";
 
@@ -51,6 +52,49 @@ function createStoredReminderEvent(overrides?: {
 }
 
 describe("database", () => {
+  it("migrates saved contacts and browses the entire account rubrica with photo ids", () => {
+    const sqlite = new DatabaseSync(":memory:");
+    try {
+      sqlite.exec(`
+        CREATE TABLE contacts (
+          home_account_id TEXT NOT NULL, email TEXT NOT NULL, normalized_email TEXT NOT NULL,
+          name TEXT, normalized_name TEXT NOT NULL, search_text TEXT NOT NULL, updated_at TEXT NOT NULL,
+          PRIMARY KEY (home_account_id, normalized_email)
+        )
+      `);
+      const db = Object.create(AppDatabase.prototype) as AppDatabase;
+      Object.assign(db, {
+        db: {
+          exec: (sql: string) => sqlite.exec(sql),
+          prepare: (sql: string) => sqlite.prepare(sql),
+          transaction: (callback: (...args: unknown[]) => unknown) => callback,
+        },
+      });
+      (db as unknown as { migrate: () => void }).migrate();
+      const contacts = Array.from({ length: 30 }, (_, index) => ({
+        contactId: `contact-${index}`,
+        email: `person${index}@example.com`,
+        name: `Person ${String(index).padStart(2, "0")}`,
+      }));
+      db.replaceContactsForAccount(contacts.toReversed(), "account-1");
+      db.replaceContactsForAccount([{ email: "other@example.com", name: "Other" }], "account-2");
+      expect(db.getContactByEmail("account-1", " PERSON29@EXAMPLE.COM ")).toEqual(contacts[29]);
+      expect(db.getContactByEmail("account-2", contacts[29].email)).toBeNull();
+      expect(db.getContactByEmail("account-1", "person29@example.co")).toBeNull();
+      expect(db.searchContacts({ homeAccountId: "account-1", query: "", limit: null })).toEqual(
+        contacts,
+      );
+      expect(
+        db.searchContacts({ homeAccountId: "account-1", query: "person 29", limit: null }),
+      ).toEqual([contacts[29]]);
+      expect(db.searchContacts({ homeAccountId: "account-2", query: "", limit: null })).toEqual([
+        { email: "other@example.com", name: "Other" },
+      ]);
+    } finally {
+      sqlite.close();
+    }
+  });
+
   it("clears only the signed-out account data with parameterized statements", () => {
     const targetAccountId = "account-1'; DELETE FROM settings; --";
     const exec = vi.fn();
@@ -744,8 +788,8 @@ describe("database", () => {
 
   it("searches contacts with normalized attendee input", () => {
     const all = vi.fn().mockReturnValue([
-      { email: "john@example.com", name: "Doe, John" },
-      { email: "jane@example.com", name: null },
+      { contact_id: "contact-1", email: "john@example.com", name: "Doe, John" },
+      { contact_id: null, email: "jane@example.com", name: null },
     ]);
     const prepare = vi.fn((sql: string) => {
       if (!sql.includes("FROM contacts")) {
@@ -765,7 +809,7 @@ describe("database", () => {
         query: '"Doe, Jo" <jo',
       }),
     ).toStrictEqual([
-      { email: "john@example.com", name: "Doe, John" },
+      { contactId: "contact-1", email: "john@example.com", name: "Doe, John" },
       { email: "jane@example.com", name: null },
     ]);
     expect(all).toHaveBeenCalledWith({
@@ -784,6 +828,10 @@ describe("database", () => {
         return {
           get: vi.fn().mockReturnValue(undefined),
         };
+      }
+
+      if (sql === "PRAGMA table_info(contacts)") {
+        return { all: vi.fn().mockReturnValue([{ name: "contact_id" }]) };
       }
 
       if (sql === "PRAGMA table_info(calendars)") {
@@ -827,6 +875,10 @@ describe("database", () => {
         };
       }
 
+      if (sql === "PRAGMA table_info(contacts)") {
+        return { all: vi.fn().mockReturnValue([{ name: "contact_id" }]) };
+      }
+
       if (sql === "PRAGMA table_info(calendars)") {
         return {
           all: vi.fn().mockReturnValue([{ name: "home_account_id" }, { name: "user_color" }]),
@@ -860,6 +912,10 @@ describe("database", () => {
         return {
           get: vi.fn().mockReturnValue({ 1: 1 }),
         };
+      }
+
+      if (sql === "PRAGMA table_info(contacts)") {
+        return { all: vi.fn().mockReturnValue([{ name: "contact_id" }]) };
       }
 
       if (sql === "PRAGMA table_info(calendars)") {

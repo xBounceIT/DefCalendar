@@ -23,6 +23,7 @@ const { BrowserWindowMock, openExternalMock } = vi.hoisted(() => {
     public show = vi.fn();
     public once = vi.fn();
     public webContents = {
+      session: { on: vi.fn() },
       setWindowOpenHandler: vi.fn(),
       on: vi.fn(),
       getURL: vi.fn().mockReturnValue("http://localhost:5173/"),

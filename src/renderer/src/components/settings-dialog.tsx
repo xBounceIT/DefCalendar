@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faArrowsRotate,
+  faBook,
   faCircleInfo,
   faGlobe,
   faPalette,
@@ -13,15 +14,17 @@ import { useUpdater } from "../hooks/use-updater";
 import { useVersion } from "../hooks/use-version";
 import SafeHtmlBody from "./safe-html-body";
 import SettingsSelect from "./settings-select";
+import SpellcheckSettings from "./spellcheck-settings";
 
 interface SettingsDialogProps {
+  initialSection?: SettingsSection;
   isOpen: boolean;
   onClose: () => void;
   settings: UserSettings;
-  onSave: (settings: Partial<UserSettings>) => void;
+  onSave: (settings: Partial<UserSettings>) => void | Promise<boolean>;
 }
 
-type SettingsSection = "appearance" | "language" | "notifications" | "sync" | "about";
+type SettingsSection = "appearance" | "language" | "spelling" | "notifications" | "sync" | "about";
 
 type LanguageSetting = UserSettings["language"];
 type LocalReminderRuleSetting = UserSettings["localReminderRules"][number];
@@ -704,6 +707,7 @@ function AboutSection({ onSave, settings }: AboutSectionProps) {
 }
 
 function SettingsDialog({
+  initialSection = "appearance",
   isOpen,
   onClose,
   settings,
@@ -712,6 +716,12 @@ function SettingsDialog({
   const { t } = useTranslation();
   const [activeSection, setActiveSection] = useState<SettingsSection>("appearance");
 
+  useEffect(() => {
+    if (isOpen) {
+      setActiveSection(initialSection);
+    }
+  }, [isOpen, initialSection]);
+
   if (!isOpen) {
     return null;
   }
@@ -719,6 +729,7 @@ function SettingsDialog({
   const sections: { id: SettingsSection; label: string; icon: typeof faPalette }[] = [
     { id: "appearance", label: t("settings.sections.appearance.label"), icon: faPalette },
     { id: "language", label: t("settings.sections.language.label"), icon: faGlobe },
+    { id: "spelling", label: t("spellcheck.title"), icon: faBook },
     { id: "notifications", label: t("settings.sections.notifications.label"), icon: faBell },
     { id: "sync", label: t("settings.sections.sync.label"), icon: faArrowsRotate },
     { id: "about", label: t("settings.sections.about.label"), icon: faCircleInfo },
@@ -731,6 +742,9 @@ function SettingsDialog({
       }
       case "language": {
         return <LanguageSection onSave={onSave} settings={settings} />;
+      }
+      case "spelling": {
+        return <SpellcheckSettings onSave={onSave} settings={settings} />;
       }
       case "notifications": {
         return <NotificationsSection onSave={onSave} settings={settings} />;
