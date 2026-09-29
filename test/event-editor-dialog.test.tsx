@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
+import { readFileSync } from "node:fs";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createInstance } from "i18next";
 import React from "react";
 import { I18nextProvider, initReactI18next } from "react-i18next";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import EventEditorDialog from "../src/renderer/src/components/event-editor-dialog";
 import enTranslations from "../src/renderer/src/i18n/locales/en.json";
@@ -497,11 +498,58 @@ function editSubject(value: string): void {
   });
 }
 
+function applyEditorStyles(): void {
+  const style = document.createElement("style");
+  style.textContent = readFileSync("src/renderer/src/styles.css", "utf8");
+  document.head.append(style);
+  onTestFinished(() => style.remove());
+}
+
 afterEach(() => {
   cleanup();
 });
 
 describe("event editor dialog", () => {
+  it("keeps padded scheduling controls and weekly options able to wrap", () => {
+    expect.hasAssertions();
+    applyEditorStyles();
+    const { container } = renderDialog();
+    openSchedulingSection(container);
+    fireEvent.click(screen.getByLabelText("Recurring event"));
+
+    const weekdays = screen.getByLabelText("mon").closest("fieldset")!;
+    expect(getComputedStyle(weekdays).minWidth).toBe("0px");
+    expect(getComputedStyle(weekdays.querySelector("div")!).flexWrap).toBe("wrap");
+    expect(getComputedStyle(container.querySelector(".scheduling-dropdown__row")!).flexWrap).toBe(
+      "wrap",
+    );
+    expect(
+      getComputedStyle(container.querySelector(".scheduling-dropdown__options")!).flexWrap,
+    ).toBe("wrap");
+  });
+
+  it("keeps long attendee pills within the padded field and separates scheduling hover", () => {
+    expect.hasAssertions();
+    applyEditorStyles();
+    const { container } = renderDialog({
+      state: {
+        event: createEvent({
+          attendees: [{ ...createParticipant(), email: "very-long-attendee-address@example.com" }],
+        }),
+        mode: "edit",
+      },
+    });
+    expect(getComputedStyle(container.querySelector(".attendee-pill")!).maxWidth).toBe(
+      "min(250px, 100%)",
+    );
+    expect(getComputedStyle(container.querySelector(".scheduling-teams-stack")!).paddingTop).toBe(
+      "4px",
+    );
+    expect(getComputedStyle(container.querySelector(".teams-toggle__label")!).whiteSpace).toBe(
+      "normal",
+    );
+  });
+
   it("allows selecting a saved attendee event title while keeping it read-only", () => {
     expect.hasAssertions();
     renderDialog({
