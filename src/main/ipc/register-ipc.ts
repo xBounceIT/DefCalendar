@@ -812,8 +812,9 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     if (removedHomeAccountId) {
       dependencies.newEventNotifications.clear();
       void dependencies.reminders.checkNow();
-      if (state.accounts.length === 0) {
-        dependencies.sync.reset();
+      dependencies.sync.reset();
+      if (state.accounts.length > 0) {
+        void dependencies.sync.syncAll("manual");
       }
     }
     broadcast(IPC_CHANNELS.authStateChanged, state);

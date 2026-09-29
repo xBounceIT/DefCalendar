@@ -261,6 +261,47 @@ function createDeferred<T>() {
 }
 
 describe("sync service", () => {
+  it("discards an on-demand response after reset while its account remains connected", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const deferred = createDeferred<CalendarEvent[]>();
+    fixture.graph.listCalendarView.mockReturnValueOnce(deferred.promise);
+    const request = fixture.service.ensureEventsRange({
+      calendarIds: ["calendar-a"],
+      start: "2026-03-30T00:00:00.000Z",
+      end: "2026-03-31T00:00:00.000Z",
+    });
+    const settledRequest = request.catch((error: unknown) => error);
+    fixture.service.reset();
+    deferred.resolve([createEvent()]);
+
+    await expect(settledRequest).resolves.toBeInstanceOf(Error);
+    expect(fixture.db.replaceEventsForCalendarRange).not.toHaveBeenCalled();
+    expect(fixture.db.recordCalendarSyncRange).not.toHaveBeenCalled();
+  });
+
+  it("does not store a cancelled run's late response for an account that remains connected", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const deferred = createDeferred<CalendarSummary[]>();
+    const oldCalendar = { ...createCalendar("calendar-a"), name: "Old calendar" };
+    const freshCalendar = { ...createCalendar("calendar-a"), name: "Fresh calendar" };
+    fixture.graph.listCalendars
+      .mockReturnValueOnce(deferred.promise)
+      .mockResolvedValue([freshCalendar]);
+    const oldSync = fixture.service.syncAll("manual");
+    fixture.service.reset();
+    const freshStatus = await fixture.service.syncAll("manual");
+    deferred.resolve([oldCalendar]);
+
+    expect(await oldSync).toEqual(freshStatus);
+    expect(fixture.db.upsertCalendars).toHaveBeenCalledExactlyOnceWith(
+      [freshCalendar],
+      "account-1",
+    );
+    expect(fixture.graph.listContacts).toHaveBeenCalledOnce();
+  });
+
   it("keeps the signed-out status when an active Graph request fails after reset", async () => {
     expect.hasAssertions();
     const fixture = createFixture();

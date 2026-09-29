@@ -400,8 +400,8 @@ describe("register ipc", () => {
         IPC_CHANNELS.authStateChanged,
         state,
       );
-      expect(fixture.sync.reset).toHaveBeenCalledTimes(hasOtherAccount ? 0 : 1);
-      expect(fixture.sync.syncAll).not.toHaveBeenCalled();
+      expect(fixture.sync.reset).toHaveBeenCalledOnce();
+      expect(fixture.sync.syncAll.mock.calls).toEqual(hasOtherAccount ? [["manual"]] : []);
     },
   );
 

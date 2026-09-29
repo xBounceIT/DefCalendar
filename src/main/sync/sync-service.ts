@@ -103,6 +103,7 @@ class SyncService {
   }
 
   async ensureEventsRange(args: EventListArgs): Promise<void> {
+    const generation = this.syncGeneration;
     if (
       !this.dependencies.auth.hasSession() ||
       !args.calendarIds?.length ||
@@ -155,7 +156,7 @@ class SyncService {
         if (!homeAccountId) {
           return;
         }
-        const assertSession = this.dependencies.auth.createAccountSessionGuard(homeAccountId);
+        const assertSession = this.createSyncSessionGuard(homeAccountId, generation);
 
         for (const range of uncoveredRanges) {
           assertSession();
@@ -326,7 +327,7 @@ class SyncService {
       const sessionGuards = new Map(
         accountIds.map((accountId) => [
           accountId,
-          this.dependencies.auth.createAccountSessionGuard(accountId),
+          this.createSyncSessionGuard(accountId, generation),
         ]),
       );
 
@@ -671,6 +672,16 @@ class SyncService {
     }
 
     return this.dependencies.auth.getAccountIds();
+  }
+
+  private createSyncSessionGuard(homeAccountId: string, generation: number): () => void {
+    const assertAccountSession = this.dependencies.auth.createAccountSessionGuard(homeAccountId);
+    return () => {
+      if (generation !== this.syncGeneration) {
+        throw new Error("The calendar sync was reset.");
+      }
+      assertAccountSession();
+    };
   }
 
   private getIntervalMs(): number {
