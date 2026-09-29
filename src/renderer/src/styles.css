@@ -4315,6 +4315,23 @@ button {
   outline: none;
 }
 
+.field-row--location .field-input {
+  min-width: 0;
+}
+
+.location-maps-link {
+  flex-shrink: 0;
+  padding: 6px 8px;
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.location-maps-error {
+  max-width: 160px;
+  font-size: 12px;
+  color: var(--ink-secondary);
+}
+
 .attendee-field {
   flex: 1;
   min-width: 0;

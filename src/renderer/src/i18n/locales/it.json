@@ -141,6 +141,8 @@
     "toggleTimeOptions": "Mostra opzioni orario",
     "allDay": "Giornata intera",
     "location": "Posizione",
+    "openInGoogleMaps": "Apri in Google Maps",
+    "locationTooLongForMaps": "Il luogo è troppo lungo per Google Maps",
     "desktopReminder": "Promemoria desktop",
     "reminderMinutes": "Minuti promemoria",
     "notes": "Note",
