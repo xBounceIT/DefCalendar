@@ -3239,6 +3239,12 @@ button {
   flex-wrap: nowrap;
 }
 
+.spellcheck-language-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+}
+
 .spellcheck-language-action {
   display: inline-flex;
   align-items: center;

@@ -180,6 +180,13 @@ function SpellcheckSettings({ settings, onSave }: SpellcheckSettingsProps) {
               const requested = settings.spellcheckLanguages.includes(code);
               const state = dictionaryStates[code];
               const installed = requested && state === "ready";
+              const failed = requested && state === "failed";
+              const remove = () =>
+                void save({
+                  spellcheckLanguages: settings.spellcheckLanguages.filter(
+                    (language) => language !== code,
+                  ),
+                });
               const downloading =
                 requested && state !== "ready" && state !== "failed" && settings.spellcheckEnabled;
               const action = downloading
@@ -192,27 +199,45 @@ function SpellcheckSettings({ settings, onSave }: SpellcheckSettingsProps) {
               return (
                 <div className="settings-row settings-group__row" key={code}>
                   <span className="settings-row__label">{label}</span>
-                  <button
-                    aria-busy={downloading}
-                    aria-label={action}
-                    className={`spellcheck-language-action${installed ? " spellcheck-language-action--remove" : ""}`}
-                    disabled={saving || downloading || !settings.spellcheckEnabled}
-                    onClick={() =>
-                      void save({
-                        spellcheckLanguages: installed
-                          ? settings.spellcheckLanguages.filter((language) => language !== code)
-                          : [...new Set([...settings.spellcheckLanguages, code])],
-                      })
-                    }
-                    title={action}
-                    type="button"
-                  >
-                    <FontAwesomeIcon
-                      aria-hidden="true"
-                      icon={downloading ? faSpinner : installed ? faTrashCan : faDownload}
-                      spin={downloading}
-                    />
-                  </button>
+                  <div className="spellcheck-language-actions">
+                    <button
+                      aria-busy={downloading}
+                      aria-label={action}
+                      className={`spellcheck-language-action${installed ? " spellcheck-language-action--remove" : ""}`}
+                      disabled={
+                        saving || downloading || (!installed && !settings.spellcheckEnabled)
+                      }
+                      onClick={() =>
+                        installed
+                          ? remove()
+                          : void save({
+                              spellcheckLanguages: [
+                                ...new Set([...settings.spellcheckLanguages, code]),
+                              ],
+                            })
+                      }
+                      title={action}
+                      type="button"
+                    >
+                      <FontAwesomeIcon
+                        aria-hidden="true"
+                        icon={downloading ? faSpinner : installed ? faTrashCan : faDownload}
+                        spin={downloading}
+                      />
+                    </button>
+                    {failed && (
+                      <button
+                        aria-label={t("spellcheck.removeDictionary", { language: label })}
+                        className="spellcheck-language-action spellcheck-language-action--remove"
+                        disabled={saving}
+                        onClick={remove}
+                        title={t("spellcheck.removeDictionary", { language: label })}
+                        type="button"
+                      >
+                        <FontAwesomeIcon aria-hidden="true" icon={faTrashCan} />
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}

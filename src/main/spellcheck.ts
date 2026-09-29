@@ -48,6 +48,10 @@ function getSpellcheckDictionaryStates(session: Session): SpellcheckDictionarySt
 }
 
 function applySpellcheckSettings(session: Session, settings: UserSettings): void {
+  if (!settings.spellcheckEnabled) {
+    session.setSpellCheckerEnabled(false);
+    return;
+  }
   const languages = settings.spellcheckLanguages.filter((language) =>
     session.availableSpellCheckerLanguages.includes(language),
   );

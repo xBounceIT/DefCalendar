@@ -448,13 +448,16 @@ describe("register ipc", () => {
     expect(fixture.mainWebContents.session.addWordToSpellCheckerDictionary).not.toHaveBeenCalled();
   });
 
-  it("applies saved spelling preferences immediately and rejects unsupported dictionaries", async () => {
+  it("defers applying dictionaries until spell checking is enabled", async () => {
     expect.hasAssertions();
     const fixture = createFixture();
     const update = fixture.handlers.get(IPC_CHANNELS.settingsUpdate)!;
     const event = { sender: fixture.mainWebContents };
     await update(event, { spellcheckLanguages: ["it"], spellcheckEnabled: false });
     expect(fixture.mainWebContents.session.setSpellCheckerEnabled).toHaveBeenCalledWith(false);
+    expect(fixture.mainWebContents.session.setSpellCheckerLanguages).not.toHaveBeenCalled();
+    await update(event, { spellcheckLanguages: ["it"], spellcheckEnabled: true });
+    expect(fixture.mainWebContents.session.setSpellCheckerEnabled).toHaveBeenLastCalledWith(true);
     expect(fixture.mainWebContents.session.setSpellCheckerLanguages.mock.calls).toStrictEqual(
       process.platform === "darwin" ? [] : [[["it"]]],
     );

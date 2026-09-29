@@ -583,6 +583,55 @@ describe("settings dialog", () => {
     expect(onSave).toHaveBeenLastCalledWith({ spellcheckLanguages: ["en-US", "it"] });
   });
 
+  it.each([true, false])(
+    "removes a failed dictionary with spell checking enabled=%s",
+    async (enabled) => {
+      const api = createCalendarApiMock(null);
+      vi.mocked(api.spellcheck.getDictionaries).mockResolvedValue({
+        availableLanguages: ["en-US", "it", "fr"],
+        customWords: [],
+        dictionaryStates: { "en-US": "ready", it: "ready", fr: "failed" },
+        usesSystemLanguages: false,
+      });
+      installCalendarApi(api);
+      const onSave = vi.fn();
+      function Preferences() {
+        const [settings, setSettings] = React.useState({
+          ...createDefaultSettings(),
+          spellcheckEnabled: enabled,
+          spellcheckLanguages: ["en-US", "it", "fr"],
+        });
+        return (
+          <SpellcheckSettings
+            settings={settings}
+            onSave={async (patch) => {
+              onSave(patch);
+              setSettings((previous) => ({ ...previous, ...patch }));
+              return true;
+            }}
+          />
+        );
+      }
+      render(
+        <I18nextProvider i18n={createTestI18n()}>
+          <Preferences />
+        </I18nextProvider>,
+      );
+      const remove = await screen.findByRole("button", { name: "Remove French dictionary" });
+      expect(remove).toBeEnabled();
+      expect(remove.textContent).toBe("");
+      expect(
+        screen
+          .getByRole("button", { name: "Retry downloading French dictionary" })
+          .hasAttribute("disabled"),
+      ).toBe(!enabled);
+      fireEvent.click(remove);
+      await screen.findByRole("button", { name: "Download French dictionary" });
+      expect(onSave).toHaveBeenLastCalledWith({ spellcheckLanguages: ["en-US", "it"] });
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    },
+  );
+
   it("preserves newer native states over an older initial response and cleans up its listener", async () => {
     expect.hasAssertions();
     const api = createCalendarApiMock(null);

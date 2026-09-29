@@ -106,6 +106,25 @@ describe("spelling integration", () => {
     expect(session.setSpellCheckerEnabled).toHaveBeenLastCalledWith(false);
   });
 
+  it.each(["uncached", "failed"])("does not download %s dictionaries while disabled", (state) => {
+    const { session, events } = createFixture();
+    const nativeSession = session as unknown as Session;
+    if (state === "failed") {
+      events.emit("spellcheck-dictionary-download-failure", {}, "fr");
+    }
+    const previousStates = getSpellcheckDictionaryStates(nativeSession);
+    const settings = { ...createDefaultSettings(), spellcheckLanguages: ["fr"] };
+    applySpellcheckSettings(nativeSession, { ...settings, spellcheckEnabled: false });
+    expect(session.setSpellCheckerLanguages).not.toHaveBeenCalled();
+    expect(session.setSpellCheckerEnabled).toHaveBeenLastCalledWith(false);
+    expect(getSpellcheckDictionaryStates(nativeSession)).toStrictEqual(previousStates);
+    applySpellcheckSettings(nativeSession, settings);
+    expect(session.setSpellCheckerLanguages.mock.calls).toStrictEqual(
+      process.platform === "darwin" ? [] : state === "failed" ? [[[]], [["fr"]]] : [[["fr"]]],
+    );
+    expect(session.setSpellCheckerEnabled).toHaveBeenLastCalledWith(true);
+  });
+
   it("replaces misspellings and adds personal words from the native menu", () => {
     expect.hasAssertions();
     const { window, session, openMenu } = createFixture();
