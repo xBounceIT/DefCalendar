@@ -4,12 +4,16 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import React from "react";
+import type { CalendarOptions, EventContentArg } from "@fullcalendar/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestI18n } from "./setup-i18n";
 import WorkspacePanel from "../src/renderer/src/components/workspace-panel";
 
+let capturedCalendarProps: CalendarOptions | null = null;
+
 vi.mock<typeof import("@fullcalendar/react")>(import("@fullcalendar/react"), () => ({
-  default: function FullCalendarMock() {
+  default: function FullCalendarMock(props: CalendarOptions) {
+    capturedCalendarProps = props;
     return React.createElement("div", { "data-testid": "fullcalendar" });
   },
 }));
@@ -25,7 +29,10 @@ vi.mock<typeof import("@fullcalendar/interaction")>(import("@fullcalendar/intera
 }));
 vi.mock(import("../src/renderer/src/interaction-plugin"), () => ({ default: {} }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  capturedCalendarProps = null;
+});
 
 function renderPanel(overrides: Partial<React.ComponentProps<typeof WorkspacePanel>> = {}) {
   const props: React.ComponentProps<typeof WorkspacePanel> = {
@@ -70,6 +77,29 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof WorkspacePan
 }
 
 describe("workspacePanel header", () => {
+  it("forwards the board meeting action to the existing join handler", () => {
+    expect.hasAssertions();
+    const { props } = renderPanel({ activeView: "timeGridWeek" });
+    const eventData = { onlineMeeting: { joinUrl: "https://meet.google.com/abc-defg-hij" } };
+    const eventContent = capturedCalendarProps?.eventContent as (
+      info: EventContentArg,
+    ) => React.ReactNode;
+
+    render(
+      <>
+        {eventContent({
+          event: { title: "Planning", allDay: false, extendedProps: { eventData } },
+          timeText: "9:00 - 10:00",
+          view: { type: "timeGridWeek" },
+        } as EventContentArg)}
+      </>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Join meeting" }));
+
+    expect(props.onJoinMeeting).toHaveBeenCalledExactlyOnceWith(eventData);
+    expect(props.onEventClick).not.toHaveBeenCalled();
+  });
+
   it("renders the formatted month label for dayGridMonth view", () => {
     renderPanel();
     expect(screen.getByRole("heading", { level: 2 }).textContent).toMatch(/April 2026/);

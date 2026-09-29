@@ -1,5 +1,5 @@
 import type {
-  DayCellArg,
+  DayCellContentArg,
   DatesSetArg,
   EventClickArg,
   EventContentArg,
@@ -21,6 +21,7 @@ import type { CalendarEvent, CalendarView, UserSettings } from "@shared/schemas"
 import { buildEventTimeFormat } from "../date-formatting";
 import interactionPlugin from "../interaction-plugin";
 import hasSelectedTextWithin from "../text-selection";
+import { MeetingIcon } from "./meeting-icon";
 
 interface CalendarBoardProps {
   activeView: CalendarView;
@@ -35,6 +36,7 @@ interface CalendarBoardProps {
   onEventCopy: (calendarId: string, eventId: string) => void;
   onEventDrop: (changeInfo: EventDropArg) => void;
   onEventResize: (changeInfo: EventResizeDoneArg) => void;
+  onJoinMeeting?: (event: CalendarEvent) => void;
   selectedDate: string;
   selectedDayForTable: null | string;
   timeFormat: UserSettings["timeFormat"];
@@ -62,7 +64,7 @@ interface TooltipSize {
 interface CalendarEventExtendedProps {
   calendarColor?: string | null;
   calendarId?: string;
-  eventData?: Pick<CalendarEvent, "isOrganizer" | "isReminderOn" | "responseStatus">;
+  eventData?: CalendarEvent;
   eventId?: string;
 }
 
@@ -410,6 +412,7 @@ function CalendarSurface({
   onEventCopy,
   onEventDrop,
   onEventResize,
+  onJoinMeeting,
   selectedDate,
   selectedDayForTable,
   timeFormat,
@@ -468,21 +471,120 @@ function CalendarSurface({
         .extendedProps as CalendarEventExtendedProps;
       const hasReminder = Boolean(eventData?.isReminderOn);
       const hasTime = info.timeText.length > 0;
-
-      return (
-        <div className="calendar-event-content">
-          {hasTime ? <span className="fc-event-time">{info.timeText}</span> : null}
-          <span className="fc-event-title" onMouseDownCapture={(event) => event.stopPropagation()}>
-            {info.event.title}
-          </span>
+      const showDetails =
+        !info.event.allDay &&
+        (info.view?.type === "timeGridWeek" || info.view?.type === "timeGridDay");
+      const time = hasTime ? <span className="fc-event-time">{info.timeText}</span> : null;
+      const actions = (
+        <>
           {calendarId && eventId ? (
             <EventCopyButton calendarId={calendarId} eventId={eventId} onCopy={onEventCopy} />
           ) : null}
           {hasReminder ? <BellIcon /> : null}
+        </>
+      );
+      const title = (
+        <span className="fc-event-title" onMouseDownCapture={(event) => event.stopPropagation()}>
+          {info.event.title}
+        </span>
+      );
+
+      if (showDetails) {
+        const location = eventData?.location?.trim();
+        const organizer = eventData?.organizer?.name?.trim() || eventData?.organizer?.email?.trim();
+        const attendees = eventData?.attendees
+          ?.map((attendee) => attendee.name?.trim() || attendee.email?.trim())
+          .filter(Boolean)
+          .join(", ");
+        const preview = eventData?.bodyPreview?.replace(/\s+/g, " ").trim();
+        const isDayView = info.view.type === "timeGridDay";
+        const joinUrl = eventData?.onlineMeeting?.joinUrl?.trim();
+        const joinButton =
+          eventData && joinUrl && !eventData.cancelled && onJoinMeeting ? (
+            <button
+              aria-label={t("eventEditor.joinMeeting")}
+              className={`calendar-event-content__join-btn${isDayView ? " calendar-event-content__join-btn--header" : ""}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onJoinMeeting(eventData);
+              }}
+              onMouseDownCapture={(event) => event.stopPropagation()}
+              type="button"
+            >
+              <MeetingIcon url={joinUrl} />
+              <span>{t("eventEditor.joinMeeting")}</span>
+            </button>
+          ) : null;
+
+        const content = (
+          <div className="calendar-event-content calendar-event-content--detailed">
+            <div className="calendar-event-content__header">
+              {time}
+              {actions}
+              {isDayView ? joinButton : null}
+            </div>
+            {title}
+            <div className="calendar-event-content__metadata">
+              {location || eventData?.isOnlineMeeting ? (
+                <div
+                  className="calendar-event-content__detail calendar-event-content__location"
+                  onMouseDownCapture={(event) => event.stopPropagation()}
+                >
+                  {[location, eventData?.isOnlineMeeting ? t("calendarBoard.onlineMeeting") : null]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </div>
+              ) : null}
+              {organizer || attendees ? (
+                <div
+                  className="calendar-event-content__participants"
+                  onMouseDownCapture={(event) => event.stopPropagation()}
+                >
+                  {organizer ? (
+                    <div className="calendar-event-content__detail calendar-event-content__people">
+                      {t("eventEditor.organizerRole")}: {organizer}
+                    </div>
+                  ) : null}
+                  {attendees ? (
+                    <div className="calendar-event-content__detail calendar-event-content__people">
+                      {t("eventEditor.tabs.attendees")}: {attendees}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+            {preview ? (
+              <div
+                className="calendar-event-content__preview"
+                onMouseDownCapture={(event) => event.stopPropagation()}
+              >
+                <span className="calendar-event-content__preview-text">{preview}</span>
+              </div>
+            ) : null}
+          </div>
+        );
+
+        if (!isDayView && joinButton) {
+          return (
+            <div className="calendar-event-card">
+              <div className="calendar-event-card__body">{content}</div>
+              {joinButton}
+            </div>
+          );
+        }
+
+        return content;
+      }
+
+      return (
+        <div className="calendar-event-content">
+          {time}
+          {title}
+          {actions}
         </div>
       );
     },
-    [onEventCopy],
+    [onEventCopy, onJoinMeeting, t],
   );
 
   const renderedTooltip = hoverTooltip
@@ -500,7 +602,7 @@ function CalendarSurface({
     : null;
 
   const handleDayCellClassNames = React.useCallback(
-    (arg: DayCellArg) => {
+    (arg: DayCellContentArg) => {
       if (!isSameLocalDay(arg.date, selectedDayForTable)) {
         return [];
       }
@@ -640,6 +742,7 @@ function CalendarBoard(props: CalendarBoardProps) {
         onEventCopy={props.onEventCopy}
         onEventDrop={props.onEventDrop}
         onEventResize={props.onEventResize}
+        onJoinMeeting={props.onJoinMeeting}
         selectedDate={props.selectedDate}
         selectedDayForTable={props.selectedDayForTable}
         timeFormat={props.timeFormat}
