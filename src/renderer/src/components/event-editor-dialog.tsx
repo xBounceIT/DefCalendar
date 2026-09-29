@@ -255,6 +255,10 @@ function EventEditorDialog(props: EventEditorDialogProps) {
   }
 
   const editedEvent = props.state.mode === "edit" ? props.state.event : null;
+  const locationQuery = form.location.trim();
+  const locationMapsUrl = locationQuery
+    ? `https://www.google.com/maps/search/?${new URLSearchParams({ api: "1", query: locationQuery })}`
+    : null;
   const isEdit = Boolean(editedEvent);
   const readOnlyForAttendee = Boolean(editedEvent && !editedEvent.isOrganizer);
   const selectedCalendar =
@@ -534,7 +538,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
               />
             </div>
 
-            <div className="field-row">
+            <div className="field-row field-row--location">
               <LocationIcon />
               <input
                 className="field-input field-input--underline"
@@ -544,6 +548,21 @@ function EventEditorDialog(props: EventEditorDialogProps) {
                 type="text"
                 value={form.location}
               />
+              {locationMapsUrl && locationMapsUrl.length <= 2048 && (
+                <a
+                  className="ghost-button location-maps-link"
+                  href={locationMapsUrl}
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  {t("eventEditor.openInGoogleMaps")}
+                </a>
+              )}
+              {locationMapsUrl && locationMapsUrl.length > 2048 && (
+                <span className="location-maps-error" role="status">
+                  {t("eventEditor.locationTooLongForMaps")}
+                </span>
+              )}
             </div>
           </div>
 

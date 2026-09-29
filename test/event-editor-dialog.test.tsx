@@ -248,6 +248,143 @@ describe("event editor dialog", () => {
     expect(screen.queryByRole("button", { name: "Save Changes" })).not.toBeInTheDocument();
   });
 
+  it("opens the current unsaved location in Google Maps while creating an event", () => {
+    expect.hasAssertions();
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    renderDialog({
+      onSave,
+      state: {
+        allDay: false,
+        calendarId: "calendar-1",
+        end: "2026-03-30T10:00:00.000Z",
+        mode: "create",
+        start: "2026-03-30T09:00:00.000Z",
+      },
+    });
+
+    expect(screen.queryByRole("link", { name: "Open in Google Maps" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText("Location"), {
+      target: { value: "  Caffè & Bar #1, Via Roma 10, Milano  " },
+    });
+
+    const link = screen.getByRole<HTMLAnchorElement>("link", { name: "Open in Google Maps" });
+    const url = new URL(link.href);
+    expect({
+      origin: url.origin,
+      pathname: url.pathname,
+      parameters: Object.fromEntries(url.searchParams),
+      target: link.target,
+      rel: link.rel,
+    }).toStrictEqual({
+      origin: "https://www.google.com",
+      pathname: "/maps/search/",
+      parameters: { api: "1", query: "Caffè & Bar #1, Via Roma 10, Milano" },
+      target: "_blank",
+      rel: "noopener noreferrer",
+    });
+    fireEvent.click(link);
+    expect(onSave).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByPlaceholderText("Location"), { target: { value: "   " } });
+    expect(screen.queryByRole("link", { name: "Open in Google Maps" })).not.toBeInTheDocument();
+  });
+
+  it("updates the map link when an existing event location is edited", () => {
+    expect.hasAssertions();
+    const { rerenderDialog } = renderDialog({
+      state: { event: createEvent({ location: "Roma" }), mode: "edit" },
+    });
+
+    expect(screen.getByRole("link", { name: "Open in Google Maps" })).toHaveAttribute(
+      "href",
+      "https://www.google.com/maps/search/?api=1&query=Roma",
+    );
+    fireEvent.change(screen.getByPlaceholderText("Location"), { target: { value: "Milano" } });
+    expect(screen.getByRole("link", { name: "Open in Google Maps" })).toHaveAttribute(
+      "href",
+      "https://www.google.com/maps/search/?api=1&query=Milano",
+    );
+    rerenderDialog({ state: { event: createEvent({ location: null }), mode: "edit" } });
+    expect(screen.queryByRole("link", { name: "Open in Google Maps" })).not.toBeInTheDocument();
+  });
+
+  it("offers the map link for a read-only attendee event", () => {
+    expect.hasAssertions();
+    renderDialog({
+      state: { event: createAttendeeEvent({ location: "Via Roma 10, Milano" }), mode: "edit" },
+    });
+
+    expect(screen.getByPlaceholderText("Location")).toBeDisabled();
+    expect(screen.getByRole("link", { name: "Open in Google Maps" })).toHaveAttribute(
+      "href",
+      "https://www.google.com/maps/search/?api=1&query=Via+Roma+10%2C+Milano",
+    );
+  });
+
+  it.each(["Via Roma \uD800, Milano", "Via Roma \uDC00, Milano"])(
+    "keeps the editor usable for malformed Unicode in the location: %j",
+    (location) => {
+      expect.hasAssertions();
+      renderDialog({ state: { event: createEvent({ location }), mode: "edit" } });
+
+      expect(screen.getByPlaceholderText("Location")).toHaveValue(location);
+      const link = screen.getByRole<HTMLAnchorElement>("link", { name: "Open in Google Maps" });
+      expect(new URL(link.href).searchParams.get("query")).toBe("Via Roma \uFFFD, Milano");
+    },
+  );
+
+  it("reports locations exceeding the Google Maps URL limit without truncating them", () => {
+    expect.hasAssertions();
+    const location = "東".repeat(223);
+    renderDialog({ state: { event: createEvent({ location }), mode: "edit" } });
+
+    expect(screen.queryByRole("link", { name: "Open in Google Maps" })).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Location is too long for Google Maps");
+    expect(screen.getByPlaceholderText("Location")).toHaveValue(location);
+  });
+
+  it("allows a 2048-character map URL and recovers when an oversized location is shortened", () => {
+    expect.hasAssertions();
+    const location = "A".repeat(2000);
+    renderDialog({ state: { event: createEvent({ location }), mode: "edit" } });
+    expect(
+      screen.getByRole<HTMLAnchorElement>("link", { name: "Open in Google Maps" }).href,
+    ).toHaveLength(2048);
+
+    const input = screen.getByPlaceholderText("Location");
+    fireEvent.change(input, { target: { value: `${location}A` } });
+    expect(screen.queryByRole("link", { name: "Open in Google Maps" })).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Location is too long for Google Maps");
+
+    fireEvent.change(input, { target: { value: "Roma" } });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open in Google Maps" })).toHaveAttribute(
+      "href",
+      "https://www.google.com/maps/search/?api=1&query=Roma",
+    );
+  });
+
+  it.each([
+    "javascript:alert(1)",
+    "https://evil.example/?api=0&query=other#fragment",
+    "45.4642,9.1900",
+    "📍 東京駅 + 50%",
+  ])("treats the location only as map search text: %j", (location) => {
+    expect.hasAssertions();
+    renderDialog({ state: { event: createEvent({ location }), mode: "edit" } });
+    const url = new URL(
+      screen.getByRole<HTMLAnchorElement>("link", { name: "Open in Google Maps" }).href,
+    );
+
+    expect({ origin: url.origin, pathname: url.pathname, hash: url.hash }).toStrictEqual({
+      origin: "https://www.google.com",
+      pathname: "/maps/search/",
+      hash: "",
+    });
+    expect(Object.fromEntries(url.searchParams)).toStrictEqual({ api: "1", query: location });
+  });
+
   it("lists and manages event attachments", async () => {
     expect.hasAssertions();
     const attachment = createAttachment();
