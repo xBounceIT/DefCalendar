@@ -164,6 +164,7 @@
     "noCalendarsHint": "Enable at least one Exchange calendar from the left sidebar to populate the view.",
     "moreEvents": "+{{count}}",
     "ownerTooltip": "You're the owner",
+    "onlineMeeting": "Online meeting",
     "copyEvent": "Copy event",
     "eventCopied": "Event copied"
   },

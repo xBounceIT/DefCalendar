@@ -6,7 +6,7 @@ import React from "react";
 import i18n from "i18next";
 import itTranslations from "../src/renderer/src/i18n/locales/it.json";
 import CalendarBoard from "../src/renderer/src/components/calendar-board";
-import type { CalendarView } from "../src/shared/schemas";
+import type { CalendarEvent, CalendarView } from "../src/shared/schemas";
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 
 let capturedCalendarProps: Record<string, unknown> | null = null;
@@ -172,10 +172,13 @@ async function renderBoard(language: "en" | "it") {
 }
 
 function renderCalendarEvent(options?: {
+  allDay?: boolean;
+  eventData?: Partial<CalendarEvent>;
   eventRect?: DOMRect;
   isOrganizer?: boolean;
   isReminderOn?: boolean;
   response?: null | string;
+  view?: CalendarView;
 }) {
   const eventRect = options?.eventRect ?? createRect();
   const isOrganizer = options?.isOrganizer ?? false;
@@ -193,6 +196,7 @@ function renderCalendarEvent(options?: {
   const eventMouseLeave = capturedCalendarProps?.eventMouseLeave as (() => void) | undefined;
 
   const event = {
+    allDay: options?.allDay ?? false,
     title: "Focus time",
     extendedProps: {
       eventData: {
@@ -204,6 +208,7 @@ function renderCalendarEvent(options?: {
               time: null,
             }
           : null,
+        ...options?.eventData,
       },
     },
   } as EventContentArg["event"];
@@ -213,6 +218,7 @@ function renderCalendarEvent(options?: {
       {eventContent({
         event,
         timeText: "9:00",
+        view: { type: options?.view ?? "dayGridMonth" },
       } as EventContentArg)}
     </>,
   );
@@ -252,6 +258,111 @@ function renderCalendarEvent(options?: {
 }
 
 describe("calendar board locale", () => {
+  it.each(["timeGridWeek", "timeGridDay"] as const)("renders event details in %s", async (view) => {
+    await renderBoard("it");
+
+    const { container, getByText } = renderCalendarEvent({
+      view,
+      eventData: {
+        location: " Sala riunioni ",
+        isOnlineMeeting: true,
+        organizer: {
+          name: " Giulia ",
+          email: "giulia@example.com",
+          response: null,
+          type: "required",
+        },
+        attendees: [{ name: null, email: "luca@example.com", response: null, type: "required" }],
+        bodyPreview: "  Revisione del progetto\n e prossimi passi.  ",
+      },
+    });
+
+    expect(container.querySelector(".calendar-event-content--detailed")).not.toBeNull();
+    getByText("Sala riunioni · Riunione online");
+    getByText("Organizzatore: Giulia");
+    getByText("Partecipanti: luca@example.com");
+    getByText("Revisione del progetto e prossimi passi.");
+  });
+
+  it.each([
+    { view: "dayGridMonth", allDay: false },
+    { view: "timeGridWeek", allDay: true },
+    { view: "timeGridDay", allDay: true },
+  ] as const)("keeps events compact in $view with allDay=$allDay", async (options) => {
+    await renderBoard("en");
+
+    const { container, queryByText } = renderCalendarEvent({
+      ...options,
+      eventData: { location: "Meeting room", bodyPreview: "Project review" },
+    });
+
+    expect(container.querySelector(".calendar-event-content--detailed")).toBeNull();
+    expect(queryByText("Meeting room")).toBeNull();
+    expect(queryByText("Project review")).toBeNull();
+  });
+
+  it("omits empty details and renders online meetings in English", async () => {
+    expect.hasAssertions();
+    await renderBoard("en");
+
+    const { container, getByText } = renderCalendarEvent({
+      view: "timeGridDay",
+      eventData: {
+        location: " ",
+        bodyPreview: "\n ",
+        attendees: [],
+        organizer: null,
+        isOnlineMeeting: true,
+      },
+    });
+
+    getByText("Online meeting");
+    expect(container.querySelector(".calendar-event-content__people")).toBeNull();
+    expect(container.querySelector(".calendar-event-content__preview")).toBeNull();
+  });
+
+  it("omits participant rows containing only whitespace or null values", async () => {
+    expect.hasAssertions();
+    await renderBoard("en");
+
+    const { container } = renderCalendarEvent({
+      view: "timeGridDay",
+      eventData: {
+        organizer: { name: " ", email: "\n ", response: null, type: "required" },
+        attendees: [
+          { name: "\t ", email: " ", response: null, type: "required" },
+          { name: null, email: null, response: null, type: "required" },
+        ],
+      },
+    });
+
+    expect(container.querySelector(".calendar-event-content__participants")).toBeNull();
+  });
+
+  it("trims email fallbacks and removes unnamed participants from the list", async () => {
+    expect.hasAssertions();
+    await renderBoard("en");
+
+    const { getByText } = renderCalendarEvent({
+      view: "timeGridWeek",
+      eventData: {
+        organizer: { name: " ", email: " giulia@example.com ", response: null, type: "required" },
+        attendees: [
+          { name: " ", email: " ", response: null, type: "required" },
+          { name: null, email: " luca@example.com ", response: null, type: "required" },
+          { name: " Sara ", email: null, response: null, type: "required" },
+        ],
+      },
+    });
+
+    expect(getByText("Organizer: giulia@example.com").textContent).toBe(
+      "Organizer: giulia@example.com",
+    );
+    expect(getByText("Attendees: luca@example.com, Sara").textContent).toBe(
+      "Attendees: luca@example.com, Sara",
+    );
+  });
+
   it("passes the Italian locale and translated all-day label", async () => {
     await renderBoard("it");
 

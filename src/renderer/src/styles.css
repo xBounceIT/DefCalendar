@@ -2339,6 +2339,250 @@ button {
   white-space: nowrap;
 }
 
+.fc .fc-timegrid-event .fc-event-main {
+  container-name: calendar-event;
+  container-type: size;
+}
+
+.calendar-event-content--detailed {
+  height: 100%;
+  overflow: hidden;
+  gap: 4px;
+}
+
+.calendar-event-card {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  height: 100%;
+  min-width: 0;
+}
+
+.calendar-event-card__body {
+  container-name: calendar-event;
+  container-type: size;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.calendar-event-content__join-btn {
+  display: none;
+  flex: 0 0 22px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 22px;
+  min-width: 0;
+  padding: 2px 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.calendar-event-content__join-btn > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-event-content__join-btn > img {
+  flex: 0 0 auto;
+}
+
+.calendar-event-content__join-btn--header {
+  flex: 0 0 auto;
+  max-width: 40%;
+  margin-left: 3px;
+}
+
+.calendar-event-content__join-btn:hover {
+  background: var(--fill-hover);
+}
+
+.calendar-event-content__join-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@container calendar-event (min-height: 40px) {
+  .calendar-event-content__join-btn {
+    display: inline-flex;
+  }
+}
+
+.calendar-event-content__header {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 55%;
+  gap: 3px;
+}
+
+.calendar-event-content__header > .fc-event-time {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0;
+}
+
+.calendar-event-content--detailed .fc-event-time::after {
+  content: none;
+}
+
+.calendar-event-content__metadata {
+  display: contents;
+}
+
+.calendar-event-content__detail,
+.calendar-event-content__participants,
+.calendar-event-content__preview {
+  display: none;
+  color: var(--ink-secondary);
+  font-size: 11px;
+  user-select: text;
+}
+
+@container calendar-event (min-height: 40px) {
+  .calendar-event-content--detailed {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 2px;
+  }
+
+  .calendar-event-content__header {
+    flex: 0 0 auto;
+    min-height: 20px;
+    max-width: none;
+  }
+
+  .calendar-event-content__header > .fc-event-time {
+    margin-right: auto;
+  }
+
+  .calendar-event-content--detailed > .fc-event-title {
+    flex: 0 0 auto;
+    min-height: 1lh;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 1;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    font-weight: 500;
+  }
+}
+
+@container calendar-event (min-height: 70px) {
+  .calendar-event-content--detailed > .fc-event-title {
+    -webkit-line-clamp: 2;
+  }
+}
+
+@container calendar-event (min-height: 96px) {
+  .calendar-event-content--detailed > .fc-event-title {
+    -webkit-line-clamp: 3;
+  }
+}
+
+@container calendar-event (min-height: 56px) {
+  .calendar-event-content__location {
+    display: block;
+  }
+}
+
+@container calendar-event (min-height: 120px) {
+  .calendar-event-content__participants {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+}
+
+@container calendar-event (min-width: 400px) and (min-height: 84px) {
+  .calendar-event-content--detailed > .fc-event-title {
+    -webkit-line-clamp: 1;
+  }
+
+  .calendar-event-content__metadata {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: baseline;
+    min-width: 0;
+    gap: 12px;
+  }
+
+  .calendar-event-content__metadata > .calendar-event-content__location {
+    flex: 0 1 auto;
+    max-width: 33%;
+  }
+
+  .calendar-event-content__metadata > .calendar-event-content__participants {
+    display: flex;
+    flex-direction: row;
+    flex: 1 1 auto;
+    gap: 12px;
+  }
+
+  .calendar-event-content__participants > .calendar-event-content__people {
+    flex: 0 1 auto;
+  }
+}
+
+@container calendar-event (min-width: 400px) and (min-height: 86px) {
+  .calendar-event-content--detailed > .fc-event-title {
+    -webkit-line-clamp: 2;
+  }
+}
+
+@container calendar-event (min-width: 400px) and (min-height: 120px) {
+  .calendar-event-content--detailed > .fc-event-title {
+    -webkit-line-clamp: 3;
+  }
+}
+
+@container calendar-event (min-height: 150px) or ((min-width: 400px) and (min-height: 84px)) {
+  .calendar-event-content__preview {
+    display: block;
+    flex: 1 1 auto;
+    min-height: 1lh;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    container-type: size;
+  }
+}
+
+.calendar-event-content__preview-text {
+  display: block;
+  max-height: round(down, 100cqh, 1lh);
+  overflow: hidden;
+}
+
+.calendar-event-content__detail {
+  flex: 0 0 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-event-content__participants {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.calendar-event-content__people {
+  display: block;
+  min-width: 0;
+}
+
 .calendar-event-tooltip {
   position: fixed;
   z-index: 3000;
