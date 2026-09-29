@@ -8,6 +8,7 @@ import type {
   ContactSuggestion,
   EventAttachment,
   EventListArgs,
+  UserSettings,
 } from "@shared/schemas";
 import {
   appUpdateStatusSchema,
@@ -36,6 +37,8 @@ import {
   syncStatusSchema,
   type ThemeSetting,
   userSettingsPatchSchema,
+  userSettingsSchema,
+  spellcheckWordSchema,
 } from "@shared/schemas";
 import { visualThemeSchema } from "@shared/theme";
 import type AppDatabase from "@main/db/database";
@@ -47,6 +50,7 @@ import type NewEventNotificationService from "@main/notifications/new-event-noti
 import type ReminderService from "@main/reminders/reminder-service";
 import type ReminderWindowManager from "@main/reminders/reminder-window";
 import type SettingsService from "@main/settings/settings-service";
+import { applySpellcheckSettings, getSpellcheckDictionaryStates } from "@main/spellcheck";
 import type SystemInviteNotificationService from "@main/notifications/system-invite-notification-service";
 import type TaskbarInviteAttentionService from "@main/notifications/taskbar-invite-attention-service";
 import type { SyncService } from "@main/sync/sync-service";
@@ -617,8 +621,34 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   ipcMain.handle(IPC_CHANNELS.settingsUpdate, async (event, input) => {
     validateMainSender(event);
     const patch = userSettingsPatchSchema.parse(input);
+    const spellingSession = dependencies.getMainWindow()!.webContents.session;
+    if (patch.spellcheckLanguages && process.platform !== "darwin") {
+      if (
+        patch.spellcheckLanguages.some(
+          (language) => !spellingSession.availableSpellCheckerLanguages.includes(language),
+        )
+      ) {
+        throw new Error("Unsupported spelling dictionary.");
+      }
+    }
     const previousSettings = dependencies.settings.getSettings();
-    const updatedSettings = dependencies.settings.updateSettings(patch);
+    const spellingChanged =
+      patch.spellcheckEnabled !== undefined || patch.spellcheckLanguages !== undefined;
+    let updatedSettings: UserSettings;
+    try {
+      if (spellingChanged) {
+        applySpellcheckSettings(
+          spellingSession,
+          userSettingsSchema.parse({ ...previousSettings, ...patch }),
+        );
+      }
+      updatedSettings = dependencies.settings.updateSettings(patch);
+    } catch (error) {
+      if (spellingChanged) {
+        applySpellcheckSettings(spellingSession, previousSettings);
+      }
+      throw error;
+    }
 
     if (
       patch.updateChannel !== undefined &&
@@ -642,6 +672,35 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     dependencies.systemInviteNotifications.refresh();
     dependencies.taskbarInviteAttention.refresh();
     return updatedSettings;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.spellcheckGetDictionaries, async (event) => {
+    validateMainSender(event);
+    const session = dependencies.getMainWindow()!.webContents.session;
+    return {
+      availableLanguages: session.availableSpellCheckerLanguages,
+      customWords: await session.listWordsInSpellCheckerDictionary(),
+      usesSystemLanguages: process.platform === "darwin",
+      dictionaryStates: getSpellcheckDictionaryStates(session),
+    };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.spellcheckAddWord, async (event, input) => {
+    validateMainSender(event);
+    const word = spellcheckWordSchema.parse(input);
+    if (!dependencies.getMainWindow()!.webContents.session.addWordToSpellCheckerDictionary(word)) {
+      throw new Error("Could not add word to dictionary.");
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.spellcheckRemoveWord, async (event, input) => {
+    validateMainSender(event);
+    const word = spellcheckWordSchema.parse(input);
+    if (
+      !dependencies.getMainWindow()!.webContents.session.removeWordFromSpellCheckerDictionary(word)
+    ) {
+      throw new Error("Could not remove word from dictionary.");
+    }
   });
 
   ipcMain.handle(IPC_CHANNELS.reminderGetState, async (event) => {

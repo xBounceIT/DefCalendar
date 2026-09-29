@@ -227,6 +227,17 @@ function getCalendarDateClickHandler(): (arg: DateClickArg) => void {
 
 function createCalendarApiMock(): CalendarApi {
   return {
+    spellcheck: {
+      onDictionaryStatesChanged: vi.fn().mockReturnValue(() => undefined),
+      addWord: vi.fn().mockResolvedValue(undefined),
+      getDictionaries: vi.fn().mockResolvedValue({
+        availableLanguages: ["en-US", "it"],
+        dictionaryStates: { "en-US": "ready", it: "ready" },
+        customWords: [],
+        usesSystemLanguages: false,
+      }),
+      removeWord: vi.fn(),
+    },
     app: {
       getLocale: vi.fn().mockResolvedValue("en-US"),
       getVersion: vi.fn().mockResolvedValue("v0.1.0"),
@@ -333,6 +344,17 @@ function createCalendarApiMock(): CalendarApi {
 
 function createSignedInCalendarApiMock(): CalendarApi {
   return {
+    spellcheck: {
+      onDictionaryStatesChanged: vi.fn().mockReturnValue(() => undefined),
+      addWord: vi.fn().mockResolvedValue(undefined),
+      getDictionaries: vi.fn().mockResolvedValue({
+        availableLanguages: ["en-US", "it"],
+        dictionaryStates: { "en-US": "ready", it: "ready" },
+        customWords: [],
+        usesSystemLanguages: false,
+      }),
+      removeWord: vi.fn(),
+    },
     app: {
       getLocale: vi.fn().mockResolvedValue("en-US"),
       getVersion: vi.fn().mockResolvedValue("v0.1.0"),
@@ -502,6 +524,17 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
       getLocale: vi.fn().mockResolvedValue("en-US"),
       getVersion: vi.fn().mockResolvedValue("v0.1.0"),
       setLocale: vi.fn().mockResolvedValue(undefined),
+    },
+    spellcheck: {
+      onDictionaryStatesChanged: vi.fn().mockReturnValue(() => undefined),
+      addWord: vi.fn().mockResolvedValue(undefined),
+      getDictionaries: vi.fn().mockResolvedValue({
+        availableLanguages: ["en-US", "it"],
+        dictionaryStates: { "en-US": "ready", it: "ready" },
+        customWords: [],
+        usesSystemLanguages: false,
+      }),
+      removeWord: vi.fn(),
     },
     auth: {
       getState: vi.fn().mockImplementation(() => {
@@ -696,6 +729,103 @@ function createDelayedAuthRefreshCalendarApiMock(): CalendarApi {
 }
 
 describe("app startup", () => {
+  it("rolls back a failed spelling save and exposes the error in settings", async () => {
+    expect.hasAssertions();
+    try {
+      installResizeObserverMock();
+      const api = createSignedInCalendarApiMock();
+      const settings = {
+        ...createDefaultSettings(),
+        language: "en" as const,
+        spellcheckOnboardingSeen: true,
+        visibleCalendarIds: ["calendar-1"],
+      };
+      api.settings.get = vi.fn().mockResolvedValue(settings);
+      api.settings.update = vi.fn((patch: Partial<typeof settings>) =>
+        patch.spellcheckEnabled !== undefined
+          ? Promise.reject(new Error("Save failed"))
+          : Promise.resolve({ ...settings, ...patch }),
+      );
+      installCalendarApi(api);
+      renderApp();
+      fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+      fireEvent.click(screen.getByRole("button", { name: "Spelling" }));
+      fireEvent.click(await screen.findByRole("checkbox", { name: "Enable spell check" }));
+      await screen.findByText("Could not save your preference. Please try again.");
+      expect(
+        (screen.getByRole("checkbox", { name: "Enable spell check" }) as HTMLInputElement).checked,
+      ).toBe(true);
+      expect(api.settings.update).toHaveBeenCalledWith({ spellcheckEnabled: false });
+    } finally {
+      restoreResizeObserver();
+      restoreCalendarApi();
+    }
+  });
+  it("persists the spelling introduction once and opens dictionary settings", async () => {
+    expect.hasAssertions();
+    try {
+      installResizeObserverMock();
+      const api = createSignedInCalendarApiMock();
+      const settings = {
+        ...createDefaultSettings(),
+        language: "en" as const,
+        visibleCalendarIds: ["calendar-1"],
+      };
+      api.settings.get = vi.fn().mockResolvedValue(settings);
+      api.settings.update = vi
+        .fn()
+        .mockResolvedValue({ ...settings, spellcheckOnboardingSeen: true });
+      api.spellcheck = {
+        onDictionaryStatesChanged: vi.fn().mockReturnValue(() => undefined),
+        addWord: vi.fn(),
+        getDictionaries: vi.fn().mockResolvedValue({
+          availableLanguages: ["en-US", "it"],
+          dictionaryStates: { "en-US": "ready", it: "ready" },
+          customWords: [],
+          usesSystemLanguages: false,
+        }),
+        removeWord: vi.fn(),
+      };
+      installCalendarApi(api);
+      const view = renderApp();
+      await screen.findByRole("dialog", { name: "Spelling suggestions are here" });
+      fireEvent.click(screen.getByRole("button", { name: "Manage dictionaries" }));
+      await screen.findByRole("checkbox", { name: "Enable spell check" });
+      expect(api.settings.update).toHaveBeenCalledWith({ spellcheckOnboardingSeen: true });
+      expect(screen.queryByRole("dialog", { name: "Spelling suggestions are here" })).toBeNull();
+      view.unmount();
+      api.settings.get = vi.fn().mockResolvedValue({ ...settings, spellcheckOnboardingSeen: true });
+      renderApp();
+      await screen.findByRole("button", { name: "Settings" });
+      expect(screen.queryByRole("dialog", { name: "Spelling suggestions are here" })).toBeNull();
+    } finally {
+      restoreResizeObserver();
+      restoreCalendarApi();
+    }
+  });
+
+  it("keeps the introduction open when saving fails", async () => {
+    expect.hasAssertions();
+    try {
+      installResizeObserverMock();
+      const api = createSignedInCalendarApiMock();
+      api.settings.get = vi.fn().mockResolvedValue({
+        ...createDefaultSettings(),
+        language: "en",
+        visibleCalendarIds: ["calendar-1"],
+      });
+      api.settings.update = vi.fn().mockRejectedValue(new Error("Save failed"));
+      installCalendarApi(api);
+      renderApp();
+      fireEvent.click(await screen.findByRole("button", { name: "Got it" }));
+      await screen.findByText("Could not save your preference. Please try again.");
+      expect(screen.getByRole("dialog", { name: "Spelling suggestions are here" })).not.toBeNull();
+      expect(screen.getByRole("button", { name: "Got it" }).hasAttribute("disabled")).toBe(false);
+    } finally {
+      restoreResizeObserver();
+      restoreCalendarApi();
+    }
+  });
   it("renders the Exchange auth screen when the preload bridge is available", async () => {
     try {
       installResizeObserverMock();

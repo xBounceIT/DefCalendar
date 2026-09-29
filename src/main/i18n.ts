@@ -1,6 +1,9 @@
 type AppLocale = "en" | "it";
 
 interface MainTranslations {
+  spellingNoSuggestions: string;
+  spellingAddToDictionary: string;
+  spellingAddWordError: string;
   trayTooltip: string;
   showApp: string;
   refreshNow: string;
@@ -24,6 +27,9 @@ interface MainTranslations {
 
 const translations: Record<AppLocale, MainTranslations> = {
   en: {
+    spellingNoSuggestions: "No spelling suggestions",
+    spellingAddToDictionary: "Add to dictionary",
+    spellingAddWordError: "Could not add the word to your personal dictionary. Please try again.",
     trayTooltip: "DefCalendar",
     showApp: "Show DefCalendar",
     refreshNow: "Refresh Now",
@@ -45,6 +51,9 @@ const translations: Record<AppLocale, MainTranslations> = {
     syncFailed: "Exchange 365 sync failed.",
   },
   it: {
+    spellingNoSuggestions: "Nessun suggerimento ortografico",
+    spellingAddToDictionary: "Aggiungi al dizionario",
+    spellingAddWordError: "Impossibile aggiungere la parola al dizionario personale. Riprova.",
     trayTooltip: "DefCalendar",
     showApp: "Mostra DefCalendar",
     refreshNow: "Aggiorna ora",

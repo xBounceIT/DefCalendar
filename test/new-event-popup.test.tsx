@@ -91,6 +91,12 @@ function createCalendarEvent(overrides: Partial<CalendarEvent> = {}): CalendarEv
 
 function installCalendarApi(items: NewEventNotificationItem[]): CalendarApi {
   const calendarApi = {
+    spellcheck: {
+      onDictionaryStatesChanged: vi.fn().mockReturnValue(() => undefined),
+      addWord: vi.fn().mockResolvedValue(undefined),
+      getDictionaries: vi.fn(),
+      removeWord: vi.fn(),
+    },
     app: {
       getLocale: vi.fn().mockResolvedValue("en-US"),
       getVersion: vi.fn().mockResolvedValue("v0.1.0"),

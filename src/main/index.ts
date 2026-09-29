@@ -9,6 +9,7 @@ import ReminderService from "@main/reminders/reminder-service";
 import ReminderWindowManager from "@main/reminders/reminder-window";
 import SafeStorageTokenCache from "@main/auth/cache-plugin";
 import SettingsService from "@main/settings/settings-service";
+import { applySpellcheckSettings } from "@main/spellcheck";
 import { SyncService } from "@main/sync/sync-service";
 import SystemInviteNotificationService from "@main/notifications/system-invite-notification-service";
 import TaskbarInviteAttentionService from "@main/notifications/taskbar-invite-attention-service";
@@ -128,6 +129,7 @@ async function bootstrap(): Promise<void> {
   const ensureWindow = () => {
     if (!mainWindow || mainWindow.isDestroyed()) {
       mainWindow = createMainWindow(resolveCurrentVisualTheme());
+      applySpellcheckSettings(mainWindow.webContents.session, settings.getSettings());
       mainWindow.on("close", (event) => {
         if (!shouldQuit) {
           event.preventDefault();

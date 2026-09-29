@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import EventActionService from "../src/main/events/event-action-service";
 import registerIpc from "../src/main/ipc/register-ipc";
 import { IPC_CHANNELS } from "../src/shared/ipc";
+import { createDefaultSettings } from "../src/shared/schemas";
 
 const { app, dialog, ipcMain, shell } = vi.hoisted(() => ({
   app: {
@@ -108,7 +109,16 @@ function createFixture() {
     string,
     (event: { sender: unknown }, input?: unknown) => Promise<unknown>
   >();
-  const mainWebContents = { send: vi.fn() };
+  const spellingSession = {
+    on: vi.fn(),
+    addWordToSpellCheckerDictionary: vi.fn().mockReturnValue(true),
+    availableSpellCheckerLanguages: ["en-US", "it", "fr"],
+    listWordsInSpellCheckerDictionary: vi.fn().mockResolvedValue(["DefCalendar"]),
+    removeWordFromSpellCheckerDictionary: vi.fn().mockReturnValue(true),
+    setSpellCheckerLanguages: vi.fn(),
+    setSpellCheckerEnabled: vi.fn(),
+  };
+  const mainWebContents = { send: vi.fn(), session: spellingSession };
   const reminderWebContents = {};
   const mainWindow = {
     focus: vi.fn(),
@@ -212,6 +222,7 @@ function createFixture() {
   };
   const settings = {
     getSettings: vi.fn().mockReturnValue({
+      ...createDefaultSettings(),
       newEventPopupEnabled: false,
       systemInviteNotificationsEnabled: false,
       taskbarInviteNotificationsEnabled: false,
@@ -219,6 +230,7 @@ function createFixture() {
       visibleCalendarIds: [],
     }),
     updateSettings: vi.fn((patch: Record<string, unknown>) => ({
+      ...createDefaultSettings(),
       newEventPopupEnabled: false,
       systemInviteNotificationsEnabled: false,
       taskbarInviteNotificationsEnabled: false,
@@ -280,6 +292,7 @@ function createFixture() {
 
   return {
     auth,
+    settings,
     db,
     graph,
     handlers,
@@ -296,6 +309,39 @@ function createFixture() {
 }
 
 describe("register ipc", () => {
+  it("does not persist spelling settings when a native setter fails", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    fixture.mainWebContents.session.setSpellCheckerEnabled.mockImplementationOnce(() => {
+      throw new Error("Native setter failed");
+    });
+    await expect(
+      fixture.handlers.get(IPC_CHANNELS.settingsUpdate)!(
+        { sender: fixture.mainWebContents },
+        { spellcheckEnabled: false },
+      ),
+    ).rejects.toThrow("Native setter failed");
+    expect(fixture.settings.updateSettings).not.toHaveBeenCalled();
+    expect(fixture.mainWebContents.session.setSpellCheckerEnabled).toHaveBeenLastCalledWith(true);
+  });
+
+  it("restores native spelling settings when persistence fails", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    fixture.settings.updateSettings.mockImplementationOnce(() => {
+      throw new Error("Database write failed");
+    });
+    await expect(
+      fixture.handlers.get(IPC_CHANNELS.settingsUpdate)!(
+        { sender: fixture.mainWebContents },
+        { spellcheckEnabled: false },
+      ),
+    ).rejects.toThrow("Database write failed");
+    expect(fixture.mainWebContents.session.setSpellCheckerEnabled.mock.calls).toStrictEqual([
+      [false],
+      [true],
+    ]);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -347,6 +393,80 @@ describe("register ipc", () => {
       { email: "coworker@example.com", status: "unknown", error: "requestFailed" },
     ]);
   });
+
+  it("lists and removes dictionary words only for the main window", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const event = { sender: fixture.mainWebContents };
+    const get = fixture.handlers.get(IPC_CHANNELS.spellcheckGetDictionaries)!;
+    const remove = fixture.handlers.get(IPC_CHANNELS.spellcheckRemoveWord)!;
+    await expect(get(event)).resolves.toMatchObject({
+      availableLanguages: ["en-US", "it", "fr"],
+      customWords: ["DefCalendar"],
+    });
+    await remove(event, "DefCalendar");
+    expect(
+      fixture.mainWebContents.session.removeWordFromSpellCheckerDictionary,
+    ).toHaveBeenCalledWith("DefCalendar");
+    await expect(get({ sender: {} })).rejects.toThrow("untrusted sender");
+    await expect(remove({ sender: {} }, "DefCalendar")).rejects.toThrow("untrusted sender");
+    await expect(remove(event, "two words")).rejects.toThrow();
+  });
+
+  it("adds dictionary words through the main window and reports native failures", async () => {
+    const fixture = createFixture();
+    const add = fixture.handlers.get(IPC_CHANNELS.spellcheckAddWord)!;
+    const nativeAdd = fixture.mainWebContents.session.addWordToSpellCheckerDictionary;
+    const event = { sender: fixture.mainWebContents };
+    await expect(add(event, "  CaffèTech  ")).resolves.toBeUndefined();
+    expect(nativeAdd).toHaveBeenCalledWith("CaffèTech");
+    nativeAdd.mockClear();
+    await expect(add({ sender: {} }, "Contoso")).rejects.toThrow("untrusted sender");
+    expect(nativeAdd).not.toHaveBeenCalled();
+    nativeAdd.mockReturnValue(false);
+    await expect(add(event, "Contoso")).rejects.toThrow("Could not add word to dictionary");
+  });
+
+  it.each([
+    "",
+    "   ",
+    "two words",
+    "two\nwords",
+    "bad\u0000word",
+    "bad\u0007word",
+    "x".repeat(257),
+    null,
+    123,
+  ])("rejects invalid dictionary input %j before calling the native API", async (input) => {
+    const fixture = createFixture();
+    const add = fixture.handlers.get(IPC_CHANNELS.spellcheckAddWord)!;
+    await expect(add({ sender: fixture.mainWebContents }, input)).rejects.toThrow();
+    expect(fixture.mainWebContents.session.addWordToSpellCheckerDictionary).not.toHaveBeenCalled();
+  });
+
+  it("applies saved spelling preferences immediately and rejects unsupported dictionaries", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const update = fixture.handlers.get(IPC_CHANNELS.settingsUpdate)!;
+    const event = { sender: fixture.mainWebContents };
+    await update(event, { spellcheckLanguages: ["it"], spellcheckEnabled: false });
+    expect(fixture.mainWebContents.session.setSpellCheckerEnabled).toHaveBeenCalledWith(false);
+    expect(fixture.mainWebContents.session.setSpellCheckerLanguages.mock.calls).toStrictEqual(
+      process.platform === "darwin" ? [] : [[["it"]]],
+    );
+  });
+
+  it.skipIf(process.platform === "darwin")(
+    "rejects unsupported language dictionaries",
+    async () => {
+      expect.hasAssertions();
+      const fixture = createFixture();
+      const update = fixture.handlers.get(IPC_CHANNELS.settingsUpdate)!;
+      await expect(
+        update({ sender: fixture.mainWebContents }, { spellcheckLanguages: ["xx"] }),
+      ).rejects.toThrow("Unsupported spelling dictionary");
+    },
+  );
 
   it("ensures the requested event range before listing cached events", async () => {
     expect.hasAssertions();

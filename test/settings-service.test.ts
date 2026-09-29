@@ -29,6 +29,21 @@ function createSettingsFixture(visibleCalendarIds: string[]): SettingsFixture {
 }
 
 describe("settings service", () => {
+  it("persists spelling preferences and onboarding without changing calendar preferences", () => {
+    expect.hasAssertions();
+    const fixture = createSettingsFixture(["calendar-a"]);
+    fixture.service.updateSettings({
+      spellcheckEnabled: false,
+      spellcheckLanguages: ["it"],
+      spellcheckOnboardingSeen: true,
+    });
+    expect(fixture.readSettings()).toMatchObject({
+      spellcheckEnabled: false,
+      spellcheckLanguages: ["it"],
+      spellcheckOnboardingSeen: true,
+      visibleCalendarIds: ["calendar-a"],
+    });
+  });
   it("keeps user-hidden calendars hidden across sync", () => {
     const fixture = createSettingsFixture(["calendar-a"]);
 

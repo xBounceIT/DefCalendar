@@ -76,6 +76,10 @@ export const IPC_CHANNELS = {
   updatesStatusChanged: "updates:status-changed",
   settingsGet: "settings:get",
   settingsUpdate: "settings:update",
+  spellcheckGetDictionaries: "spellcheck:get-dictionaries",
+  spellcheckAddWord: "spellcheck:add-word",
+  spellcheckRemoveWord: "spellcheck:remove-word",
+  spellcheckDictionaryStatesChanged: "spellcheck:dictionary-states-changed",
   windowSetTitleBarScrim: "window:set-title-bar-scrim",
   reminderGetState: "reminder:get-state",
   reminderStateChanged: "reminder:state-changed",
@@ -89,7 +93,25 @@ export const IPC_CHANNELS = {
   newEventNotificationsDismissAll: "new-event-notifications:dismiss-all",
 } as const;
 
+type SpellcheckDictionaryState = "downloading" | "ready" | "failed";
+type SpellcheckDictionaryStates = Record<string, SpellcheckDictionaryState>;
+
+interface SpellcheckDictionaries {
+  availableLanguages: string[];
+  dictionaryStates: SpellcheckDictionaryStates;
+  customWords: string[];
+  usesSystemLanguages: boolean;
+}
+
 interface CalendarApi {
+  spellcheck: {
+    getDictionaries: () => Promise<SpellcheckDictionaries>;
+    addWord: (word: string) => Promise<void>;
+    removeWord: (word: string) => Promise<void>;
+    onDictionaryStatesChanged: (
+      listener: (states: SpellcheckDictionaryStates) => void,
+    ) => () => void;
+  };
   app: {
     getLocale: () => Promise<string>;
     getVersion: () => Promise<string>;
@@ -168,6 +190,9 @@ interface CalendarApi {
 }
 
 export {
+  type SpellcheckDictionaries,
+  type SpellcheckDictionaryState,
+  type SpellcheckDictionaryStates,
   type CalendarApi,
   type EventAttachment,
   type EventResponseAction,
