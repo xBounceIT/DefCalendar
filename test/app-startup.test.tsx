@@ -901,6 +901,51 @@ describe("app startup", () => {
     }
   });
 
+  it("preserves native title copying and only copies the whole event without selected text", async () => {
+    expect.hasAssertions();
+    try {
+      installResizeObserverMock();
+      const calendarApi = createSignedInCalendarApiMock();
+      const event = createCalendarEvent({ isOrganizer: false });
+      let openInAppListener: ((event: CalendarEvent) => void) | null = null;
+      vi.spyOn(calendarApi.events, "onOpenInApp").mockImplementation((listener) => {
+        openInAppListener = listener;
+        return () => undefined;
+      });
+      installCalendarApi(calendarApi);
+      renderApp();
+
+      await screen.findByTestId("mock-calendar");
+      act(() => {
+        openInAppListener?.(event);
+      });
+
+      const subject = await screen.findByDisplayValue<HTMLInputElement>(event.subject);
+      expect(subject).toMatchObject({ disabled: false, readOnly: true });
+      subject.focus();
+      subject.setSelectionRange(0, subject.value.length);
+      expect(fireEvent.keyDown(subject, { key: "c", ctrlKey: true })).toBe(true);
+
+      const selection = globalThis.getSelection()!;
+      const range = document.createRange();
+      range.selectNodeContents(screen.getByRole("dialog"));
+      selection.removeAllRanges();
+      selection.addRange(range);
+      expect(selection.toString()).not.toBe("");
+      expect([
+        fireEvent.keyDown(document.body, { key: "c", ctrlKey: true }),
+        fireEvent.keyDown(document.body, { key: "c", metaKey: true }),
+      ]).toEqual([true, true]);
+
+      selection.removeAllRanges();
+      expect(fireEvent.keyDown(document.body, { key: "c", ctrlKey: true })).toBe(false);
+    } finally {
+      globalThis.getSelection()?.removeAllRanges();
+      restoreCalendarApi();
+      restoreResizeObserver();
+    }
+  });
+
   it("checks recurring accept conflicts across the widened series lookup range", async () => {
     try {
       vi.useFakeTimers({ shouldAdvanceTime: true });

@@ -2,6 +2,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import type { CalendarEvent, UserSettings } from "@shared/schemas";
 import { formatLocalizedDate } from "../date-formatting";
+import hasSelectedTextWithin from "../text-selection";
 import { MeetingIcon } from "./meeting-icon";
 
 type SortColumn = "start" | "end" | "title" | "category";
@@ -635,8 +636,10 @@ function DayEventsTable({
     });
   };
 
-  const handleRowClick = (event: CalendarEvent) => {
-    onEventClick(event);
+  const handleRowClick = (event: CalendarEvent, row: HTMLTableRowElement) => {
+    if (!hasSelectedTextWithin(row)) {
+      onEventClick(event);
+    }
   };
 
   if (!selectedDay) {
@@ -774,7 +777,7 @@ function DayEventsTable({
                   <tr
                     className={rowClassName}
                     key={`${event.calendarId}:${event.id}`}
-                    onClick={() => handleRowClick(event)}
+                    onClick={(click) => handleRowClick(event, click.currentTarget)}
                     ref={index === 0 ? firstRowRef : undefined}
                   >
                     <td className="day-events-table__td">

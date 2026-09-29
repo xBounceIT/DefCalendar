@@ -198,6 +198,31 @@ describe("eventSearchDialog query lifecycle", () => {
     });
   });
 
+  it("preserves a selected result title for copying", async () => {
+    expect.hasAssertions();
+    searchMock.mockResolvedValue([createEvent()]);
+    const { onSelect } = renderDialog();
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "stand" } });
+    const title = await screen.findByText("Standup");
+    title.closest("li")?.focus();
+    const selection = globalThis.getSelection()!;
+    const range = document.createRange();
+    range.selectNodeContents(title);
+    selection.removeAllRanges();
+    selection.addRange(range);
+
+    try {
+      fireEvent.click(title);
+      expect(onSelect).not.toHaveBeenCalled();
+      expect(selection.toString()).toBe("Standup");
+      selection.removeAllRanges();
+      fireEvent.click(title);
+      expect(onSelect).toHaveBeenCalledOnce();
+    } finally {
+      selection.removeAllRanges();
+    }
+  });
+
   it("calls onSelect when a result row is clicked", async () => {
     const event = createEvent({ subject: "Demo" });
     searchMock.mockResolvedValue([event]);
