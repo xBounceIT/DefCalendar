@@ -10,7 +10,7 @@ import App from "../src/renderer/src/app";
 import useUiStore from "../src/renderer/src/store";
 import { createDefaultSettings } from "../src/shared/schema-values";
 import type { CalendarApi, NewEventNotificationItem } from "../src/shared/ipc";
-import type { CalendarEvent, EventListArgs } from "../src/shared/schemas";
+import type { CalendarEvent, EventListArgs, UserSettingsPatch } from "../src/shared/schemas";
 
 interface MockedCalendarModule {
   default: unknown;
@@ -741,7 +741,7 @@ describe("app startup", () => {
         visibleCalendarIds: ["calendar-1"],
       };
       api.settings.get = vi.fn().mockResolvedValue(settings);
-      api.settings.update = vi.fn((patch: Partial<typeof settings>) =>
+      api.settings.update = vi.fn((patch: UserSettingsPatch) =>
         patch.spellcheckEnabled !== undefined
           ? Promise.reject(new Error("Save failed"))
           : Promise.resolve({ ...settings, ...patch }),
