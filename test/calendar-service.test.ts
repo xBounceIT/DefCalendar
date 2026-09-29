@@ -44,11 +44,12 @@ function createGraphEvent(overrides?: Record<string, unknown>) {
   };
 }
 
-function createService() {
+function createService(authOverrides: Record<string, unknown> = {}) {
   const auth = {
     getAccessToken: vi.fn().mockResolvedValue("token"),
     getAccessTokenForAccount: vi.fn().mockResolvedValue("token"),
     getAccountUsername: vi.fn().mockReturnValue("attendee@example.com"),
+    ...authOverrides,
   };
 
   return new GraphCalendarService(
@@ -463,6 +464,355 @@ describe("graph calendar service response normalization", () => {
 });
 
 describe("graph calendar service request handling", () => {
+  it("stops consuming an oversized photo before the whole response is downloaded", async () => {
+    const cancel = vi.fn();
+    let chunks = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          new ReadableStream({
+            pull(controller) {
+              chunks += 1;
+              controller.enqueue(new Uint8Array(1024 * 1024));
+              if (chunks === 8) controller.close();
+            },
+            cancel,
+          }),
+          { headers: { "Content-Type": "image/jpeg" } },
+        ),
+      ),
+    );
+    await expect(
+      createService().getContactPhoto("account-1", { email: "alice@example.com", name: "Alice" }),
+    ).resolves.toBeNull();
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(chunks).toBeLessThan(8);
+  });
+
+  it("bounds concurrent and queued photo loads and retries dropped contacts", async () => {
+    let releaseRequests = false;
+    let activeRequests = 0;
+    let peakRequests = 0;
+    const pending: (() => void)[] = [];
+    const fetchMock = vi.fn().mockImplementation(() => {
+      activeRequests += 1;
+      peakRequests = Math.max(peakRequests, activeRequests);
+      return new Promise<Response>((resolve) => {
+        const complete = () => {
+          activeRequests -= 1;
+          resolve(new Response("photo", { headers: { "Content-Type": "image/jpeg" } }));
+        };
+        if (releaseRequests) {
+          complete();
+        } else {
+          pending.push(complete);
+        }
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createService();
+    const contacts = Array.from({ length: 270 }, (_, index) => ({
+      email: `person${index}@example.com`,
+      name: null,
+    }));
+    const photos = contacts.map((contact) => service.getContactPhoto("account-1", contact));
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(6));
+    releaseRequests = true;
+    pending.forEach((complete) => complete());
+    const results = await Promise.all(photos);
+    expect(peakRequests).toBe(6);
+    expect(results.filter((photo) => photo === null)).toHaveLength(8);
+    expect(fetchMock).toHaveBeenCalledTimes(262);
+    const droppedIndex = results.findIndex((photo) => photo === null);
+    await expect(service.getContactPhoto("account-1", contacts[droppedIndex])).resolves.toBe(
+      "data:image/jpeg;base64,cGhvdG8=",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(263);
+  });
+
+  it("skips queued photos after their account signs out", async () => {
+    const getAccountUsername = vi.fn().mockReturnValue("user@example.com");
+    const pending: ((response: Response) => void)[] = [];
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => new Promise<Response>((resolve) => pending.push(resolve)));
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createService({ getAccountUsername });
+    const photos = Array.from({ length: 7 }, (_, index) =>
+      service.getContactPhoto("account-1", {
+        email: `person${index}@example.com`,
+        name: null,
+      }),
+    );
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(6));
+    getAccountUsername.mockReturnValue(null);
+    pending.forEach((resolve) =>
+      resolve(new Response("photo", { headers: { "Content-Type": "image/jpeg" } })),
+    );
+    await expect(Promise.all(photos)).resolves.toEqual(Array.from({ length: 7 }, () => null));
+    expect(fetchMock).toHaveBeenCalledTimes(6);
+  });
+
+  it("keeps sharing pending loads when the cache duration elapses before completion", async () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(0);
+    let complete!: (response: Response) => void;
+    const response = new Promise<Response>((resolve) => {
+      complete = resolve;
+    });
+    const fetchMock = vi.fn().mockReturnValue(response);
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createService();
+    const contact = { email: "alice@example.com", name: "Alice" };
+    const first = service.getContactPhoto("account-1", contact);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    now.mockReturnValue(5 * 60_000 + 1);
+    const second = service.getContactPhoto("account-1", contact);
+    complete(new Response("photo", { headers: { "Content-Type": "image/jpeg" } }));
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      "data:image/jpeg;base64,cGhvdG8=",
+      "data:image/jpeg;base64,cGhvdG8=",
+    ]);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    await service.getContactPhoto("account-1", contact);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("evicts large photos when their combined cached data exceeds the memory budget", async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(new Uint8Array(4 * 1024 * 1024), {
+          headers: { "Content-Type": "image/jpeg" },
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createService();
+    for (const email of [
+      "alice@example.com",
+      "bob@example.com",
+      "carol@example.com",
+      "alice@example.com",
+    ]) {
+      await service.getContactPhoto("account-1", { email, name: null });
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("uses the directory principal name for contacts whose SMTP address is an alias", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          value: [
+            {
+              displayName: "Alice",
+              userPrincipalName: "alice@tenant.onmicrosoft.com",
+              scoredEmailAddresses: [{ address: "alias@example.com" }],
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(new Response("photo", { headers: { "Content-Type": "image/jpeg" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createService();
+    const contacts = await service.searchPeople("account-1", "Alice", 5);
+    await service.getContactPhoto("account-1", contacts[0]);
+    expect(String(fetchMock.mock.calls[1][0])).toContain(
+      "/users/alice%40tenant.onmicrosoft.com/photos/48x48/$value",
+    );
+  });
+
+  it("does not return cached or in-flight photos after the account signs out", async () => {
+    const getAccountUsername = vi.fn().mockReturnValue("user@example.com");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("photo", { headers: { "Content-Type": "image/jpeg" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createService({ getAccountUsername });
+    const contact = { email: "alice@example.com", name: "Alice" };
+    await service.getContactPhoto("account-1", contact);
+    getAccountUsername.mockReturnValue(null);
+    await expect(service.getContactPhoto("account-1", contact)).resolves.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    getAccountUsername.mockReturnValue("user@example.com");
+    let resolvePhoto!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePhoto = resolve;
+        }),
+    );
+    const pending = service.getContactPhoto("account-1", { email: "bob@example.com", name: "Bob" });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    getAccountUsername.mockReturnValue(null);
+    resolvePhoto(new Response("photo", { headers: { "Content-Type": "image/jpeg" } }));
+    await expect(pending).resolves.toBeNull();
+  });
+
+  it("resolves a saved participant alias by exact email and caches the photo", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(
+        Response.json({
+          value: [
+            {
+              displayName: "Alice Other",
+              userPrincipalName: "other@tenant.onmicrosoft.com",
+              scoredEmailAddresses: [{ address: "other@example.com" }],
+            },
+            {
+              displayName: "Alice",
+              userPrincipalName: "alice@tenant.onmicrosoft.com",
+              scoredEmailAddresses: [{ address: "alias@example.com" }],
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(new Response("photo", { headers: { "Content-Type": "image/jpeg" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createService();
+    const contact = { email: "ALIAS@example.com", name: null };
+    await expect(service.getContactPhoto("account-1", contact)).resolves.toBe(
+      "data:image/jpeg;base64,cGhvdG8=",
+    );
+    expect(String(fetchMock.mock.calls[2][0])).toContain(
+      "/users/alice%40tenant.onmicrosoft.com/photos/48x48/$value",
+    );
+    await service.getContactPhoto("account-1", contact);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps initials when directory lookup only returns a fuzzy match", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(
+        Response.json({
+          value: [
+            {
+              displayName: "Alice",
+              userPrincipalName: "alice@tenant.onmicrosoft.com",
+              scoredEmailAddresses: [{ address: "other@example.com" }],
+            },
+          ],
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createService();
+    const contact = { email: "alias@example.com", name: null };
+    await expect(service.getContactPhoto("account-1", contact)).resolves.toBeNull();
+    await expect(service.getContactPhoto("account-1", contact)).resolves.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels throttled photo retries when the photo timeout expires", async () => {
+    vi.useFakeTimers();
+    const timeoutController = new AbortController();
+    vi.spyOn(AbortSignal, "timeout").mockReturnValue(timeoutController.signal);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 429, headers: { "Retry-After": "600" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const pending = createService().getContactPhoto("account-1", {
+        email: "alice@example.com",
+        name: "Alice",
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      timeoutController.abort();
+      await vi.advanceTimersByTimeAsync(0);
+      await expect(Promise.race([pending, Promise.resolve("still waiting")])).resolves.toBeNull();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps contact ids for photo lookups", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json({
+          value: [
+            {
+              id: "contact-1",
+              displayName: "Alice",
+              emailAddresses: [{ address: "alice@example.com" }],
+            },
+          ],
+        }),
+      ),
+    );
+    await expect(createService().listContacts("account-1")).resolves.toEqual([
+      { contactId: "contact-1", email: "alice@example.com", name: "Alice" },
+    ]);
+  });
+
+  it("loads and caches contact photos separately for each account", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() =>
+        Promise.resolve(new Response("photo", { headers: { "Content-Type": "image/jpeg" } })),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createService();
+    const contact = { contactId: "contact/1", email: "alice@example.com", name: "Alice" };
+    const first = service.getContactPhoto("account-1", contact);
+    await expect(service.getContactPhoto("account-1", contact)).resolves.toBe(
+      "data:image/jpeg;base64,cGhvdG8=",
+    );
+    await first;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/me/contacts/contact%2F1/photo/$value");
+    await service.getContactPhoto("account-2", contact);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("falls back to a directory photo and tolerates unavailable photos", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response("photo", { headers: { "Content-Type": "image/png" } }))
+      .mockResolvedValueOnce(new Response(null, { status: 403 }))
+      .mockResolvedValueOnce(Response.json({ value: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createService();
+    await expect(
+      service.getContactPhoto("account-1", {
+        contactId: "contact-1",
+        email: "alice@example.com",
+        name: "Alice",
+      }),
+    ).resolves.toBe("data:image/png;base64,cGhvdG8=");
+    expect(String(fetchMock.mock.calls[1][0])).toContain(
+      "/users/alice%40example.com/photos/48x48/$value",
+    );
+    await expect(
+      service.getContactPhoto("account-1", {
+        email: "bob@example.com",
+        name: "Bob",
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("rejects non-image photo responses and retries after network failure", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Offline"))
+      .mockResolvedValueOnce(
+        new Response("<svg />", { headers: { "Content-Type": "image/svg+xml" } }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createService();
+    const contact = { email: "alice@example.com", name: "Alice" };
+    await expect(service.getContactPhoto("account-1", contact)).resolves.toBeNull();
+    await expect(service.getContactPhoto("account-1", contact)).resolves.toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("uses immutable ids and mailbox-wide event paths for item lookups", async () => {
     const fetchMock = vi
       .fn()
@@ -523,8 +873,16 @@ describe("graph calendar service request handling", () => {
     const service = createService();
 
     await expect(service.searchPeople("account-1", "vol pe", 5)).resolves.toStrictEqual([
-      { email: "francesco1.volpe@telecomitalia.it", name: "Volpe Francesco" },
-      { email: "fallback@example.com", name: "Fallback Person" },
+      {
+        email: "francesco1.volpe@telecomitalia.it",
+        name: "Volpe Francesco",
+        userPrincipalName: "francesco1.volpe@telecomitalia.it",
+      },
+      {
+        email: "fallback@example.com",
+        name: "Fallback Person",
+        userPrincipalName: "fallback@example.com",
+      },
     ]);
 
     const requestUrl = new URL(String(fetchMock.mock.calls[0][0]));

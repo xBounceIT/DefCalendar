@@ -1,8 +1,47 @@
 import { describe, expect, it, vi } from "vitest";
 
 import MsalAuthService from "../src/main/auth/msal-auth-service";
+import { resolveAppConfig } from "../src/main/config";
 
 describe("msal auth service", () => {
+  it("requests directory photo permission when an existing session needs renewed consent", async () => {
+    const config = resolveAppConfig({});
+    const service = new MsalAuthService(config, {
+      createPlugin: vi.fn().mockReturnValue({}),
+    } as never);
+    const account = {
+      homeAccountId: "account-1",
+      name: "Test User",
+      tenantId: "tenant-1",
+      username: "user@example.com",
+    };
+    const acquireTokenSilent = vi.fn().mockRejectedValue(new Error("Consent required"));
+    const acquireTokenInteractive = vi
+      .fn()
+      .mockResolvedValue({ account, accessToken: "photo-token" });
+    Object.assign(service, {
+      pca: {
+        getAllAccounts: vi.fn().mockResolvedValue([account]),
+        acquireTokenSilent,
+        acquireTokenInteractive,
+      },
+    });
+    await service.initialize();
+    await expect(service.getAccessTokenForAccount("account-1")).resolves.toBe("photo-token");
+    expect(acquireTokenSilent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        account,
+        scopes: expect.arrayContaining(["User.ReadBasic.All"]),
+      }),
+    );
+    expect(acquireTokenInteractive).toHaveBeenCalledWith(
+      expect.objectContaining({
+        loginHint: account.username,
+        scopes: config.graphScopes,
+      }),
+    );
+  });
+
   it("returns stable colors for accounts without stored colors", async () => {
     const service = new MsalAuthService(
       {

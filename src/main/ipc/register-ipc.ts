@@ -60,6 +60,8 @@ import {
 } from "@shared/attendee-availability";
 
 const MIN_PEOPLE_SEARCH_QUERY_LENGTH = 2;
+const CACHED_CONTACT_DIRECTORY_WAIT_MS = 500;
+const DIRECTORY_SEARCH_WAIT_MS = 5_000;
 
 interface RegisterIpcDependencies {
   auth: MsalAuthService;
@@ -81,7 +83,7 @@ interface RegisterIpcDependencies {
 function mergeContactSuggestions(
   cachedContacts: ContactSuggestion[],
   peopleContacts: ContactSuggestion[],
-  limit: number,
+  limit: number | null,
 ): ContactSuggestion[] {
   const suggestions = new Map<string, ContactSuggestion>();
 
@@ -92,15 +94,17 @@ function mergeContactSuggestions(
     }
 
     const email = parsed.data.email.toLowerCase();
-    if (suggestions.has(email)) {
+    const existing = suggestions.get(email);
+    if (existing) {
+      suggestions.set(email, { ...parsed.data, ...existing });
       continue;
     }
 
     suggestions.set(email, {
+      ...parsed.data,
       email,
-      name: parsed.data.name,
     });
-    if (suggestions.size >= limit) {
+    if (limit !== null && suggestions.size >= limit) {
       return [...suggestions.values()];
     }
   }
@@ -295,20 +299,49 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
       .searchContacts(args)
       .map((contact) => contactSuggestionSchema.parse(contact));
 
-    if (args.query.length < MIN_PEOPLE_SEARCH_QUERY_LENGTH || cachedContacts.length >= args.limit) {
+    if (
+      args.query.length < MIN_PEOPLE_SEARCH_QUERY_LENGTH ||
+      (args.limit !== null && cachedContacts.length >= args.limit)
+    ) {
       return cachedContacts;
     }
 
+    const controller = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
-      const peopleContacts = await dependencies.graph.searchPeople(
-        args.homeAccountId,
-        args.query,
-        args.limit,
-      );
-      return mergeContactSuggestions(cachedContacts, peopleContacts, args.limit);
+      const timeout = new Promise<null>((resolve) => {
+        timeoutId = setTimeout(
+          () => {
+            controller.abort();
+            resolve(null);
+          },
+          cachedContacts.length > 0 ? CACHED_CONTACT_DIRECTORY_WAIT_MS : DIRECTORY_SEARCH_WAIT_MS,
+        );
+      });
+      const peopleContacts = await Promise.race([
+        dependencies.graph.searchPeople(
+          args.homeAccountId,
+          args.query,
+          args.limit ?? 25,
+          controller.signal,
+        ),
+        timeout,
+      ]);
+      return peopleContacts
+        ? mergeContactSuggestions(cachedContacts, peopleContacts, args.limit)
+        : cachedContacts;
     } catch {
       return cachedContacts;
+    } finally {
+      clearTimeout(timeoutId);
     }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.contactsGetPhoto, async (event, input) => {
+    validateMainSender(event);
+    const args = contactSuggestionSchema.extend({ homeAccountId: z.string().min(1) }).parse(input);
+    const cachedContact = dependencies.db.getContactByEmail(args.homeAccountId, args.email);
+    return dependencies.graph.getContactPhoto(args.homeAccountId, { ...args, ...cachedContact });
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsList, async (event, input) => {

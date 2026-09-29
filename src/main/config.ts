@@ -9,7 +9,7 @@ const envSchema = z.object({
   GRAPH_SCOPES: z
     .string()
     .default(
-      "openid profile offline_access User.Read Calendars.ReadWrite MailboxSettings.Read Contacts.Read People.Read",
+      "openid profile offline_access User.Read User.ReadBasic.All Calendars.ReadWrite MailboxSettings.Read Contacts.Read People.Read",
     ),
   SYNC_LOOKAHEAD_DAYS: z.coerce
     .number()
