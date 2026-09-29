@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { eventSearchSortSchema } from "../src/shared/schema-values";
+import { authSessionIssueSchema } from "../src/shared/schemas";
 import {
   extractKeysFromFile,
   getAllTsxFiles,
@@ -57,6 +58,7 @@ describe("i18n translation completeness", () => {
       "calendarViews.", // Used via a VIEW_KEYS record lookup
       "eventSearch.sort.", // Used via t(`eventSearch.sort.${sort}`)
       "eventEditor.attendeeAvailability.",
+      "auth.sessionIssues.",
       "tray.", // Used by main process i18n (separate translation system)
       "sync.", // Used by main process + via translateSyncMessage() lookup
     ];
@@ -156,6 +158,13 @@ describe("i18n translation completeness", () => {
     }
 
     expect(orphaned).toHaveLength(0);
+  });
+
+  it("has a localized message for every session validation reason", () => {
+    for (const reason of authSessionIssueSchema.shape.reason.options) {
+      expect(translations.en).toHaveProperty([`auth.sessionIssues.${reason}`]);
+      expect(translations.it).toHaveProperty([`auth.sessionIssues.${reason}`]);
+    }
   });
 
   it("should have proper pluralization key pairs", () => {

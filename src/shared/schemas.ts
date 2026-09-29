@@ -26,16 +26,30 @@ const storedAccountSchema = z.object({
   lastSignedInAt: dateTimeStringSchema,
 });
 
+const authSessionIssueSchema = z.object({
+  homeAccountId: z.string(),
+  username: z.string(),
+  reason: z.enum([
+    "missing_permissions",
+    "consent_required",
+    "session_expired",
+    "validation_unavailable",
+  ]),
+  missingPermissions: z.array(z.string()),
+});
+
 const authStateSchema = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("signed_out"),
     accounts: z.array(storedAccountSchema),
+    sessionIssues: z.array(authSessionIssueSchema).optional(),
   }),
   z.object({
     status: z.literal("signed_in"),
     account: accountSummarySchema,
     accounts: z.array(storedAccountSchema),
     activeAccountId: z.string(),
+    sessionIssues: z.array(authSessionIssueSchema).optional(),
   }),
 ]);
 
@@ -615,6 +629,7 @@ const userSettingsPatchSchema = z.object({
 type CalendarView = z.infer<typeof calendarViewSchema>;
 type AccountSummary = z.infer<typeof accountSummarySchema>;
 type AuthState = z.infer<typeof authStateSchema>;
+type AuthSessionIssue = z.infer<typeof authSessionIssueSchema>;
 type StoredAccount = z.infer<typeof storedAccountSchema>;
 type AuthSignInMode = z.infer<typeof authSignInModeSchema>;
 type AuthSignInRequest = z.infer<typeof authSignInRequestSchema>;
@@ -705,6 +720,7 @@ function createDefaultSettings(): UserSettings {
 export {
   accountSummarySchema,
   authStateSchema,
+  authSessionIssueSchema,
   authSignInModeSchema,
   authSignInRequestSchema,
   storedAccountSchema,
@@ -770,6 +786,7 @@ export {
   type AttachmentUploadArgs,
   type AttendeeType,
   type AuthState,
+  type AuthSessionIssue,
   type AuthSignInMode,
   type AuthSignInRequest,
   type Availability,

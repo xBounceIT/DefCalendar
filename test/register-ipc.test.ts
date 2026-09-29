@@ -146,7 +146,10 @@ function createFixture() {
     },
   );
 
+  const assertAccountSession = vi.fn();
   const auth = {
+    onSessionValidation: vi.fn(),
+    createAccountSessionGuard: vi.fn().mockReturnValue(assertAccountSession),
     getAccountIds: vi.fn().mockReturnValue(["account-1"]),
     getActiveAccountId: vi.fn().mockReturnValue("account-1"),
     getAuthState: vi.fn(),
@@ -264,6 +267,7 @@ function createFixture() {
     recordCandidates: vi.fn(),
   };
   const eventActions = new EventActionService({
+    auth: auth as never,
     db: db as never,
     getMainWindow: () => mainWindow as never,
     graph: graph as never,
@@ -295,6 +299,7 @@ function createFixture() {
   });
 
   return {
+    assertAccountSession,
     auth,
     settings,
     db,
@@ -348,6 +353,210 @@ describe("register ipc", () => {
   });
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("broadcasts automatic session validation changes without waiting for a sync", () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const state = {
+      status: "signed_out",
+      accounts: [],
+      sessionIssues: [
+        {
+          homeAccountId: "account-1",
+          username: "one@example.com",
+          reason: "missing_permissions",
+          missingPermissions: ["People.Read"],
+        },
+      ],
+    };
+    expect(fixture.auth.onSessionValidation).toHaveBeenCalledOnce();
+    fixture.auth.onSessionValidation.mock.calls[0][0](state);
+
+    expect(fixture.mainWebContents.send).toHaveBeenCalledExactlyOnceWith(
+      IPC_CHANNELS.authStateChanged,
+      state,
+    );
+    expect(fixture.sync.syncAll).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])(
+    "clears in-memory alerts after automatic removal (another account remains: %s)",
+    async (hasOtherAccount) => {
+      expect.hasAssertions();
+      const fixture = createFixture();
+      const state = hasOtherAccount
+        ? {
+            status: "signed_in",
+            accounts: [{ homeAccountId: "account-2" }],
+          }
+        : { status: "signed_out", accounts: [] };
+
+      fixture.auth.onSessionValidation.mock.calls[0][0](state, "account-1");
+
+      expect(fixture.newEventNotifications.clear).toHaveBeenCalledOnce();
+      expect(fixture.reminders.checkNow).toHaveBeenCalledOnce();
+      expect(fixture.mainWebContents.send).toHaveBeenCalledWith(
+        IPC_CHANNELS.authStateChanged,
+        state,
+      );
+      expect(fixture.sync.reset).toHaveBeenCalledOnce();
+      expect(fixture.sync.syncAll.mock.calls).toEqual(hasOtherAccount ? [["manual"]] : []);
+    },
+  );
+
+  it("starts a fresh surviving-account sync after manual sign-out", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const previousSync = createDeferred<ReturnType<typeof fixture.sync.getStatus>>();
+    const state = { status: "signed_in", accounts: [{ homeAccountId: "account-2" }] };
+    let previousSyncActive = true;
+    let completed = false;
+    fixture.auth.getAuthState.mockReturnValue(state);
+    fixture.sync.reset.mockImplementation(() => {
+      previousSyncActive = false;
+    });
+    fixture.sync.syncAll.mockImplementation(() =>
+      previousSyncActive ? previousSync.promise : Promise.resolve(fixture.sync.getStatus()),
+    );
+
+    const request = fixture.handlers.get(IPC_CHANNELS.authSignOut)!(
+      { sender: fixture.mainWebContents },
+      "account-1",
+    ).then((result) => {
+      completed = true;
+      return result;
+    });
+
+    try {
+      await vi.waitFor(() => expect(completed).toBe(true), { timeout: 200 });
+      expect(await request).toEqual(state);
+      expect(fixture.sync.syncAll).toHaveBeenCalledExactlyOnceWith("manual");
+      expect(fixture.db.clearUserData).toHaveBeenCalledExactlyOnceWith("account-1");
+    } finally {
+      previousSync.resolve(fixture.sync.getStatus());
+      await request;
+    }
+  });
+
+  it.each([
+    [IPC_CHANNELS.eventsCreate, "createEvent", createEventDraft(), createCalendarEvent()],
+    [
+      IPC_CHANNELS.eventsUpdate,
+      "updateEvent",
+      createEventDraft({ id: "event-1" }),
+      createCalendarEvent(),
+    ],
+    [
+      IPC_CHANNELS.eventsDelete,
+      "deleteEvent",
+      { calendarId: "calendar-1", eventId: "event-1" },
+      undefined,
+    ],
+    [
+      IPC_CHANNELS.eventsCancel,
+      "cancelEvent",
+      { calendarId: "calendar-1", eventId: "event-1" },
+      undefined,
+    ],
+    [
+      IPC_CHANNELS.eventsListAttachments,
+      "listAttachments",
+      { calendarId: "calendar-1", eventId: "event-1" },
+      [],
+    ],
+    [
+      IPC_CHANNELS.eventsRespond,
+      "getEvent",
+      { calendarId: "calendar-1", eventId: "event-1", action: "accept", sendResponse: true },
+      createCalendarEvent(),
+    ],
+    [
+      IPC_CHANNELS.eventsRemoveAttachment,
+      "getEvent",
+      { calendarId: "calendar-1", eventId: "event-1", attachmentId: "attachment-1" },
+      createCalendarEvent(),
+    ],
+    [
+      IPC_CHANNELS.eventsAddAttachment,
+      "getEvent",
+      {
+        calendarId: "calendar-1",
+        eventId: "event-1",
+        attachment: { name: "note.txt", contentType: "text/plain", contentBytes: "aGk=", size: 2 },
+      },
+      createCalendarEvent(),
+    ],
+    [
+      IPC_CHANNELS.eventsForward,
+      "forwardEvent",
+      {
+        calendarId: "calendar-1",
+        eventId: "event-1",
+        toRecipients: [{ email: "alice@example.com", name: "Alice" }],
+      },
+      undefined,
+    ],
+  ] as const)(
+    "discards late Graph results for %s after the account session changes",
+    async (channel, method, input, result) => {
+      expect.hasAssertions();
+      const fixture = createFixture();
+      const deferred = createDeferred<unknown>();
+      fixture.graph[method].mockReturnValueOnce(deferred.promise);
+      const request = fixture.handlers.get(channel)!({ sender: fixture.mainWebContents }, input);
+      const settledRequest = request.catch((error: unknown) => error);
+      await vi.waitFor(() => expect(fixture.graph[method]).toHaveBeenCalledOnce());
+      fixture.assertAccountSession.mockImplementation(() => {
+        throw new Error("The Microsoft 365 session changed during the request.");
+      });
+      deferred.resolve(result);
+
+      await expect(settledRequest).resolves.toBeInstanceOf(Error);
+      expect(fixture.db.upsertEvent).not.toHaveBeenCalled();
+      expect(fixture.db.deleteEvent).not.toHaveBeenCalled();
+      expect(fixture.sync.syncAll).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not schedule a mutation sync if the session changes while reminders are checked", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const deferred = createDeferred<void>();
+    fixture.reminders.checkNow.mockReturnValueOnce(deferred.promise);
+    const request = fixture.handlers.get(IPC_CHANNELS.eventsCreate)!(
+      { sender: fixture.mainWebContents },
+      createEventDraft(),
+    );
+    const settledRequest = request.catch((error: unknown) => error);
+    await vi.waitFor(() => expect(fixture.reminders.checkNow).toHaveBeenCalledOnce());
+    fixture.assertAccountSession.mockImplementation(() => {
+      throw new Error("The Microsoft 365 session changed during the request.");
+    });
+    deferred.resolve();
+
+    await expect(settledRequest).resolves.toBeInstanceOf(Error);
+    expect(fixture.sync.syncAll).not.toHaveBeenCalled();
+  });
+
+  it("does not restore a declined event from the cache after sign-out when Graph returns not found", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    fixture.graph.getEvent.mockImplementationOnce(async () => {
+      fixture.assertAccountSession.mockImplementation(() => {
+        throw new Error("The Microsoft 365 session changed during the request.");
+      });
+      throw new Error("The specified object was not found in the store.");
+    });
+
+    await expect(
+      fixture.handlers.get(IPC_CHANNELS.eventsRespond)!(
+        { sender: fixture.mainWebContents },
+        { calendarId: "calendar-1", eventId: "event-1", action: "decline" },
+      ),
+    ).rejects.toThrow("session changed");
+    expect(fixture.db.upsertEvent).not.toHaveBeenCalled();
+    expect(fixture.sync.syncAll).not.toHaveBeenCalled();
   });
 
   it("validates availability requests and resolves the account from the selected calendar", async () => {
@@ -710,6 +919,23 @@ describe("register ipc", () => {
     expect(fixture.mainWebContents.send).toHaveBeenCalledWith(IPC_CHANNELS.authStateChanged, state);
 
     deferredSync.resolve(fixture.sync.getStatus());
+  });
+
+  it("broadcasts the updated account state when incomplete consent rejects a re-sign-in", async () => {
+    const fixture = createFixture();
+    const state = { status: "signed_out", accounts: [] };
+    fixture.auth.signIn.mockRejectedValue(new Error("Missing required permissions"));
+    fixture.auth.getAuthState.mockReturnValue(state);
+
+    await expect(
+      fixture.handlers.get(IPC_CHANNELS.authSignIn)?.(
+        { sender: fixture.mainWebContents },
+        { mode: "user" },
+      ),
+    ).rejects.toThrow("Missing required permissions");
+
+    expect(fixture.mainWebContents.send).toHaveBeenCalledWith(IPC_CHANNELS.authStateChanged, state);
+    expect(fixture.sync.syncAll).not.toHaveBeenCalled();
   });
 
   it("searches cached events with the parsed query and calendar filter", async () => {

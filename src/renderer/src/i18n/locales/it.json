@@ -81,7 +81,13 @@
     "comingSoon": "Presto disponibile",
     "addAccountTitle": "Aggiungi Account",
     "addAccountSubtitle": "Connetti un altro account calendario.",
-    "back": "Indietro"
+    "back": "Indietro",
+    "sessionIssues": {
+      "missing_permissions": "{{username}} è stato disconnesso perché alla sessione Microsoft 365 mancano i permessi richiesti: {{permissions}}. Accedi di nuovo e approva tutti i permessi richiesti.",
+      "consent_required": "{{username}} è stato disconnesso perché Microsoft 365 richiede il consenso per i permessi dell’app. Accedi di nuovo e approva l’accesso; potrebbe essere necessaria l’approvazione dell’amministratore.",
+      "session_expired": "{{username}} è stato disconnesso perché la sessione Microsoft 365 è scaduta o richiede un nuovo accesso. Accedi di nuovo per ripristinare l’accesso.",
+      "validation_unavailable": "Non è stato possibile verificare i permessi di {{username}} con Microsoft 365. L’account rimane connesso, ma la sincronizzazione è sospesa finché la verifica non riesce. Controlla la connessione e riprova a sincronizzare."
+    }
   },
   "calendarSelection": {
     "title": "Scegli i calendari da sincronizzare",

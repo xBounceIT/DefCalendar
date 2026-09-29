@@ -82,6 +82,7 @@ async function bootstrap(): Promise<void> {
     settings,
   });
   const eventActions = new EventActionService({
+    auth,
     db,
     getMainWindow: () => mainWindow,
     graph,

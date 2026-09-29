@@ -157,6 +157,15 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     queryKey: ["auth"],
   });
   const signedIn = authQuery.data?.status === "signed_in";
+  const sessionIssueMessage =
+    authQuery.data?.sessionIssues
+      ?.map((issue) =>
+        t(`auth.sessionIssues.${issue.reason}`, {
+          username: issue.username,
+          permissions: issue.missingPermissions.join(", "),
+        }),
+      )
+      .join(" ") || null;
   const accounts: AccountSummary[] = authQuery.data?.accounts ?? [];
   const activeAccountId =
     authQuery.data?.status === "signed_in" ? authQuery.data.activeAccountId : null;
@@ -376,6 +385,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
       setSyncStatus(status);
       if (status.state !== "syncing") {
         void Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["auth"] }),
           queryClient.invalidateQueries({ queryKey: ["calendars"] }),
           invalidateEventQueries(queryClient),
         ]);
@@ -972,7 +982,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   if (!signedIn || showAuthScreen) {
     let signInError = bannerError;
     if (!signInError) {
-      signInError = toErrorMessage(signInMutation.error);
+      signInError = toErrorMessage(signInMutation.error) ?? sessionIssueMessage;
     }
 
     return (
@@ -988,7 +998,11 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
           startSignIn("user");
         }}
         pendingMode={pendingSignInMode}
-        showAdminApprovalAction={isAdminApprovalRequiredMessage(signInError)}
+        showAdminApprovalAction={
+          isAdminApprovalRequiredMessage(signInError) ||
+          (authQuery.data?.sessionIssues?.some((issue) => issue.reason === "consent_required") ??
+            false)
+        }
       />
     );
   }
@@ -996,7 +1010,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   if (showCalendarSelection) {
     let calendarSelectionError = bannerError;
     if (!calendarSelectionError) {
-      calendarSelectionError = toErrorMessage(calendarsQuery.error);
+      calendarSelectionError = toErrorMessage(calendarsQuery.error) ?? sessionIssueMessage;
     }
 
     return (
@@ -1015,7 +1029,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
 
   const bannerMessage = buildBannerMessage({
     authError: authQuery.error,
-    bannerError,
+    bannerError: bannerError ?? sessionIssueMessage,
     calendarsError: calendarsQuery.error,
     eventsError: eventsQuery.error ?? miniCalendarEventsQuery.error,
   });
