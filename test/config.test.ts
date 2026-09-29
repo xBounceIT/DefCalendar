@@ -14,6 +14,7 @@ describe("app config", () => {
       "profile",
       "offline_access",
       "User.Read",
+      "User.ReadBasic.All",
       "Calendars.ReadWrite",
       "MailboxSettings.Read",
       "Contacts.Read",

@@ -49,6 +49,7 @@ export const IPC_CHANNELS = {
   calendarsSetVisibility: "calendars:set-visibility",
   categoriesList: "categories:list",
   contactsSearch: "contacts:search",
+  contactsGetPhoto: "contacts:get-photo",
   attendeesGetAvailability: "attendees:get-availability",
   eventsList: "events:list",
   eventsSearch: "events:search",
@@ -111,6 +112,7 @@ interface CalendarApi {
     list: (args: ListOutlookCategoriesArgs) => Promise<OutlookCategory[]>;
   };
   contacts: {
+    getPhoto: (args: ContactSuggestion & { homeAccountId: string }) => Promise<string | null>;
     search: (args: SearchContactsArgs) => Promise<ContactSuggestion[]>;
   };
   events: {
