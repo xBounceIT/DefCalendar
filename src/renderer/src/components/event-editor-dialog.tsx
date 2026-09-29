@@ -3343,9 +3343,9 @@ function RecurrenceFields({
             </select>
           </label>
           {form.recurrenceType === "weekly" && (
-            <fieldset className="field field--full">
+            <fieldset className="field field--full recurrence-weekdays">
               <span>{t("eventEditor.recurrenceWeekdays")}</span>
-              <div className="dialog-footer__left">
+              <div className="recurrence-weekdays__options">
                 {["monday", "tuesday", "wednesday", "thursday", "friday"].map((day) => (
                   <label className="checkbox-field" key={day}>
                     <input
