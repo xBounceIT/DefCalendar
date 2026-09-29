@@ -702,7 +702,12 @@ describe("register ipc", () => {
       limit: 5,
       query: "ali",
     });
-    expect(fixture.graph.searchPeople).toHaveBeenCalledWith("account-1", "ali", 5);
+    expect(fixture.graph.searchPeople).toHaveBeenCalledWith(
+      "account-1",
+      "ali",
+      5,
+      expect.any(AbortSignal),
+    );
     expect(response).toStrictEqual([
       { email: "alice@example.com", name: "Alice Example" },
       { email: "bob@example.com", name: null },
@@ -757,6 +762,65 @@ describe("register ipc", () => {
       { email: "alice@example.com", name: "Alice Example" },
       { email: "bob@example.com", name: null },
     ]);
+  });
+
+  it.each([
+    { cached: [{ email: "alice@example.com", name: "Alice" }], deadline: 500 },
+    { cached: [], deadline: 5_000 },
+  ])(
+    "bounds the directory wait to $deadline ms when Graph does not settle",
+    async ({ cached, deadline }) => {
+      vi.useFakeTimers();
+      try {
+        const fixture = createFixture();
+        fixture.db.searchContacts.mockReturnValue(cached);
+        const people = createDeferred<ContactSuggestion[]>();
+        fixture.graph.searchPeople.mockReturnValue(people.promise);
+        const response = fixture.handlers.get(IPC_CHANNELS.contactsSearch)?.(
+          { sender: fixture.mainWebContents },
+          { homeAccountId: "account-1", limit: null, query: "alice" },
+        );
+        let settled = false;
+        void response?.then(() => {
+          settled = true;
+        });
+        await vi.advanceTimersByTimeAsync(deadline - 1);
+        expect(settled).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        const result = await response;
+        expect(result).toEqual(cached);
+        expect(fixture.graph.searchPeople.mock.calls[0][3].aborted).toBe(true);
+        expect(vi.getTimerCount()).toBe(0);
+        people.resolve([{ email: "late@example.com", name: "Late Directory Match" }]);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(result).toEqual(cached);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("merges a prompt directory result and cancels its deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = createFixture();
+      fixture.graph.searchPeople.mockResolvedValueOnce([
+        { email: "remote@example.com", name: "Remote" },
+      ]);
+      const result = await fixture.handlers.get(IPC_CHANNELS.contactsSearch)?.(
+        { sender: fixture.mainWebContents },
+        { homeAccountId: "account-1", limit: null, query: "remote" },
+      );
+      expect(result).toEqual([
+        { email: "alice@example.com", name: "Alice Example" },
+        { email: "bob@example.com", name: null },
+        { email: "remote@example.com", name: "Remote" },
+      ]);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(fixture.graph.searchPeople.mock.calls[0][3].aborted).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("skips Graph people search for one-character contact queries", async () => {

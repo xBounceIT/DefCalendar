@@ -60,6 +60,8 @@ import {
 } from "@shared/attendee-availability";
 
 const MIN_PEOPLE_SEARCH_QUERY_LENGTH = 2;
+const CACHED_CONTACT_DIRECTORY_WAIT_MS = 500;
+const DIRECTORY_SEARCH_WAIT_MS = 5_000;
 
 interface RegisterIpcDependencies {
   auth: MsalAuthService;
@@ -304,15 +306,34 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
       return cachedContacts;
     }
 
+    const controller = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
-      const peopleContacts = await dependencies.graph.searchPeople(
-        args.homeAccountId,
-        args.query,
-        args.limit ?? 25,
-      );
-      return mergeContactSuggestions(cachedContacts, peopleContacts, args.limit);
+      const timeout = new Promise<null>((resolve) => {
+        timeoutId = setTimeout(
+          () => {
+            controller.abort();
+            resolve(null);
+          },
+          cachedContacts.length > 0 ? CACHED_CONTACT_DIRECTORY_WAIT_MS : DIRECTORY_SEARCH_WAIT_MS,
+        );
+      });
+      const peopleContacts = await Promise.race([
+        dependencies.graph.searchPeople(
+          args.homeAccountId,
+          args.query,
+          args.limit ?? 25,
+          controller.signal,
+        ),
+        timeout,
+      ]);
+      return peopleContacts
+        ? mergeContactSuggestions(cachedContacts, peopleContacts, args.limit)
+        : cachedContacts;
     } catch {
       return cachedContacts;
+    } finally {
+      clearTimeout(timeoutId);
     }
   });
 
