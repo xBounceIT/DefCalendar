@@ -66,6 +66,16 @@
     "language": "Language",
     "changeCalendarColor": "Change calendar color"
   },
+  "datePicker": {
+    "open": "Open calendar for {{label}}",
+    "chooseMonth": "Choose month",
+    "chooseYear": "Choose year",
+    "previousYear": "Previous year",
+    "nextYear": "Next year",
+    "previousYears": "Previous years",
+    "nextYears": "Next years",
+    "clear": "Clear"
+  },
   "miniCalendar": {
     "previousMonth": "Previous month",
     "today": "Today",
