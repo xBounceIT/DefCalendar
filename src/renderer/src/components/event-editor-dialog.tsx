@@ -39,6 +39,7 @@ import type { CalendarOverlapTarget } from "../event-overlap";
 import { formatHeaderDate, formatLocalizedDate } from "../date-formatting";
 import { toCalendarOverlapTarget } from "../event-overlap";
 import { MeetingIcon, TeamsIcon } from "./meeting-icon";
+import DatePicker from "./date-picker";
 import OverlapWarning from "./overlap-warning";
 import SafeHtmlBody from "./safe-html-body";
 import useAttendeeAvailability from "../hooks/use-attendee-availability";
@@ -1704,16 +1705,17 @@ function SchedulingSection({
       {isExpanded && (
         <div className="scheduling-dropdown">
           <div className="scheduling-dropdown__row">
-            <label className="field scheduling-field scheduling-field--date">
-              <span>{t("eventEditor.startDate")}</span>
-              <input
+            <div className="field scheduling-field scheduling-field--date">
+              <label htmlFor="event-start-date">{t("eventEditor.startDate")}</label>
+              <DatePicker
+                id="event-start-date"
+                label={t("eventEditor.startDate")}
                 disabled={disabled}
-                onChange={(e) => {
+                onChange={(newStartDate) => {
                   const previousStartDate = extractDate(form.startInput);
                   const previousEndDate = extractDate(form.endInput);
                   const currentTime = extractTime(form.startInput) || "00:00";
                   const endTime = extractTime(form.endInput) || "00:30";
-                  const newStartDate = e.target.value;
                   const dayDelta = daysBetweenDateInputs(previousStartDate, newStartDate);
                   const newEndDate = addDaysToDateInput(previousEndDate, dayDelta);
                   onChange((current) =>
@@ -1726,10 +1728,9 @@ function SchedulingSection({
                       : current,
                   );
                 }}
-                type="date"
                 value={extractDate(form.startInput)}
               />
-            </label>
+            </div>
             <label className="field scheduling-field scheduling-field--time">
               <span>{t("eventEditor.startTime")}</span>
               <TimeSelect
@@ -3416,17 +3417,19 @@ function RecurrenceFields({
             </label>
           )}
           {form.recurrenceRangeType === "endDate" && (
-            <label className="field">
-              <span>{t("eventEditor.recurrenceEndDate")}</span>
-              <input
+            <div className="field">
+              <label htmlFor="event-recurrence-end-date">
+                {t("eventEditor.recurrenceEndDate")}
+              </label>
+              <DatePicker
+                id="event-recurrence-end-date"
+                label={t("eventEditor.recurrenceEndDate")}
+                allowClear
                 disabled={disabled}
-                onChange={(event) =>
-                  updateForm(onChange, { recurrenceEndDate: event.target.value })
-                }
-                type="date"
+                onChange={(recurrenceEndDate) => updateForm(onChange, { recurrenceEndDate })}
                 value={form.recurrenceEndDate}
               />
-            </label>
+            </div>
           )}
           {form.recurrenceRangeType === "numbered" && (
             <label className="field">

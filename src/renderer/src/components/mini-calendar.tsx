@@ -1,6 +1,8 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  addDays,
   addMonths,
+  addYears,
   eachDayOfInterval,
   endOfMonth,
   endOfWeek,
@@ -10,136 +12,38 @@ import {
   isToday,
   startOfMonth,
   startOfWeek,
-  subMonths,
 } from "date-fns";
-import { it } from "date-fns/locale";
-import type { Locale } from "date-fns/locale";
+import { enUS, it } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
 import { toLocalDateKey } from "@shared/calendar";
 
 interface MiniCalendarProps {
-  eventDayKeys: ReadonlySet<string>;
-  onVisibleMonthChange: (month: Date) => void;
-  selectedDate: Date;
+  eventDayKeys?: ReadonlySet<string>;
+  onVisibleMonthChange?: (month: Date) => void;
+  selectedDate: Date | null;
   onDateSelect: (date: Date) => void;
+  embedded?: boolean;
+  focusOnOpen?: boolean;
 }
 
 const WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
 
-function PrevMonthIcon() {
+export function CalendarIcon() {
   return (
     <svg
+      aria-hidden="true"
       width="16"
       height="16"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
     >
-      <polyline points="15 18 9 12 15 6" />
+      <rect x="3" y="4" width="18" height="18" rx="3" />
+      <path d="M16 2v4M8 2v4M3 10h18" />
     </svg>
-  );
-}
-
-function TodayIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-      <line x1="16" y1="2" x2="16" y2="6" />
-      <line x1="8" y1="2" x2="8" y2="6" />
-      <line x1="3" y1="10" x2="21" y2="10" />
-    </svg>
-  );
-}
-
-function NextMonthIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <polyline points="9 18 15 12 9 6" />
-    </svg>
-  );
-}
-
-function MiniCalendarNavButton({
-  ariaLabel,
-  Icon,
-  onClick,
-}: {
-  ariaLabel: string;
-  Icon: () => React.JSX.Element;
-  onClick: () => void;
-}) {
-  return (
-    <button aria-label={ariaLabel} onClick={onClick} type="button">
-      <Icon />
-    </button>
-  );
-}
-
-function MiniCalendarNav({
-  onNextMonth,
-  onPrevMonth,
-  onToday,
-}: {
-  onNextMonth: () => void;
-  onPrevMonth: () => void;
-  onToday: () => void;
-}) {
-  const { t } = useTranslation();
-
-  return (
-    <div className="mini-calendar-nav">
-      <MiniCalendarNavButton
-        Icon={PrevMonthIcon}
-        ariaLabel={t("miniCalendar.previousMonth")}
-        onClick={onPrevMonth}
-      />
-      <MiniCalendarNavButton
-        Icon={TodayIcon}
-        ariaLabel={t("miniCalendar.today")}
-        onClick={onToday}
-      />
-      <MiniCalendarNavButton
-        Icon={NextMonthIcon}
-        ariaLabel={t("miniCalendar.nextMonth")}
-        onClick={onNextMonth}
-      />
-    </div>
-  );
-}
-
-function MiniCalendarHeader({
-  currentMonth,
-  locale,
-  onNextMonth,
-  onPrevMonth,
-  onToday,
-}: {
-  currentMonth: Date;
-  locale: Locale;
-  onNextMonth: () => void;
-  onPrevMonth: () => void;
-  onToday: () => void;
-}) {
-  return (
-    <div className="mini-calendar-header">
-      <h3>{format(currentMonth, "MMMM yyyy", { locale })}</h3>
-      <MiniCalendarNav onNextMonth={onNextMonth} onPrevMonth={onPrevMonth} onToday={onToday} />
-    </div>
   );
 }
 
@@ -148,94 +52,300 @@ function MiniCalendar({
   onDateSelect,
   onVisibleMonthChange,
   selectedDate,
+  embedded = false,
+  focusOnOpen = false,
 }: MiniCalendarProps) {
   const { t, i18n } = useTranslation();
-  const [currentMonth, setCurrentMonth] = React.useState(startOfMonth(selectedDate));
-  const dateLocale = i18n.language === "it" ? it : undefined;
+  const locale = i18n.resolvedLanguage?.startsWith("it") ? it : enUS;
+  const [focusedDate, setFocusedDate] = useState(() => selectedDate ?? new Date());
+  const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(focusedDate));
+  const [mode, setMode] = useState<"days" | "months" | "years">("days");
+  const [yearStart, setYearStart] = useState(() =>
+    Math.max(1, Math.min(9988, focusedDate.getFullYear() - 5)),
+  );
+  const rootRef = useRef<HTMLDivElement>(null);
+  const focusPending = useRef(focusOnOpen);
+  const year = currentMonth.getFullYear();
+  const selectedDayKey = selectedDate ? toLocalDateKey(selectedDate) : null;
+  const previousLabel =
+    mode === "days"
+      ? t("miniCalendar.previousMonth")
+      : mode === "months"
+        ? t("datePicker.previousYear")
+        : t("datePicker.previousYears");
+  const nextLabel =
+    mode === "days"
+      ? t("miniCalendar.nextMonth")
+      : mode === "months"
+        ? t("datePicker.nextYear")
+        : t("datePicker.nextYears");
 
-  React.useEffect(() => {
+  useEffect(() => {
+    if (!selectedDate) {
+      return;
+    }
     const nextMonth = startOfMonth(selectedDate);
-    setCurrentMonth((prev) => (isSameMonth(prev, nextMonth) ? prev : nextMonth));
-  }, [selectedDate]);
+    setCurrentMonth((previous) => (isSameMonth(previous, nextMonth) ? previous : nextMonth));
+    setFocusedDate((previous) => (isSameDay(previous, selectedDate) ? previous : selectedDate));
+  }, [selectedDayKey]);
 
-  React.useEffect(() => {
-    onVisibleMonthChange(currentMonth);
+  useEffect(() => {
+    onVisibleMonthChange?.(currentMonth);
   }, [currentMonth, onVisibleMonthChange]);
 
-  const days = useMemo(() => {
-    const monthStart = startOfMonth(currentMonth);
-    const monthEnd = endOfMonth(currentMonth);
-    const calendarStart = startOfWeek(monthStart, { weekStartsOn: 1 });
-    const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
+  useEffect(() => {
+    if (focusPending.current) {
+      const selector =
+        mode === "days"
+          ? `[data-date="${toLocalDateKey(focusedDate)}"]`
+          : '.mini-calendar-choices button[aria-pressed="true"]';
+      const target =
+        rootRef.current?.querySelector<HTMLButtonElement>(selector) ??
+        rootRef.current?.querySelector<HTMLButtonElement>(".mini-calendar-choices button");
+      target?.focus();
+      focusPending.current = false;
+    }
+  }, [focusedDate, mode]);
 
-    return eachDayOfInterval({ start: calendarStart, end: calendarEnd });
-  }, [currentMonth]);
+  const days = useMemo(
+    () =>
+      eachDayOfInterval({
+        start: startOfWeek(currentMonth, { weekStartsOn: 1 }),
+        end: endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 1 }),
+      }),
+    [currentMonth],
+  );
 
-  const handlePrevMonth = () => {
-    setCurrentMonth((prev) => subMonths(prev, 1));
-  };
+  function changeMonth(next: Date) {
+    if (next.getFullYear() < 1 || next.getFullYear() > 9999) {
+      return;
+    }
+    const nextMonth = startOfMonth(next);
+    setCurrentMonth((previous) => (isSameMonth(previous, nextMonth) ? previous : nextMonth));
+    setFocusedDate(next);
+  }
 
-  const handleNextMonth = () => {
-    setCurrentMonth((prev) => addMonths(prev, 1));
-  };
+  function changeMode(next: typeof mode) {
+    focusPending.current = true;
+    setMode(next);
+  }
 
-  const handleToday = () => {
-    const today = new Date();
-    setCurrentMonth(startOfMonth(today));
-    onDateSelect(today);
-  };
+  function navigate(direction: number) {
+    if (mode === "years") {
+      setYearStart((start) => Math.max(1, Math.min(9988, start + direction * 12)));
+    } else {
+      changeMonth(
+        mode === "months" ? addYears(currentMonth, direction) : addMonths(currentMonth, direction),
+      );
+    }
+  }
 
-  const handleDateClick = (day: Date) => {
-    const nextMonth = startOfMonth(day);
-    setCurrentMonth((prev) => (isSameMonth(prev, nextMonth) ? prev : nextMonth));
+  function selectDate(day: Date) {
+    changeMonth(day);
+    setMode("days");
     onDateSelect(day);
-  };
+  }
+
+  function handleDayKey(event: React.KeyboardEvent<HTMLButtonElement>, day: Date) {
+    let next = day;
+    switch (event.key) {
+      case "ArrowLeft": {
+        next = addDays(day, -1);
+        break;
+      }
+      case "ArrowRight": {
+        next = addDays(day, 1);
+        break;
+      }
+      case "ArrowUp": {
+        next = addDays(day, -7);
+        break;
+      }
+      case "ArrowDown": {
+        next = addDays(day, 7);
+        break;
+      }
+      case "Home": {
+        next = startOfWeek(day, { weekStartsOn: 1 });
+        break;
+      }
+      case "End": {
+        next = endOfWeek(day, { weekStartsOn: 1 });
+        break;
+      }
+      case "PageUp": {
+        next = event.shiftKey ? addYears(day, -1) : addMonths(day, -1);
+        break;
+      }
+      case "PageDown": {
+        next = event.shiftKey ? addYears(day, 1) : addMonths(day, 1);
+        break;
+      }
+      default: {
+        return;
+      }
+    }
+    event.preventDefault();
+    focusPending.current = true;
+    changeMonth(next);
+  }
 
   return (
-    <div className="mini-calendar">
-      <MiniCalendarHeader
-        currentMonth={currentMonth}
-        locale={dateLocale}
-        onNextMonth={handleNextMonth}
-        onPrevMonth={handlePrevMonth}
-        onToday={handleToday}
-      />
-      <div className="mini-calendar-grid">
-        {WEEKDAY_KEYS.map((weekday) => (
-          <div key={weekday} className="mini-calendar-day-header">
-            {t(`miniCalendar.weekdays.${weekday}`)}
-          </div>
-        ))}
-        {days.map((day) => {
-          const isCurrentMonth = isSameMonth(day, currentMonth);
-          const isTodayDate = isToday(day);
-          const isSelected = isSameDay(day, selectedDate);
-          const dayClasses = ["mini-calendar-day"];
-          if (eventDayKeys.has(toLocalDateKey(day))) {
-            dayClasses.push("has-events");
-          }
-          if (!isCurrentMonth) {
-            dayClasses.push("other-month");
-          }
-          if (isTodayDate) {
-            dayClasses.push("today");
-          }
-          if (isSelected) {
-            dayClasses.push("selected");
-          }
-
-          return (
-            <button
-              key={day.toISOString()}
-              className={dayClasses.join(" ")}
-              onClick={() => handleDateClick(day)}
-              type="button"
+    <div className={`mini-calendar${embedded ? " mini-calendar--embedded" : ""}`} ref={rootRef}>
+      <div className="mini-calendar-header">
+        <h3>
+          <button
+            type="button"
+            aria-label={t("datePicker.chooseMonth")}
+            aria-expanded={mode === "months"}
+            onClick={() => changeMode(mode === "months" ? "days" : "months")}
+          >
+            {format(currentMonth, "MMMM", { locale })}
+          </button>{" "}
+          <button
+            type="button"
+            aria-label={t("datePicker.chooseYear")}
+            aria-expanded={mode === "years"}
+            onClick={() => {
+              setYearStart(Math.max(1, Math.min(9988, year - 5)));
+              changeMode(mode === "years" ? "days" : "years");
+            }}
+          >
+            {year}
+          </button>
+        </h3>
+        <div className="mini-calendar-nav">
+          <button
+            aria-label={previousLabel}
+            disabled={
+              mode === "years"
+                ? yearStart === 1
+                : year === 1 && (mode === "months" || currentMonth.getMonth() === 0)
+            }
+            onClick={() => navigate(-1)}
+            type="button"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
             >
-              {format(day, "d")}
-            </button>
-          );
-        })}
+              <path d="m6 14 6-6 6 6" />
+            </svg>
+          </button>
+          <button
+            aria-label={t("miniCalendar.today")}
+            onClick={() => selectDate(new Date())}
+            type="button"
+          >
+            <CalendarIcon />
+          </button>
+          <button
+            aria-label={nextLabel}
+            disabled={
+              mode === "years"
+                ? yearStart === 9988
+                : year === 9999 && (mode === "months" || currentMonth.getMonth() === 11)
+            }
+            onClick={() => navigate(1)}
+            type="button"
+          >
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.7"
+            >
+              <path d="m6 10 6 6 6-6" />
+            </svg>
+          </button>
+        </div>
       </div>
+      <span className="visually-hidden" aria-live="polite">
+        {format(currentMonth, "MMMM yyyy", { locale })}
+      </span>
+      {mode === "days" && (
+        <div className="mini-calendar-grid">
+          {WEEKDAY_KEYS.map((weekday) => (
+            <div key={weekday} className="mini-calendar-day-header">
+              {t(`miniCalendar.weekdays.${weekday}`)}
+            </div>
+          ))}
+          {days.map((day) => {
+            const selected = selectedDate !== null && isSameDay(day, selectedDate);
+            const classes = [
+              "mini-calendar-day",
+              eventDayKeys?.has(toLocalDateKey(day)) && "has-events",
+              !isSameMonth(day, currentMonth) && "other-month",
+              isToday(day) && "today",
+              selected && "selected",
+            ]
+              .filter(Boolean)
+              .join(" ");
+            return (
+              <button
+                key={toLocalDateKey(day)}
+                data-date={toLocalDateKey(day)}
+                aria-label={format(day, "PPPP", { locale })}
+                aria-pressed={selected}
+                aria-current={isToday(day) ? "date" : undefined}
+                className={classes}
+                disabled={day.getFullYear() < 1 || day.getFullYear() > 9999}
+                tabIndex={isSameDay(day, focusedDate) ? 0 : -1}
+                onFocus={() => setFocusedDate(day)}
+                onKeyDown={(event) => handleDayKey(event, day)}
+                onClick={() => selectDate(day)}
+                type="button"
+              >
+                {format(day, "d")}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {mode === "months" && (
+        <div className="mini-calendar-choices">
+          {Array.from({ length: 12 }, (_, month) => {
+            const date = new Date(currentMonth);
+            date.setMonth(month);
+            return (
+              <button
+                key={month}
+                type="button"
+                aria-pressed={month === currentMonth.getMonth()}
+                onClick={() => {
+                  changeMonth(date);
+                  changeMode("days");
+                }}
+              >
+                {format(date, "MMM", { locale })}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {mode === "years" && (
+        <div className="mini-calendar-choices">
+          {Array.from({ length: 12 }, (_, index) => yearStart + index).map((nextYear) => (
+            <button
+              key={nextYear}
+              type="button"
+              aria-pressed={year === nextYear}
+              onClick={() => {
+                const next = new Date(currentMonth);
+                next.setFullYear(nextYear);
+                changeMonth(next);
+                changeMode("months");
+              }}
+            >
+              {nextYear}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
