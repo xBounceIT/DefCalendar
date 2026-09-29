@@ -6,7 +6,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createInstance } from "i18next";
 import React from "react";
 import { I18nextProvider, initReactI18next } from "react-i18next";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import SettingsDialog from "../src/renderer/src/components/settings-dialog";
 import SettingsSelect from "../src/renderer/src/components/settings-select";
@@ -293,6 +293,127 @@ describe("custom select lifecycle", () => {
       "aria-selected",
       "true",
     );
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("selects by typing while the menu is closed", () => {
+    expect.hasAssertions();
+    const onChange = vi.fn();
+    render(
+      <SettingsSelect
+        aria-label="Calendar"
+        onChange={onChange}
+        options={options}
+        value="primary"
+      />,
+    );
+    const trigger = screen.getByRole("button", { name: "Calendar" });
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "B" });
+    expect(onChange).toHaveBeenCalledWith("birthdays");
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("focuses matching prefixes without committing an open-menu selection", () => {
+    expect.hasAssertions();
+    const onChange = vi.fn();
+    render(
+      <SettingsSelect
+        aria-label="Calendar"
+        onChange={onChange}
+        options={[...options, { value: "business", label: "Business" }]}
+        value="primary"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    fireEvent.keyDown(document.activeElement!, { key: "B" });
+    expect(screen.getByRole("option", { name: "Birthdays" })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!, { key: "u" });
+    expect(screen.getByRole("option", { name: "Business" })).toHaveFocus();
+    expect(screen.getByRole("option", { name: "Primary Calendar" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("cycles through matching options when the same letter is repeated", () => {
+    expect.hasAssertions();
+    render(
+      <SettingsSelect
+        aria-label="Calendar"
+        onChange={vi.fn()}
+        options={[...options, { value: "business", label: "Business" }]}
+        value="primary"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    fireEvent.keyDown(document.activeElement!, { key: "b" });
+    expect(screen.getByRole("option", { name: "Birthdays" })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!, { key: "b" });
+    expect(screen.getByRole("option", { name: "Business" })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!, { key: "b" });
+    expect(screen.getByRole("option", { name: "Birthdays" })).toHaveFocus();
+  });
+
+  it("starts a new prefix after a typing pause", () => {
+    expect.hasAssertions();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1000);
+    onTestFinished(() => clock.mockRestore());
+    render(
+      <SettingsSelect
+        aria-label="Calendar"
+        onChange={vi.fn()}
+        options={[...options, { value: "business", label: "Business" }]}
+        value="primary"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    fireEvent.keyDown(document.activeElement!, { key: "b" });
+    fireEvent.keyDown(document.activeElement!, { key: "u" });
+    expect(screen.getByRole("option", { name: "Business" })).toHaveFocus();
+    clock.mockReturnValue(2001);
+    fireEvent.keyDown(document.activeElement!, { key: "p" });
+    expect(screen.getByRole("option", { name: "Primary Calendar" })).toHaveFocus();
+  });
+
+  it.each([{ ctrlKey: true }, { metaKey: true }, { altKey: true }, { isComposing: true }])(
+    "does not intercept a modified or composing key: %j",
+    (modifiers) => {
+      expect.hasAssertions();
+      const onChange = vi.fn();
+      render(
+        <SettingsSelect
+          aria-label="Calendar"
+          onChange={onChange}
+          options={options}
+          value="primary"
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+      expect(fireEvent.keyDown(document.activeElement!, { key: "b", ...modifiers })).toBe(true);
+      expect(screen.getByRole("option", { name: "Primary Calendar" })).toHaveFocus();
+      expect(onChange).not.toHaveBeenCalled();
+    },
+  );
+
+  it("leaves selection unchanged and allows retrying after an unmatched prefix", () => {
+    expect.hasAssertions();
+    const onChange = vi.fn();
+    render(
+      <SettingsSelect
+        aria-label="Calendar"
+        onChange={onChange}
+        options={options}
+        value="primary"
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
+    fireEvent.keyDown(document.activeElement!, { key: "z" });
+    expect(screen.getByRole("option", { name: "Primary Calendar" })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!, { key: "b" });
+    expect(screen.getByRole("option", { name: "Birthdays" })).toHaveFocus();
     expect(onChange).not.toHaveBeenCalled();
   });
 });

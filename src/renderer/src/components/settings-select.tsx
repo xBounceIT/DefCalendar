@@ -14,6 +14,16 @@ interface SettingsSelectProps<T extends string | number> {
   "aria-label"?: string;
 }
 
+function normalizeTypeaheadText(text: string): string {
+  return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
+
+function getFocusedOptionIndex(items: HTMLButtonElement[]): number {
+  return document.activeElement instanceof HTMLButtonElement
+    ? items.indexOf(document.activeElement)
+    : -1;
+}
+
 function ChevronDownIcon({ className = "" }: { className?: string }) {
   return (
     <svg
@@ -45,6 +55,7 @@ function SettingsSelect<T extends string | number>({
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const openingKeyRef = useRef<string | null>(null);
+  const typeaheadRef = useRef<{ query: string; updatedAt: number; value: T } | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const menuOpen = isOpen && !disabled && options.length > 0;
 
@@ -59,6 +70,7 @@ function SettingsSelect<T extends string | number>({
   useEffect(() => {
     if (!menuOpen) {
       setIsOpen(false);
+      typeaheadRef.current = null;
       return;
     }
 
@@ -95,12 +107,65 @@ function SettingsSelect<T extends string | number>({
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) {
           setIsOpen(false);
+          typeaheadRef.current = null;
         }
       }}
       onKeyDown={(event) => {
-        if (disabled || options.length === 0) {
+        if (disabled || options.length === 0 || event.nativeEvent.isComposing) {
           return;
         }
+        if (
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey &&
+          [...event.key].length === 1 &&
+          event.key !== " "
+        ) {
+          const key = normalizeTypeaheadText(event.key);
+          if (!key) {
+            return;
+          }
+          event.preventDefault();
+          const now = Date.now();
+          const previous = typeaheadRef.current;
+          const recent = previous && now - previous.updatedAt < 700 ? previous : null;
+          const continuing = recent !== null && recent.query !== key;
+          const query = continuing ? recent.query + key : key;
+          const items = menuOpen
+            ? [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="option"]')]
+            : [];
+          const focusedIndex = getFocusedOptionIndex(items);
+          const currentIndex =
+            focusedIndex !== -1
+              ? focusedIndex
+              : options.findIndex((option) => option.value === (recent?.value ?? value));
+          const startIndex = continuing ? Math.max(currentIndex, 0) : currentIndex + 1;
+          let matchIndex = -1;
+          for (let offset = 0; offset < options.length; offset += 1) {
+            const index = (startIndex + offset) % options.length;
+            if (normalizeTypeaheadText(options[index].label).startsWith(query)) {
+              matchIndex = index;
+              break;
+            }
+          }
+          const match = options[matchIndex];
+          if (!match) {
+            typeaheadRef.current = null;
+            return;
+          }
+          typeaheadRef.current = {
+            query,
+            updatedAt: now,
+            value: match.value,
+          };
+          if (menuOpen) {
+            items[matchIndex]?.focus();
+          } else if (match.value !== value) {
+            onChange(match.value);
+          }
+          return;
+        }
+        typeaheadRef.current = null;
         if (event.key === "Escape" && menuOpen) {
           event.preventDefault();
           event.stopPropagation();
@@ -117,10 +182,10 @@ function SettingsSelect<T extends string | number>({
           setIsOpen(true);
           return;
         }
-        const items = Array.from(
-          event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="option"]'),
-        );
-        const currentIndex = items.findIndex((item) => item === document.activeElement);
+        const items = [
+          ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="option"]'),
+        ];
+        const currentIndex = getFocusedOptionIndex(items);
         const nextIndex =
           event.key === "Home"
             ? 0
@@ -144,6 +209,7 @@ function SettingsSelect<T extends string | number>({
         disabled={disabled || options.length === 0}
         ref={triggerRef}
         onClick={() => {
+          typeaheadRef.current = null;
           openingKeyRef.current = "click";
           setIsOpen((open) => !open);
         }}

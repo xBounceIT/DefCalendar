@@ -226,6 +226,20 @@ function createMeetingState(
 }
 
 describe("calendar dropdown", () => {
+  it("saves the calendar chosen by typing on the closed dropdown", () => {
+    expect.hasAssertions();
+    const { onSave } = renderDialog({
+      calendars: [createCalendar(), { ...createCalendar(), id: "calendar-2", name: "Birthdays" }],
+      state: createMeetingState({ draft: { subject: "Planning" } }),
+    });
+    const trigger = screen.getByRole("button", { name: "Calendar", exact: true });
+    fireEvent.keyDown(trigger, { key: "b" });
+    expect(trigger).toHaveTextContent("Birthdays (user@example.com)");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ calendarId: "calendar-2" }));
+  });
+
   it.each(["create", "edit"] as const)("saves the selected calendar in %s mode", (mode) => {
     expect.hasAssertions();
     const { onSave } = renderDialog({
