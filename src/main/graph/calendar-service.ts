@@ -201,11 +201,24 @@ interface SendRequestArgs {
 
 const EVENT_SELECT =
   "id,subject,body,bodyPreview,location,locations,start,end,isAllDay,isReminderOn,reminderMinutesBeforeStart,webLink,changeKey,type,attendees,organizer,recurrence,onlineMeeting,onlineMeetingProvider,isOnlineMeeting,lastModifiedDateTime,allowNewTimeProposals,responseRequested,showAs,sensitivity,categories,seriesMasterId,responseStatus,hasAttachments,isOrganizer,isCancelled,originalStart";
+const MAX_CONTACT_PHOTO_BYTES = 5 * 1024 * 1024;
+const MAX_CONTACT_PHOTO_CACHE_CHARACTERS = 16 * 1024 * 1024;
+const MAX_CONTACT_PHOTO_REQUESTS = 6;
+const MAX_PENDING_CONTACT_PHOTOS = 256;
 
 class GraphCalendarService {
   private readonly auth: MsalAuthService;
   private readonly baseUrl = "https://graph.microsoft.com/v1.0";
   private readonly config: AppConfig;
+  private readonly contactPhotos = new Map<
+    string,
+    { expiresAt: number; photo: Promise<string | null>; size: number }
+  >();
+  private activeContactPhotoLoads = 0;
+  private readonly pendingContactPhotoLoads = new Set<{
+    cancel: () => void;
+    start: () => void;
+  }>();
 
   constructor(auth: MsalAuthService, config: AppConfig) {
     this.auth = auth;
@@ -354,7 +367,7 @@ class GraphCalendarService {
           continue;
         }
 
-        suggestions.set(suggestion.email, suggestion);
+        suggestions.set(suggestion.email, { ...suggestion, contactId: contact.id });
       }
     }
 
@@ -369,6 +382,7 @@ class GraphCalendarService {
     homeAccountId: string,
     queryText: string,
     limit: number,
+    signal?: AbortSignal,
   ): Promise<ContactSuggestion[]> {
     const search = trimOrNull(queryText);
     if (!search) {
@@ -387,6 +401,7 @@ class GraphCalendarService {
           headers: {
             "X-PeopleQuery-QuerySources": "Mailbox,Directory",
           },
+          signal,
         },
         homeAccountId,
       ),
@@ -394,12 +409,16 @@ class GraphCalendarService {
     const suggestions = new Map<string, ContactSuggestion>();
 
     for (const person of response.value.map(parseGraphPerson)) {
+      const userPrincipalName = trimOrNull(person.userPrincipalName);
       for (const suggestion of listGraphPersonContactSuggestions(person)) {
         if (suggestions.has(suggestion.email)) {
           continue;
         }
 
-        suggestions.set(suggestion.email, suggestion);
+        suggestions.set(suggestion.email, {
+          ...suggestion,
+          ...(userPrincipalName ? { userPrincipalName } : {}),
+        });
         if (suggestions.size >= limit) {
           return [...suggestions.values()];
         }
@@ -407,6 +426,187 @@ class GraphCalendarService {
     }
 
     return [...suggestions.values()];
+  }
+
+  async getContactPhoto(homeAccountId: string, contact: ContactSuggestion): Promise<string | null> {
+    const key = JSON.stringify([
+      homeAccountId,
+      contact.contactId,
+      contact.userPrincipalName,
+      contact.email.toLowerCase(),
+    ]);
+    if (!this.auth.getAccountUsername(homeAccountId)) {
+      this.contactPhotos.delete(key);
+      return null;
+    }
+    let cached = this.contactPhotos.get(key);
+    if (!cached || cached.expiresAt <= Date.now()) {
+      const photo = this.queueContactPhoto(homeAccountId, contact).catch(() => {
+        if (this.contactPhotos.get(key)?.photo === photo) {
+          this.contactPhotos.delete(key);
+        }
+        return null;
+      });
+      this.contactPhotos.delete(key);
+      if (this.contactPhotos.size >= 256) {
+        this.contactPhotos.delete(this.contactPhotos.keys().next().value!);
+      }
+      cached = { expiresAt: Number.POSITIVE_INFINITY, photo, size: 0 };
+      this.contactPhotos.set(key, cached);
+    }
+    const result = await cached.photo;
+    if (this.contactPhotos.get(key) === cached && cached.expiresAt === Number.POSITIVE_INFINITY) {
+      cached.expiresAt = Date.now() + 5 * 60_000;
+    }
+    if (!this.auth.getAccountUsername(homeAccountId)) {
+      if (this.contactPhotos.get(key) === cached) {
+        this.contactPhotos.delete(key);
+      }
+      return null;
+    }
+    if (this.contactPhotos.get(key) === cached && cached.size !== (result?.length ?? 0)) {
+      cached.size = result?.length ?? 0;
+      let totalSize = [...this.contactPhotos.values()].reduce(
+        (total, item) => total + item.size,
+        0,
+      );
+      for (const [entryKey, item] of this.contactPhotos) {
+        if (totalSize <= MAX_CONTACT_PHOTO_CACHE_CHARACTERS) {
+          break;
+        }
+        this.contactPhotos.delete(entryKey);
+        totalSize -= item.size;
+      }
+    }
+    return result;
+  }
+
+  private queueContactPhoto(
+    homeAccountId: string,
+    contact: ContactSuggestion,
+  ): Promise<string | null> {
+    return new Promise((resolve, reject) => {
+      const job = {
+        cancel: () => reject(new Error("Contact photo queue is full")),
+        start: () => {
+          this.activeContactPhotoLoads += 1;
+          void Promise.resolve()
+            .then(() =>
+              this.auth.getAccountUsername(homeAccountId)
+                ? this.loadContactPhoto(homeAccountId, contact)
+                : null,
+            )
+            .then(resolve, reject)
+            .finally(() => {
+              this.activeContactPhotoLoads -= 1;
+              this.startPendingContactPhotos();
+            });
+        },
+      };
+      if (this.pendingContactPhotoLoads.size >= MAX_PENDING_CONTACT_PHOTOS) {
+        const oldest = this.pendingContactPhotoLoads.values().next().value!;
+        this.pendingContactPhotoLoads.delete(oldest);
+        oldest.cancel();
+      }
+      this.pendingContactPhotoLoads.add(job);
+      this.startPendingContactPhotos();
+    });
+  }
+
+  private startPendingContactPhotos(): void {
+    while (
+      this.activeContactPhotoLoads < MAX_CONTACT_PHOTO_REQUESTS &&
+      this.pendingContactPhotoLoads.size > 0
+    ) {
+      const job = this.pendingContactPhotoLoads.values().next().value!;
+      this.pendingContactPhotoLoads.delete(job);
+      job.start();
+    }
+  }
+
+  private async loadContactPhoto(
+    homeAccountId: string,
+    contact: ContactSuggestion,
+  ): Promise<string | null> {
+    const paths = contact.contactId
+      ? [`/me/contacts/${encodeURIComponent(contact.contactId)}/photo/$value`]
+      : [];
+    paths.push(
+      `/users/${encodeURIComponent(contact.userPrincipalName ?? contact.email)}/photos/48x48/$value`,
+    );
+
+    for (const pathOrUrl of paths) {
+      const response = await this.sendRequest({
+        homeAccountId,
+        pathOrUrl,
+        init: { headers: { Accept: "image/*" }, signal: AbortSignal.timeout(20_000) },
+      });
+      if (response.status === 404 || response.status === 403) {
+        await response.body?.cancel();
+        continue;
+      }
+      if (!response.ok) {
+        throw await this.createRequestError(response);
+      }
+
+      const contentType = response.headers.get("Content-Type")?.split(";")[0].trim().toLowerCase();
+      if (
+        !contentType ||
+        !["image/jpeg", "image/png", "image/gif", "image/webp"].includes(contentType)
+      ) {
+        await response.body?.cancel();
+        return null;
+      }
+      const reader = response.body?.getReader();
+      if (!reader) {
+        return null;
+      }
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            break;
+          }
+          size += value.byteLength;
+          if (size > MAX_CONTACT_PHOTO_BYTES) {
+            await reader.cancel();
+            return null;
+          }
+          chunks.push(value);
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      if (!size) {
+        return null;
+      }
+      const bytes = Buffer.concat(chunks, size);
+      return `data:${contentType};base64,${bytes.toString("base64")}`;
+    }
+
+    if (!contact.userPrincipalName) {
+      const people = await this.searchPeople(
+        homeAccountId,
+        contact.email,
+        25,
+        AbortSignal.timeout(20_000),
+      );
+      const directoryContact = people.find(
+        (person) =>
+          person.email.toLowerCase() === contact.email.toLowerCase() &&
+          person.userPrincipalName &&
+          person.userPrincipalName.toLowerCase() !== contact.email.toLowerCase(),
+      );
+      if (directoryContact) {
+        return this.loadContactPhoto(homeAccountId, {
+          ...directoryContact,
+          contactId: undefined,
+        });
+      }
+    }
+    return null;
   }
 
   async listCalendarView(

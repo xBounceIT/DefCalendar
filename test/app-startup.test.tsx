@@ -259,6 +259,7 @@ function createCalendarApiMock(): CalendarApi {
       list: vi.fn().mockResolvedValue([]),
     },
     contacts: {
+      getPhoto: vi.fn().mockResolvedValue(null),
       search: vi.fn().mockResolvedValue([]),
     },
     events: {
@@ -409,6 +410,7 @@ function createSignedInCalendarApiMock(): CalendarApi {
       list: vi.fn().mockResolvedValue([]),
     },
     contacts: {
+      getPhoto: vi.fn().mockResolvedValue(null),
       search: vi.fn().mockResolvedValue([]),
     },
     events: {
@@ -585,6 +587,7 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
       list: vi.fn().mockResolvedValue([]),
     },
     contacts: {
+      getPhoto: vi.fn().mockResolvedValue(null),
       search: vi.fn().mockResolvedValue([]),
     },
     events: {

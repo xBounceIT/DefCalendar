@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import EventActionService from "../src/main/events/event-action-service";
 import registerIpc from "../src/main/ipc/register-ipc";
 import { IPC_CHANNELS } from "../src/shared/ipc";
-import { createDefaultSettings } from "../src/shared/schemas";
+import { createDefaultSettings, type ContactSuggestion } from "../src/shared/schemas";
 
 const { app, dialog, ipcMain, shell } = vi.hoisted(() => ({
   app: {
@@ -159,6 +159,9 @@ function createFixture() {
     clearUserData: vi.fn(),
     deleteEvent: vi.fn(),
     getCalendarHomeAccountId: vi.fn().mockReturnValue("account-1"),
+    getContactByEmail: vi
+      .fn<(homeAccountId: string, email: string) => ContactSuggestion | null>()
+      .mockReturnValue(null),
     getEvent: vi.fn().mockReturnValue(storedEvent),
     listCalendars: vi.fn().mockReturnValue([]),
     listEvents: vi.fn(),
@@ -170,6 +173,7 @@ function createFixture() {
     upsertEvent: vi.fn(),
   };
   const graph = {
+    getContactPhoto: vi.fn().mockResolvedValue("data:image/jpeg;base64,cGhvdG8="),
     getAttendeeAvailability: vi
       .fn()
       .mockResolvedValue([{ email: "coworker@example.com", status: "busy" }]),
@@ -738,6 +742,68 @@ describe("register ipc", () => {
     expect(fixture.db.searchEvents).not.toHaveBeenCalled();
   });
 
+  it("browses all cached contacts without a query and preserves photo identifiers", async () => {
+    const fixture = createFixture();
+    fixture.db.searchContacts.mockReturnValue([
+      { contactId: "contact-1", email: "alice@example.com", name: "Alice" },
+    ]);
+    const response = await fixture.handlers.get(IPC_CHANNELS.contactsSearch)?.(
+      { sender: fixture.mainWebContents },
+      { homeAccountId: "account-1", limit: null, query: "" },
+    );
+    expect(response).toEqual([
+      { contactId: "contact-1", email: "alice@example.com", name: "Alice" },
+    ]);
+    expect(fixture.graph.searchPeople).not.toHaveBeenCalled();
+  });
+
+  it("loads a photo for the validated contact and account", async () => {
+    const fixture = createFixture();
+    const args = {
+      contactId: "contact-1",
+      email: "alice@example.com",
+      homeAccountId: "account-1",
+      name: "Alice",
+    };
+    const response = await fixture.handlers.get(IPC_CHANNELS.contactsGetPhoto)?.(
+      { sender: fixture.mainWebContents },
+      args,
+    );
+    expect(response).toBe("data:image/jpeg;base64,cGhvdG8=");
+    expect(fixture.graph.getContactPhoto).toHaveBeenCalledWith("account-1", args);
+  });
+
+  it("uses the saved contact photo identity for fuzzy people results and event participants", async () => {
+    const fixture = createFixture();
+    const contact = {
+      contactId: "personal-andra",
+      email: "andra.pantea@example.com",
+      name: null,
+    };
+    fixture.db.getContactByEmail.mockReturnValue(contact);
+    fixture.db.searchContacts.mockReturnValue([]);
+    fixture.graph.searchPeople.mockResolvedValue([{ email: contact.email, name: "Andra Pantea" }]);
+    const event = { sender: fixture.mainWebContents };
+    const results = await fixture.handlers.get(IPC_CHANNELS.contactsSearch)?.(event, {
+      homeAccountId: "account-1",
+      limit: null,
+      query: "andra.panta",
+    });
+    expect(results).toEqual([{ email: contact.email, name: "Andra Pantea" }]);
+    for (const name of ["Andra Pantea", null]) {
+      await fixture.handlers.get(IPC_CHANNELS.contactsGetPhoto)?.(event, {
+        email: contact.email,
+        homeAccountId: "account-1",
+        name,
+      });
+      expect(fixture.db.getContactByEmail).toHaveBeenLastCalledWith("account-1", contact.email);
+      expect(fixture.graph.getContactPhoto).toHaveBeenLastCalledWith("account-1", {
+        ...contact,
+        homeAccountId: "account-1",
+      });
+    }
+  });
+
   it("searches cached contacts for an account", async () => {
     expect.hasAssertions();
 
@@ -755,7 +821,12 @@ describe("register ipc", () => {
       limit: 5,
       query: "ali",
     });
-    expect(fixture.graph.searchPeople).toHaveBeenCalledWith("account-1", "ali", 5);
+    expect(fixture.graph.searchPeople).toHaveBeenCalledWith(
+      "account-1",
+      "ali",
+      5,
+      expect.any(AbortSignal),
+    );
     expect(response).toStrictEqual([
       { email: "alice@example.com", name: "Alice Example" },
       { email: "bob@example.com", name: null },
@@ -768,7 +839,11 @@ describe("register ipc", () => {
     const fixture = createFixture();
     fixture.graph.searchPeople.mockResolvedValueOnce([
       { email: "volpe@example.com", name: "Volpe Francesco" },
-      { email: "ALICE@example.com", name: "Alice From Graph" },
+      {
+        email: "ALICE@example.com",
+        name: "Alice From Graph",
+        userPrincipalName: "alice@tenant.onmicrosoft.com",
+      },
     ]);
     const invokeEvent = { sender: fixture.mainWebContents };
 
@@ -779,7 +854,11 @@ describe("register ipc", () => {
     });
 
     expect(response).toStrictEqual([
-      { email: "alice@example.com", name: "Alice Example" },
+      {
+        email: "alice@example.com",
+        name: "Alice Example",
+        userPrincipalName: "alice@tenant.onmicrosoft.com",
+      },
       { email: "bob@example.com", name: null },
       { email: "volpe@example.com", name: "Volpe Francesco" },
     ]);
@@ -802,6 +881,65 @@ describe("register ipc", () => {
       { email: "alice@example.com", name: "Alice Example" },
       { email: "bob@example.com", name: null },
     ]);
+  });
+
+  it.each([
+    { cached: [{ email: "alice@example.com", name: "Alice" }], deadline: 500 },
+    { cached: [], deadline: 5_000 },
+  ])(
+    "bounds the directory wait to $deadline ms when Graph does not settle",
+    async ({ cached, deadline }) => {
+      vi.useFakeTimers();
+      try {
+        const fixture = createFixture();
+        fixture.db.searchContacts.mockReturnValue(cached);
+        const people = createDeferred<ContactSuggestion[]>();
+        fixture.graph.searchPeople.mockReturnValue(people.promise);
+        const response = fixture.handlers.get(IPC_CHANNELS.contactsSearch)?.(
+          { sender: fixture.mainWebContents },
+          { homeAccountId: "account-1", limit: null, query: "alice" },
+        );
+        let settled = false;
+        void response?.then(() => {
+          settled = true;
+        });
+        await vi.advanceTimersByTimeAsync(deadline - 1);
+        expect(settled).toBe(false);
+        await vi.advanceTimersByTimeAsync(1);
+        const result = await response;
+        expect(result).toEqual(cached);
+        expect(fixture.graph.searchPeople.mock.calls[0][3].aborted).toBe(true);
+        expect(vi.getTimerCount()).toBe(0);
+        people.resolve([{ email: "late@example.com", name: "Late Directory Match" }]);
+        await vi.advanceTimersByTimeAsync(0);
+        expect(result).toEqual(cached);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("merges a prompt directory result and cancels its deadline", async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = createFixture();
+      fixture.graph.searchPeople.mockResolvedValueOnce([
+        { email: "remote@example.com", name: "Remote" },
+      ]);
+      const result = await fixture.handlers.get(IPC_CHANNELS.contactsSearch)?.(
+        { sender: fixture.mainWebContents },
+        { homeAccountId: "account-1", limit: null, query: "remote" },
+      );
+      expect(result).toEqual([
+        { email: "alice@example.com", name: "Alice Example" },
+        { email: "bob@example.com", name: null },
+        { email: "remote@example.com", name: "Remote" },
+      ]);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(fixture.graph.searchPeople.mock.calls[0][3].aborted).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("skips Graph people search for one-character contact queries", async () => {

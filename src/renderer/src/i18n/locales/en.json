@@ -235,6 +235,7 @@
     "allowNewTimeProposals": "Allow new time proposals",
     "responseRequested": "Request responses",
     "attendeeName": "Name",
+    "noContacts": "No matching contacts",
     "attendeeEmail": "Email",
     "attendeeResponse": "Response",
     "attendeeType": "Type",

@@ -31,7 +31,7 @@ Desktop calendar app for Microsoft 365 Exchange Online built with Electron.
 5. Under `Authentication > Add a platform`, add `Mobile and desktop applications` with the redirect URI `http://localhost`.
 6. Grant delegated Microsoft Graph permissions:
    - `openid`, `profile`, `offline_access`
-   - `User.Read`, `Calendars.ReadWrite`, `MailboxSettings.Read`, `Contacts.Read`, `People.Read`
+   - `User.Read`, `User.ReadBasic.All`, `Calendars.ReadWrite`, `MailboxSettings.Read`, `Contacts.Read`, `People.Read`
 7. Use `.env.example` for optional development overrides; packaged end users should use the bundled app registration.
 8. For tenant-specific development, override `MSAL_AUTHORITY`.
 
@@ -52,6 +52,7 @@ Desktop calendar app for Microsoft 365 Exchange Online built with Electron.
 ## Notes
 
 - Targets Microsoft 365 work/school accounts only.
+- Participant profile photos use delegated `User.ReadBasic.All` to read other organizational users' basic profiles, including photos, and `Contacts.Read` for personal contact photos. See the [Microsoft Graph photo permissions](https://learn.microsoft.com/en-us/graph/api/profilephoto-get?view=graph-rest-1.0). When upgrading an existing Entra app registration, add `User.ReadBasic.All` to its delegated permissions and sign in again to grant the additional consent. Tenant consent policies may require administrator approval. If `GRAPH_SCOPES` is overridden, include `User.ReadBasic.All` there as well; photos without sufficient permission retain initials.
 - Participant availability uses Microsoft Graph `getSchedule` with the existing delegated `Calendars.ReadWrite` permission; no additional Microsoft 365 consent is required. Exchange calendar sharing and free/busy policies determine which schedules the signed-in account can see. Inaccessible or external mailboxes may show availability as unknown, never as free. Only availability is sent to the UI, without event titles or details. Recurring meetings check the selected time range only.
 - `AADSTS500113` means the Entra app registration is missing the localhost redirect or public client flows are disabled.
 - Shared/delegate calendars are not implemented.

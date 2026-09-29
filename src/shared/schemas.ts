@@ -65,8 +65,10 @@ const outlookCategorySchema = z.object({
 });
 
 const contactSuggestionSchema = z.object({
+  contactId: z.string().optional(),
   email: z.string().email(),
   name: z.string().nullable(),
+  userPrincipalName: z.string().min(1).optional(),
 });
 
 const attendeeTypeSchema = z.enum(["required", "optional", "resource"]);
@@ -323,8 +325,8 @@ const listOutlookCategoriesArgsSchema = z.object({
 
 const searchContactsArgsSchema = z.object({
   homeAccountId: z.string(),
-  limit: z.number().int().min(1).max(25).default(8),
-  query: z.string().trim().min(1).max(200),
+  limit: z.number().int().min(1).max(25).nullable().default(8),
+  query: z.string().trim().max(200),
 });
 
 const eventSearchSortSchema = z.enum(["recent", "oldest", "relevance"]);
