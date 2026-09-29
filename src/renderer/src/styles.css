@@ -2497,6 +2497,11 @@ button {
   gap: 8px;
 }
 
+.event-search-dialog__sort-container {
+  position: relative;
+  flex-shrink: 0;
+}
+
 .event-search-dialog__sort {
   display: inline-flex;
   align-items: center;
@@ -2528,6 +2533,50 @@ button {
 .event-search-dialog__sort:disabled {
   background: var(--surface-disabled);
   cursor: not-allowed;
+}
+
+.event-search-dialog__sort-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 180px;
+  padding: 6px;
+  border: var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(var(--ink-black-rgb), 0.18);
+}
+
+.event-search-dialog__sort-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.event-search-dialog__sort-option:hover,
+.event-search-dialog__sort-option:focus-visible {
+  outline: none;
+  background: var(--fill-hover);
+}
+
+.event-search-dialog__sort-option[aria-checked="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .event-search-dialog__input-icon {
@@ -4427,7 +4476,7 @@ button {
   padding: 6px;
   border-radius: 16px;
   background: var(--bg-tertiary);
-  border: 1px solid transparent;
+  border: 1px solid var(--availability-color, transparent);
   font-size: 13px;
   max-width: min(250px, 100%);
   color: var(--ink);
@@ -4439,6 +4488,32 @@ button {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.attendee-pill__availability {
+  color: var(--availability-color, var(--ink-tertiary));
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.attendee-pill--busy,
+.attendee-pill--oof {
+  --availability-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg-tertiary));
+}
+
+.attendee-pill--tentative {
+  --availability-color: var(--banner-warning-text);
+}
+
+.attendee-pill--free,
+.attendee-pill--workingElsewhere {
+  --availability-color: var(--success);
+}
+
+.attendee-pill--unknown,
+.attendee-pill--loading {
+  --availability-color: var(--ink-tertiary);
 }
 
 .attendee-pill__remove {

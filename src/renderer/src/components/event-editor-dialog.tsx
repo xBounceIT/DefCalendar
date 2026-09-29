@@ -1,3 +1,7 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faClock, faPaperPlane, faUser } from "@fortawesome/free-regular-svg-icons";
 import type {
   AccountSummary,
   AttachmentDeleteArgs,
@@ -17,16 +21,18 @@ import type {
   SearchContactsArgs,
   UserSettings,
 } from "@shared/schemas";
-import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   fromDateTimeInputValue,
   getOutlookCategoryColor,
   toDateTimeInputValue,
 } from "@shared/calendar";
-import { useTranslation } from "react-i18next";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faClock, faPaperPlane, faUser } from "@fortawesome/free-regular-svg-icons";
 import type { SyncWindowDays } from "@shared/sync";
+import {
+  attendeeAvailabilityArgsSchema,
+  attendeeEmailSchema,
+  type AttendeeAvailability,
+  type AttendeeAvailabilityArgs,
+} from "@shared/attendee-availability";
 
 import type { EditorState } from "../event-editor-state";
 import type { CalendarOverlapTarget } from "../event-overlap";
@@ -35,6 +41,7 @@ import { toCalendarOverlapTarget } from "../event-overlap";
 import { MeetingIcon, TeamsIcon } from "./meeting-icon";
 import OverlapWarning from "./overlap-warning";
 import SafeHtmlBody from "./safe-html-body";
+import useAttendeeAvailability from "../hooks/use-attendee-availability";
 
 interface EventEditorDialogProps {
   accounts: AccountSummary[];
@@ -63,6 +70,7 @@ interface EventEditorDialogProps {
     targetEventId?: string,
   ) => Promise<void>;
   onSearchContacts: (args: SearchContactsArgs) => Promise<ContactSuggestion[]>;
+  onGetAttendeeAvailability: (args: AttendeeAvailabilityArgs) => Promise<AttendeeAvailability[]>;
   onSave: (draft: EventDraft) => Promise<void>;
   state: EditorState | null;
   syncWindow?: null | SyncWindowDays;
@@ -193,6 +201,9 @@ function EventEditorDialog(props: EventEditorDialogProps) {
   const [attachmentsBusy, setAttachmentsBusy] = useState(false);
   const [form, setForm] = useState<EditorFormState | null>(null);
   const [initialForm, setInitialForm] = useState<EditorFormState | null>(null);
+  const availabilityArgs =
+    props.state?.mode === "create" && form ? buildAvailabilityArgs(form) : null;
+  const availability = useAttendeeAvailability(availabilityArgs, props.onGetAttendeeAvailability);
 
   useEffect(() => {
     const next = buildFormState(props.state);
@@ -473,6 +484,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
             <div className="field-row field-row--attendees">
               <AttendeesIcon />
               <AttendeePillsInput
+                availability={props.state?.mode === "create" ? availability : undefined}
                 attendees={getAttendeesByType(form.attendees, "required")}
                 disabled={readOnlyForAttendee}
                 homeAccountId={selectedCalendar?.homeAccountId ?? null}
@@ -507,6 +519,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
             <div className="field-row field-row--attendees">
               <AttendeesIcon />
               <AttendeePillsInput
+                availability={props.state?.mode === "create" ? availability : undefined}
                 attendees={getAttendeesByType(form.attendees, "optional")}
                 disabled={readOnlyForAttendee}
                 homeAccountId={selectedCalendar?.homeAccountId ?? null}
@@ -2615,6 +2628,7 @@ function AttendeesIcon() {
 
 function AttendeePillsInput({
   attendees,
+  availability,
   disabled,
   homeAccountId,
   inputValue,
@@ -2627,6 +2641,7 @@ function AttendeePillsInput({
   removeLabel,
 }: {
   attendees: EventParticipant[];
+  availability?: ReturnType<typeof useAttendeeAvailability>;
   disabled: boolean;
   homeAccountId: null | string;
   inputValue: string;
@@ -2744,24 +2759,48 @@ function AttendeePillsInput({
         onKeyDown={() => inputRef.current?.focus()}
         role="group"
       >
-        {attendees.map((attendee, index) => (
-          <span className="attendee-pill" key={`${attendee.email ?? "attendee"}-${index}`}>
-            <span className="attendee-pill__email">{attendee.email}</span>
-            {!disabled && (
-              <button
-                aria-label={removeLabel}
-                className="attendee-pill__remove"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onRemove(index);
-                }}
-                type="button"
-              >
-                <CloseIcon />
-              </button>
-            )}
-          </span>
-        ))}
+        {attendees.map((attendee, index) => {
+          const status = availability
+            ? availability.loading
+              ? "loading"
+              : (availability.items.find(
+                  (item) => item.email === normalizeAttendeeEmail(attendee.email),
+                )?.status ?? "unknown")
+            : null;
+          return (
+            <span
+              className={`attendee-pill${status ? ` attendee-pill--${status}` : ""}`}
+              key={`${attendee.email ?? "attendee"}-${index}`}
+            >
+              <span className="attendee-pill__email">{attendee.email}</span>
+              {status && (
+                <span
+                  className="attendee-pill__availability"
+                  title={
+                    status === "unknown"
+                      ? t("eventEditor.availabilityUnknownHint")
+                      : t(`eventEditor.attendeeAvailability.${status}`)
+                  }
+                >
+                  {t(`eventEditor.attendeeAvailability.${status}`)}
+                </span>
+              )}
+              {!disabled && (
+                <button
+                  aria-label={removeLabel}
+                  className="attendee-pill__remove"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRemove(index);
+                  }}
+                  type="button"
+                >
+                  <CloseIcon />
+                </button>
+              )}
+            </span>
+          );
+        })}
         <input
           aria-autocomplete="list"
           aria-haspopup="listbox"
@@ -3502,12 +3541,39 @@ function buildEndInput(state: EventEditorDialogProps["state"]): string {
   return toDateTimeInputValue(state.event.end, false);
 }
 
-function buildDraft(form: EditorFormState, event: CalendarEvent | null): EventDraft {
+function buildEventTimeRange(form: EditorFormState): { start: string; end: string } {
   const start = fromDateTimeInputValue(form.startInput, form.allDay);
   let end = fromDateTimeInputValue(form.endInput, false);
   if (form.allDay) {
     end = addDays(fromDateTimeInputValue(form.endInput, true), 1);
   }
+  return { start, end };
+}
+
+function buildAvailabilityArgs(form: EditorFormState): AttendeeAvailabilityArgs | null {
+  try {
+    const parsed = attendeeAvailabilityArgsSchema.safeParse({
+      calendarId: form.calendarId,
+      emails: [
+        ...new Set(
+          form.attendees
+            .map((attendee) => {
+              const parsed = attendeeEmailSchema.safeParse(attendee.email);
+              return parsed.success ? parsed.data : null;
+            })
+            .filter((email): email is string => Boolean(email)),
+        ),
+      ].toSorted(),
+      ...buildEventTimeRange(form),
+    });
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildDraft(form: EditorFormState, event: CalendarEvent | null): EventDraft {
+  const { start, end } = buildEventTimeRange(form);
 
   const attendeesWithPendingRequired = mergeAttendeesWithInput(
     form.attendees,
@@ -3936,7 +4002,9 @@ function updateRecurrenceDay(
 }
 
 function addDays(value: string, days: number): string {
-  return new Date(new Date(value).getTime() + days * 24 * 60 * 60 * 1000).toISOString();
+  const date = new Date(value);
+  date.setDate(date.getDate() + days);
+  return date.toISOString();
 }
 
 function toAttachmentErrorMessage(error: unknown, fallback: string): string {

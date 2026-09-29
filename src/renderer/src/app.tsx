@@ -1130,6 +1130,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         onRemoveAttachment={removeEventAttachment}
         onRespond={respondToMeeting}
         onSearchContacts={searchContacts}
+        onGetAttendeeAvailability={getAttendeeAvailability}
         onSave={saveDraft}
         state={editorState}
         syncWindow={syncStatus.syncWindow}
@@ -1374,6 +1375,9 @@ async function openExternalEvent(url: string): Promise<void> {
 async function searchContacts(args: SearchContactsArgs) {
   return globalThis.calendarApi.contacts.search(args);
 }
+
+const getAttendeeAvailability: CalendarApi["events"]["getAttendeeAvailability"] = (args) =>
+  globalThis.calendarApi.events.getAttendeeAvailability(args);
 
 function resetEditor(
   setDialogError: React.Dispatch<React.SetStateAction<string | null>>,

@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { readFileSync } from "node:fs";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createInstance } from "i18next";
 import React from "react";
 import { I18nextProvider, initReactI18next } from "react-i18next";
@@ -184,6 +184,7 @@ function renderDialog(props?: Partial<React.ComponentProps<typeof EventEditorDia
           onRemoveAttachment={onRemoveAttachment}
           onRespond={vi.fn().mockResolvedValue(undefined)}
           onSearchContacts={onSearchContacts}
+          onGetAttendeeAvailability={vi.fn().mockResolvedValue([])}
           onSave={onSave}
           state={state}
           timeFormat="system"
@@ -209,6 +210,275 @@ function renderDialog(props?: Partial<React.ComponentProps<typeof EventEditorDia
     onSearchContacts,
   };
 }
+
+function createMeetingState(
+  overrides: Partial<Extract<EditorState, { mode: "create" }>> = {},
+): EditorState {
+  return {
+    mode: "create",
+    calendarId: "calendar-1",
+    allDay: false,
+    start: "2026-09-29T09:00:00.000Z",
+    end: "2026-09-29T10:00:00.000Z",
+    draft: { attendees: [{ ...createParticipant(), email: "coworker@example.com" }] },
+    ...overrides,
+  };
+}
+
+describe("new meeting participant availability", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("checks valid participants even when another address is malformed", async () => {
+    expect.hasAssertions();
+    const load = vi.fn().mockResolvedValue([{ email: "coworker@example.com", status: "free" }]);
+    renderDialog({
+      onGetAttendeeAvailability: load,
+      state: createMeetingState({
+        draft: {
+          attendees: [
+            { ...createParticipant(), email: "coworker@example.com" },
+            { ...createParticipant(), email: "unfinished-address" },
+          ],
+        },
+      }),
+    });
+    expect(await screen.findByText("Available")).toBeInTheDocument();
+    expect(load).toHaveBeenCalledWith(
+      expect.objectContaining({ emails: ["coworker@example.com"] }),
+    );
+    expect(
+      within(screen.getByText("unfinished-address").closest(".attendee-pill")!).getByText(
+        "Unknown",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("times out a stalled check, checks a changed time and ignores its late response", async () => {
+    expect.hasAssertions();
+    vi.useFakeTimers();
+    let resolveOld: (items: { email: string; status: "free" }[]) => void = () => undefined;
+    const stalled = new Promise<{ email: string; status: "free" }[]>((resolve) => {
+      resolveOld = resolve;
+    });
+    const load = vi
+      .fn()
+      .mockReturnValueOnce(stalled)
+      .mockResolvedValue([{ email: "coworker@example.com", status: "busy" }]);
+    const view = renderDialog({ onGetAttendeeAvailability: load, state: createMeetingState() });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(35_300);
+    });
+    expect(screen.getByText("Unknown")).toBeInTheDocument();
+    view.rerenderDialog({
+      state: createMeetingState({
+        start: "2026-09-29T11:00:00.000Z",
+        end: "2026-09-29T12:00:00.000Z",
+      }),
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    await act(async () => {
+      resolveOld([{ email: "coworker@example.com", status: "free" }]);
+    });
+    expect(screen.getByText("coworker@example.com").closest(".attendee-pill")).toHaveClass(
+      "attendee-pill--busy",
+    );
+    expect(screen.queryByText("Available")).not.toBeInTheDocument();
+  });
+
+  it("allows the service deadline to return successful colleagues before the UI times out", async () => {
+    expect.hasAssertions();
+    vi.useFakeTimers();
+    const load = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          globalThis.setTimeout(
+            () =>
+              resolve([
+                { email: "coworker@example.com", status: "free" },
+                { email: "other@example.com", status: "unknown", error: "requestFailed" },
+              ]),
+            30_001,
+          );
+        }),
+    );
+    renderDialog({
+      onGetAttendeeAvailability: load,
+      state: createMeetingState({
+        draft: {
+          attendees: [
+            { ...createParticipant(), email: "coworker@example.com" },
+            { ...createParticipant(), email: "other@example.com" },
+          ],
+        },
+      }),
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_301);
+    });
+    expect(screen.getByText("Available")).toBeInTheDocument();
+    expect(
+      within(screen.getByText("other@example.com").closest(".attendee-pill")!).getByText("Unknown"),
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    ["2026-03-29", "2026-03-30"],
+    ["2026-10-25", "2026-10-26"],
+  ])(
+    "keeps an all-day range at local midnight across the clock change on %s",
+    async (day, nextDay) => {
+      expect.hasAssertions();
+      const load = vi.fn().mockResolvedValue([{ email: "coworker@example.com", status: "free" }]);
+      const start = toLocalIso(`${day}T00:00:00`);
+      const end = toLocalIso(`${nextDay}T00:00:00`);
+      const view = renderDialog({
+        onGetAttendeeAvailability: load,
+        state: createMeetingState({ allDay: true, start, end }),
+      });
+      expect(await screen.findByText("Available")).toBeInTheDocument();
+      expect(load).toHaveBeenCalledWith(expect.objectContaining({ start, end }));
+      editSubject("All-day meeting");
+      fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+      expect(view.onSave).toHaveBeenCalledWith(
+        expect.objectContaining({ start, end, isAllDay: true }),
+      );
+    },
+  );
+
+  it("highlights required and optional participants without blocking save", async () => {
+    expect.hasAssertions();
+    const load = vi.fn().mockResolvedValue([
+      { email: "coworker@example.com", status: "busy" },
+      { email: "optional@example.com", status: "free" },
+    ]);
+    const view = renderDialog({
+      onGetAttendeeAvailability: load,
+      state: createMeetingState({
+        draft: {
+          attendees: [
+            { ...createParticipant(), email: "coworker@example.com" },
+            { ...createParticipant(), email: "optional@example.com", type: "optional" },
+          ],
+        },
+      }),
+    });
+    expect(await screen.findByText("Available")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Refresh availability" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Availability for the selected time, where calendar sharing allows it."),
+    ).not.toBeInTheDocument();
+    expect(
+      within(screen.getByText("coworker@example.com").closest(".attendee-pill")!).getByText("Busy"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("coworker@example.com").closest(".attendee-pill")).toHaveClass(
+      "attendee-pill--busy",
+    );
+    expect(load).toHaveBeenCalledWith({
+      calendarId: "calendar-1",
+      emails: ["coworker@example.com", "optional@example.com"],
+      start: "2026-09-29T09:00:00.000Z",
+      end: "2026-09-29T10:00:00.000Z",
+    });
+    editSubject("Planning");
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    await waitFor(() => expect(view.onSave).toHaveBeenCalled());
+  });
+
+  it("updates automatically when the time changes and discards a late response", async () => {
+    expect.hasAssertions();
+    let resolveOld: (items: { email: string; status: "busy" }[]) => void = () => undefined;
+    const oldRequest = new Promise<{ email: string; status: "busy" }[]>((resolve) => {
+      resolveOld = resolve;
+    });
+    const load = vi
+      .fn()
+      .mockReturnValueOnce(oldRequest)
+      .mockResolvedValue([{ email: "coworker@example.com", status: "free" }]);
+    const view = renderDialog({ onGetAttendeeAvailability: load, state: createMeetingState() });
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    view.rerenderDialog({
+      state: createMeetingState({
+        start: "2026-09-29T11:00:00.000Z",
+        end: "2026-09-29T12:00:00.000Z",
+      }),
+    });
+    expect(screen.getByText("Checking…")).toBeInTheDocument();
+    expect(await screen.findByText("Available")).toBeInTheDocument();
+    await act(async () => {
+      resolveOld([{ email: "coworker@example.com", status: "busy" }]);
+    });
+    expect(screen.getByText("coworker@example.com").closest(".attendee-pill")).toHaveClass(
+      "attendee-pill--free",
+    );
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it("checks the exclusive end of an all-day meeting and marks permission failures unknown", async () => {
+    expect.hasAssertions();
+    const load = vi.fn().mockRejectedValue(new Error("Access denied"));
+    renderDialog({
+      onGetAttendeeAvailability: load,
+      state: createMeetingState({
+        allDay: true,
+        start: toLocalIso("2026-09-29T00:00:00"),
+        end: toLocalIso("2026-09-30T00:00:00"),
+      }),
+    });
+    expect(await screen.findByText("Unknown")).toBeInTheDocument();
+    expect(load).toHaveBeenCalledWith({
+      calendarId: "calendar-1",
+      emails: ["coworker@example.com"],
+      start: toLocalIso("2026-09-29T00:00:00"),
+      end: toLocalIso("2026-09-30T00:00:00"),
+    });
+    expect(screen.queryByText("Available")).not.toBeInTheDocument();
+  });
+
+  it("does not check existing meetings against their own reservations", async () => {
+    expect.hasAssertions();
+    const load = vi.fn();
+    renderDialog({
+      onGetAttendeeAvailability: load,
+      state: {
+        mode: "edit",
+        event: createEvent({
+          attendees: [{ ...createParticipant(), email: "coworker@example.com" }],
+        }),
+      },
+    });
+    expect(screen.queryByText("Checking…")).not.toBeInTheDocument();
+    expect(load).not.toHaveBeenCalled();
+  });
+
+  it("updates availability when the selected calendar or participants change", async () => {
+    expect.hasAssertions();
+    const load = vi
+      .fn()
+      .mockResolvedValueOnce([{ email: "coworker@example.com", status: "free" }])
+      .mockResolvedValue([{ email: "coworker@example.com", status: "unknown" }]);
+    const view = renderDialog({
+      onGetAttendeeAvailability: load,
+      state: createMeetingState(),
+      calendars: [
+        createCalendar(),
+        { ...createCalendar(), id: "calendar-2", homeAccountId: "account-2" },
+      ],
+    });
+    expect(await screen.findByText("Available")).toBeInTheDocument();
+    fireEvent.change(view.container.querySelector(".field-select")!, {
+      target: { value: "calendar-2" },
+    });
+    expect(screen.queryByText("Available")).not.toBeInTheDocument();
+    expect(await screen.findByText("Unknown")).toBeInTheDocument();
+    expect(load).toHaveBeenLastCalledWith(expect.objectContaining({ calendarId: "calendar-2" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    expect(screen.queryByText("Unknown")).not.toBeInTheDocument();
+  });
+});
 
 function openSchedulingSection(container: HTMLElement) {
   const schedulingButton = container.querySelector(".scheduling-summary");

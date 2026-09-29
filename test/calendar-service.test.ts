@@ -8,6 +8,7 @@ import GraphCalendarService, {
 } from "../src/main/graph/calendar-service";
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -57,6 +58,278 @@ function createService() {
     } as never,
   );
 }
+
+describe("graph participant availability", () => {
+  it("ends an availability check even when authentication never settles", async () => {
+    expect.hasAssertions();
+    vi.useFakeTimers();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new GraphCalendarService(
+      { getAccessTokenForAccount: vi.fn().mockReturnValue(new Promise(() => undefined)) } as never,
+      { timeZone: "UTC" } as never,
+    );
+    const promise = service.getAttendeeAvailability(
+      {
+        calendarId: "calendar-1",
+        emails: ["coworker@example.com"],
+        start: "2026-09-29T09:00:00Z",
+        end: "2026-09-29T10:00:00Z",
+      },
+      "account-1",
+    );
+    let settled = false;
+    void promise.then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(settled).toBe(true);
+    expect(await promise).toEqual([
+      { email: "coworker@example.com", status: "unknown", error: "requestFailed" },
+    ]);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not fetch a schedule when a token arrives after the check has expired", async () => {
+    expect.hasAssertions();
+    vi.useFakeTimers();
+    let resolveToken: (token: string) => void = () => undefined;
+    const token = new Promise<string>((resolve) => {
+      resolveToken = resolve;
+    });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new GraphCalendarService(
+      { getAccessTokenForAccount: vi.fn().mockReturnValue(token) } as never,
+      { timeZone: "UTC" } as never,
+    );
+    const promise = service.getAttendeeAvailability(
+      {
+        calendarId: "calendar-1",
+        emails: ["coworker@example.com"],
+        start: "2026-09-29T09:00:00Z",
+        end: "2026-09-29T10:00:00Z",
+      },
+      "account-1",
+    );
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await promise).toEqual([
+      { email: "coworker@example.com", status: "unknown", error: "requestFailed" },
+    ]);
+    resolveToken("late-token");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("aborts a stalled batch at the deadline and preserves already fetched availability", async () => {
+    expect.hasAssertions();
+    vi.useFakeTimers();
+    const emails = Array.from({ length: 41 }, (_, index) => `person${index}@example.com`);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            value: emails
+              .slice(0, 20)
+              .map((email) => ({ scheduleId: email, availabilityView: "000000000000" })),
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockImplementationOnce(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal!.addEventListener("abort", () => reject(init.signal!.reason), {
+              once: true,
+            });
+          }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const promise = createService().getAttendeeAvailability(
+      {
+        calendarId: "calendar-1",
+        emails,
+        start: "2026-09-29T09:00:00Z",
+        end: "2026-09-29T10:00:00Z",
+      },
+      "account-1",
+    );
+    await vi.advanceTimersByTimeAsync(30_000);
+    const result = await promise;
+    expect(result.slice(0, 20)).toEqual(
+      emails.slice(0, 20).map((email) => ({ email, status: "free" })),
+    );
+    expect(result.slice(20)).toEqual(
+      emails.slice(20).map((email) => ({ email, status: "unknown", error: "requestFailed" })),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("interrupts a long throttle delay at the availability deadline", async () => {
+    expect.hasAssertions();
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response("", { status: 429, headers: { "Retry-After": "3600" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const promise = createService().getAttendeeAvailability(
+      {
+        calendarId: "calendar-1",
+        emails: ["coworker@example.com"],
+        start: "2026-09-29T09:00:00Z",
+        end: "2026-09-29T10:00:00Z",
+      },
+      "account-1",
+    );
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await promise).toEqual([
+      { email: "coworker@example.com", status: "unknown", error: "requestFailed" },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not repeatedly request a forbidden account for remaining batches", async () => {
+    expect.hasAssertions();
+    const emails = Array.from({ length: 41 }, (_, index) => `person${index}@example.com`);
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: { code: "ErrorAccessDenied", message: "Denied" } }), {
+        status: 403,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    expect(
+      await createService().getAttendeeAvailability(
+        {
+          calendarId: "calendar-1",
+          emails,
+          start: "2026-09-29T09:00:00Z",
+          end: "2026-09-29T10:00:00Z",
+        },
+        "account-1",
+      ),
+    ).toEqual(emails.map((email) => ({ email, status: "unknown", error: "requestFailed" })));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it("preserves successful batches when a later batch fails", async () => {
+    expect.hasAssertions();
+    const emails = Array.from({ length: 21 }, (_, index) => `person${index}@example.com`);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            value: emails
+              .slice(0, 20)
+              .map((email) => ({ scheduleId: email, availabilityView: "000000000000" })),
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: { code: "ErrorInvalidRequest", message: "Mailbox unavailable" },
+          }),
+          { status: 400 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await createService().getAttendeeAvailability(
+      {
+        calendarId: "calendar-1",
+        emails,
+        start: "2026-09-29T09:00:00Z",
+        end: "2026-09-29T10:00:00Z",
+      },
+      "account-1",
+    );
+    expect(result.slice(0, 20)).toEqual(
+      emails.slice(0, 20).map((email) => ({ email, status: "free" })),
+    );
+    expect(result[20]).toEqual({ email: emails[20], status: "unknown", error: "requestFailed" });
+  });
+
+  it("batches and deduplicates recipients using the selected account and UTC", async () => {
+    const emails = Array.from({ length: 21 }, (_, index) => `person${index}@example.com`);
+    const fetchMock = vi.fn().mockImplementation((_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            value: body.schedules.map((email: string) => ({
+              scheduleId: email.toUpperCase(),
+              availabilityView: "000000000000",
+            })),
+          }),
+          { status: 200 },
+        ),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const auth = { getAccessTokenForAccount: vi.fn().mockResolvedValue("account-token") };
+    const service = new GraphCalendarService(auth as never, { timeZone: "Europe/Rome" } as never);
+    const results = await service.getAttendeeAvailability(
+      {
+        calendarId: "calendar-2",
+        emails: [...emails, emails[0].toUpperCase()],
+        start: "2026-09-29T11:00:00+02:00",
+        end: "2026-09-29T12:00:00+02:00",
+      },
+      "account-2",
+    );
+    expect(results).toEqual(emails.map((email) => ({ email, status: "free" })));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(auth.getAccessTokenForAccount).toHaveBeenCalledWith("account-2", false);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://graph.microsoft.com/v1.0/me/calendar/getSchedule");
+    expect(init.method).toBe("POST");
+    expect(new Headers(init.headers).get("Prefer")).toBe(
+      'outlook.timezone="UTC", IdType="ImmutableId"',
+    );
+    expect(JSON.parse(init.body as string)).toEqual({
+      schedules: emails.slice(0, 20),
+      availabilityViewInterval: 5,
+      startTime: { dateTime: "2026-09-29T09:00:00.000", timeZone: "UTC" },
+      endTime: { dateTime: "2026-09-29T10:00:00.000", timeZone: "UTC" },
+    });
+  });
+
+  it("keeps per-mailbox failures and omitted schedules unknown while reporting accessible colleagues", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            value: [
+              { scheduleId: "free@example.com", availabilityView: "000000000000" },
+              { scheduleId: "denied@example.com", error: { responseCode: "5009" } },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    expect(
+      await createService().getAttendeeAvailability(
+        {
+          calendarId: "calendar-1",
+          emails: ["free@example.com", "denied@example.com", "external@example.org"],
+          start: "2026-09-29T09:00:00Z",
+          end: "2026-09-29T10:00:00Z",
+        },
+        "account-1",
+      ),
+    ).toEqual([
+      { email: "free@example.com", status: "free" },
+      { email: "denied@example.com", status: "unknown" },
+      { email: "external@example.org", status: "unknown" },
+    ]);
+  });
+});
 
 function createCalendarEvent(overrides?: Partial<CalendarEvent>): CalendarEvent {
   return {
