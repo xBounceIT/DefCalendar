@@ -223,7 +223,13 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   ipcMain.handle(IPC_CHANNELS.authSignIn, async (event, input) => {
     validateMainSender(event);
     const args = authSignInRequestSchema.parse(input ?? {});
-    const state = await dependencies.auth.signIn(args.mode);
+    let state;
+    try {
+      state = await dependencies.auth.signIn(args.mode);
+    } catch (error) {
+      broadcast(IPC_CHANNELS.authStateChanged, dependencies.auth.getAuthState());
+      throw error;
+    }
     void dependencies.sync.syncAll("sign-in");
     broadcast(IPC_CHANNELS.authStateChanged, state);
     return state;

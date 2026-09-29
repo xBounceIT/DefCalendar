@@ -23,9 +23,15 @@ describe("msal auth service", () => {
       service as unknown as {
         pca: {
           getAllAccounts: ReturnType<typeof vi.fn>;
+          acquireTokenSilent: ReturnType<typeof vi.fn>;
         };
       }
     ).pca = {
+      acquireTokenSilent: vi.fn().mockResolvedValue({
+        accessToken: "token",
+        account: { homeAccountId: "account-1" },
+        scopes: ["User.Read"],
+      }),
       getAllAccounts: vi.fn().mockResolvedValue([
         {
           homeAccountId: "account-1",
@@ -74,6 +80,7 @@ describe("msal auth service", () => {
     service.setDatabase({
       getAccounts: vi.fn().mockReturnValue([]),
       saveAccounts,
+      clearUserData: vi.fn(),
     });
     service.setSettings({
       getSettings: vi.fn().mockReturnValue({ activeAccountId: "account-1" }),

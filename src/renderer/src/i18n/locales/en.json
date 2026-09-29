@@ -32,7 +32,13 @@
     "comingSoon": "Coming soon",
     "addAccountTitle": "Add Account",
     "addAccountSubtitle": "Connect another calendar account.",
-    "back": "Back"
+    "back": "Back",
+    "sessionIssues": {
+      "missing_permissions": "{{username}} was signed out because the Microsoft 365 session lacks required permissions: {{permissions}}. Sign in again and approve all requested permissions.",
+      "consent_required": "{{username}} was signed out because Microsoft 365 requires consent for the app's permissions. Sign in again and approve access; your administrator may need to approve it.",
+      "session_expired": "{{username}} was signed out because the Microsoft 365 session has expired or requires a new sign-in. Sign in again to restore access.",
+      "validation_unavailable": "The permissions for {{username}} could not be verified with Microsoft 365. The account remains connected, but sync is paused until verification succeeds. Check your connection and try syncing again."
+    }
   },
   "calendarSelection": {
     "title": "Choose calendars to sync",

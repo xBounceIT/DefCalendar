@@ -16,6 +16,11 @@ const FIXTURE_SYNC_WINDOW = {
 };
 
 interface SyncFixture {
+  auth: {
+    getAccountIds: ReturnType<typeof vi.fn>;
+    getActiveAccountId: ReturnType<typeof vi.fn>;
+    hasSession: ReturnType<typeof vi.fn>;
+  };
   db: {
     clearNotificationFired: ReturnType<typeof vi.fn>;
     clearCalendarSyncRanges: ReturnType<typeof vi.fn>;
@@ -218,6 +223,7 @@ function createFixture(args?: {
   );
 
   return {
+    auth,
     db,
     graph,
     newEventNotifications,
@@ -248,6 +254,71 @@ function createDeferred<T>() {
 }
 
 describe("sync service", () => {
+  it("discards calendar discovery results if permission validation removed the account", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture({ calendars: [createCalendar("calendar-a")] });
+    const deferred = createDeferred<CalendarSummary[]>();
+    fixture.graph.listCalendars.mockReturnValueOnce(deferred.promise);
+    const sync = fixture.service.syncAll("startup");
+    fixture.auth.getAccountIds.mockReturnValue([]);
+    deferred.resolve([createCalendar("calendar-a")]);
+
+    expect((await sync).state).toBe("error");
+    expect(fixture.db.upsertCalendars).not.toHaveBeenCalled();
+  });
+
+  it("does not restore contacts for a removed account", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture({ calendars: [createCalendar("calendar-a")] });
+    const deferred = createDeferred<{ email: string; name: string }[]>();
+    fixture.graph.listContacts.mockReturnValueOnce(deferred.promise);
+    const sync = fixture.service.syncAll("startup");
+    await vi.waitFor(() => expect(fixture.graph.listContacts).toHaveBeenCalledOnce());
+    fixture.auth.getAccountIds.mockReturnValue([]);
+    deferred.resolve([{ email: "one@example.com", name: "One" }]);
+
+    expect((await sync).state).toBe("error");
+    expect(fixture.db.replaceContactsForAccount).not.toHaveBeenCalled();
+  });
+
+  it("does not store delayed events or fire notifications for a removed account", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture({
+      calendars: [createCalendar("calendar-a")],
+      visibleCalendarIds: ["calendar-a"],
+    });
+    const deferred = createDeferred<CalendarEvent[]>();
+    fixture.graph.listCalendarView.mockReturnValueOnce(deferred.promise);
+    const sync = fixture.service.syncAll("startup");
+    await vi.waitFor(() => expect(fixture.graph.listCalendarView).toHaveBeenCalledOnce());
+    fixture.auth.getAccountIds.mockReturnValue([]);
+    deferred.resolve([createEvent()]);
+
+    expect((await sync).state).toBe("error");
+    expect(fixture.db.replaceEventsForCalendarRange).not.toHaveBeenCalled();
+    expect(fixture.newEventNotifications.recordCandidates).not.toHaveBeenCalled();
+  });
+
+  it("does not persist an on-demand event response after the account is removed", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const deferred = createDeferred<CalendarEvent[]>();
+    fixture.graph.listCalendarView.mockReturnValueOnce(deferred.promise);
+    const fetchRange = fixture.service.ensureEventsRange({
+      calendarIds: ["calendar-a"],
+      start: "2026-03-30T00:00:00.000Z",
+      end: "2026-03-31T00:00:00.000Z",
+    });
+    const settledRange = fetchRange.catch((error: unknown) => error);
+    await vi.waitFor(() => expect(fixture.graph.listCalendarView).toHaveBeenCalledOnce());
+    fixture.auth.getAccountIds.mockReturnValue([]);
+    deferred.resolve([createEvent()]);
+    await settledRange;
+
+    expect(fixture.db.replaceEventsForCalendarRange).not.toHaveBeenCalled();
+    expect(fixture.db.recordCalendarSyncRange).not.toHaveBeenCalled();
+  });
+
   it("discovers calendars on sign-in without syncing events", async () => {
     const fixture = createFixture({
       calendars: [createCalendar("calendar-a"), createCalendar("calendar-b")],

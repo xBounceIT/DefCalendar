@@ -163,6 +163,7 @@ class SyncService {
           } catch {
             continue;
           }
+          this.assertAccountConnected(homeAccountId);
           const persistedEvents = this.dependencies.db.listEvents({
             calendarIds: [calendarId],
             end: range.rangeEnd,
@@ -312,6 +313,7 @@ class SyncService {
       for (const accountId of accountIds) {
         const knownCalendarIds = this.dependencies.db.listCalendarIds(accountId);
         const accountCalendars = await this.dependencies.graph.listCalendars(accountId);
+        this.assertAccountConnected(accountId);
         this.dependencies.db.upsertCalendars(accountCalendars, accountId);
         settings = this.dependencies.settings.syncVisibleCalendars({
           calendarIds: accountCalendars.map((calendar) => calendar.id),
@@ -321,8 +323,10 @@ class SyncService {
 
         try {
           const accountContacts = await this.dependencies.graph.listContacts(accountId);
+          this.assertAccountConnected(accountId);
           this.dependencies.db.replaceContactsForAccount(accountContacts, accountId);
         } catch {}
+        this.assertAccountConnected(accountId);
       }
 
       if (reason === "sign-in") {
@@ -398,6 +402,7 @@ class SyncService {
               rangeEnd,
               calendar.homeAccountId,
             );
+            this.assertAccountConnected(calendar.homeAccountId);
             processedCalendars += 1;
             processedEvents += fetchedEvents.length;
             if (!syncFailed) {
@@ -412,6 +417,7 @@ class SyncService {
             }
             return {
               calendarId: calendar.id,
+              homeAccountId: calendar.homeAccountId,
               fetchedEvents,
               isDeepBackfill,
               rangeStart,
@@ -426,6 +432,7 @@ class SyncService {
 
       const syncedCalendars = [];
       for (const syncedCalendar of calendarsToStore) {
+        this.assertAccountConnected(syncedCalendar.homeAccountId);
         const { calendarId, fetchedEvents, isDeepBackfill, rangeStart } = syncedCalendar;
         const persistedEvents = this.dependencies.db.listEvents({
           calendarIds: [calendarId],
@@ -631,6 +638,12 @@ class SyncService {
     }
 
     return this.dependencies.auth.getAccountIds();
+  }
+
+  private assertAccountConnected(homeAccountId: string): void {
+    if (!this.dependencies.auth.getAccountIds().includes(homeAccountId)) {
+      throw new Error("The Microsoft 365 account was signed out during sync. Sign in again.");
+    }
   }
 
   private getIntervalMs(): number {

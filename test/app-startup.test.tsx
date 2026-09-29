@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import React from "react";
 import App from "../src/renderer/src/app";
 import useUiStore from "../src/renderer/src/store";
+import { setAppLocale } from "../src/renderer/src/i18n";
 import { createDefaultSettings } from "../src/shared/schema-values";
 import type { CalendarApi, NewEventNotificationItem } from "../src/shared/ipc";
 import type { CalendarEvent, EventListArgs } from "../src/shared/schemas";
@@ -696,6 +697,70 @@ function createDelayedAuthRefreshCalendarApiMock(): CalendarApi {
 }
 
 describe("app startup", () => {
+  it.each([
+    ["en", /one@example.com was signed out.*Tasks.ReadWrite/],
+    ["it", /one@example.com è stato disconnesso.*Tasks.ReadWrite/],
+  ] as const)("explains the startup permission logout in %s", async (language, message) => {
+    try {
+      installResizeObserverMock();
+      const calendarApi = createCalendarApiMock();
+      vi.mocked(calendarApi.auth.getState).mockResolvedValue({
+        status: "signed_out",
+        accounts: [],
+        sessionIssues: [
+          {
+            homeAccountId: "account-1",
+            username: "one@example.com",
+            reason: "missing_permissions",
+            missingPermissions: ["Tasks.ReadWrite"],
+          },
+        ],
+      });
+      vi.mocked(calendarApi.settings.get).mockResolvedValue({
+        ...createDefaultSettings(),
+        language,
+      });
+      installCalendarApi(calendarApi);
+      renderApp();
+
+      await expect(screen.findByText(message)).resolves.not.toBeNull();
+      expect(calendarApi.calendars.list).not.toHaveBeenCalled();
+    } finally {
+      restoreCalendarApi();
+      restoreResizeObserver();
+      await setAppLocale("en");
+    }
+  });
+
+  it("shows the removed account's permissions while another account remains signed in", async () => {
+    try {
+      installResizeObserverMock();
+      const calendarApi = createSignedInCalendarApiMock();
+      const state = await calendarApi.auth.getState();
+      vi.mocked(calendarApi.auth.getState).mockResolvedValue({
+        ...state,
+        sessionIssues: [
+          {
+            homeAccountId: "removed-account",
+            username: "removed@example.com",
+            reason: "missing_permissions",
+            missingPermissions: ["People.Read"],
+          },
+        ],
+      });
+      installCalendarApi(calendarApi);
+      renderApp();
+
+      await expect(
+        screen.findByText(/removed@example.com was signed out.*People.Read/),
+      ).resolves.not.toBeNull();
+      await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
+    } finally {
+      restoreCalendarApi();
+      restoreResizeObserver();
+    }
+  });
+
   it("renders the Exchange auth screen when the preload bridge is available", async () => {
     try {
       installResizeObserverMock();

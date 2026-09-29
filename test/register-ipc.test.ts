@@ -585,6 +585,23 @@ describe("register ipc", () => {
     deferredSync.resolve(fixture.sync.getStatus());
   });
 
+  it("broadcasts the updated account state when incomplete consent rejects a re-sign-in", async () => {
+    const fixture = createFixture();
+    const state = { status: "signed_out", accounts: [] };
+    fixture.auth.signIn.mockRejectedValue(new Error("Missing required permissions"));
+    fixture.auth.getAuthState.mockReturnValue(state);
+
+    await expect(
+      fixture.handlers.get(IPC_CHANNELS.authSignIn)?.(
+        { sender: fixture.mainWebContents },
+        { mode: "user" },
+      ),
+    ).rejects.toThrow("Missing required permissions");
+
+    expect(fixture.mainWebContents.send).toHaveBeenCalledWith(IPC_CHANNELS.authStateChanged, state);
+    expect(fixture.sync.syncAll).not.toHaveBeenCalled();
+  });
+
   it("searches cached events with the parsed query and calendar filter", async () => {
     const fixture = createFixture();
     const invokeEvent = { sender: fixture.mainWebContents };
