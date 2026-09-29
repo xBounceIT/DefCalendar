@@ -716,6 +716,10 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     dependencies.newEventNotifications.clear();
   });
 
+  dependencies.auth.onSessionValidation((state) => {
+    broadcast(IPC_CHANNELS.authStateChanged, state);
+  });
+
   dependencies.newEventNotifications.onChange((items) => {
     broadcast(IPC_CHANNELS.newEventNotificationsChanged, items);
     if (items.length === 0) {

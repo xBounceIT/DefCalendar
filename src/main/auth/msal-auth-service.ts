@@ -91,6 +91,7 @@ class MsalAuthService {
   private db: DatabaseStore | null = null;
   private settings: SettingsStore | null = null;
   private sessionIssues: AuthSessionIssue[] = [];
+  private readonly sessionValidationListeners = new Set<(state: AuthState) => void>();
   private unverifiedAccounts = new Set<string>();
   private sessionValidations = new Map<string, Promise<SessionValidationResult>>();
   private accountVersions = new Map<string, number>();
@@ -206,11 +207,28 @@ class MsalAuthService {
       clearTimeout(timeout);
     }
 
-    this.unverifiedAccounts.delete(account.homeAccountId);
+    const wasUnverified = this.unverifiedAccounts.delete(account.homeAccountId);
     this.sessionIssues = this.sessionIssues.filter(
       (item) => item.homeAccountId !== account.homeAccountId,
     );
+    if (wasUnverified) {
+      this.notifySessionValidation();
+    }
     return { issue: null, accessToken: result.accessToken };
+  }
+
+  onSessionValidation(listener: (state: AuthState) => void): () => void {
+    this.sessionValidationListeners.add(listener);
+    return () => {
+      this.sessionValidationListeners.delete(listener);
+    };
+  }
+
+  private notifySessionValidation(): void {
+    const state = this.getAuthState();
+    for (const listener of this.sessionValidationListeners) {
+      listener(state);
+    }
   }
 
   private getAccountVersion(homeAccountId: string): number {
@@ -300,6 +318,7 @@ class MsalAuthService {
       reason: failure.reason,
       missingPermissions: failure.missingPermissions,
     };
+    const alreadyUnverified = this.unverifiedAccounts.has(account.homeAccountId);
     if (issue.reason === "validation_unavailable") {
       this.unverifiedAccounts.add(account.homeAccountId);
     } else {
@@ -315,6 +334,9 @@ class MsalAuthService {
       (item) => item.homeAccountId !== account.homeAccountId,
     );
     this.sessionIssues.push(issue);
+    if (issue.reason !== "validation_unavailable" || !alreadyUnverified) {
+      this.notifySessionValidation();
+    }
     return issue;
   }
 

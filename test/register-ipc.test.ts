@@ -138,6 +138,7 @@ function createFixture() {
 
   const assertAccountSession = vi.fn();
   const auth = {
+    onSessionValidation: vi.fn(),
     createAccountSessionGuard: vi.fn().mockReturnValue(assertAccountSession),
     getAccountIds: vi.fn().mockReturnValue(["account-1"]),
     getActiveAccountId: vi.fn().mockReturnValue("account-1"),
@@ -302,6 +303,31 @@ function createFixture() {
 describe("register ipc", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("broadcasts automatic session validation changes without waiting for a sync", () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const state = {
+      status: "signed_out",
+      accounts: [],
+      sessionIssues: [
+        {
+          homeAccountId: "account-1",
+          username: "one@example.com",
+          reason: "missing_permissions",
+          missingPermissions: ["People.Read"],
+        },
+      ],
+    };
+    expect(fixture.auth.onSessionValidation).toHaveBeenCalledOnce();
+    fixture.auth.onSessionValidation.mock.calls[0][0](state);
+
+    expect(fixture.mainWebContents.send).toHaveBeenCalledExactlyOnceWith(
+      IPC_CHANNELS.authStateChanged,
+      state,
+    );
+    expect(fixture.sync.syncAll).not.toHaveBeenCalled();
   });
 
   it.each([

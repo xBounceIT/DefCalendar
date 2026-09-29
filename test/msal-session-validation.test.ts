@@ -56,6 +56,52 @@ function createFixture(accounts = [account], graphScopes = resolveAppConfig({}).
 }
 
 describe("startup session permission validation", () => {
+  it("notifies subscribers of automatic sign-out with the permission failure reason", async () => {
+    expect.hasAssertions();
+    const { service, pca, db } = createFixture();
+    await service.initialize();
+    const listener = vi.fn();
+    service.onSessionValidation(listener);
+    pca.acquireTokenSilent.mockResolvedValueOnce(createToken(["User.Read"]));
+
+    await expect(service.getAccessToken(true)).rejects.toThrow("required permissions");
+
+    expect(listener).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        status: "signed_out",
+        sessionIssues: [expect.objectContaining({ reason: "missing_permissions" })],
+      }),
+    );
+    expect(db.clearUserData).toHaveBeenCalledWith(account.homeAccountId);
+  });
+
+  it("notifies subscribers when unavailable validation recovers and respects unsubscribe", async () => {
+    expect.hasAssertions();
+    const { service, pca } = createFixture();
+    const listener = vi.fn();
+    const unsubscribe = service.onSessionValidation(listener);
+    pca.acquireTokenSilent.mockRejectedValueOnce(new Error("offline"));
+    await service.initialize();
+    pca.acquireTokenSilent.mockRejectedValueOnce(new Error("still offline"));
+    await expect(service.getAccessToken()).rejects.toThrow("Unable to validate");
+    expect(listener).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: "signed_in",
+        sessionIssues: [expect.objectContaining({ reason: "validation_unavailable" })],
+      }),
+    );
+
+    pca.acquireTokenSilent.mockResolvedValue(createToken());
+    await service.getAccessToken();
+    expect(listener).toHaveBeenLastCalledWith(service.getAuthState());
+    expect(listener).toHaveBeenCalledTimes(2);
+    unsubscribe();
+    pca.acquireTokenSilent.mockResolvedValue(createToken(["User.Read"]));
+    await expect(service.getAccessToken(true)).rejects.toThrow("required permissions");
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
   it("bounds startup verification to one timeout for multiple unresponsive accounts", async () => {
     expect.hasAssertions();
     vi.useFakeTimers();
