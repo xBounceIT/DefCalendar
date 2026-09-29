@@ -41,6 +41,7 @@ import { toCalendarOverlapTarget } from "../event-overlap";
 import { MeetingIcon, TeamsIcon } from "./meeting-icon";
 import OverlapWarning from "./overlap-warning";
 import SafeHtmlBody from "./safe-html-body";
+import SettingsSelect from "./settings-select";
 import useAttendeeAvailability from "../hooks/use-attendee-availability";
 
 interface EventEditorDialogProps {
@@ -454,19 +455,17 @@ function EventEditorDialog(props: EventEditorDialogProps) {
           <div className="slide-panel__section">
             <div className="field-row">
               <CalendarSelectIcon />
-              <select
-                className="field-input field-input--underline field-select"
+              <SettingsSelect
+                aria-label={t("eventEditor.calendar")}
+                className="calendar-select"
                 disabled={readOnlyForAttendee}
-                onChange={(event) => updateForm(setForm, { calendarId: event.target.value })}
+                onChange={(calendarId) => updateForm(setForm, { calendarId })}
+                options={props.calendars.map((calendar) => ({
+                  value: calendar.id,
+                  label: `${calendar.name}${calendar.ownerAddress ? ` (${calendar.ownerAddress})` : ""}`,
+                }))}
                 value={form.calendarId}
-              >
-                {props.calendars.map((calendar) => (
-                  <option key={calendar.id} value={calendar.id}>
-                    {calendar.name}
-                    {calendar.ownerAddress && ` (${calendar.ownerAddress})`}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
 
             <div className="field-row">
