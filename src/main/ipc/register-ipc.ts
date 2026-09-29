@@ -716,7 +716,14 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     dependencies.newEventNotifications.clear();
   });
 
-  dependencies.auth.onSessionValidation((state) => {
+  dependencies.auth.onSessionValidation((state, removedHomeAccountId) => {
+    if (removedHomeAccountId) {
+      dependencies.newEventNotifications.clear();
+      void dependencies.reminders.checkNow();
+      if (state.accounts.length === 0) {
+        dependencies.sync.reset();
+      }
+    }
     broadcast(IPC_CHANNELS.authStateChanged, state);
   });
 

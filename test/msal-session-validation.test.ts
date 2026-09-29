@@ -56,6 +56,50 @@ function createFixture(accounts = [account], graphScopes = resolveAppConfig({}).
 }
 
 describe("startup session permission validation", () => {
+  it("still clears account data and notifies the UI if MSAL token eviction fails", async () => {
+    expect.hasAssertions();
+    const { service, pca, db } = createFixture();
+    await service.initialize();
+    const listener = vi.fn();
+    service.onSessionValidation(listener);
+    pca.signOut.mockRejectedValue(new Error("token cache cannot be written"));
+    pca.acquireTokenSilent.mockResolvedValue(createToken(["User.Read"]));
+
+    await expect(service.getAccessToken(true)).rejects.toThrow("required permissions");
+
+    expect(db.clearUserData).toHaveBeenCalledWith(account.homeAccountId);
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "signed_out" }),
+      account.homeAccountId,
+    );
+  });
+
+  it("allows startup and manual logout to complete despite token-cache eviction errors", async () => {
+    expect.hasAssertions();
+    const { service, pca, db } = createFixture();
+    pca.signOut.mockRejectedValue(new Error("token cache cannot be written"));
+    pca.acquireTokenSilent.mockResolvedValue(createToken(["User.Read"]));
+    await expect(service.initialize()).resolves.toBeUndefined();
+    expect(db.clearUserData).toHaveBeenCalledWith(account.homeAccountId);
+    pca.acquireTokenInteractive.mockResolvedValue(createToken());
+    await service.signIn();
+    await expect(service.signOut()).resolves.toBeUndefined();
+    expect(service.hasSession()).toBe(false);
+  });
+
+  it("attempts to evict all accounts even when the first token-cache eviction fails", async () => {
+    expect.hasAssertions();
+    const secondAccount = { ...account, homeAccountId: "account-2" };
+    const { service, pca } = createFixture([account, secondAccount]);
+    await service.initialize();
+    pca.signOut.mockRejectedValueOnce(new Error("token cache cannot be written"));
+
+    await expect(service.signOutAll()).resolves.toBeUndefined();
+
+    expect(service.hasSession()).toBe(false);
+    expect(pca.signOut).toHaveBeenCalledTimes(2);
+  });
+
   it("notifies subscribers of automatic sign-out with the permission failure reason", async () => {
     expect.hasAssertions();
     const { service, pca, db } = createFixture();
@@ -71,6 +115,7 @@ describe("startup session permission validation", () => {
         status: "signed_out",
         sessionIssues: [expect.objectContaining({ reason: "missing_permissions" })],
       }),
+      account.homeAccountId,
     );
     expect(db.clearUserData).toHaveBeenCalledWith(account.homeAccountId);
   });
@@ -90,11 +135,12 @@ describe("startup session permission validation", () => {
         status: "signed_in",
         sessionIssues: [expect.objectContaining({ reason: "validation_unavailable" })],
       }),
+      undefined,
     );
 
     pca.acquireTokenSilent.mockResolvedValue(createToken());
     await service.getAccessToken();
-    expect(listener).toHaveBeenLastCalledWith(service.getAuthState());
+    expect(listener).toHaveBeenLastCalledWith(service.getAuthState(), undefined);
     expect(listener).toHaveBeenCalledTimes(2);
     unsubscribe();
     pca.acquireTokenSilent.mockResolvedValue(createToken(["User.Read"]));

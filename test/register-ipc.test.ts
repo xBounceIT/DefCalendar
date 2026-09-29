@@ -330,6 +330,31 @@ describe("register ipc", () => {
     expect(fixture.sync.syncAll).not.toHaveBeenCalled();
   });
 
+  it.each([true, false])(
+    "clears in-memory alerts after automatic removal (another account remains: %s)",
+    async (hasOtherAccount) => {
+      expect.hasAssertions();
+      const fixture = createFixture();
+      const state = hasOtherAccount
+        ? {
+            status: "signed_in",
+            accounts: [{ homeAccountId: "account-2" }],
+          }
+        : { status: "signed_out", accounts: [] };
+
+      fixture.auth.onSessionValidation.mock.calls[0][0](state, "account-1");
+
+      expect(fixture.newEventNotifications.clear).toHaveBeenCalledOnce();
+      expect(fixture.reminders.checkNow).toHaveBeenCalledOnce();
+      expect(fixture.mainWebContents.send).toHaveBeenCalledWith(
+        IPC_CHANNELS.authStateChanged,
+        state,
+      );
+      expect(fixture.sync.reset).toHaveBeenCalledTimes(hasOtherAccount ? 0 : 1);
+      expect(fixture.sync.syncAll).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([
     [IPC_CHANNELS.eventsCreate, "createEvent", createEventDraft(), createCalendarEvent()],
     [

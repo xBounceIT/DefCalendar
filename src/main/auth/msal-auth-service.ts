@@ -80,6 +80,8 @@ type SessionValidationResult =
   | { issue: AuthSessionIssue; accessToken: null }
   | { issue: null; accessToken: string };
 
+type SessionValidationListener = (state: AuthState, removedHomeAccountId?: string) => void;
+
 class MsalAuthService {
   private readonly config: AppConfig;
   private readonly pca: PublicClientApplication | null;
@@ -91,7 +93,7 @@ class MsalAuthService {
   private db: DatabaseStore | null = null;
   private settings: SettingsStore | null = null;
   private sessionIssues: AuthSessionIssue[] = [];
-  private readonly sessionValidationListeners = new Set<(state: AuthState) => void>();
+  private readonly sessionValidationListeners = new Set<SessionValidationListener>();
   private unverifiedAccounts = new Set<string>();
   private sessionValidations = new Map<string, Promise<SessionValidationResult>>();
   private accountVersions = new Map<string, number>();
@@ -217,17 +219,17 @@ class MsalAuthService {
     return { issue: null, accessToken: result.accessToken };
   }
 
-  onSessionValidation(listener: (state: AuthState) => void): () => void {
+  onSessionValidation(listener: SessionValidationListener): () => void {
     this.sessionValidationListeners.add(listener);
     return () => {
       this.sessionValidationListeners.delete(listener);
     };
   }
 
-  private notifySessionValidation(): void {
+  private notifySessionValidation(removedHomeAccountId?: string): void {
     const state = this.getAuthState();
     for (const listener of this.sessionValidationListeners) {
-      listener(state);
+      listener(state, removedHomeAccountId);
     }
   }
 
@@ -281,6 +283,7 @@ class MsalAuthService {
   private removeAccountTokens(account: AccountInfo): Promise<void> {
     const signOut = this.getPca()
       .signOut({ account })
+      .catch(() => undefined)
       .finally(() => {
         this.pendingSignOuts.delete(signOut);
       });
@@ -335,7 +338,9 @@ class MsalAuthService {
     );
     this.sessionIssues.push(issue);
     if (issue.reason !== "validation_unavailable" || !alreadyUnverified) {
-      this.notifySessionValidation();
+      this.notifySessionValidation(
+        issue.reason === "validation_unavailable" ? undefined : account.homeAccountId,
+      );
     }
     return issue;
   }
