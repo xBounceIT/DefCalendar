@@ -126,6 +126,16 @@
     "eventsCount_other": "{{count}} eventi"
   },
   "eventEditor": {
+    "attendeeAvailability": {
+      "loading": "Verifica…",
+      "free": "Disponibile",
+      "busy": "Occupato",
+      "tentative": "Provvisorio",
+      "oof": "Fuori sede",
+      "workingElsewhere": "Al lavoro altrove",
+      "unknown": "Non verificabile"
+    },
+    "availabilityUnknownHint": "Calendario non accessibile o non condiviso con questo account. Disponibilità non verificabile.",
     "newEventEyebrow": "Nuovo evento Exchange",
     "newEventTitle": "Crea evento",
     "editEventEyebrow": "Dettagli evento",

@@ -6,6 +6,7 @@ Desktop calendar app for Microsoft 365 Exchange Online built with Electron.
 - Multi-account support with calendar selection and custom colors
 - Full event CRUD with drag-and-drop move/resize
 - Meeting responses (accept/tentative/decline)
+- Participant free/busy indicators when creating meetings, refreshed as attendees or times change
 - Local SQLite cache with configurable periodic sync
 - Desktop reminder popup with snooze/dismiss and meeting join
 - System tray integration
@@ -51,6 +52,7 @@ Desktop calendar app for Microsoft 365 Exchange Online built with Electron.
 ## Notes
 
 - Targets Microsoft 365 work/school accounts only.
+- Participant availability uses Microsoft Graph `getSchedule` with the existing delegated `Calendars.ReadWrite` permission; no additional Microsoft 365 consent is required. Exchange calendar sharing and free/busy policies determine which schedules the signed-in account can see. Inaccessible or external mailboxes may show availability as unknown, never as free. Only availability is sent to the UI, without event titles or details. Recurring meetings check the selected time range only.
 - `AADSTS500113` means the Entra app registration is missing the localhost redirect or public client flows are disabled.
 - Shared/delegate calendars are not implemented.
 - Recurring events and attendee-managed meetings are shown but edited as read-only, with an Outlook handoff.

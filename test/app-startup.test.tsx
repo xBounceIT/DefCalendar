@@ -251,6 +251,7 @@ function createCalendarApiMock(): CalendarApi {
       search: vi.fn().mockResolvedValue([]),
     },
     events: {
+      getAttendeeAvailability: vi.fn().mockResolvedValue([]),
       addAttachment: vi.fn(),
       cancel: vi.fn(),
       create: vi.fn(),
@@ -389,6 +390,7 @@ function createSignedInCalendarApiMock(): CalendarApi {
       search: vi.fn().mockResolvedValue([]),
     },
     events: {
+      getAttendeeAvailability: vi.fn().mockResolvedValue([]),
       addAttachment: vi.fn(),
       cancel: vi.fn(),
       create: vi.fn(),
@@ -553,6 +555,7 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
       search: vi.fn().mockResolvedValue([]),
     },
     events: {
+      getAttendeeAvailability: vi.fn().mockResolvedValue([]),
       create: vi.fn(),
       delete: vi.fn(),
       forward: vi.fn(),
