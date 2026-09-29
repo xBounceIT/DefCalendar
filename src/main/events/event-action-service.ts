@@ -1,4 +1,5 @@
 import type { BrowserWindow } from "electron";
+import type MsalAuthService from "@main/auth/msal-auth-service";
 import type { CalendarEvent, EventReferenceArgs, RespondToEventArgs } from "@shared/schemas";
 import type AppDatabase from "@main/db/database";
 import { IPC_CHANNELS } from "@shared/ipc";
@@ -10,6 +11,7 @@ import type { SyncService } from "@main/sync/sync-service";
 import { showAndFocusMainWindow } from "@main/window";
 
 interface EventActionServiceDependencies {
+  auth: MsalAuthService;
   db: AppDatabase;
   getMainWindow: () => BrowserWindow | null;
   graph: GraphCalendarService;
@@ -27,9 +29,11 @@ class EventActionService {
 
   async respondToEvent(args: RespondToEventArgs): Promise<void> {
     const homeAccountId = this.resolveCalendarHomeAccountId(args.calendarId);
+    const assertSession = this.dependencies.auth.createAccountSessionGuard(homeAccountId);
     const current = this.dependencies.db.getEvent(args.calendarId, args.eventId);
     const isSeriesTarget = targetsDifferentEvent(args.eventId, args.targetEventId);
     await this.dependencies.graph.respondToEvent(args, homeAccountId);
+    assertSession();
     this.dependencies.newEventNotifications.dismiss({
       calendarId: args.calendarId,
       eventId: args.eventId,
@@ -37,6 +41,7 @@ class EventActionService {
 
     if (isSeriesTarget) {
       await this.dependencies.reminders.checkNow();
+      assertSession();
       await this.dependencies.sync.syncAll("mutation", homeAccountId);
       return;
     }
@@ -55,6 +60,8 @@ class EventActionService {
       }
     }
 
+    assertSession();
+
     if (nextEvent) {
       replaceStoredEvent(
         this.dependencies.db,
@@ -64,6 +71,7 @@ class EventActionService {
     }
 
     await this.dependencies.reminders.checkNow();
+    assertSession();
     void this.dependencies.sync.syncAll("mutation", homeAccountId);
   }
 

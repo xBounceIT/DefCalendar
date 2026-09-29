@@ -150,8 +150,10 @@ class SyncService {
         if (!homeAccountId) {
           return;
         }
+        const assertSession = this.dependencies.auth.createAccountSessionGuard(homeAccountId);
 
         for (const range of uncoveredRanges) {
+          assertSession();
           let fetchedEvents: CalendarEvent[];
           try {
             fetchedEvents = await this.dependencies.graph.listCalendarView(
@@ -163,7 +165,7 @@ class SyncService {
           } catch {
             continue;
           }
-          this.assertAccountConnected(homeAccountId);
+          assertSession();
           const persistedEvents = this.dependencies.db.listEvents({
             calendarIds: [calendarId],
             end: range.rangeEnd,
@@ -309,11 +311,19 @@ class SyncService {
     try {
       let settings = this.dependencies.settings.getSettings();
       const calendars: CalendarSummary[] = [];
+      const sessionGuards = new Map(
+        accountIds.map((accountId) => [
+          accountId,
+          this.dependencies.auth.createAccountSessionGuard(accountId),
+        ]),
+      );
 
       for (const accountId of accountIds) {
+        const assertSession = sessionGuards.get(accountId)!;
+        assertSession();
         const knownCalendarIds = this.dependencies.db.listCalendarIds(accountId);
         const accountCalendars = await this.dependencies.graph.listCalendars(accountId);
-        this.assertAccountConnected(accountId);
+        assertSession();
         this.dependencies.db.upsertCalendars(accountCalendars, accountId);
         settings = this.dependencies.settings.syncVisibleCalendars({
           calendarIds: accountCalendars.map((calendar) => calendar.id),
@@ -323,10 +333,10 @@ class SyncService {
 
         try {
           const accountContacts = await this.dependencies.graph.listContacts(accountId);
-          this.assertAccountConnected(accountId);
+          assertSession();
           this.dependencies.db.replaceContactsForAccount(accountContacts, accountId);
         } catch {}
-        this.assertAccountConnected(accountId);
+        assertSession();
       }
 
       if (reason === "sign-in") {
@@ -393,6 +403,8 @@ class SyncService {
       const calendarsToStore = await Promise.all(
         calendarsToSync.map(async (calendar) => {
           try {
+            const assertSession = sessionGuards.get(calendar.homeAccountId)!;
+            assertSession();
             const isDeepBackfill =
               this.dependencies.db.getDeepBackfillCompletedAt(calendar.id) === null;
             const rangeStart = isDeepBackfill ? deepRangeStart : rollingRangeStart;
@@ -402,7 +414,7 @@ class SyncService {
               rangeEnd,
               calendar.homeAccountId,
             );
-            this.assertAccountConnected(calendar.homeAccountId);
+            assertSession();
             processedCalendars += 1;
             processedEvents += fetchedEvents.length;
             if (!syncFailed) {
@@ -417,7 +429,7 @@ class SyncService {
             }
             return {
               calendarId: calendar.id,
-              homeAccountId: calendar.homeAccountId,
+              assertSession,
               fetchedEvents,
               isDeepBackfill,
               rangeStart,
@@ -432,7 +444,7 @@ class SyncService {
 
       const syncedCalendars = [];
       for (const syncedCalendar of calendarsToStore) {
-        this.assertAccountConnected(syncedCalendar.homeAccountId);
+        syncedCalendar.assertSession();
         const { calendarId, fetchedEvents, isDeepBackfill, rangeStart } = syncedCalendar;
         const persistedEvents = this.dependencies.db.listEvents({
           calendarIds: [calendarId],
@@ -638,12 +650,6 @@ class SyncService {
     }
 
     return this.dependencies.auth.getAccountIds();
-  }
-
-  private assertAccountConnected(homeAccountId: string): void {
-    if (!this.dependencies.auth.getAccountIds().includes(homeAccountId)) {
-      throw new Error("The Microsoft 365 account was signed out during sync. Sign in again.");
-    }
   }
 
   private getIntervalMs(): number {

@@ -342,9 +342,12 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     validateMainSender(event);
     const draft = eventDraftSchema.parse(input);
     const homeAccountId = resolveCalendarHomeAccountId(draft.calendarId);
+    const assertSession = dependencies.auth.createAccountSessionGuard(homeAccountId);
     const created = await dependencies.graph.createEvent(draft, homeAccountId);
+    assertSession();
     dependencies.db.upsertEvent(created);
     await dependencies.reminders.checkNow();
+    assertSession();
     void dependencies.sync.syncAll("mutation", homeAccountId);
     return created;
   });
@@ -362,9 +365,12 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     }
 
     const homeAccountId = resolveCalendarHomeAccountId(draft.calendarId);
+    const assertSession = dependencies.auth.createAccountSessionGuard(homeAccountId);
     const updated = await dependencies.graph.updateEvent(draft, homeAccountId, current);
+    assertSession();
     replaceStoredEvent(current, mergeCachedAttachments(updated, current));
     await dependencies.reminders.checkNow();
+    assertSession();
     void dependencies.sync.syncAll("mutation", homeAccountId);
     return updated;
   });
@@ -378,6 +384,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     }
 
     const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
+    const assertSession = dependencies.auth.createAccountSessionGuard(homeAccountId);
     const isSeriesTarget = targetsDifferentEvent(args.eventId, args.targetEventId);
     await dependencies.graph.deleteEvent(
       args.calendarId,
@@ -386,12 +393,14 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
       args.etag,
       args.targetEventId,
     );
+    assertSession();
 
     if (!isSeriesTarget) {
       dependencies.db.deleteEvent(args.calendarId, args.eventId);
     }
 
     await dependencies.reminders.checkNow();
+    assertSession();
     if (isSeriesTarget) {
       await dependencies.sync.syncAll("mutation", homeAccountId);
       return;
@@ -410,7 +419,9 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     validateMainSender(event);
     const args = forwardEventArgsSchema.parse(input);
     const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
+    const assertSession = dependencies.auth.createAccountSessionGuard(homeAccountId);
     await dependencies.graph.forwardEvent(args, homeAccountId);
+    assertSession();
     void dependencies.sync.syncAll("mutation", homeAccountId);
   });
 
@@ -418,14 +429,17 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     validateMainSender(event);
     const args = cancelEventArgsSchema.parse(input);
     const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
+    const assertSession = dependencies.auth.createAccountSessionGuard(homeAccountId);
     await dependencies.graph.cancelEvent(
       args.calendarId,
       args.eventId,
       homeAccountId,
       args.comment,
     );
+    assertSession();
     dependencies.db.deleteEvent(args.calendarId, args.eventId);
     await dependencies.reminders.checkNow();
+    assertSession();
     void dependencies.sync.syncAll("mutation", homeAccountId);
   });
 
@@ -433,6 +447,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     validateMainSender(event);
     const args = eventReferenceArgsSchema.parse(input);
     const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
+    const assertSession = dependencies.auth.createAccountSessionGuard(homeAccountId);
     const current = dependencies.db.getEvent(args.calendarId, args.eventId);
 
     let attachments: EventAttachment[] = [];
@@ -447,9 +462,11 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
         throw error;
       }
 
+      assertSession();
       return current?.attachments ?? [];
     }
 
+    assertSession();
     if (current) {
       dependencies.db.upsertEvent({
         ...current,
@@ -464,6 +481,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     validateMainSender(event);
     const args = attachmentUploadArgsSchema.parse(input);
     const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
+    const assertSession = dependencies.auth.createAccountSessionGuard(homeAccountId);
     const current = dependencies.db.getEvent(args.calendarId, args.eventId);
     const attachments = await dependencies.graph.addAttachment(
       args.calendarId,
@@ -471,11 +489,13 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
       args.attachment,
       homeAccountId,
     );
+    assertSession();
     const refreshed = await dependencies.graph.getEvent(
       args.calendarId,
       args.eventId,
       homeAccountId,
     );
+    assertSession();
     replaceStoredEvent(current, {
       ...refreshed,
       attachments,
@@ -489,6 +509,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     validateMainSender(event);
     const args = attachmentDeleteArgsSchema.parse(input);
     const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
+    const assertSession = dependencies.auth.createAccountSessionGuard(homeAccountId);
     const current = dependencies.db.getEvent(args.calendarId, args.eventId);
     const attachments = await dependencies.graph.removeAttachment(
       args.calendarId,
@@ -496,11 +517,13 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
       args.attachmentId,
       homeAccountId,
     );
+    assertSession();
     const refreshed = await dependencies.graph.getEvent(
       args.calendarId,
       args.eventId,
       homeAccountId,
     );
+    assertSession();
     replaceStoredEvent(current, {
       ...refreshed,
       attachments,

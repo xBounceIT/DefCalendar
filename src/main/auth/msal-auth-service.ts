@@ -163,9 +163,7 @@ class MsalAuthService {
       this.activeAccountId = this.accounts[0].homeAccountId;
     }
 
-    for (const account of this.accounts) {
-      await this.validateAccountSession(account);
-    }
+    await Promise.all(this.accounts.map((account) => this.validateAccountSession(account)));
   }
 
   private validateAccountSession(account: AccountInfo): Promise<SessionValidationResult> {
@@ -286,6 +284,12 @@ class MsalAuthService {
     }
   }
 
+  createAccountSessionGuard(homeAccountId: string): () => void {
+    const version = this.getAccountVersion(homeAccountId);
+    this.assertCurrentAccount(homeAccountId, version);
+    return () => this.assertCurrentAccount(homeAccountId, version);
+  }
+
   private async recordSessionFailure(
     account: AccountInfo,
     failure: SessionValidationError,
@@ -389,7 +393,6 @@ class MsalAuthService {
   }
 
   private upsertAccount(account: AccountInfo, setActive = true): void {
-    this.advanceAccountVersion(account.homeAccountId);
     const existingIndex = this.accounts.findIndex(
       (item) => item.homeAccountId === account.homeAccountId,
     );
@@ -418,6 +421,7 @@ class MsalAuthService {
     }
 
     if (result.account) {
+      this.advanceAccountVersion(result.account.homeAccountId);
       this.upsertAccount(result.account);
       this.unverifiedAccounts.delete(result.account.homeAccountId);
       this.sessionIssues = this.sessionIssues.filter(

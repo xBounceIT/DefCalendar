@@ -17,6 +17,7 @@ const FIXTURE_SYNC_WINDOW = {
 
 interface SyncFixture {
   auth: {
+    createAccountSessionGuard: ReturnType<typeof vi.fn>;
     getAccountIds: ReturnType<typeof vi.fn>;
     getActiveAccountId: ReturnType<typeof vi.fn>;
     hasSession: ReturnType<typeof vi.fn>;
@@ -191,8 +192,14 @@ function createFixture(args?: {
     }),
   };
 
+  const getAccountIds = vi.fn().mockReturnValue(args?.accountIds ?? ["account-1"]);
   const auth = {
-    getAccountIds: vi.fn().mockReturnValue(args?.accountIds ?? ["account-1"]),
+    createAccountSessionGuard: vi.fn().mockImplementation((homeAccountId: string) => () => {
+      if (!getAccountIds().includes(homeAccountId)) {
+        throw new Error("The Microsoft 365 session changed during the request.");
+      }
+    }),
+    getAccountIds,
     getActiveAccountId: vi.fn().mockReturnValue("account-1"),
     hasSession: vi.fn().mockReturnValue(true),
   };
@@ -254,6 +261,28 @@ function createDeferred<T>() {
 }
 
 describe("sync service", () => {
+  it("discards old sync results even if the same account has already signed back in", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture({ calendars: [createCalendar("calendar-a")] });
+    let sessionVersion = 0;
+    fixture.auth.createAccountSessionGuard.mockImplementation(() => {
+      const capturedVersion = sessionVersion;
+      return () => {
+        if (capturedVersion !== sessionVersion) {
+          throw new Error("The Microsoft 365 session changed during the request.");
+        }
+      };
+    });
+    const deferred = createDeferred<CalendarSummary[]>();
+    fixture.graph.listCalendars.mockReturnValueOnce(deferred.promise);
+    const sync = fixture.service.syncAll("startup");
+    sessionVersion += 1;
+    deferred.resolve([createCalendar("calendar-a")]);
+
+    expect((await sync).state).toBe("error");
+    expect(fixture.db.upsertCalendars).not.toHaveBeenCalled();
+  });
+
   it("discards calendar discovery results if permission validation removed the account", async () => {
     expect.hasAssertions();
     const fixture = createFixture({ calendars: [createCalendar("calendar-a")] });

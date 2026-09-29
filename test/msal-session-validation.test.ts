@@ -56,6 +56,32 @@ function createFixture(accounts = [account], graphScopes = resolveAppConfig({}).
 }
 
 describe("startup session permission validation", () => {
+  it("bounds startup verification to one timeout for multiple unresponsive accounts", async () => {
+    expect.hasAssertions();
+    vi.useFakeTimers();
+    try {
+      const accounts = Array.from({ length: 3 }, (_, index) => ({
+        ...account,
+        homeAccountId: `account-${index + 1}`,
+      }));
+      const { service, pca } = createFixture(accounts);
+      pca.acquireTokenSilent.mockReturnValue(new Promise(() => undefined));
+      let completed = false;
+      const startup = service.initialize().then(() => {
+        completed = true;
+      });
+
+      await vi.advanceTimersByTimeAsync(15_000);
+
+      expect(completed).toBe(true);
+      await startup;
+      expect(service.getAuthState().sessionIssues).toHaveLength(3);
+      expect(pca.signOut).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("rejects a silently refreshed token if it drops a required permission", async () => {
     expect.hasAssertions();
     const { service, pca, db } = createFixture();
@@ -67,6 +93,54 @@ describe("startup session permission validation", () => {
     expect(service.hasSession()).toBe(false);
     expect(db.clearUserData).toHaveBeenCalledWith(account.homeAccountId);
     expect(pca.acquireTokenInteractive).not.toHaveBeenCalled();
+  });
+
+  it("removes every incomplete account during concurrent startup validation", async () => {
+    expect.hasAssertions();
+    const secondAccount = { ...account, homeAccountId: "account-2", username: "two@example.com" };
+    const { service, pca, db } = createFixture([account, secondAccount]);
+    pca.acquireTokenSilent.mockImplementation(async ({ account: requested }) => ({
+      account: requested,
+      accessToken: "token",
+      scopes: ["User.Read"],
+    }));
+
+    await service.initialize();
+
+    expect(service.hasSession()).toBe(false);
+    expect(service.getAuthState().sessionIssues).toHaveLength(2);
+    expect(db.clearUserData.mock.calls).toEqual([
+      [account.homeAccountId],
+      [secondAccount.homeAccountId],
+    ]);
+    expect(pca.signOut).toHaveBeenCalledTimes(2);
+  });
+
+  it("invalidates captured operations when permission validation signs out and the same account returns", async () => {
+    expect.hasAssertions();
+    const { service, pca } = createFixture();
+    await service.initialize();
+    const assertSession = service.createAccountSessionGuard(account.homeAccountId);
+    pca.acquireTokenSilent.mockResolvedValueOnce(createToken(["User.Read"]));
+    await expect(service.getAccessToken(true)).rejects.toThrow("required permissions");
+    pca.acquireTokenInteractive.mockResolvedValue(createToken());
+    await service.signIn();
+
+    expect(service.hasSession()).toBe(true);
+    expect(assertSession).toThrow("session changed");
+    expect(service.createAccountSessionGuard(account.homeAccountId)).not.toThrow();
+  });
+
+  it("keeps captured operations current during an interactive token renewal", async () => {
+    expect.hasAssertions();
+    const { service, pca } = createFixture();
+    await service.initialize();
+    const assertSession = service.createAccountSessionGuard(account.homeAccountId);
+    pca.acquireTokenSilent.mockRejectedValueOnce(new Error("renew token"));
+    pca.acquireTokenInteractive.mockResolvedValue(createToken());
+
+    await expect(service.getAccessToken()).resolves.toBe("token");
+    expect(assertSession).not.toThrow();
   });
 
   it("does not let an old permission check sign out a newly authenticated session", async () => {
