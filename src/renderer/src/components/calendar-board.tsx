@@ -20,6 +20,7 @@ import type { CalendarEvent, CalendarView, UserSettings } from "@shared/schemas"
 
 import { buildEventTimeFormat } from "../date-formatting";
 import interactionPlugin from "../interaction-plugin";
+import hasSelectedTextWithin from "../text-selection";
 
 interface CalendarBoardProps {
   activeView: CalendarView;
@@ -471,7 +472,9 @@ function CalendarSurface({
       return (
         <div className="calendar-event-content">
           {hasTime ? <span className="fc-event-time">{info.timeText}</span> : null}
-          <span className="fc-event-title">{info.event.title}</span>
+          <span className="fc-event-title" onMouseDownCapture={(event) => event.stopPropagation()}>
+            {info.event.title}
+          </span>
           {calendarId && eventId ? (
             <EventCopyButton calendarId={calendarId} eventId={eventId} onCopy={onEventCopy} />
           ) : null}
@@ -538,7 +541,11 @@ function CalendarSurface({
         eventMaxStack={3}
         slotEventOverlap={false}
         editable
-        eventClick={onEventClick}
+        eventClick={(info) => {
+          if (!hasSelectedTextWithin(info.el)) {
+            onEventClick(info);
+          }
+        }}
         eventClassNames={handleEventClassNames}
         eventContent={renderEventContent}
         eventDidMount={handleEventDidMount}

@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import { DEFAULT_EVENT_SEARCH_SORT, eventSearchSortSchema } from "@shared/schema-values";
 
 import { formatLocalizedDate } from "../date-formatting";
+import hasSelectedTextWithin from "../text-selection";
 import SearchIcon from "./search-icon";
 
 interface EventSearchDialogProps {
@@ -260,7 +261,11 @@ function EventSearchDialog({
               className={className}
               id={getResultId(index)}
               key={`${event.calendarId}:${event.id}`}
-              onClick={() => onSelect(event)}
+              onClick={(click) => {
+                if (!hasSelectedTextWithin(click.currentTarget)) {
+                  onSelect(event);
+                }
+              }}
               /*
                * Keyboard activation normally flows through the combobox input via
                * aria-activedescendant; this handler is a defensive fallback that

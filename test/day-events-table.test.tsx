@@ -12,6 +12,7 @@ import itTranslations from "../src/renderer/src/i18n/locales/it.json";
 import type { CalendarEvent } from "../src/shared/schemas";
 
 afterEach(() => {
+  globalThis.getSelection()?.removeAllRanges();
   cleanup();
   vi.useRealTimers();
 });
@@ -156,6 +157,29 @@ function renderTable(args?: RenderTableArgs) {
 }
 
 describe("day events table", () => {
+  it("keeps a selected title available for copying without opening the event", () => {
+    expect.hasAssertions();
+    const { onEventClick } = renderTable({
+      events: [createEvent(), createEvent({ id: "event-2", subject: "Other event" })],
+    });
+    const title = screen.getByText("Planning");
+    const range = document.createRange();
+    range.selectNodeContents(title);
+    const selection = globalThis.getSelection()!;
+    selection.addRange(range);
+
+    fireEvent.click(title);
+    expect(onEventClick).not.toHaveBeenCalled();
+    expect(selection.toString()).toBe("Planning");
+
+    fireEvent.click(screen.getByText("Other event"));
+    expect(onEventClick).toHaveBeenCalledWith(expect.objectContaining({ id: "event-2" }));
+
+    selection.removeAllRanges();
+    fireEvent.click(title);
+    expect(onEventClick).toHaveBeenLastCalledWith(expect.objectContaining({ id: "event-1" }));
+  });
+
   it("uses translated untitled fallback text", () => {
     renderTable({
       events: [createEvent({ id: "untitled", subject: "" })],

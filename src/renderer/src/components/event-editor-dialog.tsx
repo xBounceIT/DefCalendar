@@ -458,9 +458,9 @@ function EventEditorDialog(props: EventEditorDialogProps) {
               <SubjectIcon />
               <input
                 className="field-input field-input--underline"
-                disabled={readOnlyForAttendee}
                 onChange={(event) => updateForm(setForm, { subject: event.target.value })}
                 placeholder={t("eventEditor.subject")}
+                readOnly={readOnlyForAttendee}
                 type="text"
                 value={form.subject}
               />

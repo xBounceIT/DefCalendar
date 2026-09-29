@@ -575,6 +575,9 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
       if (isEditableTarget(e.target)) {
         return;
       }
+      if (isCopyChord && globalThis.getSelection()?.toString()) {
+        return;
+      }
 
       if (isCopyChord && editorState?.mode === "edit") {
         e.preventDefault();

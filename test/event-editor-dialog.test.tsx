@@ -232,6 +232,22 @@ afterEach(() => {
 });
 
 describe("event editor dialog", () => {
+  it("allows selecting a saved attendee event title while keeping it read-only", () => {
+    expect.hasAssertions();
+    renderDialog({
+      state: { event: createAttendeeEvent(), mode: "edit" },
+    });
+
+    const subject = screen.getByPlaceholderText<HTMLInputElement>("Subject");
+    expect(subject).toBeEnabled();
+    expect(subject).toHaveAttribute("readonly");
+    subject.focus();
+    subject.setSelectionRange(0, subject.value.length);
+    expect(subject).toHaveFocus();
+    expect(subject.value.slice(subject.selectionStart!, subject.selectionEnd!)).toBe("Planning");
+    expect(screen.queryByRole("button", { name: "Save Changes" })).not.toBeInTheDocument();
+  });
+
   it("lists and manages event attachments", async () => {
     expect.hasAssertions();
     const attachment = createAttachment();
