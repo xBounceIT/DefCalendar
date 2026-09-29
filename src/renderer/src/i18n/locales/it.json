@@ -60,6 +60,16 @@
     "language": "Lingua",
     "changeCalendarColor": "Cambia colore calendario"
   },
+  "datePicker": {
+    "open": "Apri calendario per {{label}}",
+    "chooseMonth": "Scegli mese",
+    "chooseYear": "Scegli anno",
+    "previousYear": "Anno precedente",
+    "nextYear": "Anno successivo",
+    "previousYears": "Anni precedenti",
+    "nextYears": "Anni successivi",
+    "clear": "Cancella"
+  },
   "miniCalendar": {
     "previousMonth": "Mese precedente",
     "today": "Oggi",
@@ -126,6 +136,16 @@
     "eventsCount_other": "{{count}} eventi"
   },
   "eventEditor": {
+    "attendeeAvailability": {
+      "loading": "Verifica…",
+      "free": "Disponibile",
+      "busy": "Occupato",
+      "tentative": "Provvisorio",
+      "oof": "Fuori sede",
+      "workingElsewhere": "Al lavoro altrove",
+      "unknown": "Non verificabile"
+    },
+    "availabilityUnknownHint": "Calendario non accessibile o non condiviso con questo account. Disponibilità non verificabile.",
     "newEventEyebrow": "Nuovo evento Exchange",
     "newEventTitle": "Crea evento",
     "editEventEyebrow": "Dettagli evento",

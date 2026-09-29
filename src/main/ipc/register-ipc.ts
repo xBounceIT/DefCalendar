@@ -54,6 +54,10 @@ import type UpdateService from "@main/update/update-service";
 import { app, dialog, ipcMain, shell } from "@main/electron-runtime";
 import { showAndFocusMainWindow, setTitleBarScrim } from "@main/window";
 import { IPC_CHANNELS } from "@shared/ipc";
+import {
+  attendeeAvailabilityArgsSchema,
+  attendeeAvailabilitySchema,
+} from "@shared/attendee-availability";
 
 const MIN_PEOPLE_SEARCH_QUERY_LENGTH = 2;
 
@@ -324,6 +328,14 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     const args = eventListArgsSchema.parse(input);
     await ensureEventsRangeForList(args);
     return dependencies.db.listEvents(args);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.attendeesGetAvailability, async (event, input) => {
+    validateMainSender(event);
+    const args = attendeeAvailabilityArgsSchema.parse(input);
+    const homeAccountId = resolveCalendarHomeAccountId(args.calendarId);
+    const availability = await dependencies.graph.getAttendeeAvailability(args, homeAccountId);
+    return availability.map((item) => attendeeAvailabilitySchema.parse(item));
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsSearch, async (event, input) => {

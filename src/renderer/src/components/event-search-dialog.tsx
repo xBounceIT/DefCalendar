@@ -26,7 +26,8 @@ const DEBOUNCE_MS = 200;
 const MIN_QUERY_LENGTH = 2;
 const RESULT_LIMIT = 30;
 const RESULTS_LISTBOX_ID = "event-search-dialog-results";
-const SORT_CYCLE = eventSearchSortSchema.options;
+const SORT_OPTIONS = eventSearchSortSchema.options;
+const SORT_MENU_ID = "event-search-dialog-sort-menu";
 
 function getResultId(index: number): string {
   return `event-search-result-${index}`;
@@ -106,6 +107,10 @@ function EventSearchDialog({
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const [sort, setSort] = useState<EventSearchSort>(DEFAULT_EVENT_SEARCH_SORT);
+  const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
+  const sortContainerRef = useRef<HTMLDivElement>(null);
+  const sortButtonRef = useRef<HTMLButtonElement>(null);
+  const sortOptionRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
 
@@ -116,6 +121,7 @@ function EventSearchDialog({
 
   const trimmedQuery = inputValue.trim();
   const isQueryEligible = trimmedQuery.length >= MIN_QUERY_LENGTH;
+  const hasVisibleCalendars = visibleCalendarIds.length > 0;
 
   useEffect(() => {
     if (!isOpen) {
@@ -123,6 +129,7 @@ function EventSearchDialog({
       setDebouncedQuery("");
       setActiveIndex(0);
       setSort(DEFAULT_EVENT_SEARCH_SORT);
+      setIsSortMenuOpen(false);
       const previouslyFocused = previouslyFocusedRef.current;
       previouslyFocusedRef.current = null;
       if (previouslyFocused && globalThis.document.contains(previouslyFocused)) {
@@ -144,6 +151,30 @@ function EventSearchDialog({
       globalThis.clearTimeout(focusTimeout);
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !hasVisibleCalendars) {
+      setIsSortMenuOpen(false);
+      return;
+    }
+
+    if (!isSortMenuOpen) {
+      return;
+    }
+
+    sortOptionRefs.current[SORT_OPTIONS.indexOf(sort)]?.focus();
+
+    function handleClickOutside(event: MouseEvent): void {
+      if (!sortContainerRef.current?.contains(event.target as Node)) {
+        setIsSortMenuOpen(false);
+      }
+    }
+
+    globalThis.document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      globalThis.document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [hasVisibleCalendars, isOpen, isSortMenuOpen, sort]);
 
   useEffect(() => {
     if (!isQueryEligible) {
@@ -174,7 +205,6 @@ function EventSearchDialog({
   });
 
   const results = searchQuery.data ?? [];
-  const hasVisibleCalendars = visibleCalendarIds.length > 0;
 
   useEffect(() => {
     setActiveIndex(0);
@@ -225,6 +255,19 @@ function EventSearchDialog({
         onSelect(selected);
       }
     }
+  }
+
+  function handleSortMenuDismiss(event: React.KeyboardEvent<HTMLElement>): boolean {
+    if (!isSortMenuOpen || (event.key !== "Escape" && event.key !== "Tab")) {
+      return false;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    setIsSortMenuOpen(false);
+    sortButtonRef.current?.focus();
+    return true;
   }
 
   let body: React.ReactNode = null;
@@ -359,22 +402,102 @@ function EventSearchDialog({
             type="search"
             value={inputValue}
           />
-          <button
-            aria-label={t("eventSearch.sortButton")}
-            className="event-search-dialog__sort"
-            disabled={!hasVisibleCalendars}
-            onClick={() => {
-              setSort(
-                (current) => SORT_CYCLE[(SORT_CYCLE.indexOf(current) + 1) % SORT_CYCLE.length],
-              );
-              inputRef.current?.focus();
+          <div
+            className="event-search-dialog__sort-container"
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) {
+                setIsSortMenuOpen(false);
+              }
             }}
-            title={t("eventSearch.sortButton")}
-            type="button"
+            ref={sortContainerRef}
           >
-            <SortIcon />
-            <span>{t(`eventSearch.sort.${sort}`)}</span>
-          </button>
+            <button
+              aria-controls={isSortMenuOpen ? SORT_MENU_ID : undefined}
+              aria-expanded={isSortMenuOpen}
+              aria-haspopup="menu"
+              aria-label={t("eventSearch.sortButton")}
+              className="event-search-dialog__sort"
+              disabled={!hasVisibleCalendars}
+              onClick={() => setIsSortMenuOpen((open) => !open)}
+              onKeyDown={(event) => {
+                if (handleSortMenuDismiss(event)) {
+                  return;
+                }
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setIsSortMenuOpen(true);
+                }
+              }}
+              ref={sortButtonRef}
+              title={t("eventSearch.sortButton")}
+              type="button"
+            >
+              <SortIcon />
+              <span>{t(`eventSearch.sort.${sort}`)}</span>
+            </button>
+            {isSortMenuOpen && hasVisibleCalendars && (
+              <div
+                aria-label={t("eventSearch.sortButton")}
+                className="event-search-dialog__sort-menu"
+                id={SORT_MENU_ID}
+                onKeyDown={(event) => {
+                  if (handleSortMenuDismiss(event)) {
+                    return;
+                  }
+                  const index = sortOptionRefs.current.indexOf(
+                    globalThis.document.activeElement as HTMLButtonElement,
+                  );
+                  let nextIndex = index;
+                  switch (event.key) {
+                    case "ArrowDown": {
+                      nextIndex = (index + 1) % SORT_OPTIONS.length;
+                      break;
+                    }
+                    case "ArrowUp": {
+                      nextIndex = (index - 1 + SORT_OPTIONS.length) % SORT_OPTIONS.length;
+                      break;
+                    }
+                    case "Home": {
+                      nextIndex = 0;
+                      break;
+                    }
+                    case "End": {
+                      nextIndex = SORT_OPTIONS.length - 1;
+                      break;
+                    }
+                    default: {
+                      return;
+                    }
+                  }
+                  event.preventDefault();
+                  sortOptionRefs.current[nextIndex]?.focus();
+                }}
+                role="menu"
+              >
+                {SORT_OPTIONS.map((option, index) => (
+                  <button
+                    aria-checked={option === sort}
+                    className="event-search-dialog__sort-option"
+                    key={option}
+                    onClick={() => {
+                      setSort(option);
+                      setIsSortMenuOpen(false);
+                      inputRef.current?.focus();
+                    }}
+                    ref={(element) => {
+                      sortOptionRefs.current[index] = element;
+                    }}
+                    role="menuitemradio"
+                    tabIndex={-1}
+                    type="button"
+                  >
+                    <span>{t(`eventSearch.sort.${option}`)}</span>
+                    <span aria-hidden="true">{option === sort ? "✓" : ""}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         {body}
       </div>

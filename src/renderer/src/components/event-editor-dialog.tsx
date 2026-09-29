@@ -1,3 +1,7 @@
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faClock, faPaperPlane, faUser } from "@fortawesome/free-regular-svg-icons";
 import type {
   AccountSummary,
   AttachmentDeleteArgs,
@@ -17,25 +21,29 @@ import type {
   SearchContactsArgs,
   UserSettings,
 } from "@shared/schemas";
-import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   fromDateTimeInputValue,
   getOutlookCategoryColor,
   toDateTimeInputValue,
 } from "@shared/calendar";
-import { useTranslation } from "react-i18next";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faClock, faPaperPlane, faUser } from "@fortawesome/free-regular-svg-icons";
 import type { SyncWindowDays } from "@shared/sync";
+import {
+  attendeeAvailabilityArgsSchema,
+  attendeeEmailSchema,
+  type AttendeeAvailability,
+  type AttendeeAvailabilityArgs,
+} from "@shared/attendee-availability";
 
 import type { EditorState } from "../event-editor-state";
 import type { CalendarOverlapTarget } from "../event-overlap";
 import { formatHeaderDate, formatLocalizedDate } from "../date-formatting";
 import { toCalendarOverlapTarget } from "../event-overlap";
 import { MeetingIcon, TeamsIcon } from "./meeting-icon";
+import DatePicker from "./date-picker";
 import OverlapWarning from "./overlap-warning";
 import SafeHtmlBody from "./safe-html-body";
 import ContactAvatar from "./contact-avatar";
+import useAttendeeAvailability from "../hooks/use-attendee-availability";
 
 interface EventEditorDialogProps {
   accounts: AccountSummary[];
@@ -64,6 +72,7 @@ interface EventEditorDialogProps {
     targetEventId?: string,
   ) => Promise<void>;
   onSearchContacts: (args: SearchContactsArgs) => Promise<ContactSuggestion[]>;
+  onGetAttendeeAvailability: (args: AttendeeAvailabilityArgs) => Promise<AttendeeAvailability[]>;
   onSave: (draft: EventDraft) => Promise<void>;
   state: EditorState | null;
   syncWindow?: null | SyncWindowDays;
@@ -194,6 +203,9 @@ function EventEditorDialog(props: EventEditorDialogProps) {
   const [attachmentsBusy, setAttachmentsBusy] = useState(false);
   const [form, setForm] = useState<EditorFormState | null>(null);
   const [initialForm, setInitialForm] = useState<EditorFormState | null>(null);
+  const availabilityArgs =
+    props.state?.mode === "create" && form ? buildAvailabilityArgs(form) : null;
+  const availability = useAttendeeAvailability(availabilityArgs, props.onGetAttendeeAvailability);
 
   useEffect(() => {
     const next = buildFormState(props.state);
@@ -474,6 +486,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
             <div className="field-row field-row--attendees">
               <AttendeesIcon />
               <AttendeePillsInput
+                availability={props.state?.mode === "create" ? availability : undefined}
                 attendees={getAttendeesByType(form.attendees, "required")}
                 disabled={readOnlyForAttendee || !selectedCalendar?.canEdit}
                 homeAccountId={selectedCalendar?.homeAccountId ?? null}
@@ -508,6 +521,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
             <div className="field-row field-row--attendees">
               <AttendeesIcon />
               <AttendeePillsInput
+                availability={props.state?.mode === "create" ? availability : undefined}
                 attendees={getAttendeesByType(form.attendees, "optional")}
                 disabled={readOnlyForAttendee || !selectedCalendar?.canEdit}
                 homeAccountId={selectedCalendar?.homeAccountId ?? null}
@@ -1693,16 +1707,17 @@ function SchedulingSection({
       {isExpanded && (
         <div className="scheduling-dropdown">
           <div className="scheduling-dropdown__row">
-            <label className="field scheduling-field scheduling-field--date">
-              <span>{t("eventEditor.startDate")}</span>
-              <input
+            <div className="field scheduling-field scheduling-field--date">
+              <label htmlFor="event-start-date">{t("eventEditor.startDate")}</label>
+              <DatePicker
+                id="event-start-date"
+                label={t("eventEditor.startDate")}
                 disabled={disabled}
-                onChange={(e) => {
+                onChange={(newStartDate) => {
                   const previousStartDate = extractDate(form.startInput);
                   const previousEndDate = extractDate(form.endInput);
                   const currentTime = extractTime(form.startInput) || "00:00";
                   const endTime = extractTime(form.endInput) || "00:30";
-                  const newStartDate = e.target.value;
                   const dayDelta = daysBetweenDateInputs(previousStartDate, newStartDate);
                   const newEndDate = addDaysToDateInput(previousEndDate, dayDelta);
                   onChange((current) =>
@@ -1715,10 +1730,9 @@ function SchedulingSection({
                       : current,
                   );
                 }}
-                type="date"
                 value={extractDate(form.startInput)}
               />
-            </label>
+            </div>
             <label className="field scheduling-field scheduling-field--time">
               <span>{t("eventEditor.startTime")}</span>
               <TimeSelect
@@ -2628,6 +2642,7 @@ function AttendeesIcon() {
 
 function AttendeePillsInput({
   attendees,
+  availability,
   disabled,
   homeAccountId,
   inputValue,
@@ -2640,6 +2655,7 @@ function AttendeePillsInput({
   removeLabel,
 }: {
   attendees: EventParticipant[];
+  availability?: ReturnType<typeof useAttendeeAvailability>;
   disabled: boolean;
   homeAccountId: null | string;
   inputValue: string;
@@ -2776,24 +2792,48 @@ function AttendeePillsInput({
         }}
         role="group"
       >
-        {attendees.map((attendee, index) => (
-          <span className="attendee-pill" key={`${attendee.email ?? "attendee"}-${index}`}>
-            <span className="attendee-pill__email">{attendee.email}</span>
-            {!disabled && (
-              <button
-                aria-label={removeLabel}
-                className="attendee-pill__remove"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onRemove(index);
-                }}
-                type="button"
-              >
-                <CloseIcon />
-              </button>
-            )}
-          </span>
-        ))}
+        {attendees.map((attendee, index) => {
+          const status = availability
+            ? availability.loading
+              ? "loading"
+              : (availability.items.find(
+                  (item) => item.email === normalizeAttendeeEmail(attendee.email),
+                )?.status ?? "unknown")
+            : null;
+          return (
+            <span
+              className={`attendee-pill${status ? ` attendee-pill--${status}` : ""}`}
+              key={`${attendee.email ?? "attendee"}-${index}`}
+            >
+              <span className="attendee-pill__email">{attendee.email}</span>
+              {status && (
+                <span
+                  className="attendee-pill__availability"
+                  title={
+                    status === "unknown"
+                      ? t("eventEditor.availabilityUnknownHint")
+                      : t(`eventEditor.attendeeAvailability.${status}`)
+                  }
+                >
+                  {t(`eventEditor.attendeeAvailability.${status}`)}
+                </span>
+              )}
+              {!disabled && (
+                <button
+                  aria-label={removeLabel}
+                  className="attendee-pill__remove"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRemove(index);
+                  }}
+                  type="button"
+                >
+                  <CloseIcon />
+                </button>
+              )}
+            </span>
+          );
+        })}
         <input
           aria-autocomplete="list"
           aria-controls={isOpen ? listboxId : undefined}
@@ -3402,9 +3442,9 @@ function RecurrenceFields({
             </select>
           </label>
           {form.recurrenceType === "weekly" && (
-            <fieldset className="field field--full">
+            <fieldset className="field field--full recurrence-weekdays">
               <span>{t("eventEditor.recurrenceWeekdays")}</span>
-              <div className="dialog-footer__left">
+              <div className="recurrence-weekdays__options">
                 {["monday", "tuesday", "wednesday", "thursday", "friday"].map((day) => (
                   <label className="checkbox-field" key={day}>
                     <input
@@ -3436,17 +3476,19 @@ function RecurrenceFields({
             </label>
           )}
           {form.recurrenceRangeType === "endDate" && (
-            <label className="field">
-              <span>{t("eventEditor.recurrenceEndDate")}</span>
-              <input
+            <div className="field">
+              <label htmlFor="event-recurrence-end-date">
+                {t("eventEditor.recurrenceEndDate")}
+              </label>
+              <DatePicker
+                id="event-recurrence-end-date"
+                label={t("eventEditor.recurrenceEndDate")}
+                allowClear
                 disabled={disabled}
-                onChange={(event) =>
-                  updateForm(onChange, { recurrenceEndDate: event.target.value })
-                }
-                type="date"
+                onChange={(recurrenceEndDate) => updateForm(onChange, { recurrenceEndDate })}
                 value={form.recurrenceEndDate}
               />
-            </label>
+            </div>
           )}
           {form.recurrenceRangeType === "numbered" && (
             <label className="field">
@@ -3561,12 +3603,39 @@ function buildEndInput(state: EventEditorDialogProps["state"]): string {
   return toDateTimeInputValue(state.event.end, false);
 }
 
-function buildDraft(form: EditorFormState, event: CalendarEvent | null): EventDraft {
+function buildEventTimeRange(form: EditorFormState): { start: string; end: string } {
   const start = fromDateTimeInputValue(form.startInput, form.allDay);
   let end = fromDateTimeInputValue(form.endInput, false);
   if (form.allDay) {
     end = addDays(fromDateTimeInputValue(form.endInput, true), 1);
   }
+  return { start, end };
+}
+
+function buildAvailabilityArgs(form: EditorFormState): AttendeeAvailabilityArgs | null {
+  try {
+    const parsed = attendeeAvailabilityArgsSchema.safeParse({
+      calendarId: form.calendarId,
+      emails: [
+        ...new Set(
+          form.attendees
+            .map((attendee) => {
+              const parsed = attendeeEmailSchema.safeParse(attendee.email);
+              return parsed.success ? parsed.data : null;
+            })
+            .filter((email): email is string => Boolean(email)),
+        ),
+      ].toSorted(),
+      ...buildEventTimeRange(form),
+    });
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildDraft(form: EditorFormState, event: CalendarEvent | null): EventDraft {
+  const { start, end } = buildEventTimeRange(form);
 
   const attendeesWithPendingRequired = mergeAttendeesWithInput(
     form.attendees,
@@ -3995,7 +4064,9 @@ function updateRecurrenceDay(
 }
 
 function addDays(value: string, days: number): string {
-  return new Date(new Date(value).getTime() + days * 24 * 60 * 60 * 1000).toISOString();
+  const date = new Date(value);
+  date.setDate(date.getDate() + days);
+  return date.toISOString();
 }
 
 function toAttachmentErrorMessage(error: unknown, fallback: string): string {

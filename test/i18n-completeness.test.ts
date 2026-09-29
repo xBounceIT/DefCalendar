@@ -56,6 +56,7 @@ describe("i18n translation completeness", () => {
       "miniCalendar.weekdays.", // Used via t(`miniCalendar.weekdays.${key}`)
       "calendarViews.", // Used via a VIEW_KEYS record lookup
       "eventSearch.sort.", // Used via t(`eventSearch.sort.${sort}`)
+      "eventEditor.attendeeAvailability.",
       "tray.", // Used by main process i18n (separate translation system)
       "sync.", // Used by main process + via translateSyncMessage() lookup
     ];

@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import delay from "delay";
 import {
   contactSuggestionSchema,
   type AttachmentUpload,
@@ -18,7 +19,13 @@ import {
 import type { AppConfig } from "@main/config";
 import type MsalAuthService from "@main/auth/msal-auth-service";
 import { normalizeEventResponseValue as normalizeGraphResponseValue } from "@shared/event-response";
-import delay from "delay";
+import {
+  attendeeAvailabilityArgsSchema,
+  AVAILABILITY_REQUEST_TIMEOUT_MS,
+  type AttendeeAvailability,
+  type AttendeeAvailabilityArgs,
+} from "@shared/attendee-availability";
+import parseAttendeeSchedule from "./attendee-availability";
 
 interface ParsedGraphCollection {
   nextLink?: string;
@@ -244,6 +251,86 @@ class GraphCalendarService {
         ownerName: calendar.owner?.name ?? null,
       };
     });
+  }
+
+  async getAttendeeAvailability(
+    input: AttendeeAvailabilityArgs,
+    homeAccountId: string,
+  ): Promise<AttendeeAvailability[]> {
+    const args = attendeeAvailabilityArgsSchema.parse(input);
+    const emails = [...new Set(args.emails)];
+    const results: AttendeeAvailability[] = [];
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), AVAILABILITY_REQUEST_TIMEOUT_MS);
+    try {
+      for (let offset = 0; offset < emails.length; offset += 20) {
+        const batch = emails.slice(offset, offset + 20);
+        let response: ParsedGraphCollection;
+        try {
+          controller.signal.throwIfAborted();
+          response = parseGraphCollection(
+            await awaitWithSignal(
+              this.requestJson(
+                "/me/calendar/getSchedule",
+                {
+                  method: "POST",
+                  signal: controller.signal,
+                  headers: { "Content-Type": "application/json", Prefer: 'outlook.timezone="UTC"' },
+                  body: JSON.stringify({
+                    schedules: batch,
+                    startTime: {
+                      dateTime: new Date(args.start).toISOString().replace(/Z$/, ""),
+                      timeZone: "UTC",
+                    },
+                    endTime: {
+                      dateTime: new Date(args.end).toISOString().replace(/Z$/, ""),
+                      timeZone: "UTC",
+                    },
+                    availabilityViewInterval: 5,
+                  }),
+                },
+                homeAccountId,
+              ),
+              controller.signal,
+            ),
+          );
+        } catch (error) {
+          const stop =
+            controller.signal.aborted ||
+            !(error instanceof GraphRequestError) ||
+            error.status === 401 ||
+            error.status === 403;
+          const failedEmails = stop ? emails.slice(offset) : batch;
+          results.push(
+            ...failedEmails.map(
+              (email): AttendeeAvailability => ({
+                email,
+                status: "unknown",
+                error: "requestFailed",
+              }),
+            ),
+          );
+          if (stop) {
+            break;
+          }
+          continue;
+        }
+        for (const email of batch) {
+          const schedule = response.value.find(
+            (item) =>
+              isRecord(item) &&
+              typeof item.scheduleId === "string" &&
+              item.scheduleId.toLowerCase() === email,
+          );
+          results.push(
+            parseAttendeeSchedule(schedule, email, Date.parse(args.start), Date.parse(args.end)),
+          );
+        }
+      }
+      return results;
+    } finally {
+      clearTimeout(deadline);
+    }
   }
 
   async listOutlookCategories(homeAccountId: string): Promise<OutlookCategory[]> {
@@ -860,6 +947,7 @@ class GraphCalendarService {
 
   private async sendRequest(args: SendRequestArgs): Promise<Response> {
     const { forceRefresh = false, homeAccountId, init = {}, pathOrUrl, retryCount = 0 } = args;
+    init.signal?.throwIfAborted();
     const headers = new Headers(init.headers);
     if (!headers.has("Accept")) {
       headers.set("Accept", "application/json");
@@ -867,6 +955,7 @@ class GraphCalendarService {
     const accessToken = homeAccountId
       ? await this.auth.getAccessTokenForAccount(homeAccountId, forceRefresh)
       : await this.auth.getAccessToken(forceRefresh);
+    init.signal?.throwIfAborted();
     headers.set("Authorization", `Bearer ${accessToken}`);
     headers.set("Prefer", buildPreferHeader(headers.get("Prefer"), this.config.timeZone));
 
@@ -1342,6 +1431,24 @@ function getUnsupportedReason(event: GraphEvent): null | string {
   }
 
   return null;
+}
+
+async function awaitWithSignal<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  let onAbort: (() => void) | undefined = undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) {
+      onAbort();
+    }
+  });
+  try {
+    return await Promise.race([operation, aborted]);
+  } finally {
+    if (onAbort) {
+      signal.removeEventListener("abort", onAbort);
+    }
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -2008,7 +2115,9 @@ function buildPreferHeader(existingPrefer: null | string, timeZone: string): str
     }
   }
 
-  preferences.add(`outlook.timezone="${timeZone}"`);
+  if (![...preferences].some((value) => value.toLowerCase().startsWith("outlook.timezone="))) {
+    preferences.add(`outlook.timezone="${timeZone}"`);
+  }
   preferences.add('IdType="ImmutableId"');
 
   return [...preferences].join(", ");

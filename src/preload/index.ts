@@ -44,6 +44,8 @@ const calendarApi: CalendarApi = {
     search: (args) => ipcRenderer.invoke(IPC_CHANNELS.contactsSearch, args),
   },
   events: {
+    getAttendeeAvailability: (args) =>
+      ipcRenderer.invoke(IPC_CHANNELS.attendeesGetAvailability, args),
     list: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsList, args),
     search: (args) => ipcRenderer.invoke(IPC_CHANNELS.eventsSearch, args),
     create: (draft) => ipcRenderer.invoke(IPC_CHANNELS.eventsCreate, draft),
