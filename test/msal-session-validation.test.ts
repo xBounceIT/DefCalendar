@@ -330,6 +330,77 @@ describe("startup session permission validation", () => {
     await expect(pca.getAllAccounts()).resolves.toEqual([]);
   });
 
+  it("preserves new credentials when a late silent response arrives during replacement sign-in", async () => {
+    expect.hasAssertions();
+    const { service, pca } = createFixture();
+    await service.initialize();
+    const silentToken = createDeferredToken();
+    const interactiveToken = createDeferredToken();
+    let cached = true;
+    let finishCleanup!: () => void;
+    const lateCleanup = new Promise<void>((resolve) => {
+      finishCleanup = resolve;
+    });
+    pca.signOut.mockImplementationOnce(async () => {
+      cached = false;
+    });
+    pca.signOut.mockImplementationOnce(async () => {
+      await lateCleanup;
+      cached = false;
+    });
+    pca.acquireTokenSilent.mockReturnValueOnce(silentToken.promise);
+    const oldRequest = service.getAccessToken().catch((error: unknown) => error);
+    await service.signOut();
+    pca.acquireTokenInteractive.mockImplementation(async () => {
+      const token = await interactiveToken.promise;
+      cached = true;
+      return token;
+    });
+    const login = service.signIn();
+    await vi.waitFor(() => expect(pca.acquireTokenInteractive).toHaveBeenCalledOnce());
+    silentToken.resolve(createToken());
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    interactiveToken.resolve(createToken());
+    await login;
+    finishCleanup();
+    await expect(oldRequest).resolves.toHaveProperty(
+      "message",
+      expect.stringContaining("session changed"),
+    );
+
+    expect(service.hasSession()).toBe(true);
+    expect(cached).toBe(true);
+    expect(pca.signOut).toHaveBeenCalledOnce();
+  });
+
+  it("still evicts a late silent token if replacement sign-in fails", async () => {
+    expect.hasAssertions();
+    const { service, pca } = createFixture();
+    await service.initialize();
+    const silentToken = createDeferredToken();
+    const interactiveToken = createDeferredToken();
+    pca.acquireTokenSilent.mockReturnValueOnce(silentToken.promise);
+    const oldRequest = service.getAccessToken().catch((error: unknown) => error);
+    await service.signOut();
+    pca.acquireTokenInteractive.mockImplementation(async () => {
+      await interactiveToken.promise;
+      throw new Error("sign-in cancelled");
+    });
+    const failedLogin = service.signIn().catch((error: unknown) => error);
+    await vi.waitFor(() => expect(pca.acquireTokenInteractive).toHaveBeenCalledOnce());
+    silentToken.resolve(createToken());
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    interactiveToken.resolve(createToken());
+
+    await expect(failedLogin).resolves.toHaveProperty("message", "sign-in cancelled");
+    await expect(oldRequest).resolves.toHaveProperty(
+      "message",
+      expect.stringContaining("session changed"),
+    );
+    expect(service.hasSession()).toBe(false);
+    expect(pca.signOut).toHaveBeenCalledTimes(2);
+  });
+
   it("does not cache an unexpected account when a sync refresh prompts for sign-in", async () => {
     expect.hasAssertions();
     const { service, pca } = createFixture();

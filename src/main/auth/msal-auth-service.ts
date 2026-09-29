@@ -99,6 +99,7 @@ class MsalAuthService {
   private accountVersions = new Map<string, number>();
   private globalSignOutVersion = 0;
   private pendingSignOuts = new Set<Promise<void>>();
+  private pendingSignIns = new Set<Promise<AuthState>>();
 
   constructor(config: AppConfig, tokenCache: SafeStorageTokenCache) {
     this.config = config;
@@ -275,7 +276,10 @@ class MsalAuthService {
         this.getAccountVersion(account.homeAccountId) !== version &&
         !this.accounts.some((item) => item.homeAccountId === account.homeAccountId)
       ) {
-        await this.removeAccountTokens(account);
+        while (this.pendingSignIns.size > 0) {
+          await Promise.allSettled(this.pendingSignIns);
+        }
+        await this.discardUnregisteredAccount(account);
       }
     }
   }
@@ -439,7 +443,15 @@ class MsalAuthService {
     this.persistAccounts();
   }
 
-  async signIn(mode: AuthSignInMode = "user"): Promise<AuthState> {
+  signIn(mode: AuthSignInMode = "user"): Promise<AuthState> {
+    const signIn = this.completeSignIn(mode).finally(() => {
+      this.pendingSignIns.delete(signIn);
+    });
+    this.pendingSignIns.add(signIn);
+    return signIn;
+  }
+
+  private async completeSignIn(mode: AuthSignInMode): Promise<AuthState> {
     const snapshot = this.captureSessionSnapshot();
     const result = await this.acquireInteractiveToken(mode, undefined, snapshot);
     if (this.sessionChanged(result.account, snapshot)) {
