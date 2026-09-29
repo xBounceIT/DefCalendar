@@ -124,8 +124,8 @@ describe("calendar sidebar", () => {
   it("adds event markers to mini-calendar days with events", () => {
     renderSidebar({ eventDayKeys: new Set(["2026-03-30"]) });
 
-    const dayWithEvents = screen.getByRole("button", { name: "30" });
-    const dayWithoutEvents = screen.getByRole("button", { name: "29" });
+    const dayWithEvents = screen.getByRole("button", { name: "Monday, March 30th, 2026" });
+    const dayWithoutEvents = screen.getByRole("button", { name: "Sunday, March 29th, 2026" });
 
     expect(dayWithEvents.className).toContain("has-events");
     expect(dayWithoutEvents.className).not.toContain("has-events");
