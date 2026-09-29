@@ -40,6 +40,7 @@ const calendarApi: CalendarApi = {
     list: (args) => ipcRenderer.invoke(IPC_CHANNELS.categoriesList, args),
   },
   contacts: {
+    getPhoto: (args) => ipcRenderer.invoke(IPC_CHANNELS.contactsGetPhoto, args),
     search: (args) => ipcRenderer.invoke(IPC_CHANNELS.contactsSearch, args),
   },
   events: {

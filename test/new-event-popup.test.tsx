@@ -112,6 +112,7 @@ function installCalendarApi(items: NewEventNotificationItem[]): CalendarApi {
       list: vi.fn(),
     },
     contacts: {
+      getPhoto: vi.fn().mockResolvedValue(null),
       search: vi.fn(),
     },
     events: {

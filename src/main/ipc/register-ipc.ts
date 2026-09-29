@@ -77,7 +77,7 @@ interface RegisterIpcDependencies {
 function mergeContactSuggestions(
   cachedContacts: ContactSuggestion[],
   peopleContacts: ContactSuggestion[],
-  limit: number,
+  limit: number | null,
 ): ContactSuggestion[] {
   const suggestions = new Map<string, ContactSuggestion>();
 
@@ -88,15 +88,17 @@ function mergeContactSuggestions(
     }
 
     const email = parsed.data.email.toLowerCase();
-    if (suggestions.has(email)) {
+    const existing = suggestions.get(email);
+    if (existing) {
+      suggestions.set(email, { ...parsed.data, ...existing });
       continue;
     }
 
     suggestions.set(email, {
+      ...parsed.data,
       email,
-      name: parsed.data.name,
     });
-    if (suggestions.size >= limit) {
+    if (limit !== null && suggestions.size >= limit) {
       return [...suggestions.values()];
     }
   }
@@ -291,7 +293,10 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
       .searchContacts(args)
       .map((contact) => contactSuggestionSchema.parse(contact));
 
-    if (args.query.length < MIN_PEOPLE_SEARCH_QUERY_LENGTH || cachedContacts.length >= args.limit) {
+    if (
+      args.query.length < MIN_PEOPLE_SEARCH_QUERY_LENGTH ||
+      (args.limit !== null && cachedContacts.length >= args.limit)
+    ) {
       return cachedContacts;
     }
 
@@ -299,12 +304,19 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
       const peopleContacts = await dependencies.graph.searchPeople(
         args.homeAccountId,
         args.query,
-        args.limit,
+        args.limit ?? 25,
       );
       return mergeContactSuggestions(cachedContacts, peopleContacts, args.limit);
     } catch {
       return cachedContacts;
     }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.contactsGetPhoto, async (event, input) => {
+    validateMainSender(event);
+    const args = contactSuggestionSchema.extend({ homeAccountId: z.string().min(1) }).parse(input);
+    const cachedContact = dependencies.db.getContactByEmail(args.homeAccountId, args.email);
+    return dependencies.graph.getContactPhoto(args.homeAccountId, { ...args, ...cachedContact });
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsList, async (event, input) => {

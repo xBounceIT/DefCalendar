@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { createInstance } from "i18next";
 import React from "react";
 import { I18nextProvider, initReactI18next } from "react-i18next";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import EventEditorDialog from "../src/renderer/src/components/event-editor-dialog";
 import enTranslations from "../src/renderer/src/i18n/locales/en.json";
@@ -17,8 +17,13 @@ import type {
   EventParticipant,
 } from "../src/shared/schemas";
 
+beforeEach(() => {
+  vi.stubGlobal("calendarApi", { contacts: { getPhoto: vi.fn().mockResolvedValue(null) } });
+});
+
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 function createCalendar(): CalendarSummary {
@@ -760,8 +765,8 @@ describe("event editor dialog", () => {
     });
 
     editSubject("Planning");
-    const requiredInput = screen.getByRole("textbox", { name: "Required attendees" });
-    const optionalInput = screen.getByRole("textbox", { name: "Optional attendees" });
+    const requiredInput = screen.getByRole("combobox", { name: "Required attendees" });
+    const optionalInput = screen.getByRole("combobox", { name: "Optional attendees" });
 
     fireEvent.change(requiredInput, {
       target: { value: "alice@example.com, bob@example.com" },
@@ -851,16 +856,263 @@ describe("event editor dialog", () => {
     });
 
     const requiredRow = screen
-      .getByRole("textbox", { name: "Required attendees" })
+      .getByRole("combobox", { name: "Required attendees" })
       .closest(".attendee-pills-wrapper");
     const optionalRow = screen
-      .getByRole("textbox", { name: "Optional attendees" })
+      .getByRole("combobox", { name: "Optional attendees" })
       .closest(".attendee-pills-wrapper");
 
     expect(requiredRow).toBeInstanceOf(HTMLElement);
     expect(optionalRow).toBeInstanceOf(HTMLElement);
     expect(within(requiredRow as HTMLElement).getByText("alice@example.com")).toBeInTheDocument();
     expect(within(optionalRow as HTMLElement).getByText("bob@example.com")).toBeInTheDocument();
+  });
+
+  it("opens the full alphabetical contact list on click and updates it as the query changes", async () => {
+    const onSearchContacts = vi.fn().mockImplementation(({ query }) =>
+      Promise.resolve(
+        query
+          ? [{ email: "zoe@example.com", name: "Zoe" }]
+          : [
+              { email: "zoe@example.com", name: "Zoe" },
+              { email: "alice@example.com", name: "Alice" },
+              { email: "coworker@example.com", name: "Coworker" },
+            ],
+      ),
+    );
+    renderDialog({
+      onSearchContacts,
+      state: {
+        event: createEvent({
+          attendees: [{ ...createParticipant(), email: "coworker@example.com" }],
+        }),
+        mode: "edit",
+      },
+    });
+    const input = screen.getByRole("combobox", { name: "Required attendees" });
+    fireEvent.click(input);
+    await screen.findByRole("option", { name: /Alice/ });
+    expect(onSearchContacts).toHaveBeenLastCalledWith({
+      homeAccountId: "account-1",
+      limit: null,
+      query: "",
+    });
+    expect(within(screen.getByRole("listbox")).getAllByRole("option")).toEqual([
+      screen.getByRole("option", { name: /Alice/ }),
+      screen.getByRole("option", { name: /Zoe/ }),
+    ]);
+
+    fireEvent.change(input, { target: { value: "zo" } });
+    await waitFor(() =>
+      expect(within(screen.getByRole("listbox")).getAllByRole("option")).toHaveLength(1),
+    );
+    expect(onSearchContacts).toHaveBeenLastCalledWith({
+      homeAccountId: "account-1",
+      limit: null,
+      query: "zo",
+    });
+
+    fireEvent.change(input, { target: { value: "" } });
+    await screen.findByRole("option", { name: /Alice/ });
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    fireEvent.click(input);
+    await screen.findByRole("option", { name: /Alice/ });
+  });
+
+  it("loads profile photos in the optional attendee popup and keeps initials when unavailable", async () => {
+    const photo = "data:image/jpeg;base64,cGhvdG8=";
+    const getPhoto = vi
+      .fn()
+      .mockImplementation(({ email }) =>
+        Promise.resolve(email === "alice@example.com" ? photo : null),
+      );
+    vi.stubGlobal("calendarApi", { contacts: { getPhoto } });
+    const observers: { callback: IntersectionObserverCallback; element?: Element }[] = [];
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        private record: (typeof observers)[number];
+        constructor(callback: IntersectionObserverCallback) {
+          this.record = { callback };
+          observers.push(this.record);
+        }
+        observe(element: Element) {
+          this.record.element = element;
+        }
+        disconnect() {}
+      },
+    );
+    renderDialog({
+      onSearchContacts: vi.fn().mockResolvedValue([
+        {
+          contactId: "contact-1",
+          email: "alice@example.com",
+          name: "Alice Smith",
+          userPrincipalName: "alice@tenant.onmicrosoft.com",
+        },
+        { email: "bob@example.com", name: "Bob Jones" },
+      ]),
+    });
+
+    fireEvent.focus(screen.getByRole("combobox", { name: "Optional attendees" }));
+    const alice = await screen.findByRole("option", { name: /Alice Smith/ });
+    expect(getPhoto).not.toHaveBeenCalled();
+    for (const observer of observers) {
+      observer.callback(
+        [{ isIntersecting: true, target: observer.element } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    }
+    await waitFor(() => expect(alice.querySelector("img")).toHaveAttribute("src", photo));
+    expect(getPhoto).toHaveBeenCalledWith({
+      contactId: "contact-1",
+      email: "alice@example.com",
+      homeAccountId: "account-1",
+      name: "Alice Smith",
+      userPrincipalName: "alice@tenant.onmicrosoft.com",
+    });
+    expect(screen.getByRole("option", { name: /Bob Jones/ }).querySelector("img")).toBeNull();
+    expect(
+      within(screen.getByRole("option", { name: /Bob Jones/ })).getByText("BJ"),
+    ).toBeInTheDocument();
+    fireEvent.error(alice.querySelector("img")!);
+    expect(within(alice).getByText("AS")).toBeInTheDocument();
+  });
+
+  it("loads participant photos in the sidebar without opening the contact picker", async () => {
+    const photo = "data:image/jpeg;base64,cGhvdG8=";
+    const getPhoto = vi.fn().mockResolvedValue(photo);
+    vi.stubGlobal("calendarApi", { contacts: { getPhoto } });
+    const { container, rerenderDialog } = renderDialog({
+      state: {
+        event: createAttendeeEvent({
+          attendees: [
+            { ...createParticipant(), email: "andra.pantea@example.com", name: null },
+            { ...createParticipant(), email: null, name: "No Email" },
+          ],
+        }),
+        mode: "edit",
+      },
+    });
+    const avatar = container.querySelector(".attendees-sidebar__attendee-avatar")!;
+    await waitFor(() => expect(avatar.querySelector("img")).toHaveAttribute("src", photo));
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(getPhoto).toHaveBeenCalledOnce();
+    expect(getPhoto).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: "andra.pantea@example.com",
+        homeAccountId: "account-1",
+        name: null,
+      }),
+    );
+    fireEvent.error(avatar.querySelector("img")!);
+    expect(avatar).toHaveTextContent("AN");
+    expect(container.querySelectorAll(".attendees-sidebar__attendee-avatar")[1]).toHaveTextContent(
+      "NE",
+    );
+    rerenderDialog({ calendars: [] });
+    expect(avatar.querySelector("img")).toBeNull();
+    expect(getPhoto).toHaveBeenCalledOnce();
+  });
+
+  it("lets Tab leave an empty contact field and supports selecting from the list with arrow keys", async () => {
+    renderDialog({
+      onSearchContacts: vi.fn().mockResolvedValue([
+        { email: "bob@example.com", name: "Bob" },
+        { email: "alice@example.com", name: "Alice" },
+      ]),
+    });
+    const input = screen.getByRole("combobox", { name: "Required attendees" });
+    fireEvent.click(input);
+    await screen.findByRole("option", { name: /Alice/ });
+    expect(fireEvent.keyDown(input, { key: "Tab" })).toBe(true);
+    expect(
+      within(screen.getByRole("listbox"))
+        .getAllByRole("option")
+        .every((option) => option.tabIndex === -1),
+    ).toBe(true);
+    expect(input.closest(".attendee-pills-wrapper")?.querySelector(".attendee-pill")).toBeNull();
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { name: /Bob/ })).toHaveAttribute("aria-selected", "true");
+    expect(input).toHaveAttribute(
+      "aria-activedescendant",
+      screen.getByRole("option", { name: /Bob/ }).id,
+    );
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(
+      within(input.closest(".attendee-pills-wrapper") as HTMLElement).getByText("bob@example.com"),
+    ).toBeInTheDocument();
+  });
+
+  it("does not select a contact while Enter is confirming an IME composition", async () => {
+    renderDialog({
+      onSearchContacts: vi.fn().mockResolvedValue([{ email: "alice@example.com", name: "Alice" }]),
+    });
+    const input = screen.getByRole("combobox", { name: "Required attendees" });
+    fireEvent.click(input);
+    fireEvent.change(input, { target: { value: "Alice" } });
+    await screen.findByRole("option", { name: /Alice/ });
+    expect(fireEvent.keyDown(input, { key: "Enter", isComposing: true })).toBe(true);
+    expect(input).toHaveValue("Alice");
+    expect(input.closest(".attendee-pills-wrapper")?.querySelector(".attendee-pill")).toBeNull();
+    fireEvent.keyDown(input, { key: "Enter", isComposing: false });
+    expect(input).toHaveValue("");
+    expect(
+      within(input.closest(".attendee-pills-wrapper") as HTMLElement).getByText(
+        "alice@example.com",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("ignores stale search results and does not reopen a dismissed contact popup", async () => {
+    let resolveInitial!: (contacts: { email: string; name: string }[]) => void;
+    let resolveSearch!: (contacts: { email: string; name: string }[]) => void;
+    const onSearchContacts = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveInitial = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveSearch = resolve;
+          }),
+      );
+    renderDialog({ onSearchContacts });
+    const input = screen.getByRole("combobox", { name: "Required attendees" });
+    fireEvent.focus(input);
+    await waitFor(() => expect(onSearchContacts).toHaveBeenCalledTimes(1));
+    fireEvent.change(input, { target: { value: "bob" } });
+    await waitFor(() => expect(onSearchContacts).toHaveBeenCalledTimes(2));
+    resolveInitial([{ email: "alice@example.com", name: "Alice" }]);
+    expect(screen.queryByRole("option", { name: /Alice/ })).not.toBeInTheDocument();
+    fireEvent.keyDown(input, { key: "Escape" });
+    resolveSearch([{ email: "bob@example.com", name: "Bob" }]);
+    await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
+  });
+
+  it("keeps participant contact search disabled without event or calendar write permissions", () => {
+    const { onSearchContacts, rerenderDialog } = renderDialog({
+      state: { event: createAttendeeEvent(), mode: "edit" },
+    });
+    for (const label of ["Required attendees", "Optional attendees"]) {
+      const input = screen.getByRole("combobox", { name: label });
+      expect(input).toBeDisabled();
+      fireEvent.click(input);
+    }
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(onSearchContacts).not.toHaveBeenCalled();
+    rerenderDialog({
+      calendars: [{ ...createCalendar(), canEdit: false }],
+      state: { event: createEvent(), mode: "edit" },
+    });
+    expect(screen.getByRole("combobox", { name: "Required attendees" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Optional attendees" })).toBeDisabled();
   });
 
   it("inserts a selected contact from the attendee popup", async () => {
@@ -880,7 +1132,7 @@ describe("event editor dialog", () => {
 
     editSubject("Planning");
 
-    const requiredInput = screen.getByRole("textbox", { name: "Required attendees" });
+    const requiredInput = screen.getByRole("combobox", { name: "Required attendees" });
     fireEvent.focus(requiredInput);
     fireEvent.change(requiredInput, {
       target: { value: '"Doe, J' },
@@ -925,8 +1177,8 @@ describe("event editor dialog", () => {
     });
 
     editSubject("Planning");
-    const requiredInput = screen.getByRole("textbox", { name: "Required attendees" });
-    const optionalInput = screen.getByRole("textbox", { name: "Optional attendees" });
+    const requiredInput = screen.getByRole("combobox", { name: "Required attendees" });
+    const optionalInput = screen.getByRole("combobox", { name: "Optional attendees" });
 
     fireEvent.change(requiredInput, {
       target: { value: "alice@example.com" },
@@ -995,10 +1247,10 @@ describe("event editor dialog", () => {
     });
 
     const requiredRow = screen
-      .getByRole("textbox", { name: "Required attendees" })
+      .getByRole("combobox", { name: "Required attendees" })
       .closest(".attendee-pills-wrapper");
     const optionalRow = screen
-      .getByRole("textbox", { name: "Optional attendees" })
+      .getByRole("combobox", { name: "Optional attendees" })
       .closest(".attendee-pills-wrapper");
 
     expect(requiredRow).toBeInstanceOf(HTMLElement);
@@ -1063,7 +1315,7 @@ describe("event editor dialog", () => {
     const popup = screen.getByText("Forward to").closest(".event-toolbar__popup");
     expect(popup).toBeInstanceOf(HTMLElement);
 
-    fireEvent.change(within(popup as HTMLElement).getByRole("textbox", { name: "Forward to" }), {
+    fireEvent.change(within(popup as HTMLElement).getByRole("combobox", { name: "Forward to" }), {
       target: { value: "Dana Swope <dana@example.com>" },
     });
     fireEvent.change(within(popup as HTMLElement).getByLabelText("Comment"), {
