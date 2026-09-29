@@ -405,6 +405,40 @@ describe("register ipc", () => {
     },
   );
 
+  it("starts a fresh surviving-account sync after manual sign-out", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const previousSync = createDeferred<ReturnType<typeof fixture.sync.getStatus>>();
+    const state = { status: "signed_in", accounts: [{ homeAccountId: "account-2" }] };
+    let previousSyncActive = true;
+    let completed = false;
+    fixture.auth.getAuthState.mockReturnValue(state);
+    fixture.sync.reset.mockImplementation(() => {
+      previousSyncActive = false;
+    });
+    fixture.sync.syncAll.mockImplementation(() =>
+      previousSyncActive ? previousSync.promise : Promise.resolve(fixture.sync.getStatus()),
+    );
+
+    const request = fixture.handlers.get(IPC_CHANNELS.authSignOut)!(
+      { sender: fixture.mainWebContents },
+      "account-1",
+    ).then((result) => {
+      completed = true;
+      return result;
+    });
+
+    try {
+      await vi.waitFor(() => expect(completed).toBe(true), { timeout: 200 });
+      expect(await request).toEqual(state);
+      expect(fixture.sync.syncAll).toHaveBeenCalledExactlyOnceWith("manual");
+      expect(fixture.db.clearUserData).toHaveBeenCalledExactlyOnceWith("account-1");
+    } finally {
+      previousSync.resolve(fixture.sync.getStatus());
+      await request;
+    }
+  });
+
   it.each([
     [IPC_CHANNELS.eventsCreate, "createEvent", createEventDraft(), createCalendarEvent()],
     [

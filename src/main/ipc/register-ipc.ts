@@ -252,10 +252,9 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     } else {
       dependencies.db.clearUserData();
     }
+    dependencies.sync.reset();
     if (dependencies.auth.hasSession()) {
       await dependencies.sync.syncAll("manual");
-    } else {
-      dependencies.sync.reset();
     }
     dependencies.newEventNotifications.clear();
     await dependencies.reminders.checkNow();
