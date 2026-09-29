@@ -230,6 +230,84 @@ function createMeetingState(
   };
 }
 
+describe("calendar dropdown", () => {
+  it("saves the calendar chosen by typing on the closed dropdown", () => {
+    expect.hasAssertions();
+    const { onSave } = renderDialog({
+      calendars: [createCalendar(), { ...createCalendar(), id: "calendar-2", name: "Birthdays" }],
+      state: createMeetingState({ draft: { subject: "Planning" } }),
+    });
+    const trigger = screen.getByRole("button", { name: "Calendar", exact: true });
+    fireEvent.keyDown(trigger, { key: "b" });
+    expect(trigger).toHaveTextContent("Birthdays (user@example.com)");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ calendarId: "calendar-2" }));
+  });
+
+  it.each(["create", "edit"] as const)("saves the selected calendar in %s mode", (mode) => {
+    expect.hasAssertions();
+    const { onSave } = renderDialog({
+      calendars: [createCalendar(), { ...createCalendar(), id: "calendar-2", name: "Birthdays" }],
+      state:
+        mode === "create"
+          ? createMeetingState({ draft: { subject: "Planning" } })
+          : { mode: "edit", event: createEvent() },
+    });
+    const trigger = screen.getByRole("button", { name: "Calendar", exact: true });
+    fireEvent.click(trigger);
+    expect(
+      screen.getByRole("option", { name: "Primary Calendar (user@example.com)" }),
+    ).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(screen.getByRole("option", { name: "Birthdays (user@example.com)" }));
+    expect(trigger).toHaveTextContent("Birthdays (user@example.com)");
+    expect(screen.queryByRole("listbox", { name: "Calendar" })).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: mode === "create" ? "Create Event" : "Save Changes" }),
+    );
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ calendarId: "calendar-2" }));
+  });
+
+  it("supports keyboard navigation and dismisses without changing the calendar", () => {
+    expect.hasAssertions();
+    renderDialog({
+      calendars: [createCalendar(), { ...createCalendar(), id: "calendar-2", name: "Birthdays" }],
+    });
+    const trigger = screen.getByRole("button", { name: "Calendar", exact: true });
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    const options = screen.getAllByRole("option");
+    expect(options[0]).toHaveFocus();
+    fireEvent.keyDown(options[0], { key: "ArrowDown" });
+    expect(options[1]).toHaveFocus();
+    fireEvent.keyDown(options[1], { key: "Home" });
+    expect(options[0]).toHaveFocus();
+    fireEvent.keyDown(options[0], { key: "End" });
+    expect(options[1]).toHaveFocus();
+    fireEvent.keyDown(options[1], { key: "Escape" });
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger).toHaveTextContent("Primary Calendar");
+    fireEvent.click(trigger);
+    fireEvent.mouseDown(document.body);
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(trigger);
+    fireEvent.blur(screen.getAllByRole("option")[0], {
+      relatedTarget: screen.getByPlaceholderText("Subject"),
+    });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("prevents changing the calendar for an attendee", () => {
+    expect.hasAssertions();
+    renderDialog({ state: { mode: "edit", event: createAttendeeEvent() } });
+    const trigger = screen.getByRole("button", { name: "Calendar", exact: true });
+    expect(trigger).toBeDisabled();
+    fireEvent.click(trigger);
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    expect(screen.queryByRole("listbox", { name: "Calendar" })).not.toBeInTheDocument();
+  });
+});
+
 describe("new meeting participant availability", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -465,7 +543,7 @@ describe("new meeting participant availability", () => {
       .fn()
       .mockResolvedValueOnce([{ email: "coworker@example.com", status: "free" }])
       .mockResolvedValue([{ email: "coworker@example.com", status: "unknown" }]);
-    const view = renderDialog({
+    renderDialog({
       onGetAttendeeAvailability: load,
       state: createMeetingState(),
       calendars: [
@@ -474,9 +552,8 @@ describe("new meeting participant availability", () => {
       ],
     });
     expect(await screen.findByText("Available")).toBeInTheDocument();
-    fireEvent.change(view.container.querySelector(".field-select")!, {
-      target: { value: "calendar-2" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "Calendar", exact: true }));
+    fireEvent.click(screen.getAllByRole("option")[1]);
     expect(screen.queryByText("Available")).not.toBeInTheDocument();
     expect(await screen.findByText("Unknown")).toBeInTheDocument();
     expect(load).toHaveBeenLastCalledWith(expect.objectContaining({ calendarId: "calendar-2" }));
