@@ -261,6 +261,67 @@ function createDeferred<T>() {
 }
 
 describe("sync service", () => {
+  it("keeps the signed-out status when an active Graph request fails after reset", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const deferred = createDeferred<CalendarSummary[]>();
+    fixture.graph.listCalendars.mockReturnValueOnce(deferred.promise);
+    const sync = fixture.service.syncAll("manual");
+    fixture.auth.getAccountIds.mockReturnValue([]);
+    fixture.auth.hasSession.mockReturnValue(false);
+    fixture.service.reset();
+    deferred.resolve([createCalendar("calendar-a")]);
+
+    expect(await sync).toMatchObject({
+      state: "idle",
+      messageKey: "sync.signInToSync",
+      lastSyncedAt: null,
+    });
+    expect(fixture.service.getStatus().messageKey).toBe("sync.signInToSync");
+  });
+
+  it("keeps the signed-out status when an active sync finishes its reminder check after reset", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const deferred = createDeferred<void>();
+    fixture.reminders.checkNow.mockReturnValueOnce(deferred.promise);
+    const sync = fixture.service.syncAll("manual");
+    await vi.waitFor(() => expect(fixture.reminders.checkNow).toHaveBeenCalledOnce());
+    fixture.auth.getAccountIds.mockReturnValue([]);
+    fixture.auth.hasSession.mockReturnValue(false);
+    fixture.service.reset();
+    deferred.resolve();
+
+    expect(await sync).toMatchObject({
+      state: "idle",
+      messageKey: "sync.signInToSync",
+      lastSyncedAt: null,
+    });
+  });
+
+  it("starts a fresh account sync after reset without letting the old run replace its status", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const deferred = createDeferred<CalendarSummary[]>();
+    fixture.graph.listCalendars
+      .mockReturnValueOnce(deferred.promise)
+      .mockResolvedValue([createCalendar("calendar-a", "account-2")]);
+    const oldSync = fixture.service.syncAll("manual");
+    fixture.service.reset();
+    fixture.auth.getAccountIds.mockReturnValue(["account-2"]);
+    const freshSync = fixture.service.syncAll("manual");
+    expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(2);
+    const freshStatus = await freshSync;
+    deferred.resolve([createCalendar("calendar-a")]);
+
+    expect(await oldSync).toEqual(freshStatus);
+    expect(fixture.service.getStatus()).toEqual(freshStatus);
+    expect(fixture.db.upsertCalendars).toHaveBeenCalledExactlyOnceWith(
+      [createCalendar("calendar-a", "account-2")],
+      "account-2",
+    );
+  });
+
   it("discards old sync results even if the same account has already signed back in", async () => {
     expect.hasAssertions();
     const fixture = createFixture({ calendars: [createCalendar("calendar-a")] });

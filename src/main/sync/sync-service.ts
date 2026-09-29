@@ -38,6 +38,7 @@ class SyncService {
   private readonly now: () => number;
   private timer: NodeJS.Timeout | null = null;
   private inFlight: Promise<SyncStatus> | null = null;
+  private syncGeneration = 0;
   private pendingMutationAllAccounts = false;
   private readonly pendingMutationAccountIds = new Set<string>();
   private status: SyncStatus;
@@ -75,6 +76,10 @@ class SyncService {
   }
 
   reset(): void {
+    this.syncGeneration += 1;
+    this.inFlight = null;
+    this.pendingMutationAllAccounts = false;
+    this.pendingMutationAccountIds.clear();
     this.setStatus({
       lastSyncedAt: null,
       message: "Sign in to sync Exchange 365.",
@@ -206,8 +211,11 @@ class SyncService {
       return this.inFlight;
     }
 
+    const generation = this.syncGeneration;
     const nextSync = this.runSync(reason, homeAccountId);
-    this.inFlight = nextSync;
+    if (generation === this.syncGeneration) {
+      this.inFlight = nextSync;
+    }
 
     try {
       return await nextSync;
@@ -267,6 +275,7 @@ class SyncService {
   }
 
   private async runSync(reason: SyncReason, homeAccountId?: string): Promise<SyncStatus> {
+    const generation = this.syncGeneration;
     if (!this.dependencies.auth.hasSession()) {
       const idleStatus = {
         lastSyncedAt: this.status.lastSyncedAt,
@@ -276,7 +285,7 @@ class SyncService {
         progress: null,
         state: "idle" as const,
       };
-      return this.setStatus(idleStatus);
+      return this.setStatus(idleStatus, generation);
     }
 
     const accountIds = this.resolveAccountIds(reason, homeAccountId);
@@ -289,7 +298,7 @@ class SyncService {
         progress: null,
         state: "idle" as const,
       };
-      return this.setStatus(idleStatus);
+      return this.setStatus(idleStatus, generation);
     }
 
     let syncMessage = "Syncing Exchange 365…";
@@ -299,14 +308,17 @@ class SyncService {
       syncMessageKey = "sync.connecting";
     }
 
-    this.setStatus({
-      lastSyncedAt: this.status.lastSyncedAt,
-      message: syncMessage,
-      messageKey: syncMessageKey,
-      counts: null,
-      progress: null,
-      state: "syncing",
-    });
+    this.setStatus(
+      {
+        lastSyncedAt: this.status.lastSyncedAt,
+        message: syncMessage,
+        messageKey: syncMessageKey,
+        counts: null,
+        progress: null,
+        state: "syncing",
+      },
+      generation,
+    );
 
     try {
       let settings = this.dependencies.settings.getSettings();
@@ -348,7 +360,7 @@ class SyncService {
           progress: null,
           state: "idle",
         };
-        return this.setStatus(nextStatus);
+        return this.setStatus(nextStatus, generation);
       }
 
       const visibleCalendarIdSet = new Set(settings.visibleCalendarIds);
@@ -362,7 +374,7 @@ class SyncService {
           progress: null,
           state: "idle",
         };
-        return this.setStatus(nextStatus);
+        return this.setStatus(nextStatus, generation);
       }
 
       if (reason === "manual") {
@@ -391,14 +403,17 @@ class SyncService {
       let processedEvents = 0;
       let syncFailed = false;
 
-      this.setStatus({
-        lastSyncedAt: this.status.lastSyncedAt,
-        message: syncMessage,
-        messageKey: syncMessageKey,
-        counts: null,
-        progress: { processedCalendars: 0, totalCalendars, processedEvents: 0 },
-        state: "syncing",
-      });
+      this.setStatus(
+        {
+          lastSyncedAt: this.status.lastSyncedAt,
+          message: syncMessage,
+          messageKey: syncMessageKey,
+          counts: null,
+          progress: { processedCalendars: 0, totalCalendars, processedEvents: 0 },
+          state: "syncing",
+        },
+        generation,
+      );
 
       const calendarsToStore = await Promise.all(
         calendarsToSync.map(async (calendar) => {
@@ -418,14 +433,17 @@ class SyncService {
             processedCalendars += 1;
             processedEvents += fetchedEvents.length;
             if (!syncFailed) {
-              this.setStatus({
-                lastSyncedAt: this.status.lastSyncedAt,
-                message: syncMessage,
-                messageKey: syncMessageKey,
-                counts: null,
-                progress: { processedCalendars, totalCalendars, processedEvents },
-                state: "syncing",
-              });
+              this.setStatus(
+                {
+                  lastSyncedAt: this.status.lastSyncedAt,
+                  message: syncMessage,
+                  messageKey: syncMessageKey,
+                  counts: null,
+                  progress: { processedCalendars, totalCalendars, processedEvents },
+                  state: "syncing",
+                },
+                generation,
+              );
             }
             return {
               calendarId: calendar.id,
@@ -484,14 +502,17 @@ class SyncService {
       const totalEvents = syncedCalendars.reduce((sum, sc) => sum + sc.events.length, 0);
       if (processedEvents !== totalEvents) {
         processedEvents = totalEvents;
-        this.setStatus({
-          lastSyncedAt: this.status.lastSyncedAt,
-          message: syncMessage,
-          messageKey: syncMessageKey,
-          counts: null,
-          progress: { processedCalendars, totalCalendars, processedEvents },
-          state: "syncing",
-        });
+        this.setStatus(
+          {
+            lastSyncedAt: this.status.lastSyncedAt,
+            message: syncMessage,
+            messageKey: syncMessageKey,
+            counts: null,
+            progress: { processedCalendars, totalCalendars, processedEvents },
+            state: "syncing",
+          },
+          generation,
+        );
       }
 
       const newEvents: CalendarEvent[] = [];
@@ -534,7 +555,7 @@ class SyncService {
         progress: null,
         state: "idle",
       };
-      return this.setStatus(nextStatus);
+      return this.setStatus(nextStatus, generation);
     } catch (error) {
       let errorMessage = "Exchange 365 sync failed.";
       let messageKey: null | string = "sync.syncFailed";
@@ -554,7 +575,7 @@ class SyncService {
         progress: null,
         state: "error",
       };
-      return this.setStatus(nextStatus);
+      return this.setStatus(nextStatus, generation);
     }
   }
 
@@ -678,7 +699,10 @@ class SyncService {
     };
   }
 
-  private setStatus(status: SyncStatus): SyncStatus {
+  private setStatus(status: SyncStatus, generation = this.syncGeneration): SyncStatus {
+    if (generation !== this.syncGeneration) {
+      return this.status;
+    }
     const nextStatus = this.withSyncWindow(status);
     this.status = nextStatus;
 
