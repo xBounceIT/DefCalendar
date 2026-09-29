@@ -47,6 +47,8 @@ import AuthScreen from "./components/auth-screen";
 import CalendarSidebar from "./components/calendar-sidebar";
 import CalendarSelectionScreen from "./components/calendar-selection-screen";
 import SettingsDialog from "./components/settings-dialog";
+import SpellcheckOnboarding from "./components/spellcheck-onboarding";
+import createSettingsUpdater from "./settings-update";
 import type { EditorState } from "./event-editor-state";
 import EventEditorDialog from "./components/event-editor-dialog";
 import EventSearchDialog from "./components/event-search-dialog";
@@ -117,6 +119,9 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   const [copiedEvent, setCopiedEvent] = useState<CalendarEvent | null>(null);
   const [pendingSignInMode, setPendingSignInMode] = useState<AuthSignInMode>("user");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsInitialSection, setSettingsInitialSection] = useState<"appearance" | "spelling">(
+    "appearance",
+  );
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [showAuthScreen, setShowAuthScreen] = useState(false);
   const [showCalendarSelection, setShowCalendarSelection] = useState(false);
@@ -163,6 +168,10 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   });
 
   const appSettings = settingsQuery.data ?? fallbackSettings;
+  const saveSettings = useMemo(
+    () => createSettingsUpdater(queryClient, calendarApi.settings.update, fallbackSettings),
+    [queryClient, calendarApi, fallbackSettings],
+  );
   useTitleBarScrim(
     isSearchOpen || isSettingsOpen || editorState !== null,
     appSettings.theme ?? "system",
@@ -1041,7 +1050,10 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         onRefresh={() => {
           refreshMutation.mutate();
         }}
-        onSettingsClick={() => setIsSettingsOpen(true)}
+        onSettingsClick={() => {
+          setSettingsInitialSection("appearance");
+          setIsSettingsOpen(true);
+        }}
         onSignOut={() => {
           signOutMutation.mutate(undefined);
         }}
@@ -1083,23 +1095,11 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         timeFormat={appSettings.timeFormat}
       />
       <SettingsDialog
+        initialSection={settingsInitialSection}
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         settings={appSettings}
-        onSave={(newSettings) => {
-          const previousSettings = appSettings;
-          const nextSettings = { ...previousSettings, ...newSettings };
-          queryClient.setQueryData(["settings"], nextSettings);
-
-          void calendarApi.settings
-            .update(newSettings)
-            .then((savedSettings) => {
-              queryClient.setQueryData(["settings"], savedSettings);
-            })
-            .catch(() => {
-              queryClient.setQueryData(["settings"], previousSettings);
-            });
-        }}
+        onSave={saveSettings}
       />
       <EventSearchDialog
         calendarMap={calendarMap}
@@ -1137,6 +1137,23 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         timeFormat={appSettings.timeFormat}
       />
       <UpdateAvailablePopup />
+      {settingsQuery.data &&
+        !appSettings.spellcheckOnboardingSeen &&
+        !isSettingsOpen &&
+        !isSearchOpen &&
+        !editorState && (
+          <SpellcheckOnboarding
+            onComplete={async () => {
+              if (!(await saveSettings({ spellcheckOnboardingSeen: true }, false))) {
+                throw new Error("Could not save onboarding preference.");
+              }
+            }}
+            onOpenSettings={() => {
+              setSettingsInitialSection("spelling");
+              setIsSettingsOpen(true);
+            }}
+          />
+        )}
       {shouldShowNewEventPopup && (
         <NewEventPopup
           onFindAcceptConflicts={findAcceptConflicts}

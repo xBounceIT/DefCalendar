@@ -57,7 +57,7 @@ function loadAppConfig(): AppConfig {
     return cachedConfig;
   }
 
-  dotenv.config();
+  dotenv.config({ quiet: true });
   cachedConfig = resolveAppConfig(process.env);
 
   return cachedConfig;

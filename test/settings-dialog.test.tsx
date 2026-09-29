@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createInstance } from "i18next";
 import React from "react";
 import { I18nextProvider, initReactI18next } from "react-i18next";
@@ -10,6 +10,8 @@ import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import SettingsDialog from "../src/renderer/src/components/settings-dialog";
 import SettingsSelect from "../src/renderer/src/components/settings-select";
+import SpellcheckOnboarding from "../src/renderer/src/components/spellcheck-onboarding";
+import SpellcheckSettings from "../src/renderer/src/components/spellcheck-settings";
 import enTranslations from "../src/renderer/src/i18n/locales/en.json";
 import type { CalendarApi } from "../src/shared/ipc";
 import { createDefaultSettings } from "../src/shared/schema-values";
@@ -39,6 +41,17 @@ function createCalendarApiMock(releaseNotes: null | string): CalendarApi {
       install: vi.fn().mockResolvedValue(undefined),
       onStatus: vi.fn().mockReturnValue(() => undefined),
     },
+    spellcheck: {
+      onDictionaryStatesChanged: vi.fn().mockReturnValue(() => undefined),
+      addWord: vi.fn().mockResolvedValue(undefined),
+      getDictionaries: vi.fn().mockResolvedValue({
+        availableLanguages: ["en-US", "it", "fr"],
+        dictionaryStates: { "en-US": "ready", it: "ready" },
+        customWords: ["DefCalendar"],
+        usesSystemLanguages: false,
+      }),
+      removeWord: vi.fn().mockResolvedValue(undefined),
+    },
   } as unknown as CalendarApi;
 }
 
@@ -62,13 +75,7 @@ function restoreCalendarApi(): void {
   Reflect.deleteProperty(globalThis, "calendarApi");
 }
 
-function renderDialog(
-  releaseNotes: null | string,
-  options?: {
-    onSave?: (patch: UserSettingsPatch) => void;
-    settings?: UserSettings;
-  },
-) {
+function createTestI18n() {
   const i18n = createInstance();
   void i18n.use(initReactI18next).init({
     resources: { en: { translation: enTranslations } },
@@ -76,6 +83,17 @@ function renderDialog(
     fallbackLng: "en",
     interpolation: { escapeValue: false },
   });
+  return i18n;
+}
+
+function renderDialog(
+  releaseNotes: null | string,
+  options?: {
+    onSave?: (patch: UserSettingsPatch) => void | Promise<boolean>;
+    settings?: UserSettings;
+  },
+) {
+  const i18n = createTestI18n();
 
   installCalendarApi(createCalendarApiMock(releaseNotes));
   const onSave = options?.onSave ?? vi.fn();
@@ -419,6 +437,357 @@ describe("custom select lifecycle", () => {
 });
 
 describe("settings dialog", () => {
+  it("keeps the native modal open while cancellation is being saved", async () => {
+    expect.hasAssertions();
+    let finish: () => void = () => undefined;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const onComplete = vi.fn(() => pending);
+    const view = render(
+      <I18nextProvider i18n={createTestI18n()}>
+        <SpellcheckOnboarding onComplete={onComplete} />
+      </I18nextProvider>,
+    );
+    const dialog = screen.getByRole("dialog");
+    const cancel = new Event("cancel", { cancelable: true });
+    fireEvent(dialog, cancel);
+    fireEvent(dialog, new Event("cancel", { cancelable: true }));
+    expect(dialog).toBeInstanceOf(HTMLDialogElement);
+    expect(dialog).toHaveAttribute("open");
+    expect(cancel.defaultPrevented).toBe(true);
+    expect(onComplete).toHaveBeenCalledOnce();
+    view.unmount();
+    await act(async () => {
+      finish();
+    });
+  });
+  it("locks dictionary controls during a save and displays failed saves", async () => {
+    expect.hasAssertions();
+    let finish: (saved: boolean) => void = () => undefined;
+    const pending = new Promise<boolean>((resolve) => {
+      finish = resolve;
+    });
+    const onSave = vi.fn().mockReturnValue(pending);
+    renderDialog(null, { onSave });
+    fireEvent.click(screen.getByRole("button", { name: "Spelling" }));
+    const italian = await screen.findByRole("button", { name: "Remove Italian dictionary" });
+    fireEvent.click(italian);
+    expect(screen.getByRole("button", { name: "Download French dictionary" })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "Enable spell check" })).toBeDisabled();
+    await act(async () => {
+      finish(false);
+    });
+    expect(
+      await screen.findByText("Could not save your preference. Please try again."),
+    ).toBeInTheDocument();
+    expect(italian).not.toBeDisabled();
+  });
+
+  it("does not navigate from an onboarding completion after it is unmounted", async () => {
+    expect.hasAssertions();
+    let finish: () => void = () => undefined;
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const onOpenSettings = vi.fn();
+    const view = render(
+      <I18nextProvider i18n={createTestI18n()}>
+        <SpellcheckOnboarding onComplete={() => pending} onOpenSettings={onOpenSettings} />
+      </I18nextProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Manage dictionaries" }));
+    view.unmount();
+    await act(async () => {
+      finish();
+    });
+    expect(onOpenSettings).not.toHaveBeenCalled();
+  });
+  it("shows both default dictionaries and saves language and enabled preferences", async () => {
+    expect.hasAssertions();
+    const onSave = vi.fn();
+    renderDialog(null, { onSave });
+    fireEvent.click(screen.getByRole("button", { name: "Spelling" }));
+    const english = await screen.findByRole("button", {
+      name: "Remove American English dictionary",
+    });
+    const italian = screen.getByRole("button", { name: "Remove Italian dictionary" });
+    expect(english).toBeEnabled();
+    expect(italian).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Download French dictionary" }));
+    expect(onSave).toHaveBeenLastCalledWith({ spellcheckLanguages: ["en-US", "it", "fr"] });
+    await waitFor(() => expect(italian).not.toBeDisabled());
+    fireEvent.click(italian);
+    expect(onSave).toHaveBeenLastCalledWith({ spellcheckLanguages: ["en-US"] });
+    await waitFor(() => expect(italian).not.toBeDisabled());
+    fireEvent.click(screen.getByRole("checkbox", { name: "Enable spell check" }));
+    expect(onSave).toHaveBeenLastCalledWith({ spellcheckEnabled: false });
+  });
+
+  it("switches dictionary actions after saving additions and removals", async () => {
+    installCalendarApi(createCalendarApiMock(null));
+    const onSave = vi.fn();
+    function Preferences() {
+      const [settings, setSettings] = React.useState(createDefaultSettings());
+      return (
+        <SpellcheckSettings
+          onSave={async (patch) => {
+            onSave(patch);
+            setSettings((previous) => ({ ...previous, ...patch }));
+            return true;
+          }}
+          settings={settings}
+        />
+      );
+    }
+    render(
+      <I18nextProvider i18n={createTestI18n()}>
+        <Preferences />
+      </I18nextProvider>,
+    );
+    const download = await screen.findByRole("button", { name: "Download French dictionary" });
+    expect(download.textContent).toBe("");
+    expect(download).toHaveAttribute("title", "Download French dictionary");
+    fireEvent.click(download);
+    const pendingDownload = await screen.findByRole("button", {
+      name: "Downloading French dictionary",
+    });
+    expect(pendingDownload).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Remove French dictionary" }),
+    ).not.toBeInTheDocument();
+    act(() =>
+      vi
+        .mocked(calendarApi.spellcheck.onDictionaryStatesChanged)
+        .mock.calls[0][0]({ "en-US": "ready", it: "ready", fr: "failed" }),
+    );
+    const retry = screen.getByRole("button", { name: "Retry downloading French dictionary" });
+    await waitFor(() => expect(retry).toBeEnabled());
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Could not download one or more dictionaries.",
+    );
+    fireEvent.click(retry);
+    expect(onSave).toHaveBeenLastCalledWith({ spellcheckLanguages: ["en-US", "it", "fr"] });
+    act(() =>
+      vi
+        .mocked(calendarApi.spellcheck.onDictionaryStatesChanged)
+        .mock.calls[0][0]({ "en-US": "ready", it: "ready", fr: "ready" }),
+    );
+    const remove = await screen.findByRole("button", { name: "Remove French dictionary" });
+    expect(onSave).toHaveBeenLastCalledWith({ spellcheckLanguages: ["en-US", "it", "fr"] });
+    await waitFor(() => expect(remove).toBeEnabled());
+    fireEvent.click(remove);
+    expect(
+      await screen.findByRole("button", { name: "Download French dictionary" }),
+    ).toBeInTheDocument();
+    expect(onSave).toHaveBeenLastCalledWith({ spellcheckLanguages: ["en-US", "it"] });
+  });
+
+  it.each([true, false])(
+    "removes a failed dictionary with spell checking enabled=%s",
+    async (enabled) => {
+      const api = createCalendarApiMock(null);
+      vi.mocked(api.spellcheck.getDictionaries).mockResolvedValue({
+        availableLanguages: ["en-US", "it", "fr"],
+        customWords: [],
+        dictionaryStates: { "en-US": "ready", it: "ready", fr: "failed" },
+        usesSystemLanguages: false,
+      });
+      installCalendarApi(api);
+      const onSave = vi.fn();
+      function Preferences() {
+        const [settings, setSettings] = React.useState({
+          ...createDefaultSettings(),
+          spellcheckEnabled: enabled,
+          spellcheckLanguages: ["en-US", "it", "fr"],
+        });
+        return (
+          <SpellcheckSettings
+            settings={settings}
+            onSave={async (patch) => {
+              onSave(patch);
+              setSettings((previous) => ({ ...previous, ...patch }));
+              return true;
+            }}
+          />
+        );
+      }
+      render(
+        <I18nextProvider i18n={createTestI18n()}>
+          <Preferences />
+        </I18nextProvider>,
+      );
+      const remove = await screen.findByRole("button", { name: "Remove French dictionary" });
+      expect(remove).toBeEnabled();
+      expect(remove.textContent).toBe("");
+      expect(
+        screen
+          .getByRole("button", { name: "Retry downloading French dictionary" })
+          .hasAttribute("disabled"),
+      ).toBe(!enabled);
+      fireEvent.click(remove);
+      await screen.findByRole("button", { name: "Download French dictionary" });
+      expect(onSave).toHaveBeenLastCalledWith({ spellcheckLanguages: ["en-US", "it"] });
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    },
+  );
+
+  it("preserves newer native states over an older initial response and cleans up its listener", async () => {
+    expect.hasAssertions();
+    const api = createCalendarApiMock(null);
+    let finish: (value: Awaited<ReturnType<typeof api.spellcheck.getDictionaries>>) => void = () =>
+      undefined;
+    vi.mocked(api.spellcheck.getDictionaries).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const unsubscribe = vi.fn();
+    vi.mocked(api.spellcheck.onDictionaryStatesChanged).mockReturnValue(unsubscribe);
+    installCalendarApi(api);
+    const view = render(
+      <I18nextProvider i18n={createTestI18n()}>
+        <SpellcheckSettings
+          settings={{ ...createDefaultSettings(), spellcheckLanguages: ["fr"] }}
+          onSave={vi.fn()}
+        />
+      </I18nextProvider>,
+    );
+    await act(async () => {
+      vi.mocked(api.spellcheck.onDictionaryStatesChanged).mock.calls[0][0]({ fr: "ready" });
+      finish({
+        availableLanguages: ["fr"],
+        customWords: [],
+        dictionaryStates: { fr: "downloading" },
+        usesSystemLanguages: false,
+      });
+    });
+    expect(screen.getByRole("button", { name: "Remove French dictionary" })).toBeEnabled();
+    view.unmount();
+    expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it("adds a trimmed word on form submission and prevents concurrent dictionary changes", async () => {
+    renderDialog(null);
+    fireEvent.click(screen.getByRole("button", { name: "Spelling" }));
+    const remove = await screen.findByRole("button", {
+      name: "Remove DefCalendar from dictionary",
+    });
+    const input = screen.getByRole("textbox", { name: "New word" });
+    expect(screen.getByRole("button", { name: "Add word" })).toBeDisabled();
+    let finish: () => void = () => undefined;
+    vi.mocked(calendarApi.spellcheck.addWord).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    vi.mocked(calendarApi.spellcheck.getDictionaries).mockResolvedValue({
+      availableLanguages: ["en-US", "it", "fr"],
+      dictionaryStates: { "en-US": "ready", it: "ready" },
+      customWords: ["DefCalendar", "CaffèTech"],
+      usesSystemLanguages: false,
+    });
+    fireEvent.change(input, { target: { value: "  CaffèTech  " } });
+    fireEvent.submit(input.closest("form")!);
+    fireEvent.submit(input.closest("form")!);
+    expect(calendarApi.spellcheck.addWord).toHaveBeenCalledExactlyOnceWith("CaffèTech");
+    expect(input).toBeDisabled();
+    expect(remove).toBeDisabled();
+    await act(async () => finish());
+    expect(
+      await screen.findByRole("button", { name: "Remove CaffèTech from dictionary" }),
+    ).toBeEnabled();
+    expect(input).toHaveValue("");
+  });
+
+  it("keeps successful word additions visible when the follow-up refresh fails", async () => {
+    expect.hasAssertions();
+    renderDialog(null);
+    fireEvent.click(screen.getByRole("button", { name: "Spelling" }));
+    await screen.findByRole("button", { name: "Remove DefCalendar from dictionary" });
+    vi.mocked(calendarApi.spellcheck.getDictionaries).mockRejectedValueOnce(
+      new Error("Refresh failed"),
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "New word" }), {
+      target: { value: "Contoso" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add word" }));
+    await expect(
+      screen.findByRole("button", { name: "Remove Contoso from dictionary" }),
+    ).resolves.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not load or update the dictionary.");
+  });
+
+  it("keeps successful word removals visible when the follow-up refresh fails", async () => {
+    expect.hasAssertions();
+    renderDialog(null);
+    fireEvent.click(screen.getByRole("button", { name: "Spelling" }));
+    const remove = await screen.findByRole("button", {
+      name: "Remove DefCalendar from dictionary",
+    });
+    vi.mocked(calendarApi.spellcheck.getDictionaries).mockRejectedValueOnce(
+      new Error("Refresh failed"),
+    );
+    fireEvent.click(remove);
+    await screen.findByRole("alert");
+    expect(
+      screen.queryByRole("button", { name: "Remove DefCalendar from dictionary" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("No personal words added yet.")).toBeInTheDocument();
+  });
+
+  it("rejects phrases and duplicate words without changing the dictionary", async () => {
+    renderDialog(null);
+    fireEvent.click(screen.getByRole("button", { name: "Spelling" }));
+    await screen.findByRole("button", { name: "Remove DefCalendar from dictionary" });
+    const input = screen.getByRole("textbox", { name: "New word" });
+    fireEvent.change(input, { target: { value: "two words" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add word" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Enter a single word without spaces or control characters.",
+    );
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    fireEvent.change(input, { target: { value: "DefCalendar" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add word" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("This word is already in the dictionary.");
+    expect(calendarApi.spellcheck.addWord).not.toHaveBeenCalled();
+  });
+
+  it("keeps the word after a failed addition and allows a retry", async () => {
+    renderDialog(null);
+    fireEvent.click(screen.getByRole("button", { name: "Spelling" }));
+    await screen.findByRole("button", { name: "Remove DefCalendar from dictionary" });
+    vi.mocked(calendarApi.spellcheck.addWord).mockRejectedValueOnce(new Error("Native failure"));
+    const input = screen.getByRole("textbox", { name: "New word" });
+    fireEvent.change(input, { target: { value: "Contoso" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add word" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not add the word. Please try again.",
+    );
+    expect(input).toHaveValue("Contoso");
+    expect(screen.getByRole("button", { name: "Add word" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Add word" }));
+    await waitFor(() => expect(input).toHaveValue(""));
+    expect(calendarApi.spellcheck.addWord).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("removes personal words and can replay the onboarding", async () => {
+    expect.hasAssertions();
+    renderDialog(null);
+    fireEvent.click(screen.getByRole("button", { name: "Spelling" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Remove DefCalendar from dictionary" }),
+    );
+    expect(calendarApi.spellcheck.removeWord).toHaveBeenCalledWith("DefCalendar");
+    fireEvent.click(screen.getByRole("button", { name: "Show introduction" }));
+    expect(screen.getByRole("dialog", { name: "Spelling suggestions are here" })).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Got it" }));
+    await screen.findByRole("button", { name: "Show introduction" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
   it("renders HTML release notes instead of showing escaped markup", async () => {
     const releaseNotes = [
       "<h2>Highlights</h2>",

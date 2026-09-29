@@ -545,7 +545,22 @@ const themePreferenceSchema = z.preprocess(
   themeSettingSchema.default("system"),
 );
 
+const spellcheckLanguagesSchema = z
+  .array(z.string().regex(/^[a-z]{2,3}(?:-[A-Za-z]{2,8})?$/))
+  .max(100)
+  .transform((languages) => [...new Set(languages)]);
+
+const spellcheckWordSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(256)
+  .regex(/^[^\s\p{Cc}]+$/u);
+
 const userSettingsSchema = z.object({
+  spellcheckEnabled: z.boolean().default(true),
+  spellcheckLanguages: spellcheckLanguagesSchema.default(["en-US", "it"]),
+  spellcheckOnboardingSeen: z.boolean().default(false),
   activeAccountId: z.string().nullable().optional(),
   visibleCalendarIds: z.array(z.string()),
   activeView: calendarViewSchema,
@@ -563,6 +578,9 @@ const userSettingsSchema = z.object({
 });
 
 const userSettingsPatchSchema = z.object({
+  spellcheckEnabled: z.boolean().optional(),
+  spellcheckLanguages: spellcheckLanguagesSchema.optional(),
+  spellcheckOnboardingSeen: z.boolean().optional(),
   activeAccountId: z.string().nullable().optional(),
   visibleCalendarIds: z.array(z.string()).optional(),
   activeView: calendarViewSchema.optional(),
@@ -664,6 +682,9 @@ function getBase64DecodedByteLength(value: string): null | number {
 
 function createDefaultSettings(): UserSettings {
   return {
+    spellcheckEnabled: true,
+    spellcheckLanguages: ["en-US", "it"],
+    spellcheckOnboardingSeen: false,
     activeAccountId: null,
     visibleCalendarIds: [],
     activeView: "timeGridWeek",
@@ -741,6 +762,7 @@ export {
   updateChannelSchema,
   userSettingsPatchSchema,
   userSettingsSchema,
+  spellcheckWordSchema,
   type AccountSummary,
   type AttachmentDeleteArgs,
   type AttachmentReferenceArgs,

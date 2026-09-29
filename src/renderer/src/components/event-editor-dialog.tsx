@@ -477,6 +477,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
                 onChange={(event) => updateForm(setForm, { subject: event.target.value })}
                 placeholder={t("eventEditor.subject")}
                 readOnly={readOnlyForAttendee}
+                spellCheck
                 type="text"
                 value={form.subject}
               />
@@ -559,6 +560,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
                 disabled={readOnlyForAttendee}
                 onChange={(event) => updateForm(setForm, { location: event.target.value })}
                 placeholder={t("eventEditor.location")}
+                spellCheck
                 type="text"
                 value={form.location}
               />
@@ -1091,6 +1093,7 @@ function EventToolbar({
                 <label className="field field--full event-toolbar__popup-field">
                   <span>{t("eventEditor.comment")}</span>
                   <textarea
+                    spellCheck
                     disabled={busy}
                     onChange={(event) => setForwardComment(event.target.value)}
                     rows={4}
@@ -2340,6 +2343,7 @@ function AttendeesSidebar({
                 <label className="field field--full attendees-sidebar__response-comment">
                   <span>{t("eventEditor.comment")}</span>
                   <textarea
+                    spellCheck
                     onChange={(eventValue) => onResponseCommentChange(eventValue.target.value)}
                     rows={4}
                     value={form.responseComment}
@@ -2486,6 +2490,7 @@ function NotesSection({
             </div>
           ) : (
             <textarea
+              spellCheck
               disabled={disabled}
               onChange={(eventValue) =>
                 updateForm(onChange, {
@@ -3353,6 +3358,7 @@ function ResponsesSection({
       <label className="field field--full">
         <span>{t("eventEditor.comment")}</span>
         <textarea
+          spellCheck
           onChange={(eventValue) => onResponseCommentChange(eventValue.target.value)}
           rows={4}
           value={form.responseComment}

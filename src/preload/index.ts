@@ -6,10 +6,27 @@ import type {
   SyncStatus,
 } from "@shared/schemas";
 import { contextBridge, ipcRenderer } from "electron";
-import type { CalendarApi, NewEventNotificationItem, ReminderDialogState } from "@shared/ipc";
+import type {
+  CalendarApi,
+  NewEventNotificationItem,
+  ReminderDialogState,
+  SpellcheckDictionaryStates,
+} from "@shared/ipc";
 import IPC_CHANNELS from "@shared/ipc-values";
 
 const calendarApi: CalendarApi = {
+  spellcheck: {
+    getDictionaries: () => ipcRenderer.invoke(IPC_CHANNELS.spellcheckGetDictionaries),
+    addWord: (word) => ipcRenderer.invoke(IPC_CHANNELS.spellcheckAddWord, word),
+    removeWord: (word) => ipcRenderer.invoke(IPC_CHANNELS.spellcheckRemoveWord, word),
+    onDictionaryStatesChanged: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, states: SpellcheckDictionaryStates) =>
+        listener(states);
+      ipcRenderer.on(IPC_CHANNELS.spellcheckDictionaryStatesChanged, wrapped);
+      return () =>
+        ipcRenderer.removeListener(IPC_CHANNELS.spellcheckDictionaryStatesChanged, wrapped);
+    },
+  },
   app: {
     getLocale: () => ipcRenderer.invoke(IPC_CHANNELS.appGetLocale),
     getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.appGetVersion),
