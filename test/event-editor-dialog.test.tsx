@@ -18,6 +18,7 @@ import { I18nextProvider, initReactI18next } from "react-i18next";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import EventEditorDialog from "../src/renderer/src/components/event-editor-dialog";
+import SchedulingAssistant from "../src/renderer/src/components/scheduling-assistant";
 import useAttendeeAvailability from "../src/renderer/src/hooks/use-attendee-availability";
 import enTranslations from "../src/renderer/src/i18n/locales/en.json";
 import type { EditorState } from "../src/renderer/src/event-editor-state";
@@ -601,6 +602,62 @@ describe("detailed scheduling assistant", () => {
     );
   });
 
+  it.each([
+    { edge: "start", origin: 292, target: 224, start: "06:00", end: "10:00" },
+    { edge: "end", origin: 328, target: 486, start: "09:30", end: "14:30" },
+  ])(
+    "continues resizing the $edge beyond the visible columns while held at the viewport edge",
+    ({ edge, origin, target, start, end }) => {
+      expect.hasAssertions();
+      const { container, onSave } = setup();
+      vi.stubGlobal(
+        "PointerEvent",
+        class extends MouseEvent {
+          pointerId = 1;
+        },
+      );
+      const frames = new Map<number, FrameRequestCallback>();
+      let nextFrame = 0;
+      vi.stubGlobal("requestAnimationFrame", (draw: FrameRequestCallback) => {
+        frames.set(++nextFrame, draw);
+        return nextFrame;
+      });
+      vi.stubGlobal("cancelAnimationFrame", (id: number) => frames.delete(id));
+      const scroll = container.querySelector<HTMLDivElement>(".scheduling-assistant__scroll")!;
+      vi.spyOn(scroll, "getBoundingClientRect").mockReturnValue({
+        left: 0,
+        right: 500,
+        width: 500,
+      } as DOMRect);
+      scroll.scrollLeft = 612;
+      const handle = screen.getByRole("button", { name: `Adjust meeting ${edge}` });
+      fireEvent.pointerDown(handle, { button: 0, clientX: origin });
+      fireEvent.pointerMove(handle, { clientX: target });
+      for (let timestamp = 16; timestamp <= 480; timestamp += 16) {
+        act(() => {
+          const pending = [...frames.values()];
+          frames.clear();
+          for (const draw of pending) {
+            draw(timestamp);
+          }
+        });
+      }
+      expect(screen.getByRole("button", { name: "Move meeting" })).toHaveTextContent(
+        `${start} – ${end}`,
+      );
+      fireEvent.pointerUp(handle);
+      expect(frames.size).toBe(0);
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          start: toLocalIso(`2026-09-29T${start}:00`),
+          end: toLocalIso(`2026-09-29T${end}:00`),
+        }),
+      );
+    },
+  );
+
   it("snaps keyboard movement from an off-grid time and removes only the selected unnamed participant", () => {
     setup({
       state: createMeetingState({
@@ -626,6 +683,8 @@ describe("detailed scheduling assistant", () => {
 
   it("freezes changes if saving begins while a pointer drag is active", () => {
     const { rerenderDialog } = setup();
+    const cancelFrame = vi.spyOn(globalThis, "cancelAnimationFrame");
+    onTestFinished(() => cancelFrame.mockRestore());
     vi.stubGlobal(
       "PointerEvent",
       class extends MouseEvent {
@@ -635,6 +694,7 @@ describe("detailed scheduling assistant", () => {
     const body = screen.getByRole("button", { name: "Move meeting" });
     fireEvent.pointerDown(body, { clientX: 100, button: 0 });
     rerenderDialog({ busy: true });
+    expect(cancelFrame).toHaveBeenCalled();
     fireEvent.pointerMove(body, { clientX: 172 });
     expect(body).toHaveTextContent("09:30 – 10:30");
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
@@ -642,11 +702,14 @@ describe("detailed scheduling assistant", () => {
 
   it("preserves an end-time edit made while a horizontal drag is captured", () => {
     const { onSave } = setup();
+    const cancelFrame = vi.spyOn(globalThis, "cancelAnimationFrame");
+    onTestFinished(() => cancelFrame.mockRestore());
     const meeting = screen.getByRole("button", { name: "Move meeting" });
     fireEvent.pointerDown(meeting, { button: 0, pointerId: 1, clientX: 100 });
     const endTime = screen.getByRole("textbox", { name: /End time/ });
     fireEvent.change(endTime, { target: { value: "12:00" } });
     fireEvent.blur(endTime);
+    expect(cancelFrame).toHaveBeenCalled();
     fireEvent.pointerMove(meeting, { pointerId: 1, clientX: 172 });
     fireEvent.pointerCancel(meeting, { pointerId: 1 });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -677,7 +740,7 @@ describe("detailed scheduling assistant", () => {
     );
   });
 
-  it("does not offer resize handles for clipped event boundaries or move a clipped start", () => {
+  it("shows the complete multi-day event and disables a clipped start after navigating", () => {
     setup({
       state: createMeetingState({
         start: toLocalIso("2026-09-29T23:00:00"),
@@ -686,11 +749,155 @@ describe("detailed scheduling assistant", () => {
       }),
     });
     expect(screen.getByRole("button", { name: "Adjust meeting start" })).toBeEnabled();
-    expect(screen.queryByRole("button", { name: "Adjust meeting end" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Adjust meeting end" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Next day" }));
     expect(screen.queryByRole("button", { name: "Adjust meeting start" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Adjust meeting end" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Move meeting" })).toBeDisabled();
+  });
+
+  it("extends the visible timeline and availability when the end date exceeds two days", async () => {
+    expect.hasAssertions();
+    const { onSave, load, container } = setup();
+    fireEvent.change(screen.getByRole("textbox", { name: "End date", exact: true }), {
+      target: { value: "10/03/2026" },
+    });
+    fireEvent.blur(screen.getByRole("textbox", { name: "End date", exact: true }));
+    expect(container.querySelectorAll(".scheduling-assistant__days > button")).toHaveLength(5);
+    const endHandle = screen.getByRole("button", { name: "Adjust meeting end" });
+    expect(endHandle).toBeEnabled();
+    fireEvent.keyDown(endHandle, { key: "ArrowRight" });
+    expect(screen.getByRole("textbox", { name: /End time/ })).toHaveValue("10:30");
+    await waitFor(() =>
+      expect(load).toHaveBeenLastCalledWith(
+        expect.objectContaining({ end: toLocalIso("2026-10-04T00:00:00") }),
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ end: toLocalIso("2026-10-03T10:30:00") }),
+    );
+  });
+
+  it("keeps dragging when a previous emitted range commits after a newer pointer update", () => {
+    expect.hasAssertions();
+    const i18n = createInstance();
+    void i18n.use(initReactI18next).init({
+      resources: { en: { translation: enTranslations } },
+      lng: "en",
+      interpolation: { escapeValue: false },
+    });
+    const onChange = vi.fn();
+    const range = { startInput: "2026-09-29T09:30", endInput: "2026-09-29T10:30" };
+    const element = (value: typeof range) => (
+      <I18nextProvider i18n={i18n}>
+        <SchedulingAssistant
+          date="2026-09-29"
+          view="day"
+          onViewChange={() => {}}
+          {...value}
+          allDay={false}
+          participants={[]}
+          availability={[]}
+          loading={false}
+          disabled={false}
+          timeFormat="24h"
+          controls={null}
+          renderParticipantInput={() => null}
+          onDateChange={() => {}}
+          onChange={onChange}
+          onRemove={() => {}}
+          onBack={() => {}}
+        />
+      </I18nextProvider>
+    );
+    const view = render(element(range));
+    vi.stubGlobal(
+      "PointerEvent",
+      class extends MouseEvent {
+        pointerId = 1;
+      },
+    );
+    const meeting = screen.getByRole("button", { name: "Move meeting" });
+    fireEvent.pointerDown(meeting, { button: 0, clientX: 100 });
+    fireEvent.pointerMove(meeting, { clientX: 172 });
+    const previous = onChange.mock.lastCall![0];
+    fireEvent.pointerMove(meeting, { clientX: 208 });
+    const latest = onChange.mock.lastCall![0];
+    view.rerender(element(previous));
+    view.rerender(element(latest));
+    fireEvent.pointerMove(meeting, { clientX: 244 });
+    fireEvent.pointerUp(meeting);
+    expect(onChange).toHaveBeenLastCalledWith({
+      startInput: "2026-09-29T11:30",
+      endInput: "2026-09-29T12:30",
+    });
+  });
+
+  it("keeps the timeline width stable while shortening a scrolled multi-day event", () => {
+    expect.hasAssertions();
+    const { container } = setup({
+      state: createMeetingState({
+        start: toLocalIso("2026-09-29T09:00:00"),
+        end: toLocalIso("2026-10-03T23:30:00"),
+        draft: { subject: "Long planning" },
+      }),
+    });
+    vi.stubGlobal(
+      "PointerEvent",
+      class extends MouseEvent {
+        pointerId = 1;
+      },
+    );
+    const scroll = container.querySelector<HTMLDivElement>(".scheduling-assistant__scroll")!;
+    const matrix = container.querySelector<HTMLDivElement>(".scheduling-assistant__matrix")!;
+    let scrollLeft = 8532;
+    Object.defineProperty(scroll, "scrollLeft", {
+      configurable: true,
+      get: () => Math.min(scrollLeft, Number.parseFloat(matrix.style.width) - 1064),
+      set: (value: number) => {
+        scrollLeft = value;
+      },
+    });
+    const originalWidth = matrix.style.width;
+    const handle = screen.getByRole("button", { name: "Adjust meeting end" });
+    fireEvent.pointerDown(handle, { button: 0, clientX: 292 });
+    fireEvent.pointerMove(handle, { clientX: 256 });
+    fireEvent.pointerMove(handle, { clientX: 220 });
+    expect(matrix.style.width).toBe(originalWidth);
+    fireEvent.pointerMove(handle, { clientX: 184 });
+    expect(screen.getByRole("textbox", { name: /End time/ })).toHaveValue("22:00");
+    fireEvent.pointerUp(handle);
+    expect(Number.parseFloat(matrix.style.width)).toBeLessThan(Number.parseFloat(originalWidth));
+  });
+
+  it("does not move or resize a meeting beyond the supported final calendar year", () => {
+    expect.hasAssertions();
+    setup({
+      state: createMeetingState({
+        start: toLocalIso("9999-12-31T23:00:00"),
+        end: toLocalIso("9999-12-31T23:30:00"),
+        draft: { subject: "Final day" },
+      }),
+    });
+    fireEvent.keyDown(screen.getByRole("button", { name: "Adjust meeting end" }), {
+      key: "ArrowRight",
+    });
+    expect(screen.getByRole("textbox", { name: /End time/ })).toHaveValue("23:30");
+    fireEvent.keyDown(screen.getByRole("button", { name: "Move meeting" }), { key: "ArrowRight" });
+    expect(screen.getByRole("textbox", { name: /Start time/ })).toHaveValue("23:00");
+    vi.stubGlobal(
+      "PointerEvent",
+      class extends MouseEvent {
+        pointerId = 1;
+      },
+    );
+    const handle = screen.getByRole("button", { name: "Adjust meeting end" });
+    fireEvent.pointerDown(handle, { button: 0, clientX: 100 });
+    fireEvent.pointerMove(handle, { clientX: 172 });
+    fireEvent.pointerUp(handle);
+    expect(screen.getByRole("textbox", { name: /End time/ })).toHaveValue("23:30");
   });
 
   it("keeps keyboard activation of all-day calendars on the local date west of UTC", () => {
@@ -1884,10 +2091,23 @@ function editSubject(value: string): void {
   });
 }
 
-function applyEditorStyles(): void {
+function applyEditorStyles(viewportWidth?: number): void {
   const style = document.createElement("style");
   style.textContent = readFileSync("src/renderer/src/styles.css", "utf8");
   document.head.append(style);
+  if (viewportWidth !== undefined && style.sheet) {
+    style.textContent = [...style.sheet.cssRules]
+      .map((rule) => {
+        if (!(rule instanceof CSSMediaRule)) {
+          return rule.cssText;
+        }
+        const maxWidth = /max-width:\s*(\d+)px/u.exec(rule.conditionText);
+        return maxWidth && viewportWidth <= Number(maxWidth[1])
+          ? Array.from(rule.cssRules, (nested) => nested.cssText).join("\n")
+          : "";
+      })
+      .join("\n");
+  }
   onTestFinished(() => style.remove());
 }
 
@@ -1896,6 +2116,79 @@ afterEach(() => {
 });
 
 describe("event editor dialog", () => {
+  it("stacks compact sidebar tab icons above their labels and keeps keyboard switching", () => {
+    expect.hasAssertions();
+    applyEditorStyles(621);
+    renderDialog({ state: createMeetingState() });
+    const attendees = screen.getByRole("tab", { name: "Attendees" });
+    const scheduling = screen.getByRole("tab", { name: "Scheduling" });
+
+    expect(getComputedStyle(scheduling).flexDirection).toBe("column");
+    fireEvent.keyDown(attendees, { key: "ArrowRight" });
+    expect(scheduling).toHaveFocus();
+    expect(screen.getByRole("tabpanel", { name: "Scheduling" })).toBeInTheDocument();
+  });
+
+  it("allows the planner participant popup to extend above its panel", () => {
+    expect.hasAssertions();
+    applyEditorStyles();
+    const { container } = renderDialog({ state: createMeetingState() });
+    fireEvent.click(screen.getByRole("tab", { name: "Scheduling" }));
+    fireEvent.click(screen.getByRole("button", { name: "Participant availability" }));
+
+    expect(container.querySelector(".meeting-planner__popup")).toBeInTheDocument();
+    expect(
+      getComputedStyle(screen.getByRole("tabpanel", { name: "Scheduling" })).overflow,
+    ).not.toBe("hidden");
+  });
+
+  it("keeps a toolbar menu within the island when opened and resized", () => {
+    expect.hasAssertions();
+    let compact = false;
+    const bounds = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function menuBounds(this: HTMLElement) {
+        if (this.classList.contains("event-toolbar")) {
+          return new DOMRect(40, 20, compact ? 300 : 540, 54);
+        }
+        if (this.classList.contains("event-toolbar__dropdown")) {
+          return new DOMRect(compact ? 140 : 440, 80, compact ? 280 : 360, 100);
+        }
+        return new DOMRect();
+      });
+    onTestFinished(() => bounds.mockRestore());
+    const { container } = renderDialog();
+    fireEvent.click(screen.getByRole("button", { name: "Categories" }));
+    const menu = container.querySelector<HTMLElement>(".event-toolbar__dropdown")!;
+
+    expect(menu.style.left).toBe("-228px");
+    expect(menu.style.maxWidth).toBe("524px");
+    compact = true;
+    fireEvent.resize(globalThis);
+    expect(menu.style.left).toBe("-88px");
+    expect(menu.style.maxWidth).toBe("284px");
+  });
+
+  it("disconnects menu resize observation when the toolbar popup closes", () => {
+    expect.hasAssertions();
+    const disconnect = vi.fn();
+    const observe = vi.fn();
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe = observe;
+        disconnect = disconnect;
+      },
+    );
+    const { container } = renderDialog();
+    fireEvent.click(screen.getByRole("button", { name: "Categories" }));
+
+    expect(observe).toHaveBeenCalledWith(container.querySelector(".event-toolbar"));
+    expect(observe).toHaveBeenCalledWith(container.querySelector(".event-toolbar__dropdown"));
+    fireEvent.click(screen.getByRole("button", { name: "Categories" }));
+    expect(disconnect).toHaveBeenCalledOnce();
+  });
+
   it("keeps padded scheduling controls and weekly options able to wrap", () => {
     expect.hasAssertions();
     applyEditorStyles();

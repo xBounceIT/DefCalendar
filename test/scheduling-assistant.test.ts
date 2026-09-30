@@ -23,6 +23,25 @@ const person = (email: string, type: EventParticipant["type"] = "required"): Eve
 });
 
 describe("scheduling periods", () => {
+  it("extends day timelines to include long selections while keeping the availability range bounded", () => {
+    expect.hasAssertions();
+    vi.stubEnv("TZ", "Europe/Rome");
+    const start = new Date("2026-09-30T23:00:00").getTime();
+    const end = new Date("2026-10-04T02:00:00").getTime();
+    const range = getSchedulingWindow("2026-09-30", "day", { start, end });
+    expect(range.end).toBe(new Date("2026-10-05T00:00:00").getTime());
+    expect(getSchedulingDays(range)).toHaveLength(5);
+    const long = getSchedulingWindow("2026-09-30", "day", {
+      start,
+      end: new Date("2027-09-30T02:00:00").getTime(),
+    });
+    expect(long.end - long.start).toBeLessThan(62 * 24 * 60 * 60 * 1000);
+    expect(getSchedulingDays(long)).toHaveLength(61);
+    expect(getSchedulingWindow("2026-10-05", "day", { start, end })).toStrictEqual(
+      getSchedulingWindow("2026-10-05", "day"),
+    );
+  });
+
   it("matches exact interval availability for partial conflicts, overlap priorities and incomplete coverage", () => {
     const item = free("required@example.com");
     item.schedule = {
