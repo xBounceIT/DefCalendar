@@ -750,17 +750,47 @@ class GraphCalendarService {
     calendarId: string,
     eventId: string,
     homeAccountId: string,
+    expectedStart: string,
     cancellation?: AbortSignal,
   ): Promise<void> {
     const assertSession = this.auth.createAccountSessionGuard(homeAccountId);
     const timeout = AbortSignal.timeout(15_000);
     const signal = cancellation ? AbortSignal.any([timeout, cancellation]) : timeout;
+    const options = { assertSession, allowInteractiveAuth: false };
+    const eventPath = `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`;
+    const query = new URLSearchParams({ $select: "id,start" });
+    const event = parseGraphEvent(
+      await awaitWithSignal(
+        this.requestJson(
+          `${eventPath}?${query.toString()}`,
+          { signal, headers: { Prefer: 'outlook.timezone="UTC"' } },
+          homeAccountId,
+          options,
+        ),
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    assertSession();
+    const start = event.start?.dateTime;
+    const remoteStart = start
+      ? parseGraphDateTimeValue(
+          /(?:Z|[+-]\d{2}:\d{2})$/i.test(start) ? start : `${start}Z`,
+        ).getTime()
+      : Number.NaN;
+    const queuedStart = Date.parse(expectedStart);
+    if (!Number.isFinite(remoteStart) || !Number.isFinite(queuedStart)) {
+      throw new Error("Cannot verify the reminder occurrence start.");
+    }
+    if (remoteStart !== queuedStart) {
+      return;
+    }
     await awaitWithSignal(
       this.requestNoContent(
-        `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}/dismissReminder`,
+        `${eventPath}/dismissReminder`,
         { method: "POST", signal },
         homeAccountId,
-        { assertSession, allowInteractiveAuth: false },
+        options,
       ),
       signal,
     );
@@ -939,8 +969,9 @@ class GraphCalendarService {
     pathOrUrl: string,
     init: RequestInit = {},
     homeAccountId?: string,
+    options: Pick<SendRequestArgs, "assertSession" | "allowInteractiveAuth"> = {},
   ): Promise<unknown> {
-    const response = await this.sendRequest({ homeAccountId, init, pathOrUrl });
+    const response = await this.sendRequest({ homeAccountId, init, pathOrUrl, ...options });
     if (!response.ok) {
       throw await this.createRequestError(response);
     }

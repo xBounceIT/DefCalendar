@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import GraphCalendarService from "../src/main/graph/calendar-service";
 import ReminderSyncService from "../src/main/reminders/reminder-sync-service";
 
 function createFixture() {
@@ -25,9 +26,56 @@ function createFixture() {
   return { items, db, auth, graph, service };
 }
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 describe("reminder sync", () => {
+  it("checks fresh Graph state at startup and clears a stale dismissal without suppressing the new reminder", async () => {
+    const fixture = createFixture();
+    const getAccessTokenForAccount = vi.fn().mockResolvedValue("token");
+    const graph = new GraphCalendarService(
+      { ...fixture.auth, getAccessTokenForAccount } as never,
+      { timeZone: "Europe/Rome" } as never,
+    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          id: "occurrence-1",
+          start: { dateTime: "2026-10-01T10:00:00.0000000", timeZone: "UTC" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          id: "event-2",
+          start: { dateTime: "2026-09-30T11:00:00.0000000", timeZone: "UTC" },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new ReminderSyncService(fixture.db as never, fixture.auth as never, graph);
+    service.start();
+    try {
+      await service.flush();
+      expect(fixture.items).toEqual([]);
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      const dismissals = fetchMock.mock.calls.filter(([, init]) => init.method === "POST");
+      expect(dismissals).toHaveLength(1);
+      expect(dismissals[0][0]).toBe(
+        "https://graph.microsoft.com/v1.0/me/calendars/calendar-2/events/event-2/dismissReminder",
+      );
+      expect(getAccessTokenForAccount.mock.calls).toEqual([
+        ["account-1", false, false],
+        ["account-2", false, false],
+        ["account-2", false, false],
+      ]);
+    } finally {
+      service.stop();
+    }
+  });
+
   it("restarts processing retained operations after stopping", async () => {
     vi.useFakeTimers();
     const fixture = createFixture();
@@ -62,8 +110,8 @@ describe("reminder sync", () => {
     const fixture = createFixture();
     await fixture.service.flush();
     expect(fixture.graph.dismissReminder.mock.calls).toEqual([
-      ["calendar-1", "occurrence-1", "account-1", expect.any(AbortSignal)],
-      ["calendar-2", "event-2", "account-2", expect.any(AbortSignal)],
+      ["calendar-1", "occurrence-1", "account-1", "2026-09-30T10:00:00Z", expect.any(AbortSignal)],
+      ["calendar-2", "event-2", "account-2", "2026-09-30T11:00:00Z", expect.any(AbortSignal)],
     ]);
     expect(fixture.items).toEqual([]);
   });
@@ -89,6 +137,7 @@ describe("reminder sync", () => {
       "calendar-2",
       "event-2",
       "account-2",
+      "2026-09-30T11:00:00Z",
       expect.any(AbortSignal),
     );
   });

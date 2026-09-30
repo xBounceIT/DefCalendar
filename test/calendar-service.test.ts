@@ -14,33 +14,102 @@ afterEach(() => {
 });
 
 describe("reminder dismissal", () => {
+  const expectedStart = "2026-03-30T10:00:00Z";
+
+  it("does not dismiss a remotely rescheduled event even when the queued start is stale", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        Response.json(
+          createGraphEvent({ start: { dateTime: "2026-04-01T10:00:00", timeZone: "UTC" } }),
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    await createService().dismissReminder("calendar-1", "event-1", "account-1", expectedStart);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(new URL(fetchMock.mock.calls[0][0]).searchParams.get("$select")).toBe("id,start");
+    expect(fetchMock.mock.calls[0][1].method).not.toBe("POST");
+  });
+
+  it.each([undefined, { dateTime: "invalid" }])(
+    "does not dismiss or acknowledge an unverifiable remote start %j",
+    async (start) => {
+      const fetchMock = vi.fn().mockResolvedValue(Response.json(createGraphEvent({ start })));
+      vi.stubGlobal("fetch", fetchMock);
+      await expect(
+        createService().dismissReminder("calendar-1", "event-1", "account-1", expectedStart),
+      ).rejects.toThrow("Cannot verify the reminder occurrence start.");
+      expect(fetchMock).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("propagates an offline fresh-state read without sending the dismissal", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("offline"));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      createService().dismissReminder("calendar-1", "event-1", "account-1", expectedStart),
+    ).rejects.toThrow("offline");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a session replaced during the fresh-state read before sending the dismissal", async () => {
+    let valid = true;
+    const service = createService({
+      createAccountSessionGuard: vi.fn(() => () => {
+        if (!valid) {
+          throw new Error("Session changed");
+        }
+      }),
+    });
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      valid = false;
+      return Response.json(createGraphEvent());
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      service.dismissReminder("calendar-1", "event-1", "account-1", expectedStart),
+    ).rejects.toThrow("Session changed");
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it("refreshes an expired token silently while keeping the same account and dismissal", async () => {
     const getAccessTokenForAccount = vi.fn().mockResolvedValue("token");
     const service = createService({ getAccessTokenForAccount });
     const fetchMock = vi
       .fn()
+      .mockResolvedValueOnce(Response.json(createGraphEvent()))
       .mockResolvedValueOnce(new Response(null, { status: 401 }))
       .mockResolvedValueOnce(new Response(null, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
-    await service.dismissReminder("calendar-1", "event-1", "account-1");
+    await service.dismissReminder("calendar-1", "event-1", "account-1", expectedStart);
     expect(getAccessTokenForAccount.mock.calls).toEqual([
+      ["account-1", false, false],
       ["account-1", false, false],
       ["account-1", true, false],
     ]);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[1][0]).toBe(fetchMock.mock.calls[0][0]);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[2][0]).toBe(fetchMock.mock.calls[1][0]);
   });
 
   it("aborts a running dismissal when its service is stopped", async () => {
     const controller = new AbortController();
     const service = createService();
-    const fetchMock = vi.fn().mockImplementation(() => new Promise(() => undefined));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json(createGraphEvent()))
+      .mockImplementation(() => new Promise(() => undefined));
     vi.stubGlobal("fetch", fetchMock);
-    const result = service.dismissReminder("calendar-1", "event-1", "account-1", controller.signal);
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const result = service.dismissReminder(
+      "calendar-1",
+      "event-1",
+      "account-1",
+      expectedStart,
+      controller.signal,
+    );
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     controller.abort();
     await expect(result).rejects.toMatchObject({ name: "AbortError" });
-    expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true);
+    expect(fetchMock.mock.calls[1][1].signal.aborted).toBe(true);
   });
 
   it("does not retry a throttled dismissal after its account session changes", async () => {
@@ -54,6 +123,7 @@ describe("reminder dismissal", () => {
     const service = createService({ createAccountSessionGuard: vi.fn(() => assertSession) });
     const fetchMock = vi
       .fn()
+      .mockResolvedValueOnce(Response.json(createGraphEvent()))
       .mockImplementationOnce(async () => {
         valid = false;
         return new Response(null, { status: 429, headers: { "Retry-After": "1" } });
@@ -61,11 +131,11 @@ describe("reminder dismissal", () => {
       .mockResolvedValue(new Response(null, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const outcome = service
-      .dismissReminder("calendar-1", "event-1", "account-1")
+      .dismissReminder("calendar-1", "event-1", "account-1", expectedStart)
       .catch((error) => error);
     await vi.advanceTimersByTimeAsync(1000);
     expect(await outcome).toMatchObject({ message: "Session changed" });
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("rejects a replaced session before sending a dismissal with a late token", async () => {
@@ -84,9 +154,9 @@ describe("reminder dismissal", () => {
     });
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
-    await expect(service.dismissReminder("calendar-1", "event-1", "account-1")).rejects.toThrow(
-      "Session changed",
-    );
+    await expect(
+      service.dismissReminder("calendar-1", "event-1", "account-1", expectedStart),
+    ).rejects.toThrow("Session changed");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -104,25 +174,33 @@ describe("reminder dismissal", () => {
     });
     const fetchMock = vi
       .fn()
+      .mockResolvedValueOnce(Response.json(createGraphEvent()))
       .mockImplementationOnce(async () => {
         valid = false;
         return new Response(null, { status: 401 });
       })
       .mockResolvedValue(new Response(null, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
-    await expect(service.dismissReminder("calendar-1", "event-1", "account-1")).rejects.toThrow(
-      "Session changed",
-    );
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(getAccessTokenForAccount).toHaveBeenCalledOnce();
+    await expect(
+      service.dismissReminder("calendar-1", "event-1", "account-1", expectedStart),
+    ).rejects.toThrow("Session changed");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(getAccessTokenForAccount).toHaveBeenCalledTimes(2);
   });
 
   it("posts to the owning calendar with the correct account and accepts an empty 200", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(Response.json(createGraphEvent()))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const getAccessTokenForAccount = vi.fn().mockResolvedValue("token");
     const service = createService({ getAccessTokenForAccount });
-    await service.dismissReminder("calendar/+", "occurrence/+", "account-2");
+    await service.dismissReminder("calendar/+", "occurrence/+", "account-2", expectedStart);
+    const [readUrl, readOptions] = fetchMock.mock.calls[0];
+    const query = new URL(readUrl).searchParams;
+    expect(query.get("$select")).toBe("id,start");
+    expect(readOptions.headers.get("Prefer")).toContain('outlook.timezone="UTC"');
     expect(getAccessTokenForAccount).toHaveBeenCalledWith("account-2", false, false);
     expect(fetchMock).toHaveBeenCalledWith(
       "https://graph.microsoft.com/v1.0/me/calendars/calendar%2F%2B/events/occurrence%2F%2B/dismissReminder",
@@ -131,10 +209,16 @@ describe("reminder dismissal", () => {
   });
 
   it("propagates failed dismissals for persistent retries", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 403 })));
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(Response.json(createGraphEvent()))
+        .mockResolvedValueOnce(new Response(null, { status: 403 })),
+    );
     const service = createService();
     await expect(
-      service.dismissReminder("calendar-1", "event-1", "account-1"),
+      service.dismissReminder("calendar-1", "event-1", "account-1", expectedStart),
     ).rejects.toMatchObject({ status: 403 });
   });
 
@@ -148,7 +232,7 @@ describe("reminder dismissal", () => {
     const service = createService({ getAccessTokenForAccount: vi.fn().mockReturnValue(token) });
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    const result = service.dismissReminder("calendar-1", "event-1", "account-1");
+    const result = service.dismissReminder("calendar-1", "event-1", "account-1", expectedStart);
     controller.abort(new Error("timeout"));
     await expect(result).rejects.toThrow("timeout");
     expect(timeout).toHaveBeenCalledWith(15_000);

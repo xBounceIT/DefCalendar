@@ -75,7 +75,13 @@ class ReminderSyncService {
           continue;
         }
         try {
-          await this.graph.dismissReminder(item.calendarId, item.eventId, homeAccountId, signal);
+          await this.graph.dismissReminder(
+            item.calendarId,
+            item.eventId,
+            homeAccountId,
+            item.start,
+            signal,
+          );
         } catch (error) {
           if (!isMissingGraphItemError(error)) {
             throw error;
