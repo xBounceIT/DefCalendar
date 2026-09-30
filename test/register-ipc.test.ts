@@ -594,6 +594,19 @@ describe("register ipc", () => {
         error: "requestFailed",
         subject: "Private meeting",
         accessToken: "secret",
+        schedule: {
+          start: "2026-09-29T09:00:00Z",
+          end: "2026-09-29T10:00:00Z",
+          slots: [
+            {
+              start: "2026-09-29T09:30:00Z",
+              end: "2026-09-29T10:00:00Z",
+              status: "busy",
+              subject: "Private meeting",
+              location: "Private room",
+            },
+          ],
+        },
       },
     ] as never);
     const result = await fixture.handlers.get(IPC_CHANNELS.attendeesGetAvailability)!(
@@ -606,7 +619,16 @@ describe("register ipc", () => {
       },
     );
     expect(result).toEqual([
-      { email: "coworker@example.com", status: "unknown", error: "requestFailed" },
+      {
+        email: "coworker@example.com",
+        status: "unknown",
+        error: "requestFailed",
+        schedule: {
+          start: "2026-09-29T09:00:00Z",
+          end: "2026-09-29T10:00:00Z",
+          slots: [{ start: "2026-09-29T09:30:00Z", end: "2026-09-29T10:00:00Z", status: "busy" }],
+        },
+      },
     ]);
   });
 

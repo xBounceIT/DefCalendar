@@ -530,6 +530,45 @@ describe("graph participant availability", () => {
     });
   });
 
+  it("passes the full-day schedule through when the planner requests it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            value: [{ scheduleId: "person@example.com", availabilityView: "0".repeat(288) }],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    const auth = { getAccessTokenForAccount: vi.fn().mockResolvedValue("account-token") };
+    const service = new GraphCalendarService(auth as never, { timeZone: "Europe/Rome" } as never);
+    const results = await service.getAttendeeAvailability(
+      {
+        calendarId: "calendar-1",
+        emails: ["person@example.com"],
+        start: "2026-09-29T00:00:00Z",
+        end: "2026-09-30T00:00:00Z",
+        includeSchedule: true,
+      },
+      "account-1",
+    );
+    expect(results).toEqual([
+      {
+        email: "person@example.com",
+        status: "free",
+        schedule: {
+          start: "2026-09-29T00:00:00.000Z",
+          end: "2026-09-30T00:00:00.000Z",
+          slots: [
+            { start: "2026-09-29T00:00:00.000Z", end: "2026-09-30T00:00:00.000Z", status: "free" },
+          ],
+        },
+      },
+    ]);
+  });
+
   it("keeps per-mailbox failures and omitted schedules unknown while reporting accessible colleagues", async () => {
     vi.stubGlobal(
       "fetch",

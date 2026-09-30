@@ -325,7 +325,13 @@ class GraphCalendarService {
               item.scheduleId.toLowerCase() === email,
           );
           results.push(
-            parseAttendeeSchedule(schedule, email, Date.parse(args.start), Date.parse(args.end)),
+            parseAttendeeSchedule(
+              schedule,
+              email,
+              Date.parse(args.start),
+              Date.parse(args.end),
+              args.includeSchedule,
+            ),
           );
         }
       }

@@ -1,6 +1,11 @@
 import { z } from "zod";
 import type { Availability } from "@shared/schemas";
-import type { AttendeeAvailability } from "@shared/attendee-availability";
+import {
+  AVAILABILITY_STATUS_PRIORITY as STATUS_PRIORITY,
+  workingHoursSchema,
+  type AttendeeAvailability,
+} from "@shared/attendee-availability";
+import windowsTimeZones from "@shared/windows-time-zones.json";
 
 const graphTimeSchema = z.object({ dateTime: z.string(), timeZone: z.string() });
 const utcDateTimeSchema = z.iso.datetime({ offset: true });
@@ -8,6 +13,7 @@ const scheduleSchema = z.object({
   scheduleId: z.string(),
   error: z.unknown().optional(),
   availabilityView: z.string().optional(),
+  workingHours: z.unknown().optional(),
   scheduleItems: z
     .array(
       z.object({
@@ -18,15 +24,6 @@ const scheduleSchema = z.object({
     )
     .optional(),
 });
-
-const STATUS_PRIORITY: Availability[] = [
-  "free",
-  "workingElsewhere",
-  "unknown",
-  "tentative",
-  "busy",
-  "oof",
-];
 
 function graphUtcTime(value: z.infer<typeof graphTimeSchema>): number {
   if (value.timeZone.toUpperCase() !== "UTC") {
@@ -43,6 +40,7 @@ function parseAttendeeSchedule(
   email: string,
   start: number,
   end: number,
+  includeSchedule = false,
 ): AttendeeAvailability {
   const result: AttendeeAvailability = { email, status: "unknown" };
   const parsed = scheduleSchema.safeParse(value);
@@ -50,6 +48,28 @@ function parseAttendeeSchedule(
     return result;
   }
   const schedule = parsed.data;
+  const workingHours = workingHoursSchema.safeParse(schedule.workingHours);
+  if (workingHours.success) {
+    const name = workingHours.data.timeZone.name;
+    if (Object.hasOwn(windowsTimeZones, name)) {
+      workingHours.data.timeZone.name = windowsTimeZones[name as keyof typeof windowsTimeZones];
+    }
+  }
+  const slots: NonNullable<AttendeeAvailability["schedule"]>["slots"] = [];
+  const finish = (status: Availability): AttendeeAvailability => ({
+    email,
+    status,
+    ...(includeSchedule
+      ? {
+          ...(workingHours.success ? { workingHours: workingHours.data } : {}),
+          schedule: {
+            start: new Date(start).toISOString(),
+            end: new Date(end).toISOString(),
+            slots,
+          },
+        }
+      : {}),
+  });
   if (schedule.scheduleItems?.length) {
     let status: Availability = "free";
     for (const item of schedule.scheduleItems) {
@@ -65,11 +85,16 @@ function parseAttendeeSchedule(
         STATUS_PRIORITY.find(
           (candidate) => candidate.toLowerCase() === item.status.toLowerCase(),
         ) ?? "unknown";
+      slots.push({
+        start: new Date(Math.max(start, itemStart)).toISOString(),
+        end: new Date(Math.min(end, itemEnd)).toISOString(),
+        status: itemStatus,
+      });
       if (STATUS_PRIORITY.indexOf(itemStatus) > STATUS_PRIORITY.indexOf(status)) {
         status = itemStatus;
       }
     }
-    return { email, status };
+    return finish(status);
   }
   if (
     !schedule.availabilityView ||
@@ -79,13 +104,26 @@ function parseAttendeeSchedule(
     return result;
   }
   const statuses: Availability[] = ["free", "tentative", "busy", "oof", "workingElsewhere"];
-  const status = [...schedule.availabilityView].reduce<Availability>((current, slot) => {
-    const candidate = statuses[Number(slot)];
-    return STATUS_PRIORITY.indexOf(candidate) > STATUS_PRIORITY.indexOf(current)
-      ? candidate
-      : current;
-  }, "free");
-  return { email, status };
+  const status = [...schedule.availabilityView]
+    .slice(0, Math.ceil((end - start) / 300_000))
+    .reduce<Availability>((current, slot, index) => {
+      const candidate = statuses[Number(slot)];
+      const slotStart = start + index * 300_000;
+      const previous = slots.at(-1);
+      if (previous?.status === candidate) {
+        previous.end = new Date(Math.min(end, slotStart + 300_000)).toISOString();
+      } else {
+        slots.push({
+          start: new Date(slotStart).toISOString(),
+          end: new Date(Math.min(end, slotStart + 300_000)).toISOString(),
+          status: candidate,
+        });
+      }
+      return STATUS_PRIORITY.indexOf(candidate) > STATUS_PRIORITY.indexOf(current)
+        ? candidate
+        : current;
+    }, "free");
+  return finish(status);
 }
 
 export default parseAttendeeSchedule;

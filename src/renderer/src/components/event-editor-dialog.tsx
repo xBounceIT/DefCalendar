@@ -30,6 +30,7 @@ import type { SyncWindowDays } from "@shared/sync";
 import {
   attendeeAvailabilityArgsSchema,
   attendeeEmailSchema,
+  MAX_AVAILABILITY_RANGE_MS,
   type AttendeeAvailability,
   type AttendeeAvailabilityArgs,
 } from "@shared/attendee-availability";
@@ -45,6 +46,16 @@ import SafeHtmlBody from "./safe-html-body";
 import ContactAvatar from "./contact-avatar";
 import SettingsSelect from "./settings-select";
 import useAttendeeAvailability from "../hooks/use-attendee-availability";
+import MeetingPlanner from "./meeting-planner";
+import SchedulingAssistant from "./scheduling-assistant";
+import { getSchedulingWindow, type SchedulingView } from "../scheduling-assistant";
+import {
+  getPlannerDay,
+  getAvailabilityInRange,
+  snapPlannerRange,
+  movePlannerRange,
+  toPlannerInput,
+} from "../meeting-planner";
 
 interface EventEditorDialogProps {
   accounts: AccountSummary[];
@@ -204,14 +215,82 @@ function EventEditorDialog(props: EventEditorDialogProps) {
   const [attachmentsBusy, setAttachmentsBusy] = useState(false);
   const [form, setForm] = useState<EditorFormState | null>(null);
   const [initialForm, setInitialForm] = useState<EditorFormState | null>(null);
+  const [sidebarTab, setSidebarTab] = useState<"attendees" | "scheduling">("attendees");
+  const [assistantDate, setAssistantDate] = useState<string | null>(null);
+  const [assistantView, setAssistantView] = useState<SchedulingView>("day");
+  const [assistantInputs, setAssistantInputs] = useState({
+    required: "",
+    optional: "",
+    resource: "",
+  });
+  const assistantTriggerRef = useRef<HTMLButtonElement>(null);
+  const sidebarId = useId();
+  const availabilityCalendar = props.calendars.find((calendar) => calendar.id === form?.calendarId);
+  const availabilityAccount = props.accounts.find(
+    (account) => account.homeAccountId === availabilityCalendar?.homeAccountId,
+  );
+  const plannerOrganizer = availabilityCalendar?.ownerAddress || availabilityAccount?.username;
+  const plannerParticipants = useMemo<EventParticipant[]>(
+    () => [
+      ...(plannerOrganizer
+        ? [
+            {
+              email: plannerOrganizer,
+              name: availabilityCalendar?.ownerName || availabilityAccount?.name || null,
+              type: "required" as const,
+              response: null,
+              status: null,
+            },
+          ]
+        : []),
+      ...(form?.attendees ?? []).filter(
+        (person, index, people) =>
+          !person.email ||
+          (normalizeAttendeeEmail(person.email) !== normalizeAttendeeEmail(plannerOrganizer) &&
+            people.findIndex(
+              (candidate) =>
+                normalizeAttendeeEmail(candidate.email) === normalizeAttendeeEmail(person.email),
+            ) === index),
+      ),
+    ],
+    [form?.attendees, plannerOrganizer, availabilityCalendar?.ownerName, availabilityAccount?.name],
+  );
   const availabilityArgs =
-    props.state?.mode === "create" && form ? buildAvailabilityArgs(form) : null;
-  const availability = useAttendeeAvailability(availabilityArgs, props.onGetAttendeeAvailability);
+    props.state?.mode === "create" && form
+      ? buildAvailabilityArgs(form, plannerOrganizer, assistantDate, assistantView)
+      : null;
+  const dayAvailability = useAttendeeAvailability(
+    availabilityArgs,
+    props.onGetAttendeeAvailability,
+    60_000,
+  );
+  let selectedRange: { start: number; end: number } | null = null;
+  try {
+    const range = form ? buildEventTimeRange(form) : null;
+    if (range) {
+      selectedRange = { start: Date.parse(range.start), end: Date.parse(range.end) };
+    }
+  } catch {
+    selectedRange = null;
+  }
+  const availability = {
+    ...dayAvailability,
+    items: dayAvailability.items.map((item) => ({
+      ...item,
+      status: selectedRange
+        ? getAvailabilityInRange(item, selectedRange.start, selectedRange.end)
+        : ("unknown" as const),
+    })),
+  };
 
   useEffect(() => {
     const next = buildFormState(props.state);
     setForm(next);
     setInitialForm(next);
+    setSidebarTab("attendees");
+    setAssistantDate(null);
+    setAssistantView("day");
+    setAssistantInputs({ required: "", optional: "", resource: "" });
   }, [props.state]);
 
   const attachmentSourceEvent = props.state?.mode === "edit" ? props.state.event : null;
@@ -287,6 +366,42 @@ function EventEditorDialog(props: EventEditorDialogProps) {
         ) ?? null,
       )
     : null;
+  const changePlanningDate = (date: string) => {
+    const offset = daysBetweenDateInputs(form.startInput.slice(0, 10), date);
+    const range = {
+      startInput: `${date}${form.startInput.slice(10, 16)}`,
+      endInput: `${addDaysToDateInput(form.endInput.slice(0, 10), offset)}${form.endInput.slice(10, 16)}`,
+    };
+    updateForm(
+      setForm,
+      form.allDay
+        ? range
+        : movePlannerRange(
+            form.startInput,
+            form.endInput,
+            Date.parse(snapPlannerRange(range.startInput, range.endInput).startInput),
+          ),
+    );
+    if (assistantDate) {
+      setAssistantDate(date);
+    }
+  };
+  const removeAttendeeLabel = t("eventEditor.removeAttendee");
+  const assistantInputLabels = {
+    required: t("eventEditor.assistant.add.required"),
+    optional: t("eventEditor.assistant.add.optional"),
+    resource: t("eventEditor.assistant.add.resource"),
+  };
+  const finishPlanning = () => {
+    setForm((current) =>
+      current
+        ? { ...current, attendees: mergePlanningAttendees(current.attendees, assistantInputs) }
+        : current,
+    );
+    setAssistantInputs({ required: "", optional: "", resource: "" });
+    setAssistantDate(null);
+    globalThis.requestAnimationFrame?.(() => assistantTriggerRef.current?.focus());
+  };
 
   const canModifyAttachments = Boolean(
     editedEvent && !readOnlyForAttendee && !editedEvent.cancelled,
@@ -398,10 +513,20 @@ function EventEditorDialog(props: EventEditorDialogProps) {
         onClick={props.onDismiss}
         type="button"
       />
-      <section aria-modal="true" className="slide-panel" role="dialog">
+      <section
+        aria-modal="true"
+        className={`slide-panel${isEdit ? "" : " slide-panel--planning"}${assistantDate ? " slide-panel--assistant" : ""}`}
+        role="dialog"
+      >
         <header className="slide-panel__header">
           <div className="slide-panel__header-title">
-            <h3>{isEdit ? t("eventEditor.editEventTitle") : t("eventEditor.newEventTitle")}</h3>
+            <h3>
+              {assistantDate
+                ? t("eventEditor.assistant.title")
+                : isEdit
+                  ? t("eventEditor.editEventTitle")
+                  : t("eventEditor.newEventTitle")}
+            </h3>
           </div>
           <div className="slide-panel__header-actions">
             {editedEvent?.onlineMeeting?.joinUrl && !editedEvent.cancelled && (
@@ -427,267 +552,462 @@ function EventEditorDialog(props: EventEditorDialogProps) {
           </div>
         </header>
 
-        <EventToolbar
-          availableCategories={availableCategories}
-          busy={props.busy}
-          categoriesLoading={props.categoriesLoading}
-          editedEvent={editedEvent}
-          form={form}
-          homeAccountId={selectedCalendar?.homeAccountId ?? null}
-          onChange={setForm}
-          onDelete={
-            editedEvent &&
-            (editedEvent.cancelled ||
-              (editedEvent.isOrganizer && editedEvent.attendees.length === 0))
-              ? () => {
-                  void props.onDelete(editedEvent);
-                }
-              : undefined
-          }
-          onDuplicate={() => {
-            void props.onDuplicate(buildDraft(form, editedEvent));
-          }}
-          onForward={props.onForward}
-          onSearchContacts={props.onSearchContacts}
-        />
-
-        <div className="slide-panel__body">
-          {props.errorMessage && <div className="banner banner--error">{props.errorMessage}</div>}
-
-          <div className="slide-panel__section">
-            <div className="field-row">
-              <CalendarSelectIcon />
-              <SettingsSelect
-                aria-label={t("eventEditor.calendar")}
-                className="calendar-select"
-                disabled={readOnlyForAttendee}
-                onChange={(calendarId) => updateForm(setForm, { calendarId })}
-                options={props.calendars.map((calendar) => ({
-                  value: calendar.id,
-                  label: `${calendar.name}${calendar.ownerAddress ? ` (${calendar.ownerAddress})` : ""}`,
-                }))}
-                value={form.calendarId}
-              />
-            </div>
-
-            <div className="field-row">
-              <SubjectIcon />
-              <input
-                className="field-input field-input--underline"
-                onChange={(event) => updateForm(setForm, { subject: event.target.value })}
-                placeholder={t("eventEditor.subject")}
-                readOnly={readOnlyForAttendee}
-                spellCheck
-                type="text"
-                value={form.subject}
-              />
-            </div>
-
-            <div className="field-row field-row--attendees">
-              <AttendeesIcon />
-              <AttendeePillsInput
-                availability={props.state?.mode === "create" ? availability : undefined}
-                attendees={getAttendeesByType(form.attendees, "required")}
-                disabled={readOnlyForAttendee || !selectedCalendar?.canEdit}
-                homeAccountId={selectedCalendar?.homeAccountId ?? null}
-                inputValue={form.requiredAttendeesInput}
-                label={t("eventEditor.requiredAttendees")}
-                onCommit={(value) => commitAttendeeInput(setForm, value, "required")}
-                onInputChange={(requiredAttendeesInput) =>
-                  updateForm(setForm, { requiredAttendeesInput })
-                }
-                onSearchContacts={props.onSearchContacts}
-                onRemove={(index) =>
-                  setForm((current) =>
-                    current
-                      ? {
-                          ...current,
-                          attendees: replaceAttendeesByType(
-                            current.attendees,
-                            "required",
-                            getAttendeesByType(current.attendees, "required").filter(
-                              (_, attendeeIndex) => attendeeIndex !== index,
-                            ),
-                          ),
-                        }
-                      : current,
-                  )
-                }
-                selectedAttendees={form.attendees}
-                removeLabel={t("eventEditor.removeAttendee")}
-              />
-            </div>
-
-            <div className="field-row field-row--attendees">
-              <AttendeesIcon />
-              <AttendeePillsInput
-                availability={props.state?.mode === "create" ? availability : undefined}
-                attendees={getAttendeesByType(form.attendees, "optional")}
-                disabled={readOnlyForAttendee || !selectedCalendar?.canEdit}
-                homeAccountId={selectedCalendar?.homeAccountId ?? null}
-                inputValue={form.optionalAttendeesInput}
-                label={t("eventEditor.optionalAttendees")}
-                onCommit={(value) => commitAttendeeInput(setForm, value, "optional")}
-                onInputChange={(optionalAttendeesInput) =>
-                  updateForm(setForm, { optionalAttendeesInput })
-                }
-                onSearchContacts={props.onSearchContacts}
-                onRemove={(index) =>
-                  setForm((current) =>
-                    current
-                      ? {
-                          ...current,
-                          attendees: replaceAttendeesByType(
-                            current.attendees,
-                            "optional",
-                            getAttendeesByType(current.attendees, "optional").filter(
-                              (_, attendeeIndex) => attendeeIndex !== index,
-                            ),
-                          ),
-                        }
-                      : current,
-                  )
-                }
-                selectedAttendees={form.attendees}
-                removeLabel={t("eventEditor.removeAttendee")}
-              />
-            </div>
-
-            <div className="field-row field-row--location">
-              <LocationIcon />
-              <input
-                className="field-input field-input--underline"
-                disabled={readOnlyForAttendee}
-                onChange={(event) => updateForm(setForm, { location: event.target.value })}
-                placeholder={t("eventEditor.location")}
-                spellCheck
-                type="text"
-                value={form.location}
-              />
-              {locationMapsUrl && locationMapsUrl.length <= 2048 && (
-                <a
-                  className="ghost-button location-maps-link"
-                  href={locationMapsUrl}
-                  rel="noopener noreferrer"
-                  target="_blank"
-                >
-                  {t("eventEditor.openInGoogleMaps")}
-                </a>
-              )}
-              {locationMapsUrl && locationMapsUrl.length > 2048 && (
-                <span className="location-maps-error" role="status">
-                  {t("eventEditor.locationTooLongForMaps")}
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="slide-panel__section">
-            <div className="scheduling-teams-stack">
-              <SchedulingSection
-                disabled={readOnlyForAttendee}
+        {assistantDate ? (
+          <SchedulingAssistant
+            date={assistantDate}
+            view={assistantView}
+            onViewChange={setAssistantView}
+            startInput={form.startInput}
+            endInput={form.endInput}
+            allDay={form.allDay}
+            participants={plannerParticipants}
+            organizerEmail={plannerOrganizer}
+            availability={dayAvailability.items}
+            loading={dayAvailability.loading}
+            disabled={props.busy || !selectedCalendar?.canEdit}
+            homeAccountId={selectedCalendar?.homeAccountId}
+            timeFormat={props.timeFormat}
+            controls={
+              <AssistantTimeControls
+                disabled={props.busy || !selectedCalendar?.canEdit}
                 form={form}
                 onChange={setForm}
+                onDateChange={changePlanningDate}
                 timeFormat={props.timeFormat}
               />
-              {!editedEvent?.onlineMeeting?.joinUrl && (
-                <TeamsSection
-                  disabled={readOnlyForAttendee}
+            }
+            renderParticipantInput={(type) => (
+              <AttendeePillsInput
+                leadingIcon={
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  >
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                }
+                attendees={[]}
+                disabled={props.busy || !selectedCalendar?.canEdit}
+                homeAccountId={selectedCalendar?.homeAccountId ?? null}
+                inputValue={assistantInputs[type]}
+                label={assistantInputLabels[type]}
+                onInputChange={(value) =>
+                  setAssistantInputs((current) => ({ ...current, [type]: value }))
+                }
+                onCommit={(value) => {
+                  setForm((current) =>
+                    current
+                      ? {
+                          ...current,
+                          attendees: mergePlanningAttendees(current.attendees, {
+                            required: "",
+                            optional: "",
+                            resource: "",
+                            [type]: value,
+                          }),
+                        }
+                      : current,
+                  );
+                  setAssistantInputs((current) => ({ ...current, [type]: "" }));
+                }}
+                onSearchContacts={props.onSearchContacts}
+                onRemove={() => {}}
+                selectedAttendees={plannerParticipants}
+                removeLabel={removeAttendeeLabel}
+              />
+            )}
+            onDateChange={setAssistantDate}
+            onChange={(range) => updateForm(setForm, range)}
+            onRemove={(index) =>
+              setForm((current) =>
+                current
+                  ? {
+                      ...current,
+                      attendees: current.attendees.filter((person) =>
+                        plannerParticipants[index]?.email
+                          ? normalizeAttendeeEmail(person.email) !==
+                            normalizeAttendeeEmail(plannerParticipants[index]?.email)
+                          : person !== plannerParticipants[index],
+                      ),
+                    }
+                  : current,
+              )
+            }
+            onBack={finishPlanning}
+          />
+        ) : (
+          <>
+            <EventToolbar
+              availableCategories={availableCategories}
+              busy={props.busy}
+              categoriesLoading={props.categoriesLoading}
+              editedEvent={editedEvent}
+              form={form}
+              homeAccountId={selectedCalendar?.homeAccountId ?? null}
+              onChange={setForm}
+              onDelete={
+                editedEvent &&
+                (editedEvent.cancelled ||
+                  (editedEvent.isOrganizer && editedEvent.attendees.length === 0))
+                  ? () => {
+                      void props.onDelete(editedEvent);
+                    }
+                  : undefined
+              }
+              onDuplicate={() => {
+                void props.onDuplicate(buildDraft(form, editedEvent));
+              }}
+              onForward={props.onForward}
+              onSearchContacts={props.onSearchContacts}
+            />
+
+            <div className="slide-panel__body">
+              {props.errorMessage && (
+                <div className="banner banner--error">{props.errorMessage}</div>
+              )}
+
+              <div className="slide-panel__section">
+                <div className="field-row">
+                  <CalendarSelectIcon />
+                  <SettingsSelect
+                    aria-label={t("eventEditor.calendar")}
+                    className="calendar-select"
+                    disabled={readOnlyForAttendee}
+                    onChange={(calendarId) => updateForm(setForm, { calendarId })}
+                    options={props.calendars.map((calendar) => ({
+                      value: calendar.id,
+                      label: `${calendar.name}${calendar.ownerAddress ? ` (${calendar.ownerAddress})` : ""}`,
+                    }))}
+                    value={form.calendarId}
+                  />
+                </div>
+
+                <div className="field-row">
+                  <SubjectIcon />
+                  <input
+                    className="field-input field-input--underline"
+                    onChange={(event) => updateForm(setForm, { subject: event.target.value })}
+                    placeholder={t("eventEditor.subject")}
+                    readOnly={readOnlyForAttendee}
+                    spellCheck
+                    type="text"
+                    value={form.subject}
+                  />
+                </div>
+
+                <div className="field-row field-row--attendees">
+                  <AttendeesIcon />
+                  <AttendeePillsInput
+                    availability={props.state?.mode === "create" ? availability : undefined}
+                    attendees={getAttendeesByType(form.attendees, "required")}
+                    disabled={readOnlyForAttendee || !selectedCalendar?.canEdit}
+                    homeAccountId={selectedCalendar?.homeAccountId ?? null}
+                    inputValue={form.requiredAttendeesInput}
+                    label={t("eventEditor.requiredAttendees")}
+                    onCommit={(value) => commitAttendeeInput(setForm, value, "required")}
+                    onInputChange={(requiredAttendeesInput) =>
+                      updateForm(setForm, { requiredAttendeesInput })
+                    }
+                    onSearchContacts={props.onSearchContacts}
+                    onRemove={(index) =>
+                      setForm((current) =>
+                        current
+                          ? {
+                              ...current,
+                              attendees: replaceAttendeesByType(
+                                current.attendees,
+                                "required",
+                                getAttendeesByType(current.attendees, "required").filter(
+                                  (_, attendeeIndex) => attendeeIndex !== index,
+                                ),
+                              ),
+                            }
+                          : current,
+                      )
+                    }
+                    selectedAttendees={form.attendees}
+                    removeLabel={removeAttendeeLabel}
+                  />
+                </div>
+
+                <div className="field-row field-row--attendees">
+                  <AttendeesIcon />
+                  <AttendeePillsInput
+                    availability={props.state?.mode === "create" ? availability : undefined}
+                    attendees={getAttendeesByType(form.attendees, "optional")}
+                    disabled={readOnlyForAttendee || !selectedCalendar?.canEdit}
+                    homeAccountId={selectedCalendar?.homeAccountId ?? null}
+                    inputValue={form.optionalAttendeesInput}
+                    label={t("eventEditor.optionalAttendees")}
+                    onCommit={(value) => commitAttendeeInput(setForm, value, "optional")}
+                    onInputChange={(optionalAttendeesInput) =>
+                      updateForm(setForm, { optionalAttendeesInput })
+                    }
+                    onSearchContacts={props.onSearchContacts}
+                    onRemove={(index) =>
+                      setForm((current) =>
+                        current
+                          ? {
+                              ...current,
+                              attendees: replaceAttendeesByType(
+                                current.attendees,
+                                "optional",
+                                getAttendeesByType(current.attendees, "optional").filter(
+                                  (_, attendeeIndex) => attendeeIndex !== index,
+                                ),
+                              ),
+                            }
+                          : current,
+                      )
+                    }
+                    selectedAttendees={form.attendees}
+                    removeLabel={removeAttendeeLabel}
+                  />
+                </div>
+
+                <div className="field-row field-row--location">
+                  <LocationIcon />
+                  <input
+                    className="field-input field-input--underline"
+                    disabled={readOnlyForAttendee}
+                    onChange={(event) => updateForm(setForm, { location: event.target.value })}
+                    placeholder={t("eventEditor.location")}
+                    spellCheck
+                    type="text"
+                    value={form.location}
+                  />
+                  {locationMapsUrl && locationMapsUrl.length <= 2048 && (
+                    <a
+                      className="ghost-button location-maps-link"
+                      href={locationMapsUrl}
+                      rel="noopener noreferrer"
+                      target="_blank"
+                    >
+                      {t("eventEditor.openInGoogleMaps")}
+                    </a>
+                  )}
+                  {locationMapsUrl && locationMapsUrl.length > 2048 && (
+                    <span className="location-maps-error" role="status">
+                      {t("eventEditor.locationTooLongForMaps")}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <div className="slide-panel__section">
+                <div className="scheduling-teams-stack">
+                  <SchedulingSection
+                    disabled={readOnlyForAttendee}
+                    form={form}
+                    onChange={setForm}
+                    timeFormat={props.timeFormat}
+                    action={
+                      !isEdit ? (
+                        <button
+                          ref={assistantTriggerRef}
+                          type="button"
+                          className="scheduling-assistant-trigger"
+                          disabled={props.busy || !selectedCalendar?.canEdit}
+                          onClick={() => {
+                            setForm((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    attendees: mergeAttendeesWithInput(
+                                      mergeAttendeesWithInput(
+                                        current.attendees,
+                                        current.requiredAttendeesInput,
+                                        "required",
+                                      ),
+                                      current.optionalAttendeesInput,
+                                      "optional",
+                                    ),
+                                    requiredAttendeesInput: "",
+                                    optionalAttendeesInput: "",
+                                  }
+                                : current,
+                            );
+                            setAssistantDate(form.startInput.slice(0, 10));
+                          }}
+                        >
+                          <CalendarSelectIcon />
+                          <span>{t("eventEditor.assistant.title")}</span>
+                        </button>
+                      ) : undefined
+                    }
+                  />
+                  {!editedEvent?.onlineMeeting?.joinUrl && (
+                    <TeamsSection
+                      disabled={readOnlyForAttendee}
+                      event={editedEvent}
+                      form={form}
+                      onChange={setForm}
+                    />
+                  )}
+                </div>
+              </div>
+
+              <div className="slide-panel__section">
+                <AttachmentsSection
+                  attachments={attachments}
+                  busy={attachmentsBusy}
+                  canModify={canModifyAttachments}
+                  errorMessage={attachmentError}
                   event={editedEvent}
-                  form={form}
-                  onChange={setForm}
+                  onAddFiles={(files) => {
+                    void addAttachmentFiles(files);
+                  }}
+                  onDownload={(attachment) => {
+                    void downloadAttachment(attachment);
+                  }}
+                  onOpen={(attachment) => {
+                    void openAttachment(attachment);
+                  }}
+                  onRemove={(attachment) => {
+                    void removeAttachment(attachment);
+                  }}
                 />
+              </div>
+              <div className="slide-panel__section">
+                <h4 className="slide-panel__section-title">{t("eventEditor.notes")}</h4>
+                <NotesSection disabled={readOnlyForAttendee} form={form} onChange={setForm} />
+              </div>
+
+              {editedEvent?.isOrganizer && !editedEvent.cancelled && (
+                <div className="slide-panel__section">
+                  <h4 className="slide-panel__section-title">
+                    {t("eventEditor.optionalResponses")}
+                  </h4>
+                  <CollapsibleSection title={t("eventEditor.optionalResponseActions")}>
+                    <ResponsesSection
+                      busy={props.busy}
+                      event={editedEvent}
+                      form={form}
+                      onCancelMeeting={props.onCancelMeeting}
+                      onResponseCommentChange={(responseComment) =>
+                        setForm((current) => (current ? { ...current, responseComment } : current))
+                      }
+                    />
+                  </CollapsibleSection>
+                </div>
               )}
             </div>
-          </div>
 
-          <div className="slide-panel__section">
-            <AttachmentsSection
-              attachments={attachments}
-              busy={attachmentsBusy}
-              canModify={canModifyAttachments}
-              errorMessage={attachmentError}
-              event={editedEvent}
-              onAddFiles={(files) => {
-                void addAttachmentFiles(files);
-              }}
-              onDownload={(attachment) => {
-                void downloadAttachment(attachment);
-              }}
-              onOpen={(attachment) => {
-                void openAttachment(attachment);
-              }}
-              onRemove={(attachment) => {
-                void removeAttachment(attachment);
-              }}
-            />
-          </div>
-          <div className="slide-panel__section">
-            <h4 className="slide-panel__section-title">{t("eventEditor.notes")}</h4>
-            <NotesSection disabled={readOnlyForAttendee} form={form} onChange={setForm} />
-          </div>
-
-          {editedEvent?.isOrganizer && !editedEvent.cancelled && (
-            <div className="slide-panel__section">
-              <h4 className="slide-panel__section-title">{t("eventEditor.optionalResponses")}</h4>
-              <CollapsibleSection title={t("eventEditor.optionalResponseActions")}>
-                <ResponsesSection
-                  busy={props.busy}
-                  event={editedEvent}
-                  form={form}
-                  onCancelMeeting={props.onCancelMeeting}
-                  onResponseCommentChange={(responseComment) =>
-                    setForm((current) => (current ? { ...current, responseComment } : current))
-                  }
-                />
-              </CollapsibleSection>
-            </div>
-          )}
-        </div>
-
-        <aside className="slide-panel__sidebar">
-          <AttendeesSidebar
-            busy={props.busy}
-            event={editedEvent}
-            attendees={form.attendees}
-            form={form}
-            homeAccountId={selectedCalendar?.homeAccountId}
-            onDelete={props.onDelete}
-            onFindAcceptConflicts={props.onFindAcceptConflicts}
-            organizer={organizer}
-            onRespond={props.onRespond}
-            onResponseCommentChange={(responseComment) =>
-              setForm((current) => (current ? { ...current, responseComment } : current))
-            }
-            syncWindow={props.syncWindow}
-            timeFormat={props.timeFormat}
-          />
-        </aside>
-
-        <footer className="slide-panel__footer">
-          <div className="slide-panel__footer-left" />
-          <div className="slide-panel__footer-right">
-            <button className="ghost-button" onClick={props.onDismiss} type="button">
-              {t("common.cancel")}
-            </button>
-            {!readOnlyForAttendee && (
-              <button
-                className="primary-button"
-                disabled={props.busy || form.subject.trim().length === 0 || (isEdit && !isDirty)}
-                onClick={() => {
-                  void props.onSave(buildDraft(form, editedEvent));
-                }}
-                type="button"
+            <aside className="slide-panel__sidebar">
+              {!isEdit && (
+                <div
+                  className="event-sidebar__tabs"
+                  role="tablist"
+                  aria-label={t("eventEditor.newEventTitle")}
+                >
+                  {(["attendees", "scheduling"] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      id={`${sidebarId}-${tab}-tab`}
+                      className="event-sidebar__tab"
+                      type="button"
+                      role="tab"
+                      aria-selected={sidebarTab === tab}
+                      aria-controls={`${sidebarId}-panel`}
+                      tabIndex={sidebarTab === tab ? 0 : -1}
+                      onClick={() => setSidebarTab(tab)}
+                      onKeyDown={(event) => {
+                        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+                          return;
+                        }
+                        event.preventDefault();
+                        const next =
+                          event.key === "Home"
+                            ? "attendees"
+                            : event.key === "End"
+                              ? "scheduling"
+                              : tab === "attendees"
+                                ? "scheduling"
+                                : "attendees";
+                        setSidebarTab(next);
+                        document.getElementById(`${sidebarId}-${next}-tab`)?.focus();
+                      }}
+                    >
+                      {t(`eventEditor.tabs.${tab}`)}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div
+                id={!isEdit ? `${sidebarId}-panel` : undefined}
+                role={!isEdit ? "tabpanel" : undefined}
+                aria-labelledby={!isEdit ? `${sidebarId}-${sidebarTab}-tab` : undefined}
+                className={
+                  !isEdit ? `event-sidebar__panel event-sidebar__panel--${sidebarTab}` : undefined
+                }
               >
-                {props.busy
-                  ? t("common.saving")
-                  : isEdit
-                    ? t("eventEditor.saveChanges")
-                    : t("eventEditor.createEvent")}
-              </button>
-            )}
-          </div>
-        </footer>
+                {!isEdit && sidebarTab === "scheduling" ? (
+                  <MeetingPlanner
+                    startInput={form.startInput}
+                    endInput={form.endInput}
+                    allDay={form.allDay}
+                    participants={plannerParticipants}
+                    availability={dayAvailability.items}
+                    loading={dayAvailability.loading}
+                    disabled={props.busy || !selectedCalendar?.canEdit}
+                    homeAccountId={selectedCalendar?.homeAccountId}
+                    timeFormat={props.timeFormat}
+                    onChange={(range) => updateForm(setForm, range)}
+                    onDateChange={changePlanningDate}
+                  />
+                ) : (
+                  <AttendeesSidebar
+                    busy={props.busy}
+                    event={editedEvent}
+                    attendees={form.attendees}
+                    form={form}
+                    homeAccountId={selectedCalendar?.homeAccountId}
+                    onDelete={props.onDelete}
+                    onFindAcceptConflicts={props.onFindAcceptConflicts}
+                    organizer={organizer}
+                    onRespond={props.onRespond}
+                    onResponseCommentChange={(responseComment) =>
+                      setForm((current) => (current ? { ...current, responseComment } : current))
+                    }
+                    syncWindow={props.syncWindow}
+                    timeFormat={props.timeFormat}
+                  />
+                )}
+              </div>
+            </aside>
+
+            <footer className="slide-panel__footer">
+              <div className="slide-panel__footer-left" />
+              <div className="slide-panel__footer-right">
+                <button className="ghost-button" onClick={props.onDismiss} type="button">
+                  {t("common.cancel")}
+                </button>
+                {!readOnlyForAttendee && (
+                  <button
+                    className="primary-button"
+                    disabled={
+                      props.busy || form.subject.trim().length === 0 || (isEdit && !isDirty)
+                    }
+                    onClick={() => {
+                      void props.onSave(buildDraft(form, editedEvent));
+                    }}
+                    type="button"
+                  >
+                    {props.busy
+                      ? t("common.saving")
+                      : isEdit
+                        ? t("eventEditor.saveChanges")
+                        : t("eventEditor.createEvent")}
+                  </button>
+                )}
+              </div>
+            </footer>
+          </>
+        )}
       </section>
     </div>
   );
@@ -1633,16 +1953,139 @@ function formatDurationLabel(
 
 export const TIME_OPTIONS = generateTimeOptions();
 
-function SchedulingSection({
+function AssistantTimeControls({
   disabled,
   form,
   onChange,
+  onDateChange,
   timeFormat,
 }: {
   disabled: boolean;
   form: EditorFormState;
   onChange: React.Dispatch<React.SetStateAction<EditorFormState | null>>;
+  onDateChange: (date: string) => void;
   timeFormat: UserSettings["timeFormat"];
+}) {
+  const { t } = useTranslation();
+  const options = TIME_OPTIONS.filter((option) => ["00", "30"].includes(option.value.slice(3))).map(
+    (option) => ({
+      ...option,
+      label: formatLocalizedDate(
+        new Date(`${form.startInput.slice(0, 10)}T${option.value}`),
+        { hour: "2-digit", minute: "2-digit" },
+        timeFormat,
+      ),
+    }),
+  );
+  const startTime = form.startInput.slice(11, 16) || "09:00",
+    endTime = form.endInput.slice(11, 16) || "09:30";
+  return (
+    <>
+      <div className="field scheduling-assistant__date-control">
+        <label htmlFor="assistant-date">{t("eventEditor.startDate")}</label>
+        <DatePicker
+          id="assistant-date"
+          label={t("eventEditor.startDate")}
+          value={form.startInput.slice(0, 10)}
+          disabled={disabled}
+          onChange={onDateChange}
+        />
+      </div>
+      <label className="field scheduling-assistant__time-control">
+        <span>{t("eventEditor.startTime")}</span>
+        <TimeSelect
+          disabled={disabled || form.allDay}
+          value={startTime}
+          options={options}
+          scrollToSelected
+          onChange={(value) => {
+            const target = Date.parse(
+              snapPlannerRange(`${form.startInput.slice(0, 10)}T${value}`, form.endInput)
+                .startInput,
+            );
+            updateForm(onChange, movePlannerRange(form.startInput, form.endInput, target));
+          }}
+        />
+      </label>
+      <label className="field scheduling-assistant__time-control">
+        <span>{t("eventEditor.endTime")}</span>
+        <TimeSelect
+          disabled={disabled || form.allDay}
+          value={endTime}
+          options={options}
+          scrollToSelected
+          onChange={(value) => {
+            let finish = new Date(`${form.endInput.slice(0, 10)}T${value}`);
+            const from = Date.parse(form.startInput);
+            if (finish.getTime() <= from) {
+              finish = new Date(`${form.startInput.slice(0, 10)}T${value}`);
+              finish.setDate(finish.getDate() + 1);
+            }
+            updateForm(
+              onChange,
+              snapPlannerRange(form.startInput, toPlannerInput(finish.getTime())),
+            );
+          }}
+        />
+      </label>
+      <div className="field scheduling-assistant__date-control">
+        <label htmlFor="assistant-end-date">{t("eventEditor.assistant.endDate")}</label>
+        <DatePicker
+          id="assistant-end-date"
+          label={t("eventEditor.assistant.endDate")}
+          value={form.endInput.slice(0, 10)}
+          disabled={disabled}
+          onChange={(date) => {
+            const range = {
+              startInput: form.startInput,
+              endInput: form.allDay ? date : `${date}${form.endInput.slice(10, 16)}`,
+            };
+            if (Date.parse(range.endInput) >= Date.parse(range.startInput)) {
+              updateForm(
+                onChange,
+                form.allDay ? range : snapPlannerRange(range.startInput, range.endInput),
+              );
+            }
+          }}
+        />
+      </div>
+      <label className="teams-toggle scheduling-assistant__all-day">
+        <input
+          type="checkbox"
+          role="switch"
+          checked={form.allDay}
+          disabled={disabled}
+          onChange={(event) => {
+            if (event.target.checked) {
+              updateForm(onChange, toggleAllDayForm(form, true));
+            } else {
+              const range = snapPlannerRange(
+                `${form.startInput.slice(0, 10)}T09:00`,
+                `${form.endInput.slice(0, 10)}T09:30`,
+              );
+              updateForm(onChange, { allDay: false, ...range });
+            }
+          }}
+        />
+        <span className="toggle-slider" />
+        <span>{t("eventEditor.allDay")}</span>
+      </label>
+    </>
+  );
+}
+
+function SchedulingSection({
+  disabled,
+  form,
+  onChange,
+  timeFormat,
+  action,
+}: {
+  disabled: boolean;
+  form: EditorFormState;
+  onChange: React.Dispatch<React.SetStateAction<EditorFormState | null>>;
+  timeFormat: UserSettings["timeFormat"];
+  action?: React.ReactNode;
 }) {
   const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
@@ -1760,6 +2203,7 @@ function SchedulingSection({
             className={`scheduling-summary__arrow ${isExpanded ? "expanded" : ""}`}
           />
         </button>
+        {action}
       </div>
 
       {isExpanded && (
@@ -2707,6 +3151,7 @@ function AttendeePillsInput({
   homeAccountId,
   inputValue,
   label,
+  leadingIcon,
   onCommit,
   onInputChange,
   onSearchContacts,
@@ -2720,6 +3165,7 @@ function AttendeePillsInput({
   homeAccountId: null | string;
   inputValue: string;
   label: string;
+  leadingIcon?: React.ReactNode;
   onCommit: (value: string) => void;
   onInputChange: (value: string) => void;
   onSearchContacts: (args: SearchContactsArgs) => Promise<ContactSuggestion[]>;
@@ -2847,6 +3293,7 @@ function AttendeePillsInput({
         }}
         role="group"
       >
+        {leadingIcon}
         {attendees.map((attendee, index) => {
           const status = availability
             ? availability.loading
@@ -3668,21 +4115,40 @@ function buildEventTimeRange(form: EditorFormState): { start: string; end: strin
   return { start, end };
 }
 
-function buildAvailabilityArgs(form: EditorFormState): AttendeeAvailabilityArgs | null {
+function buildAvailabilityArgs(
+  form: EditorFormState,
+  organizerEmail?: string,
+  assistantDate: string | null = null,
+  assistantView: SchedulingView = "day",
+): AttendeeAvailabilityArgs | null {
   try {
+    const range = buildEventTimeRange(form);
+    const day = getPlannerDay(form.startInput);
+    const window = getSchedulingWindow(
+      assistantDate ?? form.startInput.slice(0, 10),
+      assistantDate ? assistantView : "day",
+    );
+    let start = Math.min(day.start.getTime(), window.start);
+    let end = Math.max(day.end.getTime(), window.end, Date.parse(range.end));
+    if (end - start >= MAX_AVAILABILITY_RANGE_MS) {
+      start = window.start;
+      end = window.end;
+    }
     const parsed = attendeeAvailabilityArgsSchema.safeParse({
       calendarId: form.calendarId,
       emails: [
         ...new Set(
-          form.attendees
-            .map((attendee) => {
-              const parsed = attendeeEmailSchema.safeParse(attendee.email);
+          [...form.attendees.map((attendee) => attendee.email), organizerEmail]
+            .map((email) => {
+              const parsed = attendeeEmailSchema.safeParse(email);
               return parsed.success ? parsed.data : null;
             })
             .filter((email): email is string => Boolean(email)),
         ),
       ].toSorted(),
-      ...buildEventTimeRange(form),
+      start: new Date(start).toISOString(),
+      end: new Date(end).toISOString(),
+      includeSchedule: true,
     });
     return parsed.success ? parsed.data : null;
   } catch {
@@ -3914,6 +4380,27 @@ function mergeAttendeesWithInput(
   }
 
   return [...resourceAttendees, ...requiredAttendees, ...optionalAttendees];
+}
+
+function mergePlanningAttendees(
+  attendees: EventParticipant[],
+  inputs: { required: string; optional: string; resource: string },
+) {
+  let next = mergeAttendeesWithInput(
+    mergeAttendeesWithInput(attendees, inputs.required, "required"),
+    inputs.optional,
+    "optional",
+  );
+  for (const entry of parseAttendeeEntries(inputs.resource)) {
+    if (
+      !next.some(
+        (person) => normalizeAttendeeEmail(person.email) === normalizeAttendeeEmail(entry.email),
+      )
+    ) {
+      next = [...next, { ...entry, type: "resource" as const, response: null, status: null }];
+    }
+  }
+  return next;
 }
 
 function commitAttendeeInput(
