@@ -6,6 +6,7 @@ import { IPC_CHANNELS } from "@shared/ipc";
 import MsalAuthService from "@main/auth/msal-auth-service";
 import NewEventNotificationService from "@main/notifications/new-event-notification-service";
 import ReminderService from "@main/reminders/reminder-service";
+import ReminderSyncService from "@main/reminders/reminder-sync-service";
 import ReminderWindowManager from "@main/reminders/reminder-window";
 import SafeStorageTokenCache from "@main/auth/cache-plugin";
 import SettingsService from "@main/settings/settings-service";
@@ -60,7 +61,6 @@ async function bootstrap(): Promise<void> {
   setMainLocale(resolveMainLocale(savedSettings.language, app.getLocale()));
 
   const reminderManager = new ReminderWindowManager();
-  const reminders = new ReminderService(db, reminderManager, settings);
   const newEventNotifications = new NewEventNotificationService();
   const auth = new MsalAuthService(
     config,
@@ -72,6 +72,8 @@ async function bootstrap(): Promise<void> {
   await auth.initialize();
 
   const graph = new GraphCalendarService(auth, config);
+  const reminderSync = new ReminderSyncService(db, auth, graph);
+  const reminders = new ReminderService(db, reminderManager, settings, reminderSync);
   const sync = new SyncService({
     auth,
     config,
@@ -204,6 +206,7 @@ async function bootstrap(): Promise<void> {
   systemInviteNotifications.start();
   taskbarInviteAttention.start();
   reminders.start();
+  reminderSync.start();
   sync.start();
 
   if (auth.hasSession()) {
@@ -232,6 +235,7 @@ async function bootstrap(): Promise<void> {
 
     shouldQuit = true;
     reminders.stop();
+    reminderSync.stop();
     systemInviteNotifications.stop();
     taskbarInviteAttention.stop();
     sync.stop();

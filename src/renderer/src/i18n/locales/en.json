@@ -166,6 +166,12 @@
     "day": "Day"
   },
   "calendarBoard": {
+    "contextMenu": "Calendar actions",
+    "placeholderTitle": "Placeholder",
+    "createPlaceholder": "Create placeholder",
+    "invalidPlaceholderRange": "The end must be after the start.",
+    "placeholderSaveFailed": "Could not create the placeholder. Please try again.",
+    "invalidPlaceholderTime": "Choose valid start and end times.",
     "noCalendars": "No calendars selected",
     "noCalendarsHint": "Enable at least one Exchange calendar from the left sidebar to populate the view.",
     "moreEvents": "+{{count}}",
@@ -210,6 +216,7 @@
     "start": "Start",
     "startDay": "Start day",
     "startDate": "Start date",
+    "endDate": "End date",
     "startTime": "Start time",
     "end": "End",
     "endDay": "End day",

@@ -192,6 +192,8 @@ interface GraphPerson {
 }
 
 interface SendRequestArgs {
+  allowInteractiveAuth?: boolean;
+  assertSession?: () => void;
   forceRefresh?: boolean;
   homeAccountId?: string;
   init?: RequestInit;
@@ -391,12 +393,8 @@ class GraphCalendarService {
     signal?: AbortSignal,
   ): Promise<ContactSuggestion[]> {
     const search = trimOrNull(queryText);
-    if (!search) {
-      return [];
-    }
-
     const query = new URLSearchParams({
-      $search: toPeopleSearchQuery(search),
+      ...(search ? { $search: toPeopleSearchQuery(search) } : {}),
       $select: "displayName,givenName,surname,userPrincipalName,scoredEmailAddresses",
       $top: String(limit),
     });
@@ -754,6 +752,56 @@ class GraphCalendarService {
     );
   }
 
+  async dismissReminder(
+    calendarId: string,
+    eventId: string,
+    homeAccountId: string,
+    expectedStart: string,
+    cancellation?: AbortSignal,
+  ): Promise<void> {
+    const assertSession = this.auth.createAccountSessionGuard(homeAccountId);
+    const timeout = AbortSignal.timeout(15_000);
+    const signal = cancellation ? AbortSignal.any([timeout, cancellation]) : timeout;
+    const options = { assertSession, allowInteractiveAuth: false };
+    const eventPath = `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`;
+    const query = new URLSearchParams({ $select: "id,start" });
+    const event = parseGraphEvent(
+      await awaitWithSignal(
+        this.requestJson(
+          `${eventPath}?${query.toString()}`,
+          { signal, headers: { Prefer: 'outlook.timezone="UTC"' } },
+          homeAccountId,
+          options,
+        ),
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    assertSession();
+    const start = event.start?.dateTime;
+    const remoteStart = start
+      ? parseGraphDateTimeValue(
+          /(?:Z|[+-]\d{2}:\d{2})$/i.test(start) ? start : `${start}Z`,
+        ).getTime()
+      : Number.NaN;
+    const queuedStart = Date.parse(expectedStart);
+    if (!Number.isFinite(remoteStart) || !Number.isFinite(queuedStart)) {
+      throw new Error("Cannot verify the reminder occurrence start.");
+    }
+    if (remoteStart !== queuedStart) {
+      return;
+    }
+    await awaitWithSignal(
+      this.requestNoContent(
+        `${eventPath}/dismissReminder`,
+        { method: "POST", signal },
+        homeAccountId,
+        options,
+      ),
+      signal,
+    );
+  }
+
   async forwardEvent(args: ForwardEventArgs, homeAccountId: string): Promise<void> {
     await this.requestNoContent(
       `/me/events/${encodeURIComponent(args.eventId)}/forward`,
@@ -927,8 +975,9 @@ class GraphCalendarService {
     pathOrUrl: string,
     init: RequestInit = {},
     homeAccountId?: string,
+    options: Pick<SendRequestArgs, "assertSession" | "allowInteractiveAuth"> = {},
   ): Promise<unknown> {
-    const response = await this.sendRequest({ homeAccountId, init, pathOrUrl });
+    const response = await this.sendRequest({ homeAccountId, init, pathOrUrl, ...options });
     if (!response.ok) {
       throw await this.createRequestError(response);
     }
@@ -940,8 +989,9 @@ class GraphCalendarService {
     pathOrUrl: string,
     init: RequestInit = {},
     homeAccountId?: string,
+    options: Pick<SendRequestArgs, "assertSession" | "allowInteractiveAuth"> = {},
   ): Promise<void> {
-    const response = await this.sendRequest({ homeAccountId, init, pathOrUrl });
+    const response = await this.sendRequest({ homeAccountId, init, pathOrUrl, ...options });
     if (!response.ok) {
       throw await this.createRequestError(response);
     }
@@ -954,16 +1004,25 @@ class GraphCalendarService {
   private async sendRequest(args: SendRequestArgs): Promise<Response> {
     const { forceRefresh = false, homeAccountId, init = {}, pathOrUrl, retryCount = 0 } = args;
     init.signal?.throwIfAborted();
+    args.assertSession?.();
     const headers = new Headers(init.headers);
     if (!headers.has("Accept")) {
       headers.set("Accept", "application/json");
     }
     const accessToken = homeAccountId
-      ? await this.auth.getAccessTokenForAccount(homeAccountId, forceRefresh)
+      ? await (args.allowInteractiveAuth === false
+          ? this.auth.getAccessTokenForAccount(homeAccountId, forceRefresh, false)
+          : this.auth.getAccessTokenForAccount(homeAccountId, forceRefresh))
       : await this.auth.getAccessToken(forceRefresh);
     init.signal?.throwIfAborted();
+    args.assertSession?.();
     headers.set("Authorization", `Bearer ${accessToken}`);
-    headers.set("Prefer", buildPreferHeader(headers.get("Prefer"), this.config.timeZone));
+    const responseTimeZone = /\/(?:events|calendarView)(?:\/|$)/.test(
+      new URL(pathOrUrl, this.baseUrl).pathname,
+    )
+      ? "UTC"
+      : this.config.timeZone;
+    headers.set("Prefer", buildPreferHeader(headers.get("Prefer"), responseTimeZone));
 
     let requestUrl = `${this.baseUrl}${pathOrUrl}`;
     if (pathOrUrl.startsWith("http")) {
@@ -977,11 +1036,8 @@ class GraphCalendarService {
 
     if (response.status === 401 && !forceRefresh) {
       return this.sendRequest({
+        ...args,
         forceRefresh: true,
-        homeAccountId,
-        init,
-        pathOrUrl,
-        retryCount,
       });
     }
 
@@ -991,10 +1047,7 @@ class GraphCalendarService {
         signal: init.signal ?? undefined,
       });
       return this.sendRequest({
-        forceRefresh,
-        homeAccountId,
-        init,
-        pathOrUrl,
+        ...args,
         retryCount: retryCount + 1,
       });
     }
@@ -1106,7 +1159,7 @@ class GraphCalendarService {
       showAs: parseShowAs(event.showAs),
       start: normalizeGraphDateTime(event.start?.dateTime),
       subject: trimOrFallback(event.subject, "(no title)"),
-      timeZone: event.start?.timeZone ?? this.config.timeZone,
+      timeZone: this.config.timeZone,
       type: event.type ?? null,
       unsupportedReason: getUnsupportedReason(event),
       webLink: event.webLink ?? null,
@@ -1201,6 +1254,10 @@ class GraphCalendarService {
       subject: draft.subject,
     };
 
+    if (mode === "create" && draft.transactionId) {
+      payload.transactionId = draft.transactionId;
+    }
+
     if (draft.body?.trim()) {
       payload.body = {
         content: draft.body,
@@ -1223,7 +1280,7 @@ class GraphCalendarService {
 
     payload.reminderMinutesBeforeStart = draft.isReminderOn
       ? (draft.reminderMinutesBeforeStart ?? 15)
-      : null;
+      : 0;
 
     if (draft.recurrence) {
       payload.recurrence = {
@@ -1476,17 +1533,11 @@ function normalizeGraphDateTime(value?: string): string {
 
 function parseGraphDateTimeValue(value: string): Date {
   const normalizedFractionalSeconds = value.replace(/\.(\d{3})\d+/, ".$1");
-  let parsed = new Date(normalizedFractionalSeconds);
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed;
-  }
-
-  parsed = new Date(`${normalizedFractionalSeconds}Z`);
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed;
-  }
-
-  return new Date(Number.NaN);
+  return new Date(
+    /(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalizedFractionalSeconds)
+      ? normalizedFractionalSeconds
+      : `${normalizedFractionalSeconds}Z`,
+  );
 }
 
 function parseGraphAttachment(value: unknown): EventAttachment {

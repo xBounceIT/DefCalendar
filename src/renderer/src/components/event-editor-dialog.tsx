@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faClock, faPaperPlane, faUser } from "@fortawesome/free-regular-svg-icons";
@@ -1638,14 +1638,16 @@ function EventToolbar({
   );
 }
 
-function TimeSelect({
+export function TimeSelect({
   disabled,
+  floating = false,
   onChange,
   options,
   scrollToSelected,
   value,
 }: {
   disabled: boolean;
+  floating?: boolean;
   onChange: (value: string) => void;
   options: { label: string; value: string }[];
   scrollToSelected: boolean;
@@ -1656,6 +1658,7 @@ function TimeSelect({
   const [draft, setDraft] = useState(value);
   const containerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -1663,7 +1666,13 @@ function TimeSelect({
   }, [value]);
 
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
+    if (disabled) {
+      setIsOpen(false);
+    }
+  }, [disabled]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent | FocusEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
@@ -1671,19 +1680,59 @@ function TimeSelect({
 
     if (isOpen) {
       document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("focusin", handleClickOutside);
     }
 
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("focusin", handleClickOutside);
     };
   }, [isOpen]);
+
+  useLayoutEffect(() => {
+    if (!isOpen || !floating || !dropdownRef.current) {
+      return;
+    }
+    const dropdown = dropdownRef.current;
+    dropdown.showPopover?.();
+    function position(): void {
+      const anchor = containerRef.current?.getBoundingClientRect();
+      if (!anchor) {
+        return;
+      }
+      const below = Math.max(0, window.innerHeight - anchor.bottom - 12);
+      const above = Math.max(0, anchor.top - 12);
+      const openBelow = below >= 188 || below >= above;
+      const height = Math.min(188, openBelow ? below : above);
+      const width = Math.min(Math.max(anchor.width, 120), window.innerWidth - 16);
+      dropdown.style.width = `${width}px`;
+      dropdown.style.left = `${Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8))}px`;
+      dropdown.style.top = `${openBelow ? anchor.bottom + 4 : anchor.top - height - 4}px`;
+      listRef.current?.style.setProperty("max-height", `${Math.max(0, height - 2)}px`);
+    }
+    position();
+    const observer = new ResizeObserver(position);
+    observer.observe(containerRef.current!);
+    window.addEventListener("resize", position);
+    window.addEventListener("scroll", position, true);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", position);
+      window.removeEventListener("scroll", position, true);
+    };
+  }, [isOpen, floating]);
 
   useEffect(() => {
     if (isOpen && listRef.current) {
       if (scrollToSelected) {
         const selectedOption = listRef.current.querySelector('[data-selected="true"]');
-        if (selectedOption && typeof selectedOption.scrollIntoView === "function") {
-          selectedOption.scrollIntoView({ block: "center" });
+        if (selectedOption) {
+          const list = listRef.current;
+          const selectedRect = selectedOption.getBoundingClientRect();
+          list.scrollTop +=
+            selectedRect.top -
+            list.getBoundingClientRect().top -
+            (list.clientHeight - selectedRect.height) / 2;
         }
       } else {
         listRef.current.scrollTop = 0;
@@ -1692,7 +1741,7 @@ function TimeSelect({
   }, [isOpen, scrollToSelected]);
 
   function commitDraft(): void {
-    if (draft === value) {
+    if (disabled || draft === value) {
       return;
     }
     const parsed = parseTimeInput(draft);
@@ -1724,6 +1773,9 @@ function TimeSelect({
               inputRef.current?.blur();
             } else if (event.key === "Escape") {
               event.preventDefault();
+              if (isOpen) {
+                event.stopPropagation();
+              }
               setDraft(value);
               setIsOpen(false);
               inputRef.current?.blur();
@@ -1740,8 +1792,8 @@ function TimeSelect({
           className="time-select__chevron"
           disabled={disabled}
           onClick={() => {
-            setIsOpen((open) => !open);
-            inputRef.current?.focus();
+            inputRef.current?.focus({ preventScroll: true });
+            setIsOpen(!isOpen);
           }}
           onMouseDown={(event) => event.preventDefault()}
           type="button"
@@ -1749,8 +1801,12 @@ function TimeSelect({
           <ChevronDownIcon className={isOpen ? "expanded" : ""} />
         </button>
       </div>
-      {isOpen && (
-        <div className="time-select__dropdown">
+      {isOpen && !disabled && (
+        <div
+          className="time-select__dropdown"
+          popover={floating ? "manual" : undefined}
+          ref={dropdownRef}
+        >
           <div className="time-select__list" ref={listRef}>
             {options.map((opt) => (
               <button
@@ -1895,7 +1951,7 @@ function formatDurationLabel(
   return `(+${hours}h ${mins}min)`;
 }
 
-const TIME_OPTIONS = generateTimeOptions();
+export const TIME_OPTIONS = generateTimeOptions();
 
 function AssistantTimeControls({
   disabled,
@@ -3169,14 +3225,9 @@ function AttendeePillsInput({
               return;
             }
 
-            const filtered = results
-              .filter((contact) => !selectedEmails.has(normalizeAttendeeEmail(contact.email)!))
-              .toSorted(
-                (left, right) =>
-                  (left.name ?? left.email).localeCompare(right.name ?? right.email, undefined, {
-                    sensitivity: "base",
-                  }) || left.email.localeCompare(right.email),
-              );
+            const filtered = results.filter(
+              (contact) => !selectedEmails.has(normalizeAttendeeEmail(contact.email)!),
+            );
             setSuggestions(filtered);
             setHighlightedIndex(0);
             setIsLoading(false);

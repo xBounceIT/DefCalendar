@@ -1,5 +1,6 @@
 import type {
   DayCellContentArg,
+  DateSelectArg,
   DatesSetArg,
   EventClickArg,
   EventContentArg,
@@ -21,6 +22,10 @@ import type { CalendarEvent, CalendarView, UserSettings } from "@shared/schemas"
 import { buildEventTimeFormat } from "../date-formatting";
 import interactionPlugin from "../interaction-plugin";
 import hasSelectedTextWithin from "../text-selection";
+import dateContextPlugin from "../date-context-plugin";
+import type { DateContextClickArg } from "../date-context-plugin";
+import PlaceholderEventMenu from "./placeholder-event-menu";
+import type { PlaceholderEventRange } from "./placeholder-event-menu";
 import { MeetingIcon } from "./meeting-icon";
 
 interface CalendarBoardProps {
@@ -29,6 +34,8 @@ interface CalendarBoardProps {
   calendarRef: React.RefObject<FullCalendar | null>;
   hasVisibleCalendars: boolean;
   isLoadingEvents: boolean;
+  onCreatePlaceholder?: (range: PlaceholderEventRange) => Promise<void>;
+  isCreatingPlaceholder?: boolean;
   onDateClick: (clickInfo: DateClickArg) => void;
   onDateDoubleClick: (clickInfo: DateClickArg) => void;
   onDatesSet: (dates: DatesSetArg) => void;
@@ -42,7 +49,7 @@ interface CalendarBoardProps {
   timeFormat: UserSettings["timeFormat"];
 }
 
-const CALENDAR_PLUGINS = [dayGridPlugin, timeGridPlugin, interactionPlugin];
+const CALENDAR_PLUGINS = [dayGridPlugin, timeGridPlugin, interactionPlugin, dateContextPlugin];
 const TOOLTIP_FALLBACK_HEIGHT_PX = 32;
 const TOOLTIP_GAP_PX = 8;
 const TOOLTIP_MAX_WIDTH_PX = 320;
@@ -405,6 +412,8 @@ function CalendarSurface({
   activeView,
   calendarEvents,
   calendarRef,
+  onCreatePlaceholder,
+  isCreatingPlaceholder,
   onDateClick,
   onDateDoubleClick,
   onDatesSet,
@@ -418,6 +427,52 @@ function CalendarSurface({
   timeFormat,
 }: Omit<CalendarBoardProps, "hasVisibleCalendars" | "isLoadingEvents">) {
   const { t, i18n } = useTranslation();
+  const selectionRef = React.useRef<DateSelectArg | null>(null);
+  const [placeholderMenu, setPlaceholderMenu] = React.useState<null | {
+    range: PlaceholderEventRange;
+    position: { x: number; y: number };
+  }>(null);
+  const dismissPlaceholderMenu = React.useCallback(() => {
+    setPlaceholderMenu(null);
+    if (selectionRef.current) {
+      calendarRef.current?.getApi().unselect();
+    }
+    selectionRef.current = null;
+  }, [calendarRef]);
+
+  React.useEffect(() => {
+    dismissPlaceholderMenu();
+  }, [activeView, selectedDate, onCreatePlaceholder, dismissPlaceholderMenu]);
+
+  function handleDateContextClick(arg: DateContextClickArg): void {
+    if (!onCreatePlaceholder || isCreatingPlaceholder) {
+      return;
+    }
+
+    const selection = selectionRef.current;
+    const useSelection =
+      selection &&
+      selection.allDay === arg.allDay &&
+      arg.date >= selection.start &&
+      arg.date < selection.end;
+    const start = new Date(useSelection ? selection.start : arg.date);
+    let end: Date;
+    if (arg.allDay) {
+      start.setHours(9, 0, 0, 0);
+      end = new Date(useSelection ? selection.end : start);
+      if (useSelection) {
+        end.setDate(end.getDate() - 1);
+      }
+      end.setHours(9, 30, 0, 0);
+    } else {
+      end = useSelection ? new Date(selection.end) : new Date(start.getTime() + 30 * 60_000);
+    }
+    lastClickRef.current = null;
+    setPlaceholderMenu({
+      range: { start: start.toISOString(), end: end.toISOString() },
+      position: { x: arg.jsEvent.clientX, y: arg.jsEvent.clientY },
+    });
+  }
   const tooltipShowTimeoutRef = React.useRef<null | ReturnType<typeof globalThis.setTimeout>>(null);
   const [hoverTooltip, setHoverTooltip] = React.useState<null | {
     position: TooltipPosition;
@@ -636,6 +691,7 @@ function CalendarSurface({
         allDayMaintainDuration
         allDayText={t("eventEditor.allDay")}
         dateClick={handleDateClick}
+        dateContextClick={handleDateContextClick}
         datesSet={onDatesSet}
         dayCellClassNames={handleDayCellClassNames}
         dayMaxEvents={3}
@@ -669,6 +725,16 @@ function CalendarSurface({
         nowIndicator
         plugins={CALENDAR_PLUGINS}
         ref={calendarRef}
+        selectable={Boolean(onCreatePlaceholder)}
+        selectMinDistance={5}
+        select={(selection) => {
+          selectionRef.current = selection;
+          lastClickRef.current = null;
+        }}
+        unselect={() => {
+          selectionRef.current = null;
+        }}
+        unselectCancel=".placeholder-event-menu"
         slotMaxTime="24:00:00"
         slotLabelFormat={eventTimeFormat}
         slotMinTime="00:00:00"
@@ -677,6 +743,15 @@ function CalendarSurface({
         weekends
       />
       {renderedTooltip}
+      {placeholderMenu && onCreatePlaceholder && (
+        <PlaceholderEventMenu
+          key={`${placeholderMenu.range.start}:${placeholderMenu.range.end}:${placeholderMenu.position.x}:${placeholderMenu.position.y}`}
+          onCreate={onCreatePlaceholder}
+          onDismiss={dismissPlaceholderMenu}
+          position={placeholderMenu.position}
+          range={placeholderMenu.range}
+        />
+      )}
     </>
   );
 }
@@ -735,6 +810,8 @@ function CalendarBoard(props: CalendarBoardProps) {
         activeView={props.activeView}
         calendarEvents={props.calendarEvents}
         calendarRef={props.calendarRef}
+        onCreatePlaceholder={props.onCreatePlaceholder}
+        isCreatingPlaceholder={props.isCreatingPlaceholder}
         onDateClick={props.onDateClick}
         onDateDoubleClick={props.onDateDoubleClick}
         onDatesSet={props.onDatesSet}

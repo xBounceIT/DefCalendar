@@ -1,6 +1,7 @@
 import type AppDatabase from "@main/db/database";
 import type ReminderWindowManager from "@main/reminders/reminder-window";
 import type SettingsService from "@main/settings/settings-service";
+import type ReminderSyncService from "@main/reminders/reminder-sync-service";
 import { app, powerMonitor } from "@main/electron-runtime";
 import { resolveMainLocale } from "@main/i18n";
 import { isDeclinedEventResponse } from "@shared/event-response";
@@ -37,6 +38,7 @@ class ReminderService {
   private readonly db: AppDatabase;
   private readonly reminderManager: ReminderWindowManager;
   private readonly settings: SettingsService;
+  private readonly reminderSync: ReminderSyncService;
   private readonly listeners = new Set<(state: ReminderDialogState) => void>();
   private timer: NodeJS.Timeout | null = null;
   private state: ReminderDialogState = {
@@ -50,10 +52,16 @@ class ReminderService {
     void this.checkNow("startup");
   };
 
-  constructor(db: AppDatabase, reminderManager: ReminderWindowManager, settings: SettingsService) {
+  constructor(
+    db: AppDatabase,
+    reminderManager: ReminderWindowManager,
+    settings: SettingsService,
+    reminderSync: ReminderSyncService,
+  ) {
     this.db = db;
     this.reminderManager = reminderManager;
     this.settings = settings;
+    this.reminderSync = reminderSync;
   }
 
   start(): void {
@@ -90,14 +98,29 @@ class ReminderService {
   }
 
   dismiss(dedupeKey: string): void {
-    this.db.dismissReminder(dedupeKey);
-    void this.checkNow();
+    this.dismissItems(this.state.items.filter((item) => item.dedupeKey === dedupeKey));
   }
 
   dismissAll(): void {
-    this.db.dismissReminders(this.state.items.map((item) => item.dedupeKey));
+    this.dismissItems(this.state.items);
+  }
 
+  private dismissItems(items: ReminderDialogItem[]): void {
+    if (items.length === 0) {
+      return;
+    }
+    this.db.dismissReminders(
+      items.map((item) => item.dedupeKey),
+      this.settings.getSettings().localReminderOverrideEnabled
+        ? []
+        : items.map((item) => ({
+            calendarId: item.calendarId,
+            eventId: item.eventId,
+            start: item.start,
+          })),
+    );
     void this.checkNow();
+    void this.reminderSync.flush();
   }
 
   snooze(dedupeKey: string, minutes: number): void {

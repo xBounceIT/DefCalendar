@@ -550,12 +550,20 @@ class MsalAuthService {
     return this.acquireAccessToken(account, forceRefresh);
   }
 
-  async getAccessTokenForAccount(homeAccountId: string, forceRefresh = false): Promise<string> {
+  async getAccessTokenForAccount(
+    homeAccountId: string,
+    forceRefresh = false,
+    allowInteractive = true,
+  ): Promise<string> {
     const account = this.ensureAccount(homeAccountId);
-    return this.acquireAccessToken(account, forceRefresh);
+    return this.acquireAccessToken(account, forceRefresh, allowInteractive);
   }
 
-  private async acquireAccessToken(account: AccountInfo, forceRefresh = false): Promise<string> {
+  private async acquireAccessToken(
+    account: AccountInfo,
+    forceRefresh = false,
+    allowInteractive = true,
+  ): Promise<string> {
     const version = this.getAccountVersion(account.homeAccountId);
     if (this.unverifiedAccounts.has(account.homeAccountId)) {
       const validation = await this.validateAccountSession(account);
@@ -569,13 +577,18 @@ class MsalAuthService {
     let result: AuthenticationResult | null;
     try {
       result = await this.acquireSilentToken(account, forceRefresh, version);
-    } catch {
+    } catch (error) {
       this.assertCurrentAccount(account.homeAccountId, version);
+      if (!allowInteractive) {
+        throw error;
+      }
       const interactive = await this.acquireInteractiveToken("user", account);
       this.assertCurrentAccount(account.homeAccountId, version);
       if (interactive.account) {
         if (interactive.account.homeAccountId !== account.homeAccountId) {
-          throw new Error(`Unable to refresh the Microsoft 365 session for ${account.username}.`);
+          throw new Error(`Unable to refresh the Microsoft 365 session for ${account.username}.`, {
+            cause: error,
+          });
         }
 
         this.upsertAccount(
@@ -586,7 +599,7 @@ class MsalAuthService {
       if (interactive.accessToken) {
         return interactive.accessToken;
       }
-      throw new Error("Unable to acquire an access token for Microsoft Graph.");
+      throw new Error("Unable to acquire an access token for Microsoft Graph.", { cause: error });
     }
 
     this.assertCurrentAccount(account.homeAccountId, version);

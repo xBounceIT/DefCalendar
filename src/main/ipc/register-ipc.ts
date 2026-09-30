@@ -63,7 +63,6 @@ import {
   attendeeAvailabilitySchema,
 } from "@shared/attendee-availability";
 
-const MIN_PEOPLE_SEARCH_QUERY_LENGTH = 2;
 const CACHED_CONTACT_DIRECTORY_WAIT_MS = 500;
 const DIRECTORY_SEARCH_WAIT_MS = 5_000;
 
@@ -89,23 +88,25 @@ function mergeContactSuggestions(
   peopleContacts: ContactSuggestion[],
   limit: number | null,
 ): ContactSuggestion[] {
+  const cachedSuggestions = new Map(
+    cachedContacts.map((contact) => [contact.email.toLowerCase(), contact]),
+  );
   const suggestions = new Map<string, ContactSuggestion>();
 
-  for (const contact of [...cachedContacts, ...peopleContacts]) {
+  for (const contact of [...peopleContacts, ...cachedContacts]) {
     const parsed = contactSuggestionSchema.safeParse(contact);
     if (!parsed.success) {
       continue;
     }
 
     const email = parsed.data.email.toLowerCase();
-    const existing = suggestions.get(email);
-    if (existing) {
-      suggestions.set(email, { ...parsed.data, ...existing });
+    if (suggestions.has(email)) {
       continue;
     }
 
     suggestions.set(email, {
       ...parsed.data,
+      ...cachedSuggestions.get(email),
       email,
     });
     if (limit !== null && suggestions.size >= limit) {
@@ -304,18 +305,13 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   ipcMain.handle(IPC_CHANNELS.contactsSearch, async (event, input) => {
     validateMainSender(event);
     const args = searchContactsArgsSchema.parse(input);
+    const assertSession = dependencies.auth.createAccountSessionGuard(args.homeAccountId);
     const cachedContacts = dependencies.db
       .searchContacts(args)
       .map((contact) => contactSuggestionSchema.parse(contact));
 
-    if (
-      args.query.length < MIN_PEOPLE_SEARCH_QUERY_LENGTH ||
-      (args.limit !== null && cachedContacts.length >= args.limit)
-    ) {
-      return cachedContacts;
-    }
-
     const controller = new AbortController();
+    let peopleContacts: ContactSuggestion[] | null = null;
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
       const timeout = new Promise<null>((resolve) => {
@@ -327,7 +323,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
           cachedContacts.length > 0 ? CACHED_CONTACT_DIRECTORY_WAIT_MS : DIRECTORY_SEARCH_WAIT_MS,
         );
       });
-      const peopleContacts = await Promise.race([
+      peopleContacts = await Promise.race([
         dependencies.graph.searchPeople(
           args.homeAccountId,
           args.query,
@@ -336,14 +332,15 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
         ),
         timeout,
       ]);
-      return peopleContacts
-        ? mergeContactSuggestions(cachedContacts, peopleContacts, args.limit)
-        : cachedContacts;
     } catch {
-      return cachedContacts;
+      peopleContacts = null;
     } finally {
       clearTimeout(timeoutId);
     }
+    assertSession();
+    return peopleContacts
+      ? mergeContactSuggestions(cachedContacts, peopleContacts, args.limit)
+      : cachedContacts;
   });
 
   ipcMain.handle(IPC_CHANNELS.contactsGetPhoto, async (event, input) => {

@@ -89,6 +89,7 @@ function createFixture(args?: {
         if (candidate) {
           candidate.dismissedAt = new Date().toISOString();
         }
+        reminderStateByKey[key] = { dismissedAt: new Date().toISOString(), snoozedUntil: null };
       }
     }),
     getReminderState: vi
@@ -147,11 +148,18 @@ function createFixture(args?: {
       visibleCalendarIds: args?.visibleCalendarIds ?? ["calendar-1"],
     }),
   };
+  const reminderSync = { flush: vi.fn().mockResolvedValue(undefined) };
 
   return {
     db,
     reminderManager,
-    service: new ReminderService(db as never, reminderManager as never, settings as never),
+    reminderSync,
+    service: new ReminderService(
+      db as never,
+      reminderManager as never,
+      settings as never,
+      reminderSync as never,
+    ),
     settings,
   };
 }
@@ -296,6 +304,7 @@ describe("reminder service", () => {
         createCandidate(),
         createCandidate({
           dedupeKey: "calendar-1:event-2:2026-03-30T10:15:00.000Z:pre",
+          id: "event-2",
           reminderMinutesBeforeStart: 30,
           start: "2026-03-30T10:15:00.000Z",
           subject: "Follow up",
@@ -306,10 +315,52 @@ describe("reminder service", () => {
     await fixture.service.checkNow();
     fixture.service.dismissAll();
 
-    expect(fixture.db.dismissReminders).toHaveBeenCalledWith([
-      "calendar-1:event-1:2026-03-30T10:00:00.000Z:pre",
-      "calendar-1:event-2:2026-03-30T10:15:00.000Z:pre",
-    ]);
+    expect(fixture.db.dismissReminders).toHaveBeenCalledWith(
+      [
+        "calendar-1:event-1:2026-03-30T10:00:00.000Z:pre",
+        "calendar-1:event-2:2026-03-30T10:15:00.000Z:pre",
+      ],
+      [
+        { calendarId: "calendar-1", eventId: "event-1", start: "2026-03-30T10:00:00.000Z" },
+        { calendarId: "calendar-1", eventId: "event-2", start: "2026-03-30T10:15:00.000Z" },
+      ],
+    );
+    expect(fixture.reminderSync.flush).toHaveBeenCalledOnce();
+  });
+
+  it("persists and queues a single visible dismissal before syncing it", async () => {
+    const candidate = createCandidate();
+    const fixture = createFixture({ candidates: [candidate] });
+    await fixture.service.checkNow();
+    fixture.service.dismiss(candidate.dedupeKey);
+    expect(fixture.service.getState().items).toEqual([]);
+    expect(fixture.db.dismissReminders).toHaveBeenCalledWith(
+      [candidate.dedupeKey],
+      [{ calendarId: "calendar-1", eventId: "event-1", start: candidate.event.start }],
+    );
+    expect(fixture.reminderSync.flush).toHaveBeenCalledOnce();
+    await fixture.service.checkNow("startup");
+    expect(fixture.service.getState().items).toEqual([]);
+  });
+
+  it("ignores dismissals for keys outside the current dialog", () => {
+    const fixture = createFixture();
+    fixture.service.dismiss("unknown");
+    fixture.service.dismissAll();
+    expect(fixture.db.dismissReminders).not.toHaveBeenCalled();
+    expect(fixture.reminderSync.flush).not.toHaveBeenCalled();
+  });
+
+  it("keeps custom local reminder dismissals local", async () => {
+    const fixture = createFixture({
+      localReminderOverrideEnabled: true,
+      localEvents: [createCandidate().event],
+    });
+    await fixture.service.checkNow();
+    const key = fixture.service.getState().items[0].dedupeKey;
+    fixture.service.dismiss(key);
+    expect(fixture.db.dismissReminders).toHaveBeenCalledWith([key], []);
+    expect(fixture.service.getState().items).toEqual([]);
   });
 
   it("shows both pre and start reminders for an event with reminderMinutesBeforeStart > 0", async () => {
