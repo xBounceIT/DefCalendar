@@ -840,7 +840,11 @@ describe("graph calendar service request handling", () => {
     expect(preferHeader).toContain('IdType="ImmutableId"');
   });
 
-  it("searches Graph people as contact suggestions", async () => {
+  it.each([
+    { query: "vol pe", search: '"vol pe"' },
+    { query: "", search: null },
+    { query: "  ", search: null },
+  ])("retrieves Graph people in relevance order for query '$query'", async ({ query, search }) => {
     expect.hasAssertions();
 
     const fetchMock = vi.fn().mockResolvedValue(
@@ -872,7 +876,7 @@ describe("graph calendar service request handling", () => {
 
     const service = createService();
 
-    await expect(service.searchPeople("account-1", "vol pe", 5)).resolves.toStrictEqual([
+    await expect(service.searchPeople("account-1", query, 5)).resolves.toStrictEqual([
       {
         email: "francesco1.volpe@telecomitalia.it",
         name: "Volpe Francesco",
@@ -896,7 +900,7 @@ describe("graph calendar service request handling", () => {
     }).toStrictEqual({
       pathname: "/v1.0/me/people",
       querySources: "Mailbox,Directory",
-      search: '"vol pe"',
+      search,
       select: "displayName,givenName,surname,userPrincipalName,scoredEmailAddresses",
       top: "5",
     });

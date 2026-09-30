@@ -2723,14 +2723,9 @@ function AttendeePillsInput({
               return;
             }
 
-            const filtered = results
-              .filter((contact) => !selectedEmails.has(normalizeAttendeeEmail(contact.email)!))
-              .toSorted(
-                (left, right) =>
-                  (left.name ?? left.email).localeCompare(right.name ?? right.email, undefined, {
-                    sensitivity: "base",
-                  }) || left.email.localeCompare(right.email),
-              );
+            const filtered = results.filter(
+              (contact) => !selectedEmails.has(normalizeAttendeeEmail(contact.email)!),
+            );
             setSuggestions(filtered);
             setHighlightedIndex(0);
             setIsLoading(false);
