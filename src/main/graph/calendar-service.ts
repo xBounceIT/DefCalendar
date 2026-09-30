@@ -385,12 +385,8 @@ class GraphCalendarService {
     signal?: AbortSignal,
   ): Promise<ContactSuggestion[]> {
     const search = trimOrNull(queryText);
-    if (!search) {
-      return [];
-    }
-
     const query = new URLSearchParams({
-      $search: toPeopleSearchQuery(search),
+      ...(search ? { $search: toPeopleSearchQuery(search) } : {}),
       $select: "displayName,givenName,surname,userPrincipalName,scoredEmailAddresses",
       $top: String(limit),
     });

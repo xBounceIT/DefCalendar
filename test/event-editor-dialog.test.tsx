@@ -1263,57 +1263,67 @@ describe("event editor dialog", () => {
     expect(within(optionalRow as HTMLElement).getByText("bob@example.com")).toBeInTheDocument();
   });
 
-  it("opens the full alphabetical contact list on click and updates it as the query changes", async () => {
-    const onSearchContacts = vi.fn().mockImplementation(({ query }) =>
-      Promise.resolve(
-        query
-          ? [{ email: "zoe@example.com", name: "Zoe" }]
-          : [
-              { email: "zoe@example.com", name: "Zoe" },
-              { email: "alice@example.com", name: "Alice" },
-              { email: "coworker@example.com", name: "Coworker" },
-            ],
-      ),
-    );
-    renderDialog({
-      onSearchContacts,
-      state: {
-        event: createEvent({
-          attendees: [{ ...createParticipant(), email: "coworker@example.com" }],
+  it.each(["Required attendees", "Optional attendees"])(
+    "preserves suggestion relevance in %s and updates it as the query changes",
+    async (label) => {
+      const onSearchContacts = vi.fn().mockImplementation(({ query }) =>
+        Promise.resolve(
+          query
+            ? [
+                { email: "zoe@example.com", name: "Zoe" },
+                { email: "alice@example.com", name: "Alice" },
+              ]
+            : [
+                { email: "zoe@example.com", name: "Zoe" },
+                { email: "alice@example.com", name: "Alice" },
+                { email: "coworker@example.com", name: "Coworker" },
+              ],
+        ),
+      );
+      renderDialog({
+        onSearchContacts,
+        state: {
+          event: createEvent({
+            attendees: [{ ...createParticipant(), email: "coworker@example.com" }],
+          }),
+          mode: "edit",
+        },
+      });
+      const input = screen.getByRole("combobox", { name: label });
+      fireEvent.click(input);
+      await screen.findByRole("option", { name: /Alice/ });
+      expect(onSearchContacts).toHaveBeenLastCalledWith({
+        homeAccountId: "account-1",
+        limit: null,
+        query: "",
+      });
+      expect(within(screen.getByRole("listbox")).getAllByRole("option")).toEqual([
+        screen.getByRole("option", { name: /Zoe/ }),
+        screen.getByRole("option", { name: /Alice/ }),
+      ]);
+
+      fireEvent.change(input, { target: { value: "zo" } });
+      await waitFor(() =>
+        expect(onSearchContacts).toHaveBeenLastCalledWith({
+          homeAccountId: "account-1",
+          limit: null,
+          query: "zo",
         }),
-        mode: "edit",
-      },
-    });
-    const input = screen.getByRole("combobox", { name: "Required attendees" });
-    fireEvent.click(input);
-    await screen.findByRole("option", { name: /Alice/ });
-    expect(onSearchContacts).toHaveBeenLastCalledWith({
-      homeAccountId: "account-1",
-      limit: null,
-      query: "",
-    });
-    expect(within(screen.getByRole("listbox")).getAllByRole("option")).toEqual([
-      screen.getByRole("option", { name: /Alice/ }),
-      screen.getByRole("option", { name: /Zoe/ }),
-    ]);
+      );
+      await screen.findByRole("option", { name: /Zoe/ });
+      expect(within(screen.getByRole("listbox")).getAllByRole("option")).toEqual([
+        screen.getByRole("option", { name: /Zoe/ }),
+        screen.getByRole("option", { name: /Alice/ }),
+      ]);
 
-    fireEvent.change(input, { target: { value: "zo" } });
-    await waitFor(() =>
-      expect(within(screen.getByRole("listbox")).getAllByRole("option")).toHaveLength(1),
-    );
-    expect(onSearchContacts).toHaveBeenLastCalledWith({
-      homeAccountId: "account-1",
-      limit: null,
-      query: "zo",
-    });
-
-    fireEvent.change(input, { target: { value: "" } });
-    await screen.findByRole("option", { name: /Alice/ });
-    fireEvent.keyDown(input, { key: "Escape" });
-    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
-    fireEvent.click(input);
-    await screen.findByRole("option", { name: /Alice/ });
-  });
+      fireEvent.change(input, { target: { value: "" } });
+      await screen.findByRole("option", { name: /Alice/ });
+      fireEvent.keyDown(input, { key: "Escape" });
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      fireEvent.click(input);
+      await screen.findByRole("option", { name: /Alice/ });
+    },
+  );
 
   it("loads profile photos in the optional attendee popup and keeps initials when unavailable", async () => {
     const photo = "data:image/jpeg;base64,cGhvdG8=";
@@ -1428,16 +1438,19 @@ describe("event editor dialog", () => {
         .every((option) => option.tabIndex === -1),
     ).toBe(true);
     expect(input.closest(".attendee-pills-wrapper")?.querySelector(".attendee-pill")).toBeNull();
-    fireEvent.keyDown(input, { key: "ArrowDown" });
     expect(screen.getByRole("option", { name: /Bob/ })).toHaveAttribute("aria-selected", "true");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { name: /Alice/ })).toHaveAttribute("aria-selected", "true");
     expect(input).toHaveAttribute(
       "aria-activedescendant",
-      screen.getByRole("option", { name: /Bob/ }).id,
+      screen.getByRole("option", { name: /Alice/ }).id,
     );
     fireEvent.keyDown(input, { key: "Enter" });
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
     expect(
-      within(input.closest(".attendee-pills-wrapper") as HTMLElement).getByText("bob@example.com"),
+      within(input.closest(".attendee-pills-wrapper") as HTMLElement).getByText(
+        "alice@example.com",
+      ),
     ).toBeInTheDocument();
   });
 
