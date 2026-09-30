@@ -616,6 +616,35 @@ describe("detailed scheduling assistant", () => {
     );
   });
 
+  it("keeps a dragged meeting visible beyond two days and follows its date after release", () => {
+    const { container } = setup();
+    vi.stubGlobal(
+      "PointerEvent",
+      class extends MouseEvent {
+        pointerId = 1;
+      },
+    );
+    vi.stubGlobal("requestAnimationFrame", () => 1);
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const meeting = screen.getByRole("button", { name: "Move meeting" });
+    const scroll = container.querySelector<HTMLDivElement>(".scheduling-assistant__scroll")!;
+    fireEvent.pointerDown(meeting, { clientX: 100, button: 0 });
+    scroll.scrollLeft += 48 * 36;
+    fireEvent.pointerMove(meeting, { clientX: 100 });
+    scroll.scrollLeft += 48 * 36;
+    fireEvent.pointerMove(meeting, { clientX: 100 });
+    expect(container.querySelectorAll(".scheduling-assistant__days > button")).toHaveLength(3);
+    scroll.scrollLeft += 48 * 36;
+    fireEvent.pointerMove(meeting, { clientX: 100 });
+    expect(container.querySelectorAll(".scheduling-assistant__days > button")).toHaveLength(4);
+    fireEvent.pointerUp(meeting);
+    expect(screen.getByRole("button", { name: "Move meeting" })).toBeEnabled();
+    expect(screen.getByLabelText("Start date")).toHaveValue("10/02/2026");
+    expect(container.querySelector(".scheduling-assistant__days > button")).toHaveTextContent(
+      "Friday, October 2",
+    );
+  });
+
   it.each([
     { edge: "start", origin: 292, target: 224, start: "06:00", end: "10:00" },
     { edge: "end", origin: 328, target: 486, start: "09:30", end: "14:30" },
@@ -769,6 +798,24 @@ describe("detailed scheduling assistant", () => {
     expect(screen.queryByRole("button", { name: "Adjust meeting start" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Adjust meeting end" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Move meeting" })).toBeDisabled();
+  });
+
+  it("keeps navigation before the meeting within two days without changing the selected event", async () => {
+    const { container, load } = setup();
+    const controls = within(container.querySelector(".scheduling-assistant__controls")!);
+    fireEvent.click(controls.getByRole("button", { name: "Previous day" }));
+    fireEvent.click(controls.getByRole("button", { name: "Previous day" }));
+    expect(container.querySelectorAll(".scheduling-assistant__days > button")).toHaveLength(2);
+    expect(controls.getByLabelText("Start date")).toHaveValue("09/29/2026");
+    expect(container.querySelector(".scheduling-assistant__selection")).toBeNull();
+    await waitFor(() =>
+      expect(load).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          start: toLocalIso("2026-09-27T00:00:00"),
+          end: toLocalIso("2026-09-30T00:00:00"),
+        }),
+      ),
+    );
   });
 
   it("extends the visible timeline and availability when the end date exceeds two days", async () => {

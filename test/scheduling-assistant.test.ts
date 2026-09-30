@@ -23,6 +23,22 @@ const person = (email: string, type: EventParticipant["type"] = "required"): Eve
 });
 
 describe("scheduling periods", () => {
+  it("keeps future selections outside the default day window without expanding it", () => {
+    const defaultWindow = getSchedulingWindow("2026-09-30", "day");
+    const end = new Date("2026-10-06T10:00:00").getTime();
+    for (const date of ["2026-10-02T00:00:00", "2026-10-03T09:00:00"]) {
+      expect(
+        getSchedulingWindow("2026-09-30", "day", { start: new Date(date).getTime(), end }),
+      ).toStrictEqual(defaultWindow);
+    }
+    expect(
+      getSchedulingWindow("2026-09-30", "day", {
+        start: new Date("2026-10-01T23:30:00").getTime(),
+        end,
+      }).end,
+    ).toBe(new Date("2026-10-07T00:00:00").getTime());
+  });
+
   it("extends day timelines to include long selections while keeping the availability range bounded", () => {
     expect.hasAssertions();
     vi.stubEnv("TZ", "Europe/Rome");

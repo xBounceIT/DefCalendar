@@ -108,9 +108,17 @@ export default function SchedulingAssistant({
     end: number;
   } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const revealRange = (range: Range) => {
+    if (view === "day" && Date.parse(range.startInput) >= getSchedulingWindow(date).end) {
+      onDateChange(range.startInput.slice(0, 10));
+    }
+  };
   const onChange = (range: Range) => {
     if (isSupportedRange(range)) {
       onRangeChange(range);
+      if (!drag.current) {
+        revealRange(range);
+      }
     }
   };
   useEffect(() => {
@@ -402,7 +410,10 @@ export default function SchedulingAssistant({
     }
     current.latest = range;
     current.pending.push(range);
-    const nextEnd = getSchedulingWindow(date, view, { start: from, end: to }).end;
+    const nextEnd = getSchedulingWindow(date, view, {
+      start: Math.min(current.start, from),
+      end: to,
+    }).end;
     setDragWindow((currentWindow) =>
       currentWindow && nextEnd > currentWindow.end
         ? { ...currentWindow, end: nextEnd }
@@ -446,10 +457,12 @@ export default function SchedulingAssistant({
     if (drag.current?.pointerId !== event.pointerId) {
       return;
     }
-    const original = drag.current.original;
+    const { original, latest } = drag.current;
     clearDrag();
     if (cancel && !disabled && !allDay) {
       onChange(original);
+    } else if (!cancel && !disabled && !allDay) {
+      revealRange(latest);
     }
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
       event.currentTarget.releasePointerCapture?.(event.pointerId);
