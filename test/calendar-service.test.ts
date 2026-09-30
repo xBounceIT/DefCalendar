@@ -639,6 +639,236 @@ function createEventDraft(overrides?: Partial<EventDraft>): EventDraft {
 }
 
 describe("graph calendar service body conversion", () => {
+  it("reuses a placeholder transaction after creation succeeds but the following read fails", async () => {
+    expect.hasAssertions();
+    const transactions = new Map<string, string>();
+    let createdCount = 0;
+    let failRead = true;
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      let eventId = "event-1";
+      if (init.method === "POST") {
+        const payload = JSON.parse(init.body as string);
+        const key = payload.transactionId ?? crypto.randomUUID();
+        if (!transactions.has(key)) {
+          transactions.set(key, `event-${++createdCount}`);
+        }
+        eventId = transactions.get(key)!;
+      } else if (failRead) {
+        failRead = false;
+        throw new Error("Lost the event read response");
+      }
+      return Response.json(
+        createGraphEvent({
+          id: eventId,
+          subject: "Provvisorio",
+          isOrganizer: true,
+          isReminderOn: false,
+          showAs: "busy",
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createService();
+    const draft = createEventDraft({
+      id: undefined,
+      subject: "Provvisorio",
+      isReminderOn: false,
+      timeZone: "UTC",
+      start: "2026-10-25T01:30:00.000Z",
+      end: "2026-10-25T02:00:00.000Z",
+      transactionId: "00000000-0000-4000-8000-000000000001",
+    });
+    await expect(service.createEvent(draft, "account-1")).rejects.toThrow(
+      "Lost the event read response",
+    );
+    await expect(service.createEvent(draft, "account-1")).resolves.toMatchObject({
+      id: "event-1",
+      isReminderOn: false,
+    });
+    expect(createdCount).toBe(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject({
+      transactionId: draft.transactionId,
+      start: { dateTime: "2026-10-25T01:30:00", timeZone: "UTC" },
+      end: { dateTime: "2026-10-25T02:00:00", timeZone: "UTC" },
+    });
+    expect(fetchMock.mock.calls[2][1].body).toBe(fetchMock.mock.calls[0][1].body);
+  });
+
+  it("keeps UTC event boundaries stable through creation and a later calendar sync", async () => {
+    expect.hasAssertions();
+    const graphEvent = createGraphEvent({
+      start: { dateTime: "2026-10-25T01:30:00.0000000", timeZone: "UTC" },
+      end: { dateTime: "2026-10-25T02:00:00.0000000", timeZone: "UTC" },
+      isOrganizer: true,
+      isReminderOn: false,
+      subject: "Provvisorio",
+      showAs: "busy",
+    });
+    const fetchMock = vi.fn(async (url: string, _init: RequestInit) =>
+      Response.json(url.includes("calendarView") ? { value: [graphEvent] } : graphEvent),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createService();
+    const created = await service.createEvent(
+      createEventDraft({
+        id: undefined,
+        subject: "Provvisorio",
+        isReminderOn: false,
+        timeZone: "UTC",
+      }),
+      "account-1",
+    );
+    const synced = await service.listCalendarView(
+      "calendar-1",
+      "2026-10-24T00:00:00Z",
+      "2026-10-26T00:00:00Z",
+      "account-1",
+    );
+    expect(created).toMatchObject({
+      start: "2026-10-25T01:30:00.000Z",
+      end: "2026-10-25T02:00:00.000Z",
+    });
+    expect(synced[0]).toStrictEqual(created);
+    expect(
+      fetchMock.mock.calls.every(([, init]) =>
+        new Headers(init.headers).get("Prefer")?.includes('outlook.timezone="UTC"'),
+      ),
+    ).toBe(true);
+  });
+
+  it("preserves local midnight boundaries when editing an all-day event received in UTC", async () => {
+    expect.hasAssertions();
+    const graphEvent = createGraphEvent({
+      isAllDay: true,
+      start: { dateTime: "2026-03-29T22:00:00.0000000", timeZone: "UTC" },
+      end: { dateTime: "2026-03-30T22:00:00.0000000", timeZone: "UTC" },
+    });
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json(graphEvent)));
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createService();
+    const event = await service.getEvent("calendar-1", "event-1", "account-1");
+    await service.updateEvent(
+      createEventDraft({
+        start: event.start,
+        end: event.end,
+        timeZone: event.timeZone,
+        isAllDay: true,
+      }),
+      "account-1",
+    );
+    expect(event).toMatchObject({
+      start: "2026-03-29T22:00:00.000Z",
+      end: "2026-03-30T22:00:00.000Z",
+      timeZone: "Europe/Rome",
+    });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).toMatchObject({
+      isAllDay: true,
+      start: { dateTime: "2026-03-30T00:00:00", timeZone: "Europe/Rome" },
+      end: { dateTime: "2026-03-31T00:00:00", timeZone: "Europe/Rome" },
+    });
+  });
+
+  it("does not send a creation transaction identifier when updating an event", async () => {
+    expect.hasAssertions();
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(createGraphEvent()));
+    vi.stubGlobal("fetch", fetchMock);
+    await createService().updateEvent(
+      createEventDraft({ transactionId: "00000000-0000-4000-8000-000000000001" }),
+      "account-1",
+    );
+    expect(fetchMock.mock.calls[0][1].method).toBe("PATCH");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).not.toHaveProperty(
+      "transactionId",
+    );
+  });
+  it("persists a busy personal placeholder with no desktop reminder or invite response", async () => {
+    const graphEvent = createGraphEvent({
+      subject: "Provvisorio",
+      isOrganizer: true,
+      isReminderOn: false,
+      showAs: "busy",
+      responseStatus: { response: "organizer" },
+    });
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(Response.json(graphEvent)));
+    vi.stubGlobal("fetch", fetchMock);
+    const created = await createService().createEvent(
+      createEventDraft({
+        id: undefined,
+        subject: "Provvisorio",
+        body: null,
+        location: null,
+        isReminderOn: false,
+        reminderMinutesBeforeStart: null,
+        responseRequested: false,
+      }),
+      "account-1",
+    );
+    const payload = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(payload).toMatchObject({
+      subject: "Provvisorio",
+      attendees: [],
+      showAs: "busy",
+      isReminderOn: false,
+      reminderMinutesBeforeStart: 0,
+      responseRequested: false,
+    });
+    expect(payload).not.toHaveProperty("responseStatus");
+    expect(created).toMatchObject({
+      subject: "Provvisorio",
+      isOrganizer: true,
+      attendees: [],
+      showAs: "busy",
+      isReminderOn: false,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+  it.each([null, undefined, 45])(
+    "sends an integer reminder offset for disabled reminders even when the draft value is %s",
+    async (reminderMinutesBeforeStart) => {
+      expect.hasAssertions();
+      const fetchMock = vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(
+            Response.json(createGraphEvent({ isReminderOn: false, reminderMinutesBeforeStart: 0 })),
+          ),
+        );
+      vi.stubGlobal("fetch", fetchMock);
+      await createService().createEvent(
+        createEventDraft({ id: undefined, isReminderOn: false, reminderMinutesBeforeStart }),
+        "account-1",
+      );
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject({
+        isReminderOn: false,
+        reminderMinutesBeforeStart: 0,
+      });
+    },
+  );
+
+  it("disables an existing reminder with a numeric Graph patch and keeps later saves unchanged", async () => {
+    expect.hasAssertions();
+    const updatedGraphEvent = createGraphEvent({
+      body: { content: "Agenda", contentType: "HTML" },
+      location: { displayName: "Room 1" },
+      isReminderOn: false,
+      reminderMinutesBeforeStart: 0,
+    });
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(Response.json(updatedGraphEvent)));
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createService();
+    const draft = createEventDraft({ isReminderOn: false, reminderMinutesBeforeStart: null });
+    const updated = await service.updateEvent(draft, "account-1", createCalendarEvent());
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toStrictEqual({
+      isReminderOn: false,
+      reminderMinutesBeforeStart: 0,
+    });
+    await service.updateEvent({ ...draft, subject: "Updated planning" }, "account-1", updated);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).toStrictEqual({
+      subject: "Updated planning",
+    });
+  });
   it("returns null for empty input", () => {
     expect(extractPlainTextFromGraphHtml()).toBeNull();
     expect(extractPlainTextFromGraphHtml("")).toBeNull();
@@ -1067,7 +1297,7 @@ describe("graph calendar service request handling", () => {
     expect(String(fetchMock.mock.calls[2][0])).toContain("/me/events/event-1/attachments?");
 
     const preferHeader = new Headers(fetchMock.mock.calls[0][1]?.headers).get("Prefer");
-    expect(preferHeader).toContain('outlook.timezone="Europe/Rome"');
+    expect(preferHeader).toContain('outlook.timezone="UTC"');
     expect(preferHeader).toContain('IdType="ImmutableId"');
   });
 

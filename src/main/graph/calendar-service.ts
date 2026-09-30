@@ -1011,7 +1011,12 @@ class GraphCalendarService {
     init.signal?.throwIfAborted();
     args.assertSession?.();
     headers.set("Authorization", `Bearer ${accessToken}`);
-    headers.set("Prefer", buildPreferHeader(headers.get("Prefer"), this.config.timeZone));
+    const responseTimeZone = /\/(?:events|calendarView)(?:\/|$)/.test(
+      new URL(pathOrUrl, this.baseUrl).pathname,
+    )
+      ? "UTC"
+      : this.config.timeZone;
+    headers.set("Prefer", buildPreferHeader(headers.get("Prefer"), responseTimeZone));
 
     let requestUrl = `${this.baseUrl}${pathOrUrl}`;
     if (pathOrUrl.startsWith("http")) {
@@ -1148,7 +1153,7 @@ class GraphCalendarService {
       showAs: parseShowAs(event.showAs),
       start: normalizeGraphDateTime(event.start?.dateTime),
       subject: trimOrFallback(event.subject, "(no title)"),
-      timeZone: event.start?.timeZone ?? this.config.timeZone,
+      timeZone: this.config.timeZone,
       type: event.type ?? null,
       unsupportedReason: getUnsupportedReason(event),
       webLink: event.webLink ?? null,
@@ -1243,6 +1248,10 @@ class GraphCalendarService {
       subject: draft.subject,
     };
 
+    if (mode === "create" && draft.transactionId) {
+      payload.transactionId = draft.transactionId;
+    }
+
     if (draft.body?.trim()) {
       payload.body = {
         content: draft.body,
@@ -1265,7 +1274,7 @@ class GraphCalendarService {
 
     payload.reminderMinutesBeforeStart = draft.isReminderOn
       ? (draft.reminderMinutesBeforeStart ?? 15)
-      : null;
+      : 0;
 
     if (draft.recurrence) {
       payload.recurrence = {
@@ -1518,17 +1527,11 @@ function normalizeGraphDateTime(value?: string): string {
 
 function parseGraphDateTimeValue(value: string): Date {
   const normalizedFractionalSeconds = value.replace(/\.(\d{3})\d+/, ".$1");
-  let parsed = new Date(normalizedFractionalSeconds);
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed;
-  }
-
-  parsed = new Date(`${normalizedFractionalSeconds}Z`);
-  if (!Number.isNaN(parsed.getTime())) {
-    return parsed;
-  }
-
-  return new Date(Number.NaN);
+  return new Date(
+    /(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalizedFractionalSeconds)
+      ? normalizedFractionalSeconds
+      : `${normalizedFractionalSeconds}Z`,
+  );
 }
 
 function parseGraphAttachment(value: unknown): EventAttachment {

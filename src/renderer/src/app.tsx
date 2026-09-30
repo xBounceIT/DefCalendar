@@ -13,7 +13,7 @@ import {
 import { isAdminApprovalRequiredMessage } from "@shared/exchange-auth";
 import type { CalendarApi } from "@shared/ipc";
 import { calendarViewSchema } from "@shared/schema-values";
-import { createDefaultSettings } from "@shared/schemas";
+import { createDefaultSettings, eventDraftSchema } from "@shared/schemas";
 import type {
   AccountSummary,
   AttachmentDeleteArgs,
@@ -56,6 +56,7 @@ import NewEventPopup from "./components/new-event-popup";
 import TitleBar from "./components/title-bar";
 import UpdateAvailablePopup from "./components/update-available-popup";
 import WorkspacePanel from "./components/workspace-panel";
+import type { PlaceholderEventRange } from "./components/placeholder-event-menu";
 import useUiStore from "./store";
 import useTitleBarScrim from "./hooks/use-title-bar-scrim";
 
@@ -110,6 +111,8 @@ function seedStartFromDate(date: Date): Date {
 function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   const { t } = useTranslation();
   const calendarRef = useRef<FullCalendar | null>(null);
+  const placeholderCreationRef = useRef(false);
+  const placeholderTransactionsRef = useRef(new Map<string, string>());
   const queryClient = useQueryClient();
   const fallbackSettings = useMemo(() => createDefaultSettings(), []);
   const startupSelectedDate = useRef(new Date().toISOString());
@@ -313,6 +316,11 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
       resetEditor(setDialogError, setEditorState);
       await invalidateEventQueries(queryClient);
     },
+  });
+
+  const createPlaceholderMutation = useMutation({
+    mutationFn: (draft: EventDraft) => calendarApi.events.create(draft),
+    onSuccess: () => invalidateEventQueries(queryClient),
   });
 
   const updateEventMutation = useMutation({
@@ -519,6 +527,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     signOutMutation.isPending ||
     refreshMutation.isPending ||
     createEventMutation.isPending ||
+    createPlaceholderMutation.isPending ||
     updateEventMutation.isPending ||
     deleteEventMutation.isPending ||
     respondToEventMutation.isPending ||
@@ -680,6 +689,43 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
   function handleDateClick(clickInfo: DateClickArg): void {
     setSelectedDayForTable(clickInfo.date.toISOString());
   }
+
+  const createPlaceholderEvent = useCallback(
+    async (range: PlaceholderEventRange): Promise<void> => {
+      if (!editableCalendar) {
+        throw new Error(t("app.noWritableCalendar"));
+      }
+      if (placeholderCreationRef.current) {
+        throw new Error(t("common.saving"));
+      }
+
+      placeholderCreationRef.current = true;
+      try {
+        const key = JSON.stringify([editableCalendar.id, range.start, range.end]);
+        const transactionId = placeholderTransactionsRef.current.get(key) ?? crypto.randomUUID();
+        const draft = eventDraftSchema.parse({
+          calendarId: editableCalendar.id,
+          transactionId,
+          subject: "Provvisorio",
+          attendees: [],
+          start: range.start,
+          end: range.end,
+          timeZone: "UTC",
+          isAllDay: false,
+          isReminderOn: false,
+          reminderMinutesBeforeStart: null,
+          showAs: "busy",
+          responseRequested: false,
+        });
+        placeholderTransactionsRef.current.set(key, transactionId);
+        await createPlaceholderMutation.mutateAsync(draft);
+        placeholderTransactionsRef.current.delete(key);
+      } finally {
+        placeholderCreationRef.current = false;
+      }
+    },
+    [editableCalendar?.id, createPlaceholderMutation.mutateAsync, t],
+  );
 
   function handleDateDoubleClick(clickInfo: DateClickArg): void {
     const startIso = clickInfo.allDay
@@ -1088,6 +1134,8 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         onClearDaySelection={clearSelectedDayForTable}
         onCreateEvent={openSelectedDateComposer}
         onDateClick={handleDateClick}
+        onCreatePlaceholder={editableCalendar ? createPlaceholderEvent : undefined}
+        isCreatingPlaceholder={createPlaceholderMutation.isPending}
         onDateDoubleClick={handleDateDoubleClick}
         onDatesSet={handleDatesSet}
         onEventClick={handleEventClick}

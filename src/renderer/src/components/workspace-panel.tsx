@@ -10,6 +10,7 @@ import { formatHeaderDate } from "../date-formatting";
 import CalendarBoard from "./calendar-board";
 import DayEventsTable from "./day-events-table";
 import SearchIcon from "./search-icon";
+import type { PlaceholderEventRange } from "./placeholder-event-menu";
 
 interface WorkspacePanelProps {
   activeView: CalendarView;
@@ -23,6 +24,8 @@ interface WorkspacePanelProps {
   isLoadingEvents: boolean;
   onClearDaySelection: () => void;
   onCreateEvent: () => void;
+  onCreatePlaceholder?: (range: PlaceholderEventRange) => Promise<void>;
+  isCreatingPlaceholder?: boolean;
   onDateClick: (clickInfo: DateClickArg) => void;
   onDateDoubleClick: (clickInfo: DateClickArg) => void;
   onDatesSet: (dates: DatesSetArg) => void;
@@ -298,6 +301,8 @@ function WorkspacePanel(props: WorkspacePanelProps) {
         activeView={props.activeView}
         calendarEvents={props.calendarEvents}
         calendarRef={props.calendarRef}
+        onCreatePlaceholder={props.onCreatePlaceholder}
+        isCreatingPlaceholder={props.isCreatingPlaceholder}
         hasVisibleCalendars={props.hasVisibleCalendars}
         isLoadingEvents={props.isLoadingEvents}
         onJoinMeeting={props.onJoinMeeting}

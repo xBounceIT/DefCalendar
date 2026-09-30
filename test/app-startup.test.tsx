@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import type { EventInput } from "@fullcalendar/core";
+import type { DateSelectArg, EventInput } from "@fullcalendar/core";
 import type { DateClickArg } from "@fullcalendar/interaction";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -12,6 +12,11 @@ import { setAppLocale } from "../src/renderer/src/i18n";
 import { createDefaultSettings } from "../src/shared/schema-values";
 import type { CalendarApi, NewEventNotificationItem } from "../src/shared/ipc";
 import type { CalendarEvent, EventListArgs, UserSettingsPatch } from "../src/shared/schemas";
+import type { DateContextClickArg } from "../src/renderer/src/date-context-plugin";
+import { toDateTimeInputValue } from "../src/shared/calendar";
+import PlaceholderEventMenu from "../src/renderer/src/components/placeholder-event-menu";
+import { TIME_OPTIONS, TimeSelect } from "../src/renderer/src/components/event-editor-dialog";
+import type { AuthState } from "../src/shared/schemas";
 
 interface MockedCalendarModule {
   default: unknown;
@@ -732,7 +737,682 @@ function createDelayedAuthRefreshCalendarApiMock(): CalendarApi {
   };
 }
 
+function choosePlaceholderAction(): void {
+  expect(screen.queryByRole("dialog", { name: "Placeholder" })).toBeNull();
+  fireEvent.click(screen.getByRole("menuitem", { name: "Create placeholder" }));
+}
+
+function changePlaceholderBoundary(boundary: "Start" | "End", value: string): void {
+  fireEvent.change(screen.getByLabelText(`${boundary} date`), {
+    target: { value: value.slice(0, 10) },
+  });
+  const time = screen.getByLabelText(`${boundary} time`);
+  fireEvent.change(time, { target: { value: value.slice(11) } });
+  fireEvent.blur(time);
+}
+
 describe("app startup", () => {
+  it.each([false, true])("hides open time choices when disabled, floating=%s", (floating) => {
+    expect.hasAssertions();
+    installResizeObserverMock();
+    const onChange = vi.fn();
+    try {
+      const view = render(
+        <TimeSelect
+          disabled={false}
+          floating={floating}
+          onChange={onChange}
+          options={TIME_OPTIONS}
+          scrollToSelected
+          value="09:30"
+        />,
+      );
+      fireEvent.focus(screen.getByRole("textbox"));
+      expect(document.querySelector(".time-select__dropdown")).not.toBeNull();
+      view.rerender(
+        <TimeSelect
+          disabled
+          floating={floating}
+          onChange={onChange}
+          options={TIME_OPTIONS}
+          scrollToSelected
+          value="09:30"
+        />,
+      );
+      expect(document.querySelector(".time-select__dropdown")).toBeNull();
+      expect(onChange).not.toHaveBeenCalled();
+    } finally {
+      cleanup();
+      restoreResizeObserver();
+    }
+  });
+
+  it("closes time choices when the focused chevron is clicked", () => {
+    expect.hasAssertions();
+    try {
+      render(
+        <TimeSelect
+          disabled={false}
+          onChange={vi.fn()}
+          options={TIME_OPTIONS}
+          scrollToSelected
+          value="09:30"
+        />,
+      );
+      act(() => screen.getByRole("textbox").focus());
+      const chevron = screen.getByRole("button", { name: "Toggle time options" });
+      act(() => chevron.focus());
+      fireEvent.click(chevron);
+      expect(document.querySelector(".time-select__dropdown")).toBeNull();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("closes time choices when keyboard focus leaves the control", () => {
+    expect.hasAssertions();
+    try {
+      render(
+        <>
+          <TimeSelect
+            disabled={false}
+            onChange={vi.fn()}
+            options={TIME_OPTIONS}
+            scrollToSelected
+            value="09:30"
+          />
+          <button type="button">Next field</button>
+        </>,
+      );
+      act(() => screen.getByRole("textbox").focus());
+      expect(document.querySelector(".time-select__dropdown")).not.toBeNull();
+      act(() => screen.getByRole("button", { name: "Next field" }).focus());
+      expect(document.querySelector(".time-select__dropdown")).toBeNull();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("keeps a growing error popup inside the viewport without moving focus", async () => {
+    expect.hasAssertions();
+    installResizeObserverMock();
+    const heightSpy = vi.spyOn(window, "innerHeight", "get").mockReturnValue(720);
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        return new DOMRect(0, 0, 344, this.querySelector('[role="alert"]') ? 310 : 246);
+      });
+    try {
+      render(
+        <PlaceholderEventMenu
+          range={{ start: "2026-09-30T09:00:00Z", end: "2026-09-30T10:00:00Z" }}
+          position={{ x: 800, y: 700 }}
+          onCreate={vi.fn().mockRejectedValue(new Error("Graph failure"))}
+          onDismiss={vi.fn()}
+        />,
+      );
+      choosePlaceholderAction();
+      const dialog = screen.getByRole("dialog", { name: "Placeholder" });
+      expect(dialog.style.top).toBe("466px");
+      const startTime = screen.getByLabelText("Start time");
+      act(() => startTime.focus());
+      fireEvent.submit(screen.getByRole("button", { name: "Create placeholder" }).closest("form")!);
+      await screen.findByRole("alert");
+      expect(dialog.style.top).toBe("402px");
+      expect(document.activeElement).toBe(startTime);
+    } finally {
+      cleanup();
+      heightSpy.mockRestore();
+      rectSpy.mockRestore();
+      restoreResizeObserver();
+    }
+  });
+
+  it.each([
+    { top: 20, height: 720, expectedTop: 62, expectedHeight: 186 },
+    { top: 650, height: 720, expectedTop: 458, expectedHeight: 186 },
+    { top: 20, height: 200, expectedTop: 62, expectedHeight: 128 },
+  ])("anchors floating time choices without scrolling their ancestors: %j", (geometry) => {
+    expect.hasAssertions();
+    installResizeObserverMock();
+    const originalScroll = Object.getOwnPropertyDescriptor(Element.prototype, "scrollIntoView");
+    const scrollAncestors = vi.fn();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollAncestors,
+    });
+    const heightSpy = vi.spyOn(window, "innerHeight", "get").mockReturnValue(geometry.height);
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.classList.contains("time-select")) {
+          return new DOMRect(100, geometry.top, 100, 38);
+        }
+        if (this.matches('[data-selected="true"]')) {
+          return new DOMRect(100, 400, 100, 36);
+        }
+        return new DOMRect(100, 100, 100, 180);
+      });
+    try {
+      render(
+        <TimeSelect
+          disabled={false}
+          floating
+          onChange={vi.fn()}
+          options={TIME_OPTIONS}
+          scrollToSelected
+          value="09:30"
+        />,
+      );
+      fireEvent.focus(screen.getByRole("textbox"));
+      const dropdown = document.querySelector<HTMLElement>(".time-select__dropdown")!;
+      const list = document.querySelector<HTMLElement>(".time-select__list")!;
+      expect({
+        top: dropdown.style.top,
+        width: dropdown.style.width,
+        height: list.style.maxHeight,
+        popover: dropdown.getAttribute("popover"),
+      }).toStrictEqual({
+        top: `${geometry.expectedTop}px`,
+        width: "120px",
+        height: `${geometry.expectedHeight}px`,
+        popover: "manual",
+      });
+      expect(list.scrollTop).toBeGreaterThan(0);
+      expect(scrollAncestors).not.toHaveBeenCalled();
+    } finally {
+      cleanup();
+      rectSpy.mockRestore();
+      heightSpy.mockRestore();
+      if (originalScroll) {
+        Object.defineProperty(Element.prototype, "scrollIntoView", originalScroll);
+      } else {
+        Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+      }
+      restoreResizeObserver();
+    }
+  });
+
+  it("offers a context action before opening the custom date and time selectors", async () => {
+    expect.hasAssertions();
+    installResizeObserverMock();
+    const onCreate = vi.fn().mockResolvedValue(undefined);
+    const onDismiss = vi.fn();
+    const start = new Date(2026, 8, 30, 9);
+    const end = new Date(2026, 8, 30, 10);
+    try {
+      render(
+        <PlaceholderEventMenu
+          range={{ start: start.toISOString(), end: end.toISOString() }}
+          position={{ x: 50, y: 50 }}
+          onCreate={onCreate}
+          onDismiss={onDismiss}
+        />,
+      );
+      expect(screen.getByRole("menu", { name: "Calendar actions" })).not.toBeNull();
+      expect(onCreate).not.toHaveBeenCalled();
+      choosePlaceholderAction();
+      expect(
+        document.querySelector(
+          'input[type="datetime-local"], input[type="date"], input[type="time"]',
+        ),
+      ).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Open calendar for Start date" }));
+      const picker = document.querySelector('.date-picker__popover[aria-label="Start date"]')!;
+      expect(picker).not.toBeNull();
+      fireEvent.keyDown(picker, { key: "Escape" });
+      expect(screen.queryByRole("dialog", { name: "Start date" })).toBeNull();
+      expect(screen.getByRole("dialog", { name: "Placeholder" })).not.toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Open calendar for End date" }));
+      const nextDay = document
+        .querySelector('.date-picker__popover[aria-label="End date"]')!
+        .querySelector('[data-date="2026-10-01"]')!;
+      fireEvent.pointerDown(nextDay);
+      fireEvent.click(nextDay);
+      const startTime = screen.getByLabelText("Start time");
+      fireEvent.focus(startTime);
+      fireEvent.keyDown(startTime, { key: "Escape" });
+      expect(screen.getByRole("dialog", { name: "Placeholder" })).not.toBeNull();
+      changePlaceholderBoundary("End", "2026-10-01T10:45");
+      fireEvent.click(screen.getByRole("button", { name: "Create placeholder" }));
+      await waitFor(() =>
+        expect(onCreate).toHaveBeenCalledExactlyOnceWith({
+          start: start.toISOString(),
+          end: new Date(2026, 9, 1, 10, 45).toISOString(),
+        }),
+      );
+      expect(onDismiss).toHaveBeenCalledOnce();
+    } finally {
+      cleanup();
+      restoreResizeObserver();
+    }
+  });
+
+  it.each(["slot", "selection", "day", "overnight"] as const)(
+    "creates a personal busy placeholder without reminders from a %s context",
+    async (target) => {
+      try {
+        const api = createSignedInCalendarApiMock();
+        api.events.create = vi
+          .fn()
+          .mockResolvedValue(createCalendarEvent({ subject: "Provvisorio" }));
+        installCalendarApi(api);
+        renderApp();
+        await screen.findByTestId("mock-calendar");
+        await waitFor(() => expect(api.events.list).toHaveBeenCalledTimes(2));
+        const start = new Date(
+          2026,
+          8,
+          30,
+          target === "overnight" ? 23 : 9,
+          target === "overnight" ? 45 : 0,
+        );
+        const end = new Date(start.getTime() + (target === "selection" ? 90 : 30) * 60_000);
+        if (target === "selection") {
+          act(() => {
+            (capturedCalendarProps!.select as (arg: DateSelectArg) => void)({
+              start,
+              end,
+              allDay: false,
+            } as DateSelectArg);
+          });
+        }
+        act(() => {
+          (capturedCalendarProps!.dateContextClick as (arg: DateContextClickArg) => void)({
+            date:
+              target === "day"
+                ? new Date(2026, 8, 30)
+                : new Date(start.getTime() + (target === "selection" ? 30 * 60_000 : 0)),
+            allDay: target === "day",
+            jsEvent: new MouseEvent("contextmenu", { clientX: 100, clientY: 200 }),
+          });
+        });
+        choosePlaceholderAction();
+        expect((screen.getByLabelText("Start time") as HTMLInputElement).value).toBe(
+          toDateTimeInputValue(start.toISOString(), false).slice(11),
+        );
+        expect((screen.getByLabelText("End time") as HTMLInputElement).value).toBe(
+          toDateTimeInputValue(end.toISOString(), false).slice(11),
+        );
+        fireEvent.click(screen.getByRole("button", { name: "Create placeholder" }));
+        await waitFor(() => {
+          expect(api.events.create).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({
+              calendarId: "calendar-1",
+              subject: "Provvisorio",
+              start: start.toISOString(),
+              end: end.toISOString(),
+              attendees: [],
+              isAllDay: false,
+              isReminderOn: false,
+              reminderMinutesBeforeStart: null,
+              showAs: "busy",
+              responseRequested: false,
+              isOnlineMeeting: false,
+              timeZone: "UTC",
+            }),
+          );
+          expect(api.events.list).toHaveBeenCalledTimes(4);
+          expect(screen.queryByRole("dialog", { name: "Placeholder" })).toBeNull();
+        });
+        expect(api.events.respond).not.toHaveBeenCalled();
+        expect(vi.mocked(api.events.create).mock.calls[0][0]).not.toHaveProperty("responseStatus");
+      } finally {
+        restoreCalendarApi();
+      }
+    },
+  );
+
+  it("validates edited placeholder ranges and keeps them available after a failed save", async () => {
+    try {
+      const api = createSignedInCalendarApiMock();
+      api.events.create = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("Offline"))
+        .mockResolvedValueOnce(createCalendarEvent());
+      installCalendarApi(api);
+      renderApp();
+      await screen.findByTestId("mock-calendar");
+      const start = new Date(2026, 8, 30, 9);
+      const end = new Date(2026, 8, 30, 11);
+      act(() => {
+        (capturedCalendarProps!.dateContextClick as (arg: DateContextClickArg) => void)({
+          date: start,
+          allDay: false,
+          jsEvent: new MouseEvent("contextmenu"),
+        });
+      });
+      choosePlaceholderAction();
+      changePlaceholderBoundary("End", toDateTimeInputValue(start.toISOString(), false));
+      expect(
+        (screen.getByRole("button", { name: "Create placeholder" }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+      expect(screen.getByRole("alert").textContent).toBe("The end must be after the start.");
+      expect(api.events.create).not.toHaveBeenCalled();
+      changePlaceholderBoundary("End", toDateTimeInputValue(end.toISOString(), false));
+      fireEvent.click(screen.getByRole("button", { name: "Create placeholder" }));
+      await screen.findByText("Offline");
+      await waitFor(() =>
+        expect(
+          (screen.getByRole("button", { name: "Create placeholder" }) as HTMLButtonElement)
+            .disabled,
+        ).toBe(false),
+      );
+      expect((screen.getByLabelText("End time") as HTMLInputElement).value).toBe(
+        toDateTimeInputValue(end.toISOString(), false).slice(11),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Create placeholder" }));
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Placeholder" })).toBeNull());
+      expect(api.events.create).toHaveBeenCalledTimes(2);
+      expect(vi.mocked(api.events.create).mock.calls[1][0].end).toBe(end.toISOString());
+      const firstDraft = vi.mocked(api.events.create).mock.calls[0][0];
+      const retryDraft = vi.mocked(api.events.create).mock.calls[1][0];
+      expect(firstDraft).toHaveProperty("transactionId", expect.any(String));
+      expect(retryDraft).toStrictEqual(firstDraft);
+      expect(screen.queryByText("Offline")).toBeNull();
+    } finally {
+      restoreCalendarApi();
+    }
+  });
+
+  it("prevents duplicate placeholder submissions while saving and dismisses without creating", async () => {
+    try {
+      const api = createSignedInCalendarApiMock();
+      let resolveCreation!: (event: CalendarEvent) => void;
+      api.events.create = vi.fn().mockReturnValue(
+        new Promise<CalendarEvent>((resolve) => {
+          resolveCreation = resolve;
+        }),
+      );
+      installCalendarApi(api);
+      renderApp();
+      await screen.findByTestId("mock-calendar");
+      const openMenu = () => {
+        act(() => {
+          (capturedCalendarProps!.dateContextClick as (arg: DateContextClickArg) => void)({
+            date: new Date(2026, 8, 30, 9),
+            allDay: false,
+            jsEvent: new MouseEvent("contextmenu"),
+          });
+        });
+        if (screen.queryByRole("menuitem", { name: "Create placeholder" })) {
+          choosePlaceholderAction();
+        }
+      };
+      openMenu();
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(screen.queryByRole("dialog", { name: "Placeholder" })).toBeNull();
+      expect(api.events.create).not.toHaveBeenCalled();
+      openMenu();
+      fireEvent.pointerDown(document.body);
+      expect(screen.queryByRole("dialog", { name: "Placeholder" })).toBeNull();
+      openMenu();
+      const form = screen.getByRole("button", { name: "Create placeholder" }).closest("form")!;
+      fireEvent.submit(form);
+      fireEvent.submit(form);
+      await waitFor(() => expect(api.events.create).toHaveBeenCalledOnce());
+      expect((screen.getByRole("button", { name: "Saving…" }) as HTMLButtonElement).disabled).toBe(
+        true,
+      );
+      await act(async () => {
+        resolveCreation(createCalendarEvent());
+      });
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Placeholder" })).toBeNull());
+    } finally {
+      restoreCalendarApi();
+    }
+  });
+
+  it("does not enable placeholder creation on read-only calendars", async () => {
+    try {
+      const api = createSignedInCalendarApiMock();
+      const calendars = await api.calendars.list();
+      api.calendars.list = vi
+        .fn()
+        .mockResolvedValue(calendars.map((calendar) => ({ ...calendar, canEdit: false })));
+      installCalendarApi(api);
+      renderApp();
+      await screen.findByTestId("mock-calendar");
+      expect(capturedCalendarProps!.selectable).toBe(false);
+      act(() => {
+        (capturedCalendarProps!.dateContextClick as (arg: DateContextClickArg) => void)({
+          date: new Date(2026, 8, 30, 9),
+          allDay: false,
+          jsEvent: new MouseEvent("contextmenu"),
+        });
+      });
+      expect(screen.queryByRole("dialog", { name: "Placeholder" })).toBeNull();
+      expect(api.events.create).not.toHaveBeenCalled();
+    } finally {
+      restoreCalendarApi();
+    }
+  });
+
+  it("keeps a saving placeholder protected when another menu is opened", async () => {
+    expect.hasAssertions();
+    try {
+      const api = createSignedInCalendarApiMock();
+      let resolveCreation!: (event: CalendarEvent) => void;
+      api.events.create = vi.fn().mockReturnValue(
+        new Promise<CalendarEvent>((resolve) => {
+          resolveCreation = resolve;
+        }),
+      );
+      installCalendarApi(api);
+      renderApp();
+      await screen.findByTestId("mock-calendar");
+      const openMenu = () => {
+        act(() => {
+          (capturedCalendarProps!.dateContextClick as (arg: DateContextClickArg) => void)({
+            date: new Date(2026, 8, 30, 9),
+            allDay: false,
+            jsEvent: new MouseEvent("contextmenu"),
+          });
+        });
+        if (screen.queryByRole("menuitem", { name: "Create placeholder" })) {
+          choosePlaceholderAction();
+        }
+      };
+      openMenu();
+      fireEvent.click(screen.getByRole("button", { name: "Create placeholder" }));
+      await waitFor(() => expect(api.events.create).toHaveBeenCalledOnce());
+      fireEvent.keyDown(document, { key: "Escape" });
+      openMenu();
+      const button = screen.getByRole("button", { name: "Saving…" });
+      expect((button as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.submit(button.closest("form")!);
+      expect(api.events.create).toHaveBeenCalledOnce();
+      await act(async () => {
+        resolveCreation(createCalendarEvent());
+      });
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Placeholder" })).toBeNull());
+    } finally {
+      restoreCalendarApi();
+    }
+  });
+
+  it("dismisses an open placeholder when its destination account changes", async () => {
+    expect.hasAssertions();
+    try {
+      const api = createSignedInCalendarApiMock();
+      const authState = await api.auth.getState();
+      const firstCalendar = (await api.calendars.list())[0];
+      api.calendars.list = vi
+        .fn()
+        .mockResolvedValue([
+          firstCalendar,
+          { ...firstCalendar, id: "calendar-2", homeAccountId: "account-2" },
+        ]);
+      let notifyAuth!: (state: AuthState) => void;
+      api.auth.onState = vi.fn().mockImplementation((listener) => {
+        notifyAuth = listener;
+        return () => undefined;
+      });
+      installCalendarApi(api);
+      renderApp();
+      await screen.findByTestId("mock-calendar");
+      act(() => {
+        (capturedCalendarProps!.dateContextClick as (arg: DateContextClickArg) => void)({
+          date: new Date(2026, 8, 30, 9),
+          allDay: false,
+          jsEvent: new MouseEvent("contextmenu"),
+        });
+      });
+      choosePlaceholderAction();
+      expect(screen.getByRole("dialog", { name: "Placeholder" })).not.toBeNull();
+      const nextAuth = { ...authState, activeAccountId: "account-2" };
+      api.auth.getState = vi.fn().mockResolvedValue(nextAuth);
+      act(() => {
+        notifyAuth(nextAuth);
+      });
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Placeholder" })).toBeNull());
+      expect(api.events.create).not.toHaveBeenCalled();
+    } finally {
+      restoreCalendarApi();
+    }
+  });
+
+  it("preserves the selected instants across the repeated hour at daylight saving end", async () => {
+    expect.hasAssertions();
+    try {
+      vi.stubEnv("TZ", "Europe/Rome");
+      const api = createSignedInCalendarApiMock();
+      api.events.create = vi.fn().mockResolvedValue(createCalendarEvent());
+      installCalendarApi(api);
+      renderApp();
+      await screen.findByTestId("mock-calendar");
+      const start = new Date("2026-10-25T01:30:00.000Z");
+      const end = new Date("2026-10-25T02:00:00.000Z");
+      act(() => {
+        (capturedCalendarProps!.select as (arg: DateSelectArg) => void)({
+          start,
+          end,
+          allDay: false,
+        } as DateSelectArg);
+        (capturedCalendarProps!.dateContextClick as (arg: DateContextClickArg) => void)({
+          date: start,
+          allDay: false,
+          jsEvent: new MouseEvent("contextmenu"),
+        });
+      });
+      choosePlaceholderAction();
+      fireEvent.click(screen.getByRole("button", { name: "Create placeholder" }));
+      await waitFor(() =>
+        expect(api.events.create).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({
+            start: start.toISOString(),
+            end: end.toISOString(),
+            timeZone: "UTC",
+          }),
+        ),
+      );
+    } finally {
+      restoreCalendarApi();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("shows failures from the placeholder callback without losing the selected interval", async () => {
+    expect.hasAssertions();
+    const range = { start: "2026-09-30T09:00:00Z", end: "2026-09-30T10:00:00Z" };
+    const onCreate = vi.fn().mockRejectedValue(new Error("Creation failed before IPC"));
+    const onDismiss = vi.fn();
+    try {
+      render(
+        <PlaceholderEventMenu
+          range={range}
+          position={{ x: 50, y: 50 }}
+          onCreate={onCreate}
+          onDismiss={onDismiss}
+        />,
+      );
+      choosePlaceholderAction();
+      fireEvent.click(screen.getByRole("button", { name: "Create placeholder" }));
+      expect((await screen.findByRole("alert")).textContent).toBe("Creation failed before IPC");
+      expect(onDismiss).not.toHaveBeenCalled();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("rejects a nonexistent daylight-saving local time before submitting", () => {
+    expect.hasAssertions();
+    try {
+      vi.stubEnv("TZ", "Europe/Rome");
+      const onCreate = vi.fn();
+      render(
+        <PlaceholderEventMenu
+          range={{
+            start: new Date(2026, 2, 29, 1, 30).toISOString(),
+            end: new Date(2026, 2, 29, 4).toISOString(),
+          }}
+          position={{ x: 50, y: 50 }}
+          onCreate={onCreate}
+          onDismiss={vi.fn()}
+        />,
+      );
+      choosePlaceholderAction();
+      changePlaceholderBoundary("Start", "2026-03-29T02:30");
+      expect(
+        (screen.getByRole("button", { name: "Create placeholder" }) as HTMLButtonElement).disabled,
+      ).toBe(true);
+      fireEvent.submit(screen.getByRole("button", { name: "Create placeholder" }).closest("form")!);
+      expect(onCreate).not.toHaveBeenCalled();
+    } finally {
+      cleanup();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("keeps retry identity across reopening and assigns a new identity to a different interval", async () => {
+    expect.hasAssertions();
+    try {
+      const api = createSignedInCalendarApiMock();
+      api.events.create = vi.fn().mockRejectedValue(new Error("Offline"));
+      installCalendarApi(api);
+      renderApp();
+      await screen.findByTestId("mock-calendar");
+      const start = new Date(2026, 8, 30, 9);
+      const openMenu = () => {
+        act(() => {
+          (capturedCalendarProps!.dateContextClick as (arg: DateContextClickArg) => void)({
+            date: start,
+            allDay: false,
+            jsEvent: new MouseEvent("contextmenu"),
+          });
+        });
+        if (screen.queryByRole("menuitem", { name: "Create placeholder" })) {
+          choosePlaceholderAction();
+        }
+      };
+      const submit = async () => {
+        fireEvent.click(screen.getByRole("button", { name: "Create placeholder" }));
+        await screen.findByText("Offline");
+      };
+      openMenu();
+      await submit();
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      openMenu();
+      await submit();
+      changePlaceholderBoundary(
+        "End",
+        toDateTimeInputValue(new Date(2026, 8, 30, 10).toISOString(), false),
+      );
+      await submit();
+      changePlaceholderBoundary(
+        "End",
+        toDateTimeInputValue(new Date(2026, 8, 30, 9, 30).toISOString(), false),
+      );
+      await submit();
+      const drafts = vi.mocked(api.events.create).mock.calls.map(([draft]) => draft);
+      expect(drafts).toHaveLength(4);
+      expect(drafts[1]).toStrictEqual(drafts[0]);
+      expect(drafts[2].transactionId).not.toBe(drafts[0].transactionId);
+      expect(drafts[3]).toStrictEqual(drafts[0]);
+    } finally {
+      restoreCalendarApi();
+    }
+  });
   it.each([
     ["en", /one@example.com was signed out.*Tasks.ReadWrite/],
     ["it", /one@example.com è stato disconnesso.*Tasks.ReadWrite/],

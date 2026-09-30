@@ -1,18 +1,24 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import FullCalendar from "@fullcalendar/react";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import CalendarBoard from "../src/renderer/src/components/calendar-board";
+import type { Hit, InteractionSettings } from "@fullcalendar/core/internal";
+import { DateComponent } from "@fullcalendar/core/internal";
+import dateContextPlugin from "../src/renderer/src/date-context-plugin";
+import { toDateTimeInputValue } from "../src/shared/calendar";
 
 function renderBoard(
   activeView: "dayGridMonth" | "timeGridWeek" | "timeGridDay",
   meeting?: { allDay?: boolean; cancelled?: boolean; joinUrl: null | string },
+  onCreatePlaceholder?: React.ComponentProps<typeof CalendarBoard>["onCreatePlaceholder"],
 ) {
   const onEventClick = vi.fn();
   const onEventCopy = vi.fn();
   const onJoinMeeting = vi.fn();
+  const calendarRef = React.createRef<FullCalendar>();
   const eventData = {
     location: "Meeting room",
     organizer: { name: "Giulia Rossi" },
@@ -39,7 +45,8 @@ function renderBoard(
           },
         },
       ]}
-      calendarRef={React.createRef<FullCalendar>()}
+      calendarRef={calendarRef}
+      onCreatePlaceholder={onCreatePlaceholder}
       hasVisibleCalendars
       isLoadingEvents={false}
       onDateClick={vi.fn()}
@@ -55,7 +62,7 @@ function renderBoard(
       timeFormat="24h"
     />,
   );
-  return { ...view, eventData, onEventClick, onEventCopy, onJoinMeeting };
+  return { ...view, calendarRef, eventData, onEventClick, onEventCopy, onJoinMeeting };
 }
 
 describe("calendar title selection", () => {
@@ -214,5 +221,107 @@ describe("calendar title selection", () => {
       joinUrl: "https://meet.google.com/abc-defg-hij",
     });
     expect(container.querySelector(".calendar-event-content__join-btn")).toBeNull();
+  });
+});
+
+describe("calendar date context interaction", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("opens the real month calendar context menu with the selected day range", () => {
+    expect.hasAssertions();
+    const onCreate = vi.fn().mockResolvedValue(undefined);
+    const { container, calendarRef } = renderBoard("dayGridMonth", undefined, onCreate);
+    const cells = [...container.querySelectorAll<HTMLElement>(".fc-daygrid-day")];
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        const index = cells.indexOf(this);
+        if (index >= 0) {
+          return new DOMRect(60 + (index % 7) * 100, 40 + Math.floor(index / 7) * 100, 100, 100);
+        }
+        return new DOMRect(60, 40, 700, 600);
+      });
+    try {
+      act(() => {
+        calendarRef
+          .current!.getApi()
+          .select({ start: "2026-03-30", end: "2026-04-01", allDay: true });
+      });
+      const cell = cells.find((value) => value.dataset.date === "2026-03-31")!;
+      const rect = cell.getBoundingClientRect();
+      fireEvent.contextMenu(cell, { clientX: rect.left + 50, clientY: rect.top + 50 });
+      expect(screen.queryByRole("dialog", { name: "Placeholder" })).toBeNull();
+      fireEvent.click(screen.getByRole("menuitem", { name: "Create placeholder" }));
+      expect(screen.getByRole("dialog", { name: "Placeholder" })).not.toBeNull();
+      expect((screen.getByLabelText("Start time") as HTMLInputElement).value).toBe(
+        toDateTimeInputValue(new Date(2026, 2, 30, 9).toISOString(), false).slice(11),
+      );
+      expect((screen.getByLabelText("End time") as HTMLInputElement).value).toBe(
+        toDateTimeInputValue(new Date(2026, 2, 31, 9, 30).toISOString(), false).slice(11),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(screen.queryByRole("dialog", { name: "Placeholder" })).toBeNull();
+      expect(onCreate).not.toHaveBeenCalled();
+    } finally {
+      rectSpy.mockRestore();
+    }
+  });
+
+  function createInteraction(allDay: boolean) {
+    const el = document.createElement("div");
+    const date = new Date("2026-09-30T09:00:00Z");
+    const hit = {
+      dateSpan: { range: { start: date, end: new Date(date.getTime() + 30 * 60_000) }, allDay },
+      dateProfile: { activeRange: { start: new Date("2026-09-01"), end: new Date("2026-10-01") } },
+    } as Hit;
+    const queryHit = vi.fn<InteractionSettings["component"]["queryHit"]>().mockReturnValue(hit);
+    const trigger = vi.fn();
+    const settings = {
+      el,
+      component: {
+        isValidDateDownEl: DateComponent.prototype.isValidDateDownEl,
+        prepareHits: vi.fn(),
+        queryHit,
+        context: { emitter: { trigger }, dateEnv: { toDate: (value: Date) => value } },
+      },
+    } as unknown as InteractionSettings;
+    el.getBoundingClientRect = () => new DOMRect(100, -200, 700, 1200);
+    const interaction = new dateContextPlugin.componentInteractions[0](settings);
+    return { el, date, hit, queryHit, trigger, interaction };
+  }
+
+  it.each([true, false])(
+    "resolves a date context click using calendar hit coordinates (allDay: %s)",
+    (allDay) => {
+      const { el, date, queryHit, trigger, interaction } = createInteraction(allDay);
+      expect(fireEvent.contextMenu(el, { clientX: 150, clientY: 200 })).toBe(false);
+      expect(queryHit).toHaveBeenCalledExactlyOnceWith(50, 400, 700, 1200);
+      expect(trigger).toHaveBeenCalledExactlyOnceWith("dateContextClick", {
+        date,
+        allDay,
+        jsEvent: expect.any(MouseEvent),
+      });
+      interaction.destroy();
+      fireEvent.contextMenu(el, { clientX: 150, clientY: 200 });
+      expect(trigger).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("keeps existing event context clicks and inactive cells out of event creation", () => {
+    const { el, hit, queryHit, trigger, interaction } = createInteraction(false);
+    const existingEvent = document.createElement("div");
+    existingEvent.className = "fc-event";
+    el.append(existingEvent);
+    expect(fireEvent.contextMenu(existingEvent, { clientX: 150, clientY: 200 })).toBe(true);
+    expect(queryHit).not.toHaveBeenCalled();
+    queryHit
+      .mockReturnValueOnce(null)
+      .mockReturnValueOnce({ ...hit, dateProfile: { ...hit.dateProfile, activeRange: null } });
+    expect(fireEvent.contextMenu(el)).toBe(true);
+    expect(fireEvent.contextMenu(el)).toBe(true);
+    expect(trigger).not.toHaveBeenCalled();
+    interaction.destroy();
   });
 });
