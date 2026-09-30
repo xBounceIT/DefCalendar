@@ -32,7 +32,7 @@ export function getSchedulingWindow(
     Number.isFinite(selection.start) &&
     Number.isFinite(selection.end) &&
     selection.end > start.getTime() &&
-    selection.start >= start.getTime()
+    selection.start < selection.end
   ) {
     const last = new Date(selection.end + HALF_HOUR * 2);
     last.setHours(0, 0, 0, 0);

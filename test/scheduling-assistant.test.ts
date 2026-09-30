@@ -31,6 +31,10 @@ describe("scheduling periods", () => {
     const range = getSchedulingWindow("2026-09-30", "day", { start, end });
     expect(range.end).toBe(new Date("2026-10-05T00:00:00").getTime());
     expect(getSchedulingDays(range)).toHaveLength(5);
+    const navigated = getSchedulingWindow("2026-10-01", "day", { start, end });
+    expect(navigated.start).toBe(new Date("2026-10-01T00:00:00").getTime());
+    expect(navigated.end).toBe(range.end);
+    expect(getSchedulingDays(navigated)).toHaveLength(4);
     const long = getSchedulingWindow("2026-09-30", "day", {
       start,
       end: new Date("2027-09-30T02:00:00").getTime(),

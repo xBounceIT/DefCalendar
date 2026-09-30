@@ -389,10 +389,12 @@ describe("detailed scheduling assistant", () => {
 
   it("loads a whole month once and opens a day's editable timeline using the cached availability", async () => {
     const { load, container, onSave } = setup();
+    const toolbar = within(container.querySelector(".scheduling-assistant__toolbar")!);
+    const controls = within(container.querySelector(".scheduling-assistant__controls")!);
     await waitFor(() =>
       expect(container.querySelector(".scheduling-assistant__slot--suggested")).not.toBeNull(),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Month" }));
+    fireEvent.click(toolbar.getByRole("button", { name: "Month" }));
     expect(container.querySelectorAll(".scheduling-assistant__days > button")).toHaveLength(30);
     await waitFor(() =>
       expect(load).toHaveBeenLastCalledWith(
@@ -407,16 +409,28 @@ describe("detailed scheduling assistant", () => {
     );
     const calls = load.mock.calls.length;
     expect(container.querySelectorAll(".scheduling-assistant__overview-day")).toHaveLength(30);
-    fireEvent.click(screen.getByRole("switch", { name: "Scheduling suggestions" }));
+    fireEvent.click(controls.getByRole("switch", { name: "Scheduling suggestions" }));
     expect(container.querySelector(".scheduling-assistant__suggestion")).toBeNull();
-    fireEvent.click(screen.getByRole("switch", { name: "Scheduling suggestions" }));
-    fireEvent.click(screen.getByRole("button", { name: "Open Tuesday, September 15" }));
-    expect(screen.getByRole("button", { name: "Day" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(controls.getByRole("switch", { name: "Scheduling suggestions" }));
+    fireEvent.click(
+      within(container.querySelector(".scheduling-assistant__days")!).getByRole("button", {
+        name: "Open Tuesday, September 15",
+      }),
+    );
+    expect(toolbar.getByRole("button", { name: "Day" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByText("Loading calendars…")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Start date")).toHaveValue("09/29/2026");
-    fireEvent.click(screen.getByRole("button", { name: /09:00.*September 15.*Available/ }));
-    expect(screen.getByRole("button", { name: "Adjust meeting end" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+    expect(controls.getByLabelText("Start date")).toHaveValue("09/29/2026");
+    fireEvent.click(
+      within(container.querySelector(".scheduling-assistant__summary-track")!).getByLabelText(
+        /09:00.*September 15.*Available/,
+      ),
+    );
+    expect(
+      within(container.querySelector(".scheduling-assistant__selection")!).getByRole("button", {
+        name: "Adjust meeting end",
+      }),
+    ).toBeInTheDocument();
+    fireEvent.click(toolbar.getByRole("button", { name: /^Save$/ }));
     fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
     expect(load).toHaveBeenCalledTimes(calls);
     expect(onSave).toHaveBeenCalledWith(
@@ -741,16 +755,17 @@ describe("detailed scheduling assistant", () => {
   });
 
   it("shows the complete multi-day event and disables a clipped start after navigating", () => {
-    setup({
+    const { container } = setup({
       state: createMeetingState({
         start: toLocalIso("2026-09-29T23:00:00"),
-        end: toLocalIso("2026-10-01T01:00:00"),
+        end: toLocalIso("2026-10-03T01:00:00"),
         draft: { subject: "Long planning" },
       }),
     });
     expect(screen.getByRole("button", { name: "Adjust meeting start" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Adjust meeting end" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    expect(container.querySelectorAll(".scheduling-assistant__days > button")).toHaveLength(4);
     expect(screen.queryByRole("button", { name: "Adjust meeting start" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Adjust meeting end" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Move meeting" })).toBeDisabled();
