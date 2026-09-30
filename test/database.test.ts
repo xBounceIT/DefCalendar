@@ -1,7 +1,49 @@
 import { describe, expect, it, vi } from "vitest";
 import { DatabaseSync } from "node:sqlite";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import AppDatabase from "../src/main/db/database";
+
+function createSqliteDatabase(sqlite: DatabaseSync): AppDatabase {
+  sqlite.exec("PRAGMA foreign_keys = ON");
+  const db = Object.create(AppDatabase.prototype) as AppDatabase;
+  Object.assign(db, {
+    db: {
+      exec: (sql: string) => sqlite.exec(sql),
+      prepare: (sql: string) => sqlite.prepare(sql),
+      transaction:
+        <T extends unknown[], R>(callback: (...args: T) => R) =>
+        (...args: T): R => {
+          sqlite.exec("BEGIN");
+          try {
+            const result = callback(...args);
+            sqlite.exec("COMMIT");
+            return result;
+          } catch (error) {
+            sqlite.exec("ROLLBACK");
+            throw error;
+          }
+        },
+    },
+  });
+  (db as unknown as { migrate: () => void }).migrate();
+  return db;
+}
+
+function seedReminderCalendar(
+  sqlite: DatabaseSync,
+  id = "calendar-1",
+  account = "account-1",
+): void {
+  sqlite
+    .prepare(`
+    INSERT INTO calendars (id, home_account_id, name, can_edit, can_share, is_default_calendar,
+      payload_json, updated_at) VALUES (?, ?, 'Calendar', 1, 0, 1, '{}', '2026-09-30')
+  `)
+    .run(id, account);
+}
 
 function createStoredReminderEvent(overrides?: {
   calendarId?: string;
@@ -17,7 +59,7 @@ function createStoredReminderEvent(overrides?: {
     attendees: [],
     attachments: [],
     body: null,
-    bodyContentType: "html",
+    bodyContentType: "html" as const,
     bodyPreview: null,
     calendarId: overrides?.calendarId ?? "calendar-1",
     cancelled: overrides?.cancelled ?? false,
@@ -52,6 +94,113 @@ function createStoredReminderEvent(overrides?: {
 }
 
 describe("database", () => {
+  it("preserves local dismissals and snoozes, repairs corrupted keys, and migrates legacy keys once", () => {
+    const sqlite = new DatabaseSync(":memory:");
+    try {
+      const db = createSqliteDatabase(sqlite);
+      const base = "calendar-1:event-1:2026-09-30T10:00:00.000Z";
+      const insert = sqlite.prepare("INSERT INTO reminder_state VALUES (?, ?, ?)");
+      insert.run(`${base}:before:15`, null, "dismissed");
+      insert.run(`${base}:after:10`, "snoozed", null);
+      insert.run(`${base}:before:30:pre`, null, "recovered-dismissal");
+      insert.run(`${base}:after:20:pre`, "recovered-snooze", null);
+      insert.run(`${base}:before:45:pre`, null, "old-dismissal");
+      insert.run(`${base}:before:45`, "new-snooze", null);
+      insert.run(base, null, "legacy-dismissal");
+      insert.run(`${base}:start`, null, "start-dismissal");
+      for (let index = 0; index < 2; index += 1) {
+        (db as unknown as { migrate: () => void }).migrate();
+      }
+      expect(db.getReminderState(`${base}:before:15`)).toEqual({
+        dismissedAt: "dismissed",
+        snoozedUntil: null,
+      });
+      expect(db.getReminderState(`${base}:after:10`)).toEqual({
+        dismissedAt: null,
+        snoozedUntil: "snoozed",
+      });
+      expect(db.getReminderState(`${base}:before:30`)).toEqual({
+        dismissedAt: "recovered-dismissal",
+        snoozedUntil: null,
+      });
+      expect(db.getReminderState(`${base}:after:20`)).toEqual({
+        dismissedAt: null,
+        snoozedUntil: "recovered-snooze",
+      });
+      expect(db.getReminderState(`${base}:pre`)).toEqual({
+        dismissedAt: "legacy-dismissal",
+        snoozedUntil: null,
+      });
+      expect(db.getReminderState(`${base}:start`)).toEqual({
+        dismissedAt: "start-dismissal",
+        snoozedUntil: null,
+      });
+      expect(db.getReminderState(`${base}:before:45`)).toEqual({
+        dismissedAt: null,
+        snoozedUntil: "new-snooze",
+      });
+      expect(sqlite.prepare("SELECT * FROM reminder_state").all()).toHaveLength(7);
+    } finally {
+      sqlite.close();
+    }
+  });
+
+  it("persists deduplicated remote dismissals across database reopen and retains them during event refresh", () => {
+    const directory = mkdtempSync(join(tmpdir(), "defcalendar-reminder-"));
+    const path = join(directory, "calendar.sqlite");
+    let sqlite = new DatabaseSync(path);
+    try {
+      let db = createSqliteDatabase(sqlite);
+      seedReminderCalendar(sqlite);
+      const event = createStoredReminderEvent();
+      db.upsertEvent(event);
+      const item = { calendarId: event.calendarId, eventId: event.id, start: event.start };
+      const pre = `${item.calendarId}:${item.eventId}:${item.start}:pre`;
+      const start = `${item.calendarId}:${item.eventId}:${item.start}:start`;
+      db.dismissReminders([pre, start], [item, item]);
+      db.replaceEventsForCalendarRange({
+        calendarId: event.calendarId,
+        events: [event],
+        rangeStart: "2026-03-01T00:00:00Z",
+        rangeEnd: "2026-04-01T00:00:00Z",
+      });
+      sqlite.close();
+      sqlite = new DatabaseSync(path);
+      db = createSqliteDatabase(sqlite);
+      expect(db.listPendingReminderDismissals()).toEqual([item]);
+      expect(db.getReminderState(pre)?.dismissedAt).toBeTruthy();
+      expect(db.getReminderState(start)?.dismissedAt).toBeTruthy();
+      db.completeReminderDismissal(item);
+      expect(db.listPendingReminderDismissals()).toEqual([]);
+      expect(db.getReminderState(pre)?.dismissedAt).toBeTruthy();
+    } finally {
+      sqlite.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("atomically queues dismissals and removes only the signed-out account's pending operations", () => {
+    const sqlite = new DatabaseSync(":memory:");
+    try {
+      const db = createSqliteDatabase(sqlite);
+      seedReminderCalendar(sqlite);
+      seedReminderCalendar(sqlite, "calendar-2", "account-2");
+      const item = { calendarId: "calendar-1", eventId: "event-1", start: "2026-09-30T10:00:00Z" };
+      expect(() =>
+        db.dismissReminders(["invalid-key"], [{ ...item, calendarId: "missing" }]),
+      ).toThrow();
+      expect(db.getReminderState("invalid-key")).toBeNull();
+      const other = { ...item, calendarId: "calendar-2" };
+      db.dismissReminders(["key-1", "key-2"], [item, other]);
+      db.clearUserData("account-1");
+      expect(db.listPendingReminderDismissals()).toEqual([other]);
+      db.clearUserData();
+      expect(db.listPendingReminderDismissals()).toEqual([]);
+    } finally {
+      sqlite.close();
+    }
+  });
+
   it("migrates saved contacts and browses the entire account rubrica with photo ids", () => {
     const sqlite = new DatabaseSync(":memory:");
     try {

@@ -4,6 +4,43 @@ import MsalAuthService from "../src/main/auth/msal-auth-service";
 import { resolveAppConfig } from "../src/main/config";
 
 describe("msal auth service", () => {
+  it("keeps background token retries silent when renewed sign-in is required", async () => {
+    const config = resolveAppConfig({});
+    const service = new MsalAuthService(config, {
+      createPlugin: vi.fn().mockReturnValue({}),
+    } as never);
+    const account = {
+      homeAccountId: "account-1",
+      username: "user@example.com",
+      tenantId: "tenant-1",
+    };
+    const acquireTokenSilent = vi
+      .fn()
+      .mockResolvedValueOnce({
+        account,
+        accessToken: "cached-token",
+        scopes: config.graphScopes,
+      })
+      .mockRejectedValue(new Error("Consent required"));
+    const acquireTokenInteractive = vi.fn().mockResolvedValue({
+      account,
+      accessToken: "interactive-token",
+      scopes: config.graphScopes,
+    });
+    Object.assign(service, {
+      pca: {
+        getAllAccounts: vi.fn().mockResolvedValue([account]),
+        acquireTokenSilent,
+        acquireTokenInteractive,
+      },
+    });
+    await service.initialize();
+    await expect(service.getAccessTokenForAccount("account-1", false, false)).rejects.toThrow(
+      "Consent required",
+    );
+    expect(acquireTokenInteractive).not.toHaveBeenCalled();
+  });
+
   it("requests directory photo permission when an existing session needs renewed consent", async () => {
     const config = resolveAppConfig({});
     const service = new MsalAuthService(config, {

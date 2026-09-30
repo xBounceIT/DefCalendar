@@ -70,6 +70,12 @@ interface ReminderStateSnapshot {
   snoozedUntil: null | string;
 }
 
+export interface ReminderDismissal {
+  calendarId: string;
+  eventId: string;
+  start: string;
+}
+
 class AppDatabase {
   private readonly db: Database.Database;
   private cachedDismissStatement: Database.Statement | null = null;
@@ -1102,7 +1108,7 @@ class AppDatabase {
     this.dismissReminders([key]);
   }
 
-  dismissReminders(keys: string[]): void {
+  dismissReminders(keys: string[], remoteDismissals: ReminderDismissal[] = []): void {
     if (keys.length === 0) {
       return;
     }
@@ -1123,8 +1129,36 @@ class AppDatabase {
       for (const key of keys) {
         dismiss.run(key, now);
       }
+      if (remoteDismissals.length > 0) {
+        const enqueue = this.db.prepare(`
+          INSERT OR IGNORE INTO pending_reminder_dismissals (calendar_id, event_id, event_start)
+          VALUES (?, ?, ?)
+        `);
+        for (const item of remoteDismissals) {
+          enqueue.run(item.calendarId, item.eventId, item.start);
+        }
+      }
     });
     transaction();
+  }
+
+  listPendingReminderDismissals(): ReminderDismissal[] {
+    return this.db
+      .prepare("SELECT calendar_id, event_id, event_start FROM pending_reminder_dismissals")
+      .all()
+      .map((row) => ({
+        calendarId: readStringProperty(row, "calendar_id"),
+        eventId: readStringProperty(row, "event_id"),
+        start: readStringProperty(row, "event_start"),
+      }));
+  }
+
+  completeReminderDismissal(item: ReminderDismissal): void {
+    this.db
+      .prepare(`
+      DELETE FROM pending_reminder_dismissals WHERE calendar_id = ? AND event_id = ? AND event_start = ?
+    `)
+      .run(item.calendarId, item.eventId, item.start);
   }
 
   snoozeReminder(key: string, untilIso: string): void {
@@ -1373,6 +1407,14 @@ class AppDatabase {
         dismissed_at TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS pending_reminder_dismissals (
+        calendar_id TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        event_start TEXT NOT NULL,
+        PRIMARY KEY (calendar_id, event_id, event_start),
+        FOREIGN KEY (calendar_id) REFERENCES calendars(id) ON DELETE CASCADE
+      );
+
       CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value_json TEXT NOT NULL,
@@ -1436,12 +1478,22 @@ class AppDatabase {
   private migrateReminderStateKeyFormat(): void {
     this.db.exec(`
       INSERT OR IGNORE INTO reminder_state (dedupe_key, snoozed_until, dismissed_at)
-      SELECT dedupe_key || ':pre', snoozed_until, dismissed_at
+      SELECT substr(dedupe_key, 1, length(dedupe_key) - 4), snoozed_until, dismissed_at
       FROM reminder_state
-      WHERE dedupe_key NOT LIKE '%:pre' AND dedupe_key NOT LIKE '%:start';
+      WHERE dedupe_key GLOB '*:before:[0-9]*:pre' OR dedupe_key GLOB '*:after:[0-9]*:pre';
 
       DELETE FROM reminder_state
-      WHERE dedupe_key NOT LIKE '%:pre' AND dedupe_key NOT LIKE '%:start';
+      WHERE dedupe_key GLOB '*:before:[0-9]*:pre' OR dedupe_key GLOB '*:after:[0-9]*:pre';
+
+      INSERT OR IGNORE INTO reminder_state (dedupe_key, snoozed_until, dismissed_at)
+      SELECT dedupe_key || ':pre', snoozed_until, dismissed_at
+      FROM reminder_state
+      WHERE dedupe_key NOT LIKE '%:pre' AND dedupe_key NOT LIKE '%:start'
+        AND dedupe_key NOT GLOB '*:before:[0-9]*' AND dedupe_key NOT GLOB '*:after:[0-9]*';
+
+      DELETE FROM reminder_state
+      WHERE dedupe_key NOT LIKE '%:pre' AND dedupe_key NOT LIKE '%:start'
+        AND dedupe_key NOT GLOB '*:before:[0-9]*' AND dedupe_key NOT GLOB '*:after:[0-9]*';
     `);
   }
 
