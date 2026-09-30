@@ -234,6 +234,7 @@ const calendarEventSchema = z.object({
 const eventDraftSchema = z
   .object({
     id: z.string().optional(),
+    transactionId: z.uuid().optional(),
     calendarId: z.string(),
     subject: z.string().trim().min(1, "Subject is required"),
     body: z.string().nullable().optional(),

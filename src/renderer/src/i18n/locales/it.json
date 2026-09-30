@@ -166,6 +166,12 @@
     "day": "Giorno"
   },
   "calendarBoard": {
+    "contextMenu": "Azioni calendario",
+    "placeholderTitle": "Provvisorio",
+    "createPlaceholder": "Crea Provvisorio",
+    "invalidPlaceholderRange": "La fine deve essere successiva all'inizio.",
+    "placeholderSaveFailed": "Impossibile creare l'evento provvisorio. Riprova.",
+    "invalidPlaceholderTime": "Seleziona orari di inizio e fine validi.",
     "noCalendars": "Nessun calendario selezionato",
     "noCalendarsHint": "Abilita almeno un calendario Exchange dalla barra laterale sinistra per popolare la vista.",
     "moreEvents": "+{{count}}",
@@ -210,6 +216,7 @@
     "start": "Inizio",
     "startDay": "Giorno di inizio",
     "startDate": "Data di inizio",
+    "endDate": "Data di fine",
     "startTime": "Ora di inizio",
     "end": "Fine",
     "endDay": "Giorno di fine",

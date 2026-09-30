@@ -369,8 +369,8 @@ describe("calendar board locale", () => {
     expect(capturedCalendarProps?.locale).toBe("it");
     expect(capturedCalendarProps?.allDayText).toBe("Giornata intera");
     expectTypeOf(capturedCalendarProps?.dateClick).toBeFunction();
-    expect(capturedCalendarProps?.selectable).toBeUndefined();
-    expect(capturedCalendarProps?.select).toBeUndefined();
+    expect(capturedCalendarProps?.selectable).toBe(false);
+    expect(capturedCalendarProps?.select).toStrictEqual(expect.any(Function));
     expect(capturedCalendarProps?.selectMirror).toBeUndefined();
   });
 
@@ -388,8 +388,8 @@ describe("calendar board locale", () => {
     expect(capturedCalendarProps?.dayCellClassNames).toStrictEqual(expect.any(Function));
     expect(capturedCalendarProps?.eventMouseEnter).toStrictEqual(expect.any(Function));
     expect(capturedCalendarProps?.eventMouseLeave).toStrictEqual(expect.any(Function));
-    expect(capturedCalendarProps?.selectable).toBeUndefined();
-    expect(capturedCalendarProps?.select).toBeUndefined();
+    expect(capturedCalendarProps?.selectable).toBe(false);
+    expect(capturedCalendarProps?.select).toStrictEqual(expect.any(Function));
     expect(capturedCalendarProps?.selectMirror).toBeUndefined();
   });
 
