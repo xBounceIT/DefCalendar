@@ -32,6 +32,13 @@ interface Range {
   endInput: string;
 }
 
+function isSupportedRange(range: Range) {
+  return [range.startInput, range.endInput].every((value) => {
+    const year = new Date(value).getFullYear();
+    return year >= 1 && year <= 9999;
+  });
+}
+
 function Chevron({ forward = false }: { forward?: boolean }) {
   return (
     <svg
@@ -65,7 +72,7 @@ export default function SchedulingAssistant({
   controls,
   renderParticipantInput,
   onDateChange,
-  onChange,
+  onChange: onRangeChange,
   onRemove,
   onBack,
 }: {
@@ -95,7 +102,25 @@ export default function SchedulingAssistant({
   const [showDetails, setShowDetails] = useState(true);
   const optionsRef = useRef<HTMLDetailsElement>(null);
   const [collapsed, setCollapsed] = useState<ParticipantType[]>([]);
+  const [dragWindow, setDragWindow] = useState<{
+    date: string;
+    view: SchedulingView;
+    end: number;
+  } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const revealRange = (range: Range) => {
+    if (view === "day" && Date.parse(range.startInput) >= getSchedulingWindow(date).end) {
+      onDateChange(range.startInput.slice(0, 10));
+    }
+  };
+  const onChange = (range: Range) => {
+    if (isSupportedRange(range)) {
+      onRangeChange(range);
+      if (!drag.current) {
+        revealRange(range);
+      }
+    }
+  };
   useEffect(() => {
     const dismiss = (event: MouseEvent) => {
       if (optionsRef.current && !optionsRef.current.contains(event.target as Node)) {
@@ -109,18 +134,33 @@ export default function SchedulingAssistant({
     edge: "move" | "start" | "end";
     pointerId: number;
     x: number;
+    clientX: number;
     scroll: number;
     start: number;
     end: number;
     original: Range;
     latest: Range;
+    pending: Range[];
   } | null>(null);
-  const window = getSchedulingWindow(date, view);
+  const dragFrame = useRef<number | null>(null);
+  const clearDrag = () => {
+    drag.current = null;
+    setDragWindow(null);
+    if (dragFrame.current !== null) {
+      cancelAnimationFrame(dragFrame.current);
+      dragFrame.current = null;
+    }
+  };
+  useEffect(() => clearDrag, []);
+  const start = allDay ? getPlannerDay(startInput).start.getTime() : Date.parse(startInput);
+  const end = allDay ? getPlannerDay(endInput).end.getTime() : Date.parse(endInput);
+  const window = getSchedulingWindow(date, view, { start, end });
+  if (dragWindow?.date === date && dragWindow.view === view) {
+    window.end = Math.max(window.end, dragWindow.end);
+  }
   const days = getSchedulingDays(window);
   const overview = view !== "day";
   const cellWidth = view === "day" ? 36 : view === "week" ? 2.5 : 1.5;
-  const start = allDay ? getPlannerDay(startInput).start.getTime() : Date.parse(startInput);
-  const end = allDay ? getPlannerDay(endInput).end.getTime() : Date.parse(endInput);
   const valid = Number.isFinite(start) && Number.isFinite(end) && end > start;
   const duration = valid
     ? Math.max(HALF_HOUR, Math.ceil((end - start) / HALF_HOUR) * HALF_HOUR)
@@ -268,14 +308,20 @@ export default function SchedulingAssistant({
     return Math.max(window.start, Math.min(window.end - HALF_HOUR, next.getTime()));
   };
   useEffect(() => {
-    drag.current = null;
+    clearDrag();
   }, [date, view]);
   useEffect(() => {
-    if (
-      drag.current &&
-      (drag.current.latest.startInput !== startInput || drag.current.latest.endInput !== endInput)
-    ) {
-      drag.current = null;
+    const current = drag.current;
+    if (!current) {
+      return;
+    }
+    const acknowledged = current.pending.findIndex(
+      (range) => range.startInput === startInput && range.endInput === endInput,
+    );
+    if (acknowledged !== -1) {
+      current.pending.splice(0, acknowledged + 1);
+    } else if (current.latest.startInput !== startInput || current.latest.endInput !== endInput) {
+      clearDrag();
     }
   }, [startInput, endInput]);
   useEffect(() => {
@@ -294,7 +340,7 @@ export default function SchedulingAssistant({
   }, [date, view, startInput, allDay]);
   useEffect(() => {
     if (disabled || allDay) {
-      drag.current = null;
+      clearDrag();
     }
   }, [disabled, allDay]);
   const begin = (event: React.PointerEvent<HTMLButtonElement>, edge: "move" | "start" | "end") => {
@@ -315,52 +361,108 @@ export default function SchedulingAssistant({
             Date.parse(snapPlannerRange(startInput, endInput).startInput),
           )
         : snapPlannerRange(startInput, endInput);
+    if (!isSupportedRange(snapped)) {
+      return;
+    }
     drag.current = {
       edge,
       pointerId: event.pointerId,
       x: event.clientX,
+      clientX: event.clientX,
       scroll: scrollRef.current?.scrollLeft ?? 0,
       start: Date.parse(snapped.startInput),
       end: Date.parse(snapped.endInput),
       original: { startInput, endInput },
       latest: snapped,
+      pending: [snapped],
     };
     event.currentTarget.setPointerCapture?.(event.pointerId);
+    setDragWindow({ date, view, end: window.end });
     event.preventDefault();
     onChange(snapped);
+    dragFrame.current = requestAnimationFrame((timestamp) => scrollDrag(timestamp, timestamp));
+  };
+  const updateDrag = (clientX: number) => {
+    const current = drag.current;
+    if (!current) {
+      return;
+    }
+    const delta =
+      Math.round(
+        (clientX - current.x + (scrollRef.current?.scrollLeft ?? 0) - current.scroll) / cellWidth,
+      ) * HALF_HOUR;
+    let from = current.start,
+      to = current.end;
+    if (current.edge === "move") {
+      from = Math.max(window.start, current.start + delta);
+      to = from + current.end - current.start;
+    } else if (current.edge === "start") {
+      from = Math.max(window.start, Math.min(to - HALF_HOUR, current.start + delta));
+    } else {
+      to = Math.max(from + HALF_HOUR, current.end + delta);
+    }
+    const range = { startInput: toPlannerInput(from), endInput: toPlannerInput(to) };
+    if (
+      !isSupportedRange(range) ||
+      (range.startInput === current.latest.startInput && range.endInput === current.latest.endInput)
+    ) {
+      return;
+    }
+    current.latest = range;
+    current.pending.push(range);
+    const nextEnd = getSchedulingWindow(date, view, {
+      start: Math.min(current.start, from),
+      end: to,
+    }).end;
+    setDragWindow((currentWindow) =>
+      currentWindow && nextEnd > currentWindow.end
+        ? { ...currentWindow, end: nextEnd }
+        : currentWindow,
+    );
+    onChange(range);
+  };
+  const scrollDrag = (timestamp: number, previousTimestamp: number) => {
+    dragFrame.current = null;
+    const current = drag.current;
+    const scroll = scrollRef.current;
+    if (!current || !scroll) {
+      return;
+    }
+    const bounds = scroll.getBoundingClientRect();
+    if (bounds.width > 220) {
+      const direction =
+        current.clientX < bounds.left + 220 + cellWidth
+          ? -1
+          : current.clientX > bounds.right - cellWidth
+            ? 1
+            : 0;
+      const previousScroll = scroll.scrollLeft;
+      scroll.scrollLeft +=
+        direction * cellWidth * (Math.min(32, timestamp - previousTimestamp) / 100);
+      if (scroll.scrollLeft !== previousScroll) {
+        updateDrag(current.clientX);
+      }
+    }
+    dragFrame.current = requestAnimationFrame((next) => scrollDrag(next, timestamp));
   };
   const move = (event: React.PointerEvent<HTMLButtonElement>) => {
     const current = drag.current;
     if (!current || current.pointerId !== event.pointerId || disabled || allDay) {
       return;
     }
-    const delta =
-      Math.round(
-        (event.clientX - current.x + (scrollRef.current?.scrollLeft ?? 0) - current.scroll) /
-          cellWidth,
-      ) * HALF_HOUR;
-    let from = current.start,
-      to = current.end;
-    if (current.edge === "move") {
-      from = Math.max(window.start, Math.min(window.end - HALF_HOUR, current.start + delta));
-      to = from + current.end - current.start;
-    } else if (current.edge === "start") {
-      from = Math.max(window.start, Math.min(to - HALF_HOUR, current.start + delta));
-    } else {
-      to = Math.max(from + HALF_HOUR, Math.min(window.end, current.end + delta));
-    }
-    const range = { startInput: toPlannerInput(from), endInput: toPlannerInput(to) };
-    current.latest = range;
-    onChange(range);
+    current.clientX = event.clientX;
+    updateDrag(event.clientX);
   };
   const finish = (event: React.PointerEvent<HTMLButtonElement>, cancel = false) => {
     if (drag.current?.pointerId !== event.pointerId) {
       return;
     }
-    const original = drag.current.original;
-    drag.current = null;
+    const { original, latest } = drag.current;
+    clearDrag();
     if (cancel && !disabled && !allDay) {
       onChange(original);
+    } else if (!cancel && !disabled && !allDay) {
+      revealRange(latest);
     }
     if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
       event.currentTarget.releasePointerCapture?.(event.pointerId);
@@ -379,7 +481,7 @@ export default function SchedulingAssistant({
     const from = Date.parse(snapped.startInput),
       to = Date.parse(snapped.endInput);
     if (edge === "move") {
-      select(Math.max(window.start, Math.min(window.end - HALF_HOUR, from + delta)));
+      select(Math.max(window.start, from + delta));
     } else if (edge === "start") {
       onChange({
         startInput: toPlannerInput(Math.max(window.start, Math.min(to - HALF_HOUR, from + delta))),
@@ -388,7 +490,7 @@ export default function SchedulingAssistant({
     } else {
       onChange({
         startInput: snapped.startInput,
-        endInput: toPlannerInput(Math.max(from + HALF_HOUR, Math.min(window.end, to + delta))),
+        endInput: toPlannerInput(Math.max(from + HALF_HOUR, to + delta)),
       });
     }
   };
@@ -399,7 +501,7 @@ export default function SchedulingAssistant({
     onPointerCancel: (event: React.PointerEvent<HTMLButtonElement>) => finish(event, true),
     onLostPointerCapture: (event: React.PointerEvent<HTMLButtonElement>) => {
       if (drag.current?.pointerId === event.pointerId) {
-        drag.current = null;
+        clearDrag();
       }
     },
     onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => adjustKey(event, edge),

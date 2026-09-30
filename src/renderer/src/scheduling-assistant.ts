@@ -8,7 +8,11 @@ import { HALF_HOUR, getPlannerDay, getAvailabilityInRange } from "./meeting-plan
 
 export type SchedulingView = "day" | "week" | "month";
 
-export function getSchedulingWindow(date: string, view: SchedulingView = "day") {
+export function getSchedulingWindow(
+  date: string,
+  view: SchedulingView = "day",
+  selection?: { start: number; end: number },
+) {
   const first = getPlannerDay(date);
   const start = new Date(first.start);
   if (view === "week") {
@@ -21,6 +25,24 @@ export function getSchedulingWindow(date: string, view: SchedulingView = "day") 
     end.setMonth(end.getMonth() + 1);
   } else {
     end.setDate(end.getDate() + (view === "week" ? 7 : 2));
+  }
+  if (
+    view === "day" &&
+    selection &&
+    Number.isFinite(selection.start) &&
+    Number.isFinite(selection.end) &&
+    selection.end > start.getTime() &&
+    selection.start < end.getTime() &&
+    selection.start < selection.end
+  ) {
+    const last = new Date(selection.end + HALF_HOUR * 2);
+    last.setHours(0, 0, 0, 0);
+    last.setDate(last.getDate() + 1);
+    const limit = new Date(start);
+    limit.setDate(limit.getDate() + 61);
+    if (last > end) {
+      end.setTime(Math.min(last.getTime(), limit.getTime()));
+    }
   }
   return { start: start.getTime(), end: end.getTime() };
 }
