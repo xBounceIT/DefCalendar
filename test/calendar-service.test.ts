@@ -13,6 +13,152 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("reminder dismissal", () => {
+  it("refreshes an expired token silently while keeping the same account and dismissal", async () => {
+    const getAccessTokenForAccount = vi.fn().mockResolvedValue("token");
+    const service = createService({ getAccessTokenForAccount });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await service.dismissReminder("calendar-1", "event-1", "account-1");
+    expect(getAccessTokenForAccount.mock.calls).toEqual([
+      ["account-1", false, false],
+      ["account-1", true, false],
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][0]).toBe(fetchMock.mock.calls[0][0]);
+  });
+
+  it("aborts a running dismissal when its service is stopped", async () => {
+    const controller = new AbortController();
+    const service = createService();
+    const fetchMock = vi.fn().mockImplementation(() => new Promise(() => undefined));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = service.dismissReminder("calendar-1", "event-1", "account-1", controller.signal);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    controller.abort();
+    await expect(result).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true);
+  });
+
+  it("does not retry a throttled dismissal after its account session changes", async () => {
+    vi.useFakeTimers();
+    let valid = true;
+    const assertSession = () => {
+      if (!valid) {
+        throw new Error("Session changed");
+      }
+    };
+    const service = createService({ createAccountSessionGuard: vi.fn(() => assertSession) });
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        valid = false;
+        return new Response(null, { status: 429, headers: { "Retry-After": "1" } });
+      })
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const outcome = service
+      .dismissReminder("calendar-1", "event-1", "account-1")
+      .catch((error) => error);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await outcome).toMatchObject({ message: "Session changed" });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a replaced session before sending a dismissal with a late token", async () => {
+    let valid = true;
+    const assertSession = () => {
+      if (!valid) {
+        throw new Error("Session changed");
+      }
+    };
+    const service = createService({
+      createAccountSessionGuard: vi.fn(() => assertSession),
+      getAccessTokenForAccount: vi.fn(async () => {
+        valid = false;
+        return "late-token";
+      }),
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(service.dismissReminder("calendar-1", "event-1", "account-1")).rejects.toThrow(
+      "Session changed",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("retains the original account guard during a 401 retry", async () => {
+    let valid = true;
+    const assertSession = () => {
+      if (!valid) {
+        throw new Error("Session changed");
+      }
+    };
+    const getAccessTokenForAccount = vi.fn().mockResolvedValue("token");
+    const service = createService({
+      createAccountSessionGuard: vi.fn(() => assertSession),
+      getAccessTokenForAccount,
+    });
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        valid = false;
+        return new Response(null, { status: 401 });
+      })
+      .mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(service.dismissReminder("calendar-1", "event-1", "account-1")).rejects.toThrow(
+      "Session changed",
+    );
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(getAccessTokenForAccount).toHaveBeenCalledOnce();
+  });
+
+  it("posts to the owning calendar with the correct account and accepts an empty 200", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const getAccessTokenForAccount = vi.fn().mockResolvedValue("token");
+    const service = createService({ getAccessTokenForAccount });
+    await service.dismissReminder("calendar/+", "occurrence/+", "account-2");
+    expect(getAccessTokenForAccount).toHaveBeenCalledWith("account-2", false, false);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://graph.microsoft.com/v1.0/me/calendars/calendar%2F%2B/events/occurrence%2F%2B/dismissReminder",
+      expect.objectContaining({ method: "POST", signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("propagates failed dismissals for persistent retries", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 403 })));
+    const service = createService();
+    await expect(
+      service.dismissReminder("calendar-1", "event-1", "account-1"),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("bounds stalled authentication and does not send a late dismissal after timeout", async () => {
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
+    let resolveToken = (_token: string) => {};
+    const token = new Promise<string>((resolve) => {
+      resolveToken = resolve;
+    });
+    const service = createService({ getAccessTokenForAccount: vi.fn().mockReturnValue(token) });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const result = service.dismissReminder("calendar-1", "event-1", "account-1");
+    controller.abort(new Error("timeout"));
+    await expect(result).rejects.toThrow("timeout");
+    expect(timeout).toHaveBeenCalledWith(15_000);
+    resolveToken("late-token");
+    await token;
+    await Promise.resolve();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 function createGraphEvent(overrides?: Record<string, unknown>) {
   return {
     attendees: [],
@@ -49,6 +195,7 @@ function createService(authOverrides: Record<string, unknown> = {}) {
     getAccessToken: vi.fn().mockResolvedValue("token"),
     getAccessTokenForAccount: vi.fn().mockResolvedValue("token"),
     getAccountUsername: vi.fn().mockReturnValue("attendee@example.com"),
+    createAccountSessionGuard: vi.fn(() => vi.fn()),
     ...authOverrides,
   };
 

@@ -192,6 +192,8 @@ interface GraphPerson {
 }
 
 interface SendRequestArgs {
+  allowInteractiveAuth?: boolean;
+  assertSession?: () => void;
   forceRefresh?: boolean;
   homeAccountId?: string;
   init?: RequestInit;
@@ -744,6 +746,26 @@ class GraphCalendarService {
     );
   }
 
+  async dismissReminder(
+    calendarId: string,
+    eventId: string,
+    homeAccountId: string,
+    cancellation?: AbortSignal,
+  ): Promise<void> {
+    const assertSession = this.auth.createAccountSessionGuard(homeAccountId);
+    const timeout = AbortSignal.timeout(15_000);
+    const signal = cancellation ? AbortSignal.any([timeout, cancellation]) : timeout;
+    await awaitWithSignal(
+      this.requestNoContent(
+        `/me/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}/dismissReminder`,
+        { method: "POST", signal },
+        homeAccountId,
+        { assertSession, allowInteractiveAuth: false },
+      ),
+      signal,
+    );
+  }
+
   async forwardEvent(args: ForwardEventArgs, homeAccountId: string): Promise<void> {
     await this.requestNoContent(
       `/me/events/${encodeURIComponent(args.eventId)}/forward`,
@@ -930,8 +952,9 @@ class GraphCalendarService {
     pathOrUrl: string,
     init: RequestInit = {},
     homeAccountId?: string,
+    options: Pick<SendRequestArgs, "assertSession" | "allowInteractiveAuth"> = {},
   ): Promise<void> {
-    const response = await this.sendRequest({ homeAccountId, init, pathOrUrl });
+    const response = await this.sendRequest({ homeAccountId, init, pathOrUrl, ...options });
     if (!response.ok) {
       throw await this.createRequestError(response);
     }
@@ -944,14 +967,18 @@ class GraphCalendarService {
   private async sendRequest(args: SendRequestArgs): Promise<Response> {
     const { forceRefresh = false, homeAccountId, init = {}, pathOrUrl, retryCount = 0 } = args;
     init.signal?.throwIfAborted();
+    args.assertSession?.();
     const headers = new Headers(init.headers);
     if (!headers.has("Accept")) {
       headers.set("Accept", "application/json");
     }
     const accessToken = homeAccountId
-      ? await this.auth.getAccessTokenForAccount(homeAccountId, forceRefresh)
+      ? await (args.allowInteractiveAuth === false
+          ? this.auth.getAccessTokenForAccount(homeAccountId, forceRefresh, false)
+          : this.auth.getAccessTokenForAccount(homeAccountId, forceRefresh))
       : await this.auth.getAccessToken(forceRefresh);
     init.signal?.throwIfAborted();
+    args.assertSession?.();
     headers.set("Authorization", `Bearer ${accessToken}`);
     headers.set("Prefer", buildPreferHeader(headers.get("Prefer"), this.config.timeZone));
 
@@ -967,11 +994,8 @@ class GraphCalendarService {
 
     if (response.status === 401 && !forceRefresh) {
       return this.sendRequest({
+        ...args,
         forceRefresh: true,
-        homeAccountId,
-        init,
-        pathOrUrl,
-        retryCount,
       });
     }
 
@@ -981,10 +1005,7 @@ class GraphCalendarService {
         signal: init.signal ?? undefined,
       });
       return this.sendRequest({
-        forceRefresh,
-        homeAccountId,
-        init,
-        pathOrUrl,
+        ...args,
         retryCount: retryCount + 1,
       });
     }
