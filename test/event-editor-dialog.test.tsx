@@ -2,15 +2,26 @@
 
 import "@testing-library/jest-dom/vitest";
 import { readFileSync } from "node:fs";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { createInstance } from "i18next";
 import React from "react";
 import { I18nextProvider, initReactI18next } from "react-i18next";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import EventEditorDialog from "../src/renderer/src/components/event-editor-dialog";
+import useAttendeeAvailability from "../src/renderer/src/hooks/use-attendee-availability";
 import enTranslations from "../src/renderer/src/i18n/locales/en.json";
 import type { EditorState } from "../src/renderer/src/event-editor-state";
+import type { AttendeeAvailabilityArgs } from "../src/shared/attendee-availability";
 import type {
   CalendarEvent,
   CalendarSummary,
@@ -230,6 +241,729 @@ function createMeetingState(
   };
 }
 
+describe("detailed scheduling assistant", () => {
+  function setup(overrides: Parameters<typeof renderDialog>[0] = {}, open = true) {
+    const load = vi.fn().mockImplementation(async (args: AttendeeAvailabilityArgs) =>
+      args.emails.map((email) => ({
+        email,
+        status: "free",
+        schedule: {
+          start: args.start,
+          end: args.end,
+          slots:
+            email === "coworker@example.com"
+              ? [
+                  {
+                    start: toLocalIso("2026-09-29T09:00:00"),
+                    end: toLocalIso("2026-09-29T10:00:00"),
+                    status: "busy",
+                  },
+                ]
+              : [],
+        },
+      })),
+    );
+    const view = renderDialog({
+      state: createMeetingState({
+        start: toLocalIso("2026-09-29T09:17:00"),
+        end: toLocalIso("2026-09-29T10:02:00"),
+        draft: {
+          subject: "Planning",
+          attendees: [{ ...createParticipant(), email: "coworker@example.com", name: "Coworker" }],
+        },
+      }),
+      timeFormat: "24h",
+      onGetAttendeeAvailability: load,
+      ...overrides,
+    });
+    const trigger = screen.getByRole("button", { name: "Scheduling assistant" });
+    expect(trigger.closest(".scheduling-row")).not.toBeNull();
+    if (open) {
+      fireEvent.click(trigger);
+    }
+    return { ...view, load };
+  }
+
+  it("shows the preloaded scheduling window immediately without requesting the same people again", async () => {
+    const { load, container } = setup({}, false);
+    await screen.findByText("Busy");
+    expect(load).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Scheduling assistant" }));
+    expect(container.querySelector(".scheduling-assistant__slot--suggested")).not.toBeNull();
+    expect(screen.queryByText("Loading calendars…")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Back$/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Scheduling assistant" }));
+    expect(container.querySelector(".scheduling-assistant__slot--suggested")).not.toBeNull();
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for an invited participant in every scheduling view and clears suggestions after the last invitee is removed", async () => {
+    const { container } = setup({
+      state: createMeetingState({ draft: { subject: "Planning", attendees: [] } }),
+    });
+    for (const view of ["Day", "Week", "Month"]) {
+      fireEvent.click(screen.getByRole("button", { name: view }));
+      expect(screen.getByRole("status")).toHaveTextContent("Add a participant to see suggestions");
+      expect(
+        container.querySelector(
+          ".scheduling-assistant__overlays .scheduling-assistant__suggestion",
+        ),
+      ).toBeNull();
+      expect(container.querySelector(".scheduling-assistant__slot--suggested")).toBeNull();
+      expect(screen.getByRole("button", { name: "Next suggestion" })).toBeDisabled();
+    }
+    const input = screen.getByRole("combobox", { name: "Add required participant" });
+    fireEvent.change(input, { target: { value: "Coworker <coworker@example.com>" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() =>
+      expect(container.querySelector(".scheduling-assistant__slot--suggested")).not.toBeNull(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove: Coworker" }));
+    expect(screen.getByRole("status")).toHaveTextContent("Add a participant to see suggestions");
+    expect(
+      container.querySelector(".scheduling-assistant__overlays .scheduling-assistant__suggestion"),
+    ).toBeNull();
+    expect(container.querySelector(".scheduling-assistant__slot--suggested")).toBeNull();
+  });
+
+  it("shows a complete week, navigates periods and preserves the selected meeting", async () => {
+    const { load, container, onSave } = setup();
+    await waitFor(() =>
+      expect(container.querySelector(".scheduling-assistant__slot--suggested")).not.toBeNull(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Week" }));
+    expect(screen.getByRole("button", { name: "Week" })).toHaveAttribute("aria-pressed", "true");
+    expect(container.querySelectorAll(".scheduling-assistant__days > button")).toHaveLength(7);
+    expect(screen.getByRole("button", { name: "Open Monday, September 28" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open Sunday, October 4" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(load).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          start: toLocalIso("2026-09-28T00:00:00"),
+          end: toLocalIso("2026-10-05T00:00:00"),
+        }),
+      ),
+    );
+    expect(screen.getByLabelText("Start date")).toHaveValue("09/29/2026");
+    expect(screen.queryByRole("button", { name: "Adjust meeting end" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next period" }));
+    expect(screen.getByRole("button", { name: "Open Monday, October 5" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Previous period" }));
+    expect(screen.getByRole("button", { name: "Open Monday, September 28" })).toBeInTheDocument();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("aligns monthly day boundaries with participant calendars through the extra DST hour", () => {
+    vi.stubEnv("TZ", "Europe/Rome");
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+    const { container } = setup({
+      state: createMeetingState({
+        start: toLocalIso("2026-10-25T09:00:00"),
+        end: toLocalIso("2026-10-25T10:00:00"),
+      }),
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Month" }));
+    const headers = Array.from(
+      container.querySelectorAll<HTMLElement>(".scheduling-assistant__days > button"),
+    );
+    const dividers = Array.from(
+      container.querySelectorAll<HTMLElement>(".scheduling-assistant__day-divider"),
+    );
+    expect(headers).toHaveLength(31);
+    expect(headers[24]!.style.width).toBe("75px");
+    let left = 0;
+    headers.forEach((header, index) => {
+      expect(parseFloat(dividers[index]!.style.left)).toBe(left);
+      left += parseFloat(header.style.width);
+    });
+  });
+
+  it("loads a whole month once and opens a day's editable timeline using the cached availability", async () => {
+    const { load, container, onSave } = setup();
+    await waitFor(() =>
+      expect(container.querySelector(".scheduling-assistant__slot--suggested")).not.toBeNull(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Month" }));
+    expect(container.querySelectorAll(".scheduling-assistant__days > button")).toHaveLength(30);
+    await waitFor(() =>
+      expect(load).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          start: toLocalIso("2026-09-01T00:00:00"),
+          end: toLocalIso("2026-10-01T00:00:00"),
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(container.querySelector(".scheduling-assistant__slot--suggested")).not.toBeNull(),
+    );
+    const calls = load.mock.calls.length;
+    expect(container.querySelectorAll(".scheduling-assistant__overview-day")).toHaveLength(30);
+    fireEvent.click(screen.getByRole("switch", { name: "Scheduling suggestions" }));
+    expect(container.querySelector(".scheduling-assistant__suggestion")).toBeNull();
+    fireEvent.click(screen.getByRole("switch", { name: "Scheduling suggestions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Tuesday, September 15" }));
+    expect(screen.getByRole("button", { name: "Day" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByText("Loading calendars…")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Start date")).toHaveValue("09/29/2026");
+    fireEvent.click(screen.getByRole("button", { name: /09:00.*September 15.*Available/ }));
+    expect(screen.getByRole("button", { name: "Adjust meeting end" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    expect(load).toHaveBeenCalledTimes(calls);
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        start: toLocalIso("2026-09-15T09:00:00"),
+        end: toLocalIso("2026-09-15T10:00:00"),
+      }),
+    );
+  });
+
+  it("opens a page in the same dialog with two full days and applies a clicked suggested range to the draft", async () => {
+    const { load, container, onSave } = setup();
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(container.querySelector(".scheduling-assistant__slot--suggested")).not.toBeNull(),
+    );
+    expect(load).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        start: toLocalIso("2026-09-29T00:00:00"),
+        end: toLocalIso("2026-10-01T00:00:00"),
+        includeSchedule: true,
+      }),
+    );
+    expect(container.querySelectorAll(".scheduling-assistant__slot")).toHaveLength(96);
+    fireEvent.click(screen.getByRole("button", { name: /12:00.*September 29.*Available/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSave).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        start: toLocalIso("2026-09-29T12:00:00"),
+        end: toLocalIso("2026-09-29T13:00:00"),
+      }),
+    );
+  });
+
+  it("toggles all scheduling highlights and navigates suggestions without losing the selected duration", async () => {
+    const { container } = setup();
+    const next = screen.getByRole("button", { name: "Next suggestion" });
+    await waitFor(() => expect(next).toBeEnabled());
+    fireEvent.click(next);
+    expect(screen.getByRole("button", { name: "Move meeting" })).toHaveTextContent("10:00 – 11:00");
+    fireEvent.click(screen.getByRole("switch", { name: "Scheduling suggestions" }));
+    expect(container.querySelector(".scheduling-assistant__suggestion")).toBeNull();
+    expect(container.querySelector(".scheduling-assistant__slot--suggested")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Next suggestion" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("switch", { name: "Scheduling suggestions" }));
+    expect(container.querySelector(".scheduling-assistant__suggestion")).not.toBeNull();
+  });
+
+  it("opens the two checked options with the keyboard and toggles working-hour suggestions and scheduling details", async () => {
+    const { container } = setup();
+    await waitFor(() =>
+      expect(container.querySelector(".scheduling-assistant__slot--suggested")).not.toBeNull(),
+    );
+    const summary = container.querySelector(".scheduling-assistant__options > summary")!;
+    fireEvent.keyDown(summary, { key: "ArrowDown" });
+    const workingHours = screen.getByRole("menuitemcheckbox", {
+      name: "Show only my working hours",
+    });
+    const details = screen.getByRole("menuitemcheckbox", {
+      name: "Show detailed scheduling data",
+    });
+    expect(workingHours).toHaveAttribute("aria-checked", "true");
+    expect(details).toHaveAttribute("aria-checked", "true");
+    expect(workingHours).toHaveFocus();
+    const midnight = screen.getByRole("button", { name: /00:00.*September 29.*Available/ });
+    expect(midnight).not.toHaveClass("scheduling-assistant__slot--suggested");
+    fireEvent.click(workingHours);
+    expect(workingHours).toHaveAttribute("aria-checked", "false");
+    expect(midnight).toHaveClass("scheduling-assistant__slot--suggested");
+    fireEvent.keyDown(workingHours, { key: "ArrowDown" });
+    expect(details).toHaveFocus();
+    expect(container.querySelector(".scheduling-assistant__person small")).not.toBeNull();
+    expect(container.querySelector(".scheduling-assistant__busy")).toHaveAttribute(
+      "title",
+      "09:00 – 10:00 · Busy",
+    );
+    fireEvent.click(details);
+    expect(details).toHaveAttribute("aria-checked", "false");
+    expect(container.querySelector(".scheduling-assistant__person small")).toBeNull();
+    expect(container.querySelector(".scheduling-assistant__busy")).toHaveAttribute("title", "Busy");
+    fireEvent.click(details);
+    expect(container.querySelector(".scheduling-assistant__person small")).not.toBeNull();
+    fireEvent.keyDown(details, { key: "Escape" });
+    expect(summary.parentElement).not.toHaveAttribute("open");
+    expect(summary).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Move meeting" })).toHaveTextContent("09:17 – 10:02");
+  });
+
+  it("loads the visible days when navigating beyond the availability request limit", async () => {
+    const { load, container } = setup();
+    const nextDay = screen.getByRole("button", { name: "Next day" });
+    for (let day = 0; day < 63; day++) {
+      fireEvent.click(nextDay);
+    }
+    await waitFor(() =>
+      expect(load).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          start: toLocalIso("2026-12-01T00:00:00"),
+          end: toLocalIso("2026-12-03T00:00:00"),
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(container.querySelector(".scheduling-assistant__slot--suggested")).not.toBeNull(),
+    );
+    expect(screen.queryByRole("button", { name: "Move meeting" })).not.toBeInTheDocument();
+  });
+
+  it("opens at the last supported date without crashing and prevents navigation into the next year", () => {
+    const { container } = setup({
+      state: createMeetingState({
+        start: toLocalIso("9999-12-31T09:00:00"),
+        end: toLocalIso("9999-12-31T10:00:00"),
+      }),
+    });
+    const date = screen.getByLabelText("Start date");
+    expect(container.querySelector(".scheduling-assistant")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    expect(date).toHaveValue("12/31/9999");
+  });
+
+  it("adds required and optional participants and rooms, removes participants, and commits pending room input when returning", () => {
+    const { onSave } = setup();
+    for (const [label, value] of [
+      ["Add required participant", "Required Person <required@example.com>"],
+      ["Add optional participant", "Optional Person <optional@example.com>"],
+    ]) {
+      const input = screen.getByRole("combobox", { name: label });
+      fireEvent.change(input, { target: { value } });
+      fireEvent.keyDown(input, { key: "Enter" });
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Remove: Coworker" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Add a room" }), {
+      target: { value: "Boardroom <room@example.com>" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attendees: expect.arrayContaining([
+          expect.objectContaining({ email: "required@example.com", type: "required" }),
+          expect.objectContaining({ email: "optional@example.com", type: "optional" }),
+          expect.objectContaining({ email: "room@example.com", type: "resource" }),
+        ]),
+      }),
+    );
+    expect(vi.mocked(onSave).mock.calls[0]![0].attendees).toHaveLength(3);
+  });
+
+  it("moves, resizes and cancels horizontal dragging in half-hour steps", () => {
+    const { onSave } = setup();
+    const NativePointerEvent = class extends MouseEvent {
+      pointerId: number;
+      constructor(type: string, init: MouseEventInit & { pointerId?: number } = {}) {
+        super(type, init);
+        this.pointerId = init.pointerId ?? 1;
+      }
+    };
+    vi.stubGlobal("PointerEvent", NativePointerEvent);
+    const body = screen.getByRole("button", { name: "Move meeting" });
+    fireEvent.pointerDown(body, { clientX: 100, pointerId: 1, button: 0 });
+    fireEvent.pointerMove(body, { clientX: 172, pointerId: 1 });
+    fireEvent.pointerCancel(body, { pointerId: 1 });
+    expect(body).toHaveTextContent("09:17 – 10:02");
+    fireEvent.pointerDown(body, { clientX: 100, pointerId: 2, button: 0 });
+    fireEvent.pointerMove(body, { clientX: 172, pointerId: 2 });
+    fireEvent.pointerUp(body, { pointerId: 2 });
+    expect(body).toHaveTextContent("10:30 – 11:30");
+    fireEvent.keyDown(screen.getByRole("button", { name: "Adjust meeting end" }), {
+      key: "ArrowRight",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        start: toLocalIso("2026-09-29T10:30:00"),
+        end: toLocalIso("2026-09-29T12:00:00"),
+      }),
+    );
+  });
+
+  it("snaps keyboard movement from an off-grid time and removes only the selected unnamed participant", () => {
+    setup({
+      state: createMeetingState({
+        start: toLocalIso("2026-09-29T09:17:00"),
+        end: toLocalIso("2026-09-29T10:02:00"),
+        draft: {
+          subject: "Planning",
+          attendees: [
+            { ...createParticipant(), email: null, name: "First" },
+            { ...createParticipant(), email: null, name: "Second" },
+          ],
+        },
+      }),
+    });
+    fireEvent.keyDown(screen.getByRole("button", { name: "Calendar for First" }), {
+      key: "ArrowRight",
+    });
+    expect(screen.getByRole("button", { name: "Move meeting" })).toHaveTextContent("10:00 – 11:00");
+    fireEvent.click(screen.getByRole("button", { name: "Remove: First" }));
+    expect(screen.queryByRole("button", { name: "Calendar for First" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Calendar for Second" })).toBeInTheDocument();
+  });
+
+  it("freezes changes if saving begins while a pointer drag is active", () => {
+    const { rerenderDialog } = setup();
+    vi.stubGlobal(
+      "PointerEvent",
+      class extends MouseEvent {
+        pointerId = 1;
+      },
+    );
+    const body = screen.getByRole("button", { name: "Move meeting" });
+    fireEvent.pointerDown(body, { clientX: 100, button: 0 });
+    rerenderDialog({ busy: true });
+    fireEvent.pointerMove(body, { clientX: 172 });
+    expect(body).toHaveTextContent("09:30 – 10:30");
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("preserves an end-time edit made while a horizontal drag is captured", () => {
+    const { onSave } = setup();
+    const meeting = screen.getByRole("button", { name: "Move meeting" });
+    fireEvent.pointerDown(meeting, { button: 0, pointerId: 1, clientX: 100 });
+    const endTime = screen.getByRole("textbox", { name: /End time/ });
+    fireEvent.change(endTime, { target: { value: "12:00" } });
+    fireEvent.blur(endTime);
+    fireEvent.pointerMove(meeting, { pointerId: 1, clientX: 172 });
+    fireEvent.pointerCancel(meeting, { pointerId: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        start: toLocalIso("2026-09-29T09:30:00"),
+        end: toLocalIso("2026-09-29T12:00:00"),
+      }),
+    );
+  });
+
+  it("supports all-day date changes and preserves the exclusive event end on save", () => {
+    const { onSave } = setup();
+    fireEvent.click(screen.getByRole("switch", { name: "All day" }));
+    expect(screen.queryByRole("button", { name: "Adjust meeting end" })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole("textbox", { name: "Start date" }), {
+      target: { value: "09/30/2026" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        isAllDay: true,
+        start: toLocalIso("2026-09-30T00:00:00"),
+        end: toLocalIso("2026-10-01T00:00:00"),
+      }),
+    );
+  });
+
+  it("does not offer resize handles for clipped event boundaries or move a clipped start", () => {
+    setup({
+      state: createMeetingState({
+        start: toLocalIso("2026-09-29T23:00:00"),
+        end: toLocalIso("2026-10-01T01:00:00"),
+        draft: { subject: "Long planning" },
+      }),
+    });
+    expect(screen.getByRole("button", { name: "Adjust meeting start" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Adjust meeting end" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    expect(screen.queryByRole("button", { name: "Adjust meeting start" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Adjust meeting end" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Move meeting" })).toBeDisabled();
+  });
+
+  it("keeps keyboard activation of all-day calendars on the local date west of UTC", () => {
+    vi.stubEnv("TZ", "America/Los_Angeles");
+    onTestFinished(() => {
+      vi.unstubAllEnvs();
+    });
+    const { onSave } = setup();
+    fireEvent.click(screen.getByRole("switch", { name: "All day" }));
+    fireEvent.click(screen.getByRole("button", { name: /12:00.*September 30/ }));
+    const calendar = screen.getByRole("button", { name: "Calendar for Coworker" });
+    fireEvent.keyDown(calendar, { key: "ArrowLeft" });
+    expect(screen.getByLabelText("Start date")).toHaveValue("09/29/2026");
+    fireEvent.keyDown(calendar, { key: "ArrowRight" });
+    fireEvent.click(calendar);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        isAllDay: true,
+        start: toLocalIso("2026-09-30T00:00:00"),
+        end: toLocalIso("2026-10-01T00:00:00"),
+      }),
+    );
+  });
+
+  it("clears a captured move when the visible days change", () => {
+    const { onSave, container } = setup({
+      state: createMeetingState({
+        start: toLocalIso("2026-09-29T23:00:00"),
+        end: toLocalIso("2026-09-30T01:00:00"),
+        draft: { subject: "Overnight planning" },
+      }),
+    });
+    vi.stubGlobal(
+      "PointerEvent",
+      class extends MouseEvent {
+        pointerId = 1;
+      },
+    );
+    const body = screen.getByRole("button", { name: "Move meeting" });
+    fireEvent.pointerDown(body, { clientX: 100, button: 0 });
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    expect(container.querySelector(".scheduling-assistant__scroll")!.scrollLeft).toBe(576);
+    fireEvent.pointerMove(body, { clientX: 172 });
+    expect(screen.getByLabelText("Start date")).toHaveValue("09/29/2026");
+    fireEvent.pointerCancel(body);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        start: toLocalIso("2026-09-29T23:00:00"),
+        end: toLocalIso("2026-09-30T01:00:00"),
+      }),
+    );
+  });
+});
+
+describe("availability request reuse", () => {
+  const first: AttendeeAvailabilityArgs = {
+    calendarId: "calendar-1",
+    emails: ["coworker@example.com"],
+    start: "2026-09-29T00:00:00Z",
+    end: "2026-10-01T00:00:00Z",
+    includeSchedule: true,
+  };
+  const next: AttendeeAvailabilityArgs = {
+    ...first,
+    start: "2026-09-30T00:00:00Z",
+    end: "2026-10-02T00:00:00Z",
+  };
+  const free = [{ email: "coworker@example.com", status: "free" as const }];
+  const busy = [{ email: "coworker@example.com", status: "busy" as const }];
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  function setupHook(load = vi.fn().mockResolvedValue(free), refreshMs = 0, strict = false) {
+    const view = renderHook(
+      ({ args, loader }) => useAttendeeAvailability(args, loader, refreshMs),
+      {
+        initialProps: { args: first as AttendeeAvailabilityArgs | null, loader: load },
+        reactStrictMode: strict,
+      },
+    );
+    return {
+      ...view,
+      load,
+      change: (args: AttendeeAvailabilityArgs | null, loader = load) =>
+        view.rerender({ args, loader }),
+    };
+  }
+
+  async function advance(ms: number) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  }
+
+  it("starts the initial request immediately and reuses recent days without a loading state", async () => {
+    const { result, load, change } = setupHook();
+    await advance(0);
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(result.current).toEqual({ items: free, loading: false });
+    change(next);
+    expect(result.current.loading).toBe(true);
+    await advance(300);
+    expect(load).toHaveBeenCalledTimes(2);
+    change(first);
+    expect(result.current).toEqual({ items: free, loading: false });
+    await advance(300);
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it("starts immediately once after Strict Mode replays the mount effects", async () => {
+    const load = vi.fn().mockResolvedValue(free);
+    const { result } = setupHook(load, 0, true);
+    await advance(0);
+    expect(result.current).toEqual({ items: free, loading: false });
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it("reuses a complete month's schedule for narrower ranges, recalculates their status and expires it normally", async () => {
+    const month = { ...first, start: "2026-09-01T00:00:00Z", end: "2026-10-01T00:00:00Z" };
+    const load = vi.fn().mockImplementation(async (args: AttendeeAvailabilityArgs) => [
+      {
+        email: "coworker@example.com",
+        status: "busy" as const,
+        schedule: {
+          start: args.start,
+          end: args.end,
+          slots: [
+            { start: "2026-09-29T09:00:00Z", end: "2026-09-29T10:00:00Z", status: "busy" as const },
+          ],
+        },
+      },
+    ]);
+    const { result, change } = setupHook(load);
+    await advance(0);
+    change(month);
+    await advance(300);
+    const day = { ...first, start: "2026-09-15T00:00:00Z", end: "2026-09-17T00:00:00Z" };
+    change(day);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.items[0]!.status).toBe("free");
+    await advance(300);
+    expect(load).toHaveBeenCalledTimes(2);
+    change({ ...day, end: "2026-10-02T00:00:00Z" });
+    expect(result.current.loading).toBe(true);
+    await advance(300);
+    expect(load).toHaveBeenCalledTimes(3);
+    await advance(31_000);
+    change(day);
+    expect(result.current.loading).toBe(true);
+    await advance(300);
+    expect(load).toHaveBeenCalledTimes(4);
+  });
+
+  it("does not reuse a wider range when a participant's detailed schedule is missing", async () => {
+    const load = vi.fn().mockResolvedValue(free);
+    const { result, change } = setupHook(load);
+    await advance(0);
+    change({ ...first, start: "2026-09-29T09:00:00Z", end: "2026-09-29T10:00:00Z" });
+    expect(result.current.loading).toBe(true);
+    await advance(300);
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not dispatch a queued request after the dialog is unmounted", async () => {
+    const { load, unmount } = setupHook();
+    act(() => {
+      vi.advanceTimersByTime(0);
+      unmount();
+    });
+    await advance(0);
+    expect(load).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("refetches an expired cached day instead of reporting old availability", async () => {
+    const { result, load, change } = setupHook();
+    await advance(0);
+    change(next);
+    await advance(31_000);
+    load.mockResolvedValue(busy);
+    change(first);
+    expect(result.current).toEqual({ items: [], loading: true });
+    await advance(300);
+    expect(result.current).toEqual({ items: busy, loading: false });
+    expect(load).toHaveBeenCalledTimes(3);
+  });
+
+  it("isolates reused results from a different calendar, loader and closed dialog", async () => {
+    const { result, load, change } = setupHook();
+    await advance(0);
+    change({ ...first, calendarId: "calendar-2" });
+    expect(result.current).toEqual({ items: [], loading: true });
+    await advance(0);
+    expect(load).toHaveBeenCalledTimes(2);
+    const otherLoad = vi.fn().mockResolvedValue(busy);
+    change(first, otherLoad);
+    expect(result.current).toEqual({ items: [], loading: true });
+    await advance(0);
+    expect(result.current.items).toEqual(busy);
+    change(null, otherLoad);
+    expect(result.current).toEqual({ items: [], loading: false });
+    change(first, otherLoad);
+    await advance(0);
+    expect(otherLoad).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the current availability visible during periodic refresh and replaces it with new conflicts", async () => {
+    const load = vi.fn().mockResolvedValueOnce(free).mockResolvedValue(busy);
+    const { result } = setupHook(load, 60_000);
+    await advance(0);
+    await advance(60_000);
+    expect(result.current).toEqual({ items: free, loading: false });
+    await advance(300);
+    expect(result.current).toEqual({ items: busy, loading: false });
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it("runs the scheduled refresh even if a slow previous response is still in the reuse window", async () => {
+    const load = vi
+      .fn()
+      .mockImplementationOnce(
+        () => new Promise((resolve) => setTimeout(() => resolve(free), 31_000)),
+      )
+      .mockResolvedValue(busy);
+    const { result } = setupHook(load, 60_000);
+    await advance(31_000);
+    expect(result.current.items).toEqual(free);
+    await advance(29_000);
+    await advance(300);
+    expect(result.current.items).toEqual(busy);
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not reuse transport failures when returning to a day", async () => {
+    const failed = [{ email: "coworker@example.com", status: "unknown", error: "requestFailed" }];
+    const load = vi.fn().mockResolvedValueOnce(failed).mockResolvedValue(free);
+    const { result, change } = setupHook(load);
+    await advance(0);
+    expect(result.current.items).toEqual(failed);
+    change(next);
+    await advance(300);
+    change(first);
+    expect(result.current.loading).toBe(true);
+    await advance(300);
+    expect(result.current.items).toEqual(free);
+    expect(load).toHaveBeenCalledTimes(3);
+  });
+
+  it("ignores a late response to an abandoned day and debounces navigation to uncached days", async () => {
+    let resolveOld: (items: typeof busy) => void = () => undefined;
+    const load = vi
+      .fn()
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveOld = resolve;
+        }),
+      )
+      .mockResolvedValue(free);
+    const { result, change } = setupHook(load);
+    await advance(0);
+    change(next);
+    await advance(100);
+    change({ ...next, start: "2026-10-01T00:00:00Z", end: "2026-10-03T00:00:00Z" });
+    await advance(300);
+    expect(load).toHaveBeenCalledTimes(2);
+    await act(async () => resolveOld(busy));
+    expect(result.current.items).toEqual(free);
+    change(first);
+    expect(result.current.loading).toBe(true);
+    await advance(300);
+    expect(load).toHaveBeenCalledTimes(3);
+    expect(result.current.items).toEqual(free);
+  });
+});
+
 describe("calendar dropdown", () => {
   it("saves the calendar chosen by typing on the closed dropdown", () => {
     expect.hasAssertions();
@@ -237,7 +971,7 @@ describe("calendar dropdown", () => {
       calendars: [createCalendar(), { ...createCalendar(), id: "calendar-2", name: "Birthdays" }],
       state: createMeetingState({ draft: { subject: "Planning" } }),
     });
-    const trigger = screen.getByRole("button", { name: "Calendar", exact: true });
+    const trigger = screen.getByRole("button", { name: "Calendar" });
     fireEvent.keyDown(trigger, { key: "b" });
     expect(trigger).toHaveTextContent("Birthdays (user@example.com)");
     expect(trigger).toHaveAttribute("aria-expanded", "false");
@@ -254,7 +988,7 @@ describe("calendar dropdown", () => {
           ? createMeetingState({ draft: { subject: "Planning" } })
           : { mode: "edit", event: createEvent() },
     });
-    const trigger = screen.getByRole("button", { name: "Calendar", exact: true });
+    const trigger = screen.getByRole("button", { name: "Calendar" });
     fireEvent.click(trigger);
     expect(
       screen.getByRole("option", { name: "Primary Calendar (user@example.com)" }),
@@ -273,7 +1007,7 @@ describe("calendar dropdown", () => {
     renderDialog({
       calendars: [createCalendar(), { ...createCalendar(), id: "calendar-2", name: "Birthdays" }],
     });
-    const trigger = screen.getByRole("button", { name: "Calendar", exact: true });
+    const trigger = screen.getByRole("button", { name: "Calendar" });
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
     const options = screen.getAllByRole("option");
     expect(options[0]).toHaveFocus();
@@ -300,7 +1034,7 @@ describe("calendar dropdown", () => {
   it("prevents changing the calendar for an attendee", () => {
     expect.hasAssertions();
     renderDialog({ state: { mode: "edit", event: createAttendeeEvent() } });
-    const trigger = screen.getByRole("button", { name: "Calendar", exact: true });
+    const trigger = screen.getByRole("button", { name: "Calendar" });
     expect(trigger).toBeDisabled();
     fireEvent.click(trigger);
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
@@ -329,7 +1063,7 @@ describe("new meeting participant availability", () => {
     });
     expect(await screen.findByText("Available")).toBeInTheDocument();
     expect(load).toHaveBeenCalledWith(
-      expect.objectContaining({ emails: ["coworker@example.com"] }),
+      expect.objectContaining({ emails: ["coworker@example.com", "user@example.com"] }),
     );
     expect(
       within(screen.getByText("unfinished-address").closest(".attendee-pill")!).getByText(
@@ -338,7 +1072,7 @@ describe("new meeting participant availability", () => {
     ).toBeInTheDocument();
   });
 
-  it("times out a stalled check, checks a changed time and ignores its late response", async () => {
+  it("times out a stalled check, checks a changed day and ignores its late response", async () => {
     expect.hasAssertions();
     vi.useFakeTimers();
     let resolveOld: (items: { email: string; status: "free" }[]) => void = () => undefined;
@@ -356,8 +1090,8 @@ describe("new meeting participant availability", () => {
     expect(screen.getByText("Unknown")).toBeInTheDocument();
     view.rerenderDialog({
       state: createMeetingState({
-        start: "2026-09-29T11:00:00.000Z",
-        end: "2026-09-29T12:00:00.000Z",
+        start: "2026-09-30T11:00:00.000Z",
+        end: "2026-09-30T12:00:00.000Z",
       }),
     });
     await act(async () => {
@@ -412,9 +1146,13 @@ describe("new meeting participant availability", () => {
     ["2026-03-29", "2026-03-30"],
     ["2026-10-25", "2026-10-26"],
   ])(
-    "keeps an all-day range at local midnight across the clock change on %s",
+    "keeps an all-day event at local midnight and preloads the next day across the clock change on %s",
     async (day, nextDay) => {
       expect.hasAssertions();
+      vi.stubEnv("TZ", "Europe/Rome");
+      onTestFinished(() => {
+        vi.unstubAllEnvs();
+      });
       const load = vi.fn().mockResolvedValue([{ email: "coworker@example.com", status: "free" }]);
       const start = toLocalIso(`${day}T00:00:00`);
       const end = toLocalIso(`${nextDay}T00:00:00`);
@@ -423,7 +1161,11 @@ describe("new meeting participant availability", () => {
         state: createMeetingState({ allDay: true, start, end }),
       });
       expect(await screen.findByText("Available")).toBeInTheDocument();
-      expect(load).toHaveBeenCalledWith(expect.objectContaining({ start, end }));
+      const previewEnd = new Date(end);
+      previewEnd.setDate(previewEnd.getDate() + 1);
+      expect(load).toHaveBeenCalledWith(
+        expect.objectContaining({ start, end: previewEnd.toISOString() }),
+      );
       editSubject("All-day meeting");
       fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
       expect(view.onSave).toHaveBeenCalledWith(
@@ -462,16 +1204,17 @@ describe("new meeting participant availability", () => {
     );
     expect(load).toHaveBeenCalledWith({
       calendarId: "calendar-1",
-      emails: ["coworker@example.com", "optional@example.com"],
-      start: "2026-09-29T09:00:00.000Z",
-      end: "2026-09-29T10:00:00.000Z",
+      emails: ["coworker@example.com", "optional@example.com", "user@example.com"],
+      start: toLocalIso("2026-09-29T00:00:00"),
+      end: toLocalIso("2026-10-01T00:00:00"),
+      includeSchedule: true,
     });
     editSubject("Planning");
     fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
     await waitFor(() => expect(view.onSave).toHaveBeenCalled());
   });
 
-  it("updates automatically when the time changes and discards a late response", async () => {
+  it("updates automatically when the day changes and discards a late response", async () => {
     expect.hasAssertions();
     let resolveOld: (items: { email: string; status: "busy" }[]) => void = () => undefined;
     const oldRequest = new Promise<{ email: string; status: "busy" }[]>((resolve) => {
@@ -485,8 +1228,8 @@ describe("new meeting participant availability", () => {
     await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
     view.rerenderDialog({
       state: createMeetingState({
-        start: "2026-09-29T11:00:00.000Z",
-        end: "2026-09-29T12:00:00.000Z",
+        start: "2026-09-30T11:00:00.000Z",
+        end: "2026-09-30T12:00:00.000Z",
       }),
     });
     expect(screen.getByText("Checking…")).toBeInTheDocument();
@@ -514,9 +1257,10 @@ describe("new meeting participant availability", () => {
     expect(await screen.findByText("Unknown")).toBeInTheDocument();
     expect(load).toHaveBeenCalledWith({
       calendarId: "calendar-1",
-      emails: ["coworker@example.com"],
+      emails: ["coworker@example.com", "user@example.com"],
       start: toLocalIso("2026-09-29T00:00:00"),
-      end: toLocalIso("2026-09-30T00:00:00"),
+      end: toLocalIso("2026-10-01T00:00:00"),
+      includeSchedule: true,
     });
     expect(screen.queryByText("Available")).not.toBeInTheDocument();
   });
@@ -552,13 +1296,566 @@ describe("new meeting participant availability", () => {
       ],
     });
     expect(await screen.findByText("Available")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Calendar", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Calendar" }));
     fireEvent.click(screen.getAllByRole("option")[1]);
     expect(screen.queryByText("Available")).not.toBeInTheDocument();
     expect(await screen.findByText("Unknown")).toBeInTheDocument();
     expect(load).toHaveBeenLastCalledWith(expect.objectContaining({ calendarId: "calendar-2" }));
     fireEvent.click(screen.getByRole("button", { name: "Remove" }));
     expect(screen.queryByText("Unknown")).not.toBeInTheDocument();
+  });
+});
+
+describe("daily meeting planner", () => {
+  function renderPlanningDialog(props: Parameters<typeof renderDialog>[0]) {
+    const view = renderDialog(props);
+    fireEvent.click(screen.getByRole("tab", { name: "Scheduling" }));
+    return view;
+  }
+
+  it("switches between the original participants layout and planning without losing the selected time", async () => {
+    expect.hasAssertions();
+    const load = loadSchedules();
+    const { container, onSave } = renderDialog({
+      state: planningState(),
+      onGetAttendeeAvailability: load,
+    });
+    const attendees = screen.getByRole("tab", { name: "Attendees" });
+    const scheduling = screen.getByRole("tab", { name: "Scheduling" });
+    expect(attendees).toHaveAttribute("aria-selected", "true");
+    const originalPanel = screen.getByRole("tabpanel", { name: "Attendees" });
+    expect(within(originalPanel).getByText("Test User")).toBeInTheDocument();
+    expect(within(originalPanel).getByText("Coworker")).toBeInTheDocument();
+    expect(within(originalPanel).getByText("No response: 1")).toBeInTheDocument();
+    expect(container.querySelector(".meeting-planner")).toBeNull();
+    fireEvent.keyDown(attendees, { key: "ArrowRight" });
+    expect(scheduling).toHaveFocus();
+    expect(scheduling).toHaveAttribute("aria-selected", "true");
+    await screen.findByText("1 participant is unavailable");
+    fireEvent.click(container.querySelectorAll(".meeting-planner__slot")[31]);
+    fireEvent.keyDown(scheduling, { key: "Home" });
+    expect(attendees).toHaveFocus();
+    expect(screen.getByRole("tabpanel", { name: "Attendees" })).toBeInTheDocument();
+    fireEvent.keyDown(attendees, { key: "End" });
+    expect(scheduling).toHaveFocus();
+    expect(screen.getByText("Everyone is available")).toBeInTheDocument();
+    fireEvent.click(attendees);
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          start: toLocalIso("2026-09-29T15:30:00"),
+          end: toLocalIso("2026-09-29T16:30:00"),
+        }),
+      ),
+    );
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  function loadSchedules() {
+    return vi.fn().mockImplementation(async (args: AttendeeAvailabilityArgs) =>
+      args.emails.map((email) => ({
+        email,
+        status: email === "coworker@example.com" ? "busy" : "free",
+        schedule: {
+          start: args.start,
+          end: args.end,
+          slots:
+            email === "coworker@example.com"
+              ? [
+                  {
+                    start: toLocalIso("2026-09-29T09:15:00"),
+                    end: toLocalIso("2026-09-29T10:15:00"),
+                    status: "busy",
+                  },
+                ]
+              : [],
+        },
+      })),
+    );
+  }
+
+  function planningState() {
+    return createMeetingState({
+      start: toLocalIso("2026-09-29T09:17:00"),
+      end: toLocalIso("2026-09-29T10:02:00"),
+      draft: {
+        subject: "Planning",
+        attendees: [{ ...createParticipant(), email: "coworker@example.com", name: "Coworker" }],
+      },
+    });
+  }
+
+  it("keeps a newly selected day when a previous captured drag is cancelled", () => {
+    const { onSave } = renderPlanningDialog({ state: planningState() });
+    const meeting = screen.getByRole("button", { name: "Move meeting" });
+    meeting.setPointerCapture = vi.fn();
+    fireEvent.pointerDown(meeting, { button: 0, pointerId: 1, clientY: 100 });
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    fireEvent.pointerCancel(meeting, { pointerId: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        start: toLocalIso("2026-09-30T09:30:00"),
+        end: toLocalIso("2026-09-30T10:30:00"),
+      }),
+    );
+  });
+
+  it("preserves an end-time edit made while a vertical drag is captured", () => {
+    const { container, onSave } = renderPlanningDialog({ state: planningState() });
+    const meeting = screen.getByRole("button", { name: "Move meeting" });
+    meeting.setPointerCapture = vi.fn();
+    fireEvent.pointerDown(meeting, { button: 0, pointerId: 1, clientY: 100 });
+    fireEvent.click(container.querySelector(".scheduling-summary")!);
+    const endTime = screen.getByRole("textbox", { name: /End time/ });
+    fireEvent.change(endTime, { target: { value: "12:00" } });
+    fireEvent.blur(endTime);
+    fireEvent.pointerMove(meeting, { pointerId: 1, clientY: 164 });
+    fireEvent.pointerCancel(meeting, { pointerId: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        start: toLocalIso("2026-09-29T09:30:00"),
+        end: toLocalIso("2026-09-29T12:00:00"),
+      }),
+    );
+  });
+
+  it("reuses the day's busy grid while moving the event through a dense calendar", async () => {
+    const load = vi.fn().mockImplementation(async (args: AttendeeAvailabilityArgs) =>
+      args.emails.map((email) => ({
+        email,
+        status: "busy",
+        schedule: {
+          start: args.start,
+          end: args.end,
+          slots: Array.from({ length: 30 }, (_, index) => ({
+            start: new Date(Date.parse(args.start) + index * 1_800_000).toISOString(),
+            end: new Date(Date.parse(args.start) + index * 1_800_000 + 300_000).toISOString(),
+            status: "busy",
+          })),
+        },
+      })),
+    );
+    const { container } = renderPlanningDialog({
+      state: planningState(),
+      onGetAttendeeAvailability: load,
+    });
+    await screen.findByText("2 participants are unavailable");
+    const busySlots = container.querySelectorAll(".meeting-planner__slot--busy").length;
+    const parse = vi.spyOn(Date, "parse");
+    onTestFinished(() => {
+      parse.mockRestore();
+    });
+    fireEvent.keyDown(screen.getByRole("button", { name: "Move meeting" }), { key: "ArrowDown" });
+    expect(container.querySelectorAll(".meeting-planner__slot--busy")).toHaveLength(busySlots);
+    expect(parse.mock.calls.length).toBeLessThan(500);
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the whole day and saves a clicked slot with a rounded duration without reloading calendars", async () => {
+    const load = loadSchedules();
+    const { container, onSave } = renderPlanningDialog({
+      state: planningState(),
+      onGetAttendeeAvailability: load,
+      timeFormat: "24h",
+    });
+    expect(await screen.findByText("1 participant is unavailable")).toBeInTheDocument();
+    const slots = container.querySelectorAll(".meeting-planner__slot");
+    expect(slots).toHaveLength(48);
+    expect(container.querySelectorAll(".meeting-planner__slot--busy")).toHaveLength(3);
+    fireEvent.click(slots[31]);
+    expect(screen.getByText("Everyone is available")).toBeInTheDocument();
+    expect(screen.getByText("coworker@example.com").closest(".attendee-pill")).toHaveClass(
+      "attendee-pill--free",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Extend by 30 minutes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          start: toLocalIso("2026-09-29T15:30:00"),
+          end: toLocalIso("2026-09-29T17:00:00"),
+        }),
+      ),
+    );
+    expect(load).toHaveBeenCalledTimes(1);
+  });
+
+  it("expands the avatar pill and focuses an individual calendar, then changes the planning day", async () => {
+    const load = loadSchedules();
+    const { container, onSave } = renderPlanningDialog({
+      state: planningState(),
+      onGetAttendeeAvailability: load,
+    });
+    await screen.findByText("1 participant is unavailable");
+    const pill = screen.getByRole("button", { name: "Participant availability" });
+    expect(pill).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(pill);
+    expect(pill).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(screen.getByRole("button", { name: /Coworker.*coworker@example.com.*Busy/ }));
+    expect(
+      container.querySelector(".meeting-planner__slot")?.getAttribute("aria-label"),
+    ).not.toContain("Test User");
+    fireEvent.click(screen.getByRole("button", { name: "Show everyone" }));
+    expect(container.querySelector(".meeting-planner__slot")?.getAttribute("aria-label")).toContain(
+      "Test User",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    await screen.findByText("Everyone is available");
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          start: toLocalIso("2026-09-30T09:30:00"),
+          end: toLocalIso("2026-09-30T10:30:00"),
+        }),
+      ),
+    );
+    expect(load).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        start: toLocalIso("2026-09-30T00:00:00"),
+        end: toLocalIso("2026-10-02T00:00:00"),
+      }),
+    );
+  });
+
+  it("resizes with pointer capture and restores a cancelled drag before allowing keyboard resizing", async () => {
+    const { container, onSave } = renderPlanningDialog({
+      state: planningState(),
+      onGetAttendeeAvailability: loadSchedules(),
+    });
+    await screen.findByText("1 participant is unavailable");
+    const handle = screen.getByRole("button", { name: "Adjust meeting end" });
+    handle.setPointerCapture = vi.fn();
+    const scroll = container.querySelector(".meeting-planner__scroll")!;
+    vi.spyOn(scroll, "getBoundingClientRect").mockReturnValue({ top: 0, bottom: 1000 } as DOMRect);
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientY: 100 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 164 });
+    expect(screen.getByText("90 min")).toBeInTheDocument();
+    fireEvent.pointerCancel(handle, { pointerId: 1 });
+    expect(screen.getByText("45 min")).toBeInTheDocument();
+    fireEvent.keyDown(handle, { key: "ArrowDown" });
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          start: toLocalIso("2026-09-29T09:30:00"),
+          end: toLocalIso("2026-09-29T10:30:00"),
+        }),
+      ),
+    );
+  });
+
+  it("moves the meeting body in half-hour steps while preserving its duration and pointer ownership", () => {
+    expect.hasAssertions();
+    const { container, onSave } = renderPlanningDialog({
+      timeFormat: "24h",
+      state: createMeetingState({
+        start: toLocalIso("2026-09-29T11:00:00"),
+        end: toLocalIso("2026-09-29T13:00:00"),
+        draft: { subject: "Move meeting" },
+      }),
+    });
+    const meeting = screen.getByRole("button", { name: "Move meeting" });
+    meeting.setPointerCapture = vi.fn();
+    vi.spyOn(
+      container.querySelector(".meeting-planner__scroll")!,
+      "getBoundingClientRect",
+    ).mockReturnValue({ top: 0, bottom: 1000 } as DOMRect);
+    fireEvent.pointerDown(meeting, { button: 0, pointerId: 1, clientY: 100 });
+    fireEvent.pointerMove(meeting, { pointerId: 2, clientY: 164 });
+    fireEvent.pointerUp(meeting, { pointerId: 2 });
+    expect(meeting).toHaveTextContent("11:00 – 13:00");
+    fireEvent.pointerMove(meeting, { pointerId: 1, clientY: 164 });
+    fireEvent.pointerUp(meeting, { pointerId: 1 });
+    expect(meeting.setPointerCapture).toHaveBeenCalledWith(1);
+    expect(screen.getByText("120 min")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        start: toLocalIso("2026-09-29T12:00:00"),
+        end: toLocalIso("2026-09-29T14:00:00"),
+      }),
+    );
+  });
+
+  it("restores a cancelled body drag and rounds an off-grid duration up when moving with the keyboard", () => {
+    expect.hasAssertions();
+    const { container, onSave } = renderPlanningDialog({ state: planningState() });
+    const meeting = screen.getByRole("button", { name: "Move meeting" });
+    meeting.setPointerCapture = vi.fn();
+    vi.spyOn(
+      container.querySelector(".meeting-planner__scroll")!,
+      "getBoundingClientRect",
+    ).mockReturnValue({ top: 0, bottom: 1000 } as DOMRect);
+    fireEvent.pointerDown(meeting, { button: 0, pointerId: 1, clientY: 100 });
+    fireEvent.pointerMove(meeting, { pointerId: 1, clientY: 132 });
+    expect(screen.getByText("60 min")).toBeInTheDocument();
+    fireEvent.pointerCancel(meeting, { pointerId: 1 });
+    expect(screen.getByText("45 min")).toBeInTheDocument();
+    fireEvent.keyDown(meeting, { key: "ArrowDown" });
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        start: toLocalIso("2026-09-29T10:00:00"),
+        end: toLocalIso("2026-09-29T11:00:00"),
+      }),
+    );
+  });
+
+  it("keeps a body drag inside the selected day without truncating an overnight meeting", () => {
+    expect.hasAssertions();
+    const { container, onSave } = renderPlanningDialog({
+      timeFormat: "24h",
+      state: createMeetingState({
+        start: toLocalIso("2026-09-29T23:00:00"),
+        end: toLocalIso("2026-09-30T01:00:00"),
+        draft: { subject: "Night meeting" },
+      }),
+    });
+    const meeting = screen.getByRole("button", { name: "Move meeting" });
+    meeting.setPointerCapture = vi.fn();
+    vi.spyOn(
+      container.querySelector(".meeting-planner__scroll")!,
+      "getBoundingClientRect",
+    ).mockReturnValue({ top: 0, bottom: 1000 } as DOMRect);
+    fireEvent.pointerDown(meeting, { button: 0, pointerId: 1, clientY: 100 });
+    fireEvent.pointerMove(meeting, { pointerId: 1, clientY: 164 });
+    fireEvent.pointerUp(meeting, { pointerId: 1 });
+    expect(meeting).toHaveTextContent("23:30 – 01:30");
+    fireEvent.keyDown(meeting, { key: "ArrowDown" });
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        start: toLocalIso("2026-09-30T00:00:00"),
+        end: toLocalIso("2026-09-30T02:00:00"),
+      }),
+    );
+  });
+
+  it("freezes a captured body move while saving", () => {
+    expect.hasAssertions();
+    const view = renderPlanningDialog({ state: planningState() });
+    const meeting = screen.getByRole("button", { name: "Move meeting" });
+    meeting.setPointerCapture = vi.fn();
+    fireEvent.pointerDown(meeting, { button: 0, pointerId: 1, clientY: 100 });
+    view.rerenderDialog({ busy: true });
+    fireEvent.pointerMove(meeting, { pointerId: 1, clientY: 164 });
+    fireEvent.pointerCancel(meeting, { pointerId: 1 });
+    expect(screen.getByText("60 min")).toBeInTheDocument();
+    expect(meeting).toBeDisabled();
+  });
+
+  it("keeps participants without an email visible and never marks their availability as confirmed", async () => {
+    const state = createMeetingState({
+      draft: {
+        attendees: [
+          { ...createParticipant(), name: "Meeting room", email: null, type: "resource" },
+        ],
+      },
+    });
+    const load = loadSchedules();
+    renderPlanningDialog({ state, onGetAttendeeAvailability: load });
+    await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("Availability not confirmed")).toBeInTheDocument();
+    expect(screen.queryByText("Everyone is available")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Participant availability" }));
+    expect(screen.getByText("Meeting room")).toBeInTheDocument();
+  });
+
+  it("matches normalized participant addresses in the planner instead of reporting false unknown availability", async () => {
+    renderPlanningDialog({
+      state: createMeetingState({
+        start: toLocalIso("2026-09-29T15:00:00"),
+        end: toLocalIso("2026-09-29T15:30:00"),
+        draft: { attendees: [{ ...createParticipant(), email: " COWORKER@example.com " }] },
+      }),
+      onGetAttendeeAvailability: loadSchedules(),
+    });
+    expect(await screen.findByText("Everyone is available")).toBeInTheDocument();
+  });
+
+  it("keeps navigation within supported calendar years", () => {
+    const { container } = renderPlanningDialog({
+      state: createMeetingState({
+        start: toLocalIso("9999-12-31T09:00:00"),
+        end: toLocalIso("9999-12-31T10:00:00"),
+      }),
+    });
+    const summary = container.querySelector(".scheduling-summary")!.textContent;
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    expect(container.querySelector(".scheduling-summary")).toHaveTextContent(summary!);
+  });
+
+  it("checks every day of a multi-day all-day meeting in the selection summary", async () => {
+    const load = vi.fn().mockImplementation(async (args: AttendeeAvailabilityArgs) =>
+      args.emails.map((email) => ({
+        email,
+        status: email === "coworker@example.com" ? "busy" : "free",
+        schedule: {
+          start: args.start,
+          end: args.end,
+          slots:
+            email === "coworker@example.com"
+              ? [
+                  {
+                    start: toLocalIso("2026-09-30T12:00:00"),
+                    end: toLocalIso("2026-09-30T13:00:00"),
+                    status: "busy",
+                  },
+                ]
+              : [],
+        },
+      })),
+    );
+    renderPlanningDialog({
+      state: createMeetingState({
+        allDay: true,
+        start: toLocalIso("2026-09-29T00:00:00"),
+        end: toLocalIso("2026-10-01T00:00:00"),
+      }),
+      onGetAttendeeAvailability: load,
+    });
+    expect(await screen.findByText("1 participant is unavailable")).toBeInTheDocument();
+    expect(screen.queryByText("Everyone is available")).not.toBeInTheDocument();
+  });
+
+  it("keeps an overnight end outside the day preview and extends it without shortening the meeting", async () => {
+    const { onSave } = renderPlanningDialog({
+      state: createMeetingState({
+        start: toLocalIso("2026-09-29T23:30:00"),
+        end: toLocalIso("2026-09-30T00:30:00"),
+        draft: { subject: "Night meeting" },
+      }),
+      onGetAttendeeAvailability: loadSchedules(),
+    });
+    await screen.findByText("Everyone is available");
+    expect(screen.queryByRole("button", { name: "Adjust meeting end" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Extend by 30 minutes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          start: toLocalIso("2026-09-29T23:30:00"),
+          end: toLocalIso("2026-09-30T01:00:00"),
+        }),
+      ),
+    );
+  });
+
+  it("freezes a captured resize gesture when saving starts", async () => {
+    const view = renderPlanningDialog({
+      state: planningState(),
+      onGetAttendeeAvailability: loadSchedules(),
+    });
+    await screen.findByText("1 participant is unavailable");
+    const handle = screen.getByRole("button", { name: "Adjust meeting end" });
+    handle.setPointerCapture = vi.fn();
+    vi.spyOn(
+      view.container.querySelector(".meeting-planner__scroll")!,
+      "getBoundingClientRect",
+    ).mockReturnValue({ top: 0, bottom: 1000 } as DOMRect);
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientY: 100 });
+    view.rerenderDialog({ busy: true });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 164 });
+    fireEvent.pointerCancel(handle, { pointerId: 1 });
+    expect(screen.getByText("30 min")).toBeInTheDocument();
+    expect(handle).toBeDisabled();
+  });
+
+  it("keeps resizing owned by its captured pointer and stops after capture is lost", async () => {
+    const { container } = renderPlanningDialog({
+      state: planningState(),
+      onGetAttendeeAvailability: loadSchedules(),
+    });
+    await screen.findByText("1 participant is unavailable");
+    const handle = screen.getByRole("button", { name: "Adjust meeting end" });
+    handle.setPointerCapture = vi.fn();
+    vi.spyOn(
+      container.querySelector(".meeting-planner__scroll")!,
+      "getBoundingClientRect",
+    ).mockReturnValue({ top: 0, bottom: 1000 } as DOMRect);
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientY: 100 });
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 2, clientY: 100 });
+    fireEvent.pointerMove(handle, { pointerId: 2, clientY: 164 });
+    fireEvent.pointerUp(handle, { pointerId: 2 });
+    expect(screen.getByText("30 min")).toBeInTheDocument();
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 164 });
+    expect(screen.getByText("90 min")).toBeInTheDocument();
+    fireEvent.lostPointerCapture(handle, { pointerId: 1 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 196 });
+    expect(screen.getByText("90 min")).toBeInTheDocument();
+  });
+
+  it("keeps pointer movement aligned when snapping a late start into the next day", () => {
+    const { container, onSave } = renderPlanningDialog({
+      state: createMeetingState({
+        start: toLocalIso("2026-09-29T23:47:00"),
+        end: toLocalIso("2026-09-30T00:47:00"),
+        draft: { subject: "Late meeting" },
+      }),
+    });
+    const handle = screen.getByRole("button", { name: "Adjust meeting start" });
+    handle.setPointerCapture = vi.fn();
+    vi.spyOn(
+      container.querySelector(".meeting-planner__scroll")!,
+      "getBoundingClientRect",
+    ).mockReturnValue({ top: 0, bottom: 1000 } as DOMRect);
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientY: 100 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 132 });
+    fireEvent.pointerUp(handle, { pointerId: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        start: toLocalIso("2026-09-30T00:30:00"),
+        end: toLocalIso("2026-09-30T01:00:00"),
+      }),
+    );
+  });
+
+  it("refreshes calendars while open and applies new conflicts without changing the selected time", async () => {
+    vi.useFakeTimers();
+    try {
+      const load = loadSchedules();
+      const { container } = renderPlanningDialog({
+        state: planningState(),
+        onGetAttendeeAvailability: load,
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      fireEvent.click(container.querySelectorAll(".meeting-planner__slot")[31]);
+      expect(screen.getByText("Everyone is available")).toBeInTheDocument();
+      load.mockImplementation(async (args: AttendeeAvailabilityArgs) =>
+        args.emails.map((email) => ({
+          email,
+          status: "busy",
+          schedule: {
+            start: args.start,
+            end: args.end,
+            slots: [
+              {
+                start: toLocalIso("2026-09-29T15:30:00"),
+                end: toLocalIso("2026-09-29T16:30:00"),
+                status: "busy",
+              },
+            ],
+          },
+        })),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      expect(screen.getByText("2 participants are unavailable")).toBeInTheDocument();
+      expect(load).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

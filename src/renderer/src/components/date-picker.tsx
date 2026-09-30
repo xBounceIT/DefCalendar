@@ -11,6 +11,7 @@ interface DatePickerProps {
   onChange: (value: string) => void;
   disabled?: boolean;
   allowClear?: boolean;
+  variant?: "field" | "inline";
 }
 
 function parseDate(value: string, pattern: string): Date | null {
@@ -30,6 +31,7 @@ function DatePicker({
   onChange,
   disabled = false,
   allowClear = false,
+  variant = "field",
 }: DatePickerProps) {
   const { t, i18n } = useTranslation();
   const locale = i18n.resolvedLanguage?.startsWith("it") ? it : enUS;
@@ -112,6 +114,33 @@ function DatePicker({
   }
 
   const invalid = text !== "" && !parseDate(text, pattern) && !parseDate(text, "yyyy-MM-dd");
+  const inlineLabel = date ? format(date, `EEE ${pattern}`, { locale }) : label;
+  const trigger = (
+    <button
+      id={variant === "inline" ? id : undefined}
+      ref={triggerRef}
+      type="button"
+      disabled={disabled}
+      className={variant === "inline" ? "date-picker__inline-trigger" : "date-picker__trigger"}
+      aria-label={`${t("datePicker.open", { label })}${variant === "inline" ? `: ${inlineLabel}` : ""}`}
+      aria-expanded={open}
+      aria-controls={open ? panelId : undefined}
+      aria-haspopup="dialog"
+      onClick={() => setOpen((previous) => !previous)}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          setOpen(true);
+        }
+      }}
+    >
+      {variant === "inline" ? (
+        <span className="date-picker__inline-label">{inlineLabel}</span>
+      ) : (
+        <CalendarIcon />
+      )}
+    </button>
+  );
 
   return (
     <div
@@ -126,49 +155,41 @@ function DatePicker({
         }
       }}
     >
-      <div className={`date-picker__field${disabled ? " date-picker__field--disabled" : ""}`}>
-        <input
-          id={id}
-          aria-label={label}
-          aria-invalid={invalid || undefined}
-          className="date-picker__input"
-          disabled={disabled}
-          placeholder={pattern.toUpperCase()}
-          type="text"
-          inputMode="numeric"
-          value={text}
-          onChange={(event) => {
-            const next = event.target.value;
-            setText(next);
-            const parsed = parseDate(next, pattern) ?? parseDate(next, "yyyy-MM-dd");
-            if (parsed) {
-              onChange(format(parsed, "yyyy-MM-dd"));
-            } else if (next === "" && allowClear) {
-              onChange("");
-            }
-          }}
-          onBlur={() => setText(displayValue)}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowDown" || event.key === "Enter") {
-              event.preventDefault();
-              setOpen(true);
-            }
-          }}
-        />
-        <button
-          ref={triggerRef}
-          type="button"
-          disabled={disabled}
-          className="date-picker__trigger"
-          aria-label={t("datePicker.open", { label })}
-          aria-expanded={open}
-          aria-controls={open ? panelId : undefined}
-          aria-haspopup="dialog"
-          onClick={() => setOpen((previous) => !previous)}
-        >
-          <CalendarIcon />
-        </button>
-      </div>
+      {variant === "inline" ? (
+        trigger
+      ) : (
+        <div className={`date-picker__field${disabled ? " date-picker__field--disabled" : ""}`}>
+          <input
+            id={id}
+            aria-label={label}
+            aria-invalid={invalid || undefined}
+            className="date-picker__input"
+            disabled={disabled}
+            placeholder={pattern.toUpperCase()}
+            type="text"
+            inputMode="numeric"
+            value={text}
+            onChange={(event) => {
+              const next = event.target.value;
+              setText(next);
+              const parsed = parseDate(next, pattern) ?? parseDate(next, "yyyy-MM-dd");
+              if (parsed) {
+                onChange(format(parsed, "yyyy-MM-dd"));
+              } else if (next === "" && allowClear) {
+                onChange("");
+              }
+            }}
+            onBlur={() => setText(displayValue)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown" || event.key === "Enter") {
+                event.preventDefault();
+                setOpen(true);
+              }
+            }}
+          />
+          {trigger}
+        </div>
+      )}
       {open && (
         <div
           id={panelId}

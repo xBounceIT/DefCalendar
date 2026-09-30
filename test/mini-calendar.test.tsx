@@ -152,6 +152,7 @@ describe("custom date picker", () => {
     language = "en",
     disabled = false,
     allowClear = false,
+    variant = "field" as "field" | "inline",
   } = {}) {
     const onChange = vi.fn();
     function Harness() {
@@ -164,6 +165,7 @@ describe("custom date picker", () => {
             value={date}
             disabled={disabled}
             allowClear={allowClear}
+            variant={variant}
             onChange={(next) => {
               setDate(next);
               onChange(next);
@@ -189,13 +191,28 @@ describe("custom date picker", () => {
     expect(screen.getByRole("button", { name: /Open calendar/ })).toHaveFocus();
   });
 
+  it("selects a date from the localized inline heading with the keyboard and restores focus", () => {
+    expect.hasAssertions();
+    const { onChange } = renderPicker({ language: "it", variant: "inline" });
+    const trigger = screen.getByRole("button", { name: /Apri calendario.*mar 29\/09\/2026/ });
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    const selected = within(screen.getByRole("dialog")).getByRole("button", { pressed: true });
+    fireEvent.keyDown(selected, { key: "ArrowRight" });
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /30.*2026/ }));
+    expect(onChange).toHaveBeenCalledExactlyOnceWith("2026-09-30");
+    expect(trigger).toHaveTextContent("mer 30/09/2026");
+    expect(trigger).toHaveFocus();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("jumps directly to another year and month without selecting a date prematurely", () => {
     const { open, onChange } = renderPicker();
     open();
     fireEvent.click(screen.getByRole("button", { name: "Choose year" }));
     fireEvent.click(screen.getByRole("button", { name: "Next years" }));
-    fireEvent.click(screen.getByRole("button", { name: "2040", exact: true }));
-    fireEvent.click(screen.getByRole("button", { name: "Feb", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "2040" }));
+    fireEvent.click(screen.getByRole("button", { name: "Feb" }));
     expect(onChange).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Wednesday, February 29th, 2040" }));
     expect(onChange).toHaveBeenCalledExactlyOnceWith("2040-02-29");

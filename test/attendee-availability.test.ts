@@ -25,6 +25,83 @@ function parse(schedule: Record<string, unknown>) {
 }
 
 describe("participant availability", () => {
+  it("keeps room for the organizer when planning with 500 participants without expanding interval-only requests", () => {
+    const emails = [
+      ...Array.from({ length: 500 }, (_, index) => `participant${index}@example.com`),
+      "organizer@example.com",
+    ];
+    const args = {
+      calendarId: "calendar-1",
+      emails,
+      start: new Date(start).toISOString(),
+      end: new Date(end).toISOString(),
+    };
+    expect(
+      attendeeAvailabilityArgsSchema.safeParse({ ...args, includeSchedule: true }).success,
+    ).toBe(true);
+    expect(attendeeAvailabilityArgsSchema.safeParse(args).success).toBe(false);
+    expect(
+      attendeeAvailabilityArgsSchema.safeParse({
+        ...args,
+        includeSchedule: true,
+        emails: [...emails, "extra@example.com"],
+      }).success,
+    ).toBe(false);
+  });
+  it("returns clipped schedule intervals without private meeting details when requested", () => {
+    expect(
+      parseAttendeeSchedule(
+        { scheduleId: email, scheduleItems: [item("busy")] },
+        email,
+        start,
+        end,
+        true,
+      ),
+    ).toEqual({
+      email,
+      status: "busy",
+      schedule: {
+        start: new Date(start).toISOString(),
+        end: new Date(end).toISOString(),
+        slots: [
+          { start: "2026-09-29T09:30:00.000Z", end: new Date(end).toISOString(), status: "busy" },
+        ],
+      },
+    });
+  });
+
+  it("merges free/busy-only intervals and leaves missing or malformed schedules unknown", () => {
+    const result = parseAttendeeSchedule(
+      { scheduleId: email, availabilityView: "000222000000" },
+      email,
+      start,
+      end,
+      true,
+    );
+    expect(result.schedule?.slots).toEqual([
+      { start: "2026-09-29T09:00:00.000Z", end: "2026-09-29T09:15:00.000Z", status: "free" },
+      { start: "2026-09-29T09:15:00.000Z", end: "2026-09-29T09:30:00.000Z", status: "busy" },
+      { start: "2026-09-29T09:30:00.000Z", end: "2026-09-29T10:00:00.000Z", status: "free" },
+    ]);
+    expect(
+      parseAttendeeSchedule(
+        { scheduleId: email, scheduleItems: [item("busy", "invalid")] },
+        email,
+        start,
+        end,
+        true,
+      ),
+    ).toEqual({ email, status: "unknown" });
+    expect(
+      parseAttendeeSchedule(
+        { scheduleId: email, error: { responseCode: "5009" } },
+        email,
+        start,
+        end,
+        true,
+      ),
+    ).toEqual({ email, status: "unknown" });
+  });
   it("uses exact overlaps and never exposes private event details", () => {
     expect(parse({ scheduleItems: [item("busy")] })).toEqual({ email, status: "busy" });
     expect(
