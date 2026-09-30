@@ -509,10 +509,11 @@ describe("detailed scheduling assistant", () => {
 
   it("loads the visible days when navigating beyond the availability request limit", async () => {
     const { load, container } = setup();
-    const nextDay = screen.getByRole("button", { name: "Next day" });
-    for (let day = 0; day < 63; day++) {
-      fireEvent.click(nextDay);
+    fireEvent.click(screen.getByRole("button", { name: "Month" }));
+    for (let month = 0; month < 3; month++) {
+      fireEvent.click(screen.getByRole("button", { name: "Next period" }));
     }
+    fireEvent.click(screen.getByRole("button", { name: "Day" }));
     await waitFor(() =>
       expect(load).toHaveBeenLastCalledWith(
         expect.objectContaining({
@@ -2109,6 +2110,9 @@ describe("event editor dialog", () => {
 
     await expect(screen.findByText("agenda.txt")).resolves.toBeInTheDocument();
 
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Open agenda.txt" })).toBeEnabled(),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Open agenda.txt" }));
     await waitFor(() => {
       expect(onOpenAttachment).toHaveBeenCalledWith({
@@ -2118,6 +2122,9 @@ describe("event editor dialog", () => {
       });
     });
 
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Download agenda.txt" })).toBeEnabled(),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Download agenda.txt" }));
     await waitFor(() => {
       expect(onDownloadAttachment).toHaveBeenCalledWith({
@@ -2127,6 +2134,9 @@ describe("event editor dialog", () => {
       });
     });
 
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Remove agenda.txt" })).toBeEnabled(),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Remove agenda.txt" }));
     await waitFor(() => {
       expect(onRemoveAttachment).toHaveBeenCalledWith({
