@@ -22,7 +22,7 @@ import {
   getSchedulingSlots,
   shiftSchedulingPeriod,
   type SchedulingView,
-  isWorkingSlot,
+  getWorkingSlotChecker,
 } from "../scheduling-assistant";
 import ContactAvatar from "./contact-avatar";
 
@@ -132,6 +132,8 @@ export default function SchedulingAssistant({
     [availability],
   );
   const canSuggest = hasSchedulingParticipants(participants, organizerEmail);
+  const workingHours = byEmail.get(organizerEmail?.trim().toLowerCase() ?? "")?.workingHours;
+  const isWorkingSlot = useMemo(() => getWorkingSlotChecker(workingHours), [workingHours]);
   const suggestions = useMemo(
     () =>
       loading || allDay || !canSuggest
@@ -171,11 +173,11 @@ export default function SchedulingAssistant({
       nonworking: getSchedulingRuns(
         Array.from(
           { length: count },
-          (_, index) => !isWorkingSlot(window.start + index * HALF_HOUR),
+          (_, index) => Boolean(workingHours) && !isWorkingSlot(window.start + index * HALF_HOUR),
         ),
       ).filter((run) => run.status),
     }),
-    [count, window.start, suggestedTimes],
+    [count, window.start, suggestedTimes, workingHours, isWorkingSlot],
   );
   const people = useMemo(
     () =>

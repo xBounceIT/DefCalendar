@@ -9,6 +9,7 @@ import {
   getSchedulingRuns,
   shiftSchedulingPeriod,
   getSchedulingSlots,
+  getWorkingSlotChecker,
 } from "../src/renderer/src/scheduling-assistant";
 
 afterEach(() => vi.unstubAllEnvs());
@@ -246,12 +247,19 @@ describe("scheduling assistant suggestions", () => {
   it("limits whole meetings to the stated weekday working hours and allows that filter to be disabled", () => {
     vi.stubEnv("TZ", "UTC");
     const args = {
-      participants: [person("required@example.com")],
+      participants: [person("required@example.com"), person("optional@example.com", "optional")],
       availability: [free("required@example.com")],
       start: time("17:00"),
       end: time("19:00"),
       duration: 2 * HALF_HOUR,
       workingHoursOnly: true,
+      organizerEmail: "required@example.com",
+    };
+    args.availability[0]!.workingHours = {
+      daysOfWeek: ["wednesday"],
+      startTime: "09:00:00",
+      endTime: "18:00:00",
+      timeZone: { name: "UTC" },
     };
     expect(getSchedulingSuggestions(args)).toEqual([time("17:00")]);
     expect(getSchedulingSuggestions({ ...args, workingHoursOnly: false })).toEqual([
@@ -259,6 +267,82 @@ describe("scheduling assistant suggestions", () => {
       time("17:30"),
       time("18:00"),
     ]);
+  });
+
+  it("uses the organizer's part-time weekend hours and timezone, including exact meeting ends", () => {
+    vi.stubEnv("TZ", "Europe/Rome");
+    const start = Date.parse("2026-10-03T14:00:00Z"),
+      end = Date.parse("2026-10-03T18:00:00Z");
+    const organizer = free("organizer@example.com"),
+      other = free("other@example.com");
+    for (const item of [organizer, other]) {
+      item.schedule = {
+        start: new Date(start).toISOString(),
+        end: new Date(end).toISOString(),
+        slots: [],
+      };
+    }
+    organizer.workingHours = {
+      daysOfWeek: ["saturday"],
+      startTime: "08:15:00.0000000",
+      endTime: "10:15:00.0000000",
+      timeZone: { name: "America/Los_Angeles" },
+    };
+    other.workingHours = { ...organizer.workingHours, daysOfWeek: ["monday"] };
+    const args = {
+      participants: [person(organizer.email), person(other.email)],
+      organizerEmail: " ORGANIZER@example.com ",
+      availability: [organizer, other],
+      start,
+      end,
+      duration: HALF_HOUR * 2,
+      workingHoursOnly: true,
+    };
+    expect(getSchedulingSuggestions(args)).toEqual([
+      Date.parse("2026-10-03T15:30:00Z"),
+      Date.parse("2026-10-03T16:00:00Z"),
+    ]);
+    expect(getSchedulingSuggestions({ ...args, duration: 45 * 60_000 })).toContain(
+      Date.parse("2026-10-03T16:30:00Z"),
+    );
+    expect(getSchedulingSuggestions({ ...args, organizerEmail: "missing@example.com" })).toEqual(
+      [],
+    );
+    organizer.workingHours.timeZone.name = "Customized Time Zone";
+    expect(getSchedulingSuggestions(args)).toEqual([]);
+    expect(getSchedulingSuggestions({ ...args, workingHoursOnly: false })).toHaveLength(7);
+  });
+
+  it("keeps recurring hours aligned across DST and excludes gaps within a repeated clock hour", () => {
+    const hours = {
+      daysOfWeek: ["sunday" as const],
+      startTime: "01:00:00",
+      endTime: "02:15:00",
+      timeZone: { name: "Europe/Rome" },
+    };
+    const check = getWorkingSlotChecker(hours);
+    expect(check(Date.parse("2026-10-25T00:00:00Z"), Date.parse("2026-10-25T01:10:00Z"))).toBe(
+      false,
+    );
+    expect(
+      getWorkingSlotChecker({ ...hours, endTime: "03:00:00" })(
+        Date.parse("2026-10-25T00:00:00Z"),
+        Date.parse("2026-10-25T02:00:00Z"),
+      ),
+    ).toBe(true);
+    const daytime = getWorkingSlotChecker({ ...hours, startTime: "08:00:00", endTime: "16:00:00" });
+    expect(daytime(Date.parse("2026-03-29T06:00:00Z"))).toBe(true);
+    expect(daytime(Date.parse("2026-10-25T07:00:00Z"))).toBe(true);
+    const overnight = getWorkingSlotChecker({
+      ...hours,
+      daysOfWeek: ["saturday"],
+      startTime: "22:00:00",
+      endTime: "06:00:00",
+    });
+    expect(overnight(Date.parse("2026-10-24T23:00:00Z"), Date.parse("2026-10-25T02:00:00Z"))).toBe(
+      true,
+    );
+    expect(overnight(Date.parse("2026-10-25T20:00:00Z"))).toBe(false);
   });
 
   it.each([

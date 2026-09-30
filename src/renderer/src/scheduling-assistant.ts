@@ -1,6 +1,7 @@
 import {
   AVAILABILITY_STATUS_PRIORITY,
   type AttendeeAvailability,
+  type WorkingHours,
 } from "@shared/attendee-availability";
 import type { Availability, EventParticipant } from "@shared/schemas";
 import { HALF_HOUR, getPlannerDay, getAvailabilityInRange } from "./meeting-planner";
@@ -59,9 +60,86 @@ export function getSchedulingRuns<T>(slots: T[]) {
   return runs;
 }
 
-export function isWorkingSlot(timestamp: number) {
-  const date = new Date(timestamp);
-  return date.getDay() !== 0 && date.getDay() !== 6 && date.getHours() >= 9 && date.getHours() < 18;
+export function getWorkingSlotChecker(hours: WorkingHours | undefined) {
+  if (!hours) {
+    return () => false;
+  }
+  let formatter: Intl.DateTimeFormat;
+  try {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: hours.timeZone.name,
+      weekday: "long",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    });
+  } catch {
+    return () => false;
+  }
+  const seconds = (value: string) => {
+    const [hour, minute, second] = value.split(":").map(Number);
+    return hour! * 3600 + minute! * 60 + second!;
+  };
+  const from = seconds(hours.startTime),
+    to = seconds(hours.endTime);
+  const weekdays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  const shift = (timestamp: number) => {
+    const parts = Object.fromEntries(
+      formatter.formatToParts(timestamp).map((part) => [part.type, part.value]),
+    );
+    const clock =
+      Number(parts.hour) * 3600 +
+      Number(parts.minute) * 60 +
+      Number(parts.second) +
+      (((timestamp % 1000) + 1000) % 1000) / 1000;
+    let weekday = parts.weekday!.toLowerCase();
+    const day = new Date(0);
+    day.setUTCFullYear(Number(parts.year), Number(parts.month) - 1, Number(parts.day));
+    const offset = day.getTime() + clock * 1000 - timestamp;
+    if (to < from && clock < to) {
+      day.setUTCDate(day.getUTCDate() - 1);
+      weekday = weekdays[(weekdays.indexOf(weekday) + 6) % 7]!;
+    } else if (clock < from || (to >= from && clock >= to)) {
+      return { day: undefined, offset };
+    }
+    return {
+      day: hours.daysOfWeek.some((value) => value === weekday) ? day.getTime() : undefined,
+      offset,
+    };
+  };
+  return (start: number, end = start + HALF_HOUR) => {
+    if (
+      !Number.isFinite(start) ||
+      !Number.isFinite(end) ||
+      end <= start ||
+      end - start > 86_400_000
+    ) {
+      return false;
+    }
+    const first = shift(start);
+    const last = shift(end - 1);
+    if (first.day === undefined || first.day !== last.day) {
+      return false;
+    }
+    if (first.offset !== last.offset) {
+      let left = start,
+        right = end - 1;
+      while (right - left > 1) {
+        const middle = Math.floor((left + right) / 2);
+        if (shift(middle).offset === first.offset) {
+          left = middle;
+        } else {
+          right = middle;
+        }
+      }
+      return shift(left).day === first.day && shift(right).day === first.day;
+    }
+    return true;
+  };
 }
 
 export function getSchedulingSlots(
@@ -124,6 +202,9 @@ export function getSchedulingSuggestions({
     return [];
   }
   const byEmail = new Map(availability.map((item) => [item.email.toLowerCase(), item]));
+  const isWorkingSlot = getWorkingSlotChecker(
+    byEmail.get(organizerEmail?.trim().toLowerCase() ?? "")?.workingHours,
+  );
   const gridDuration = duration % HALF_HOUR === 0;
   const blocked = Array<number>(Math.ceil((end - start) / HALF_HOUR)).fill(0);
   if (gridDuration) {
@@ -144,17 +225,8 @@ export function getSchedulingSuggestions({
   blocked.forEach((value) => conflicts.push(conflicts.at(-1)! + value));
   const suggestions: number[] = [];
   for (let time = start; time + duration <= end; time += HALF_HOUR) {
-    if (workingHoursOnly) {
-      let working = true;
-      for (let slot = time; slot < time + duration; slot += HALF_HOUR) {
-        if (!isWorkingSlot(slot)) {
-          working = false;
-          break;
-        }
-      }
-      if (!working) {
-        continue;
-      }
+    if (workingHoursOnly && !isWorkingSlot(time, time + duration)) {
+      continue;
     }
     if (
       gridDuration

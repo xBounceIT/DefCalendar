@@ -2,8 +2,10 @@ import { z } from "zod";
 import type { Availability } from "@shared/schemas";
 import {
   AVAILABILITY_STATUS_PRIORITY as STATUS_PRIORITY,
+  workingHoursSchema,
   type AttendeeAvailability,
 } from "@shared/attendee-availability";
+import windowsTimeZones from "@shared/windows-time-zones.json";
 
 const graphTimeSchema = z.object({ dateTime: z.string(), timeZone: z.string() });
 const utcDateTimeSchema = z.iso.datetime({ offset: true });
@@ -11,6 +13,7 @@ const scheduleSchema = z.object({
   scheduleId: z.string(),
   error: z.unknown().optional(),
   availabilityView: z.string().optional(),
+  workingHours: z.unknown().optional(),
   scheduleItems: z
     .array(
       z.object({
@@ -45,12 +48,20 @@ function parseAttendeeSchedule(
     return result;
   }
   const schedule = parsed.data;
+  const workingHours = workingHoursSchema.safeParse(schedule.workingHours);
+  if (workingHours.success) {
+    const name = workingHours.data.timeZone.name;
+    if (Object.hasOwn(windowsTimeZones, name)) {
+      workingHours.data.timeZone.name = windowsTimeZones[name as keyof typeof windowsTimeZones];
+    }
+  }
   const slots: NonNullable<AttendeeAvailability["schedule"]>["slots"] = [];
   const finish = (status: Availability): AttendeeAvailability => ({
     email,
     status,
     ...(includeSchedule
       ? {
+          ...(workingHours.success ? { workingHours: workingHours.data } : {}),
           schedule: {
             start: new Date(start).toISOString(),
             end: new Date(end).toISOString(),

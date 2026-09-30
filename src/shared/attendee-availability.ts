@@ -13,6 +13,14 @@ const AVAILABILITY_STATUS_PRIORITY: Availability[] = [
   "oof",
 ];
 const attendeeEmailSchema = z.string().trim().toLowerCase().email();
+const workingHoursSchema = z.object({
+  daysOfWeek: z.array(
+    z.enum(["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]),
+  ),
+  startTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,7})?$/),
+  endTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,7})?$/),
+  timeZone: z.object({ name: z.string().min(1) }),
+});
 
 const attendeeAvailabilityArgsSchema = z
   .object({
@@ -37,6 +45,7 @@ const attendeeAvailabilitySchema = z.object({
   email: z.string().email(),
   status: availabilitySchema,
   error: z.literal("requestFailed").optional(),
+  workingHours: workingHoursSchema.optional(),
   schedule: z
     .object({
       start: z.iso.datetime({ offset: true }),
@@ -54,15 +63,18 @@ const attendeeAvailabilitySchema = z.object({
 
 type AttendeeAvailabilityArgs = z.infer<typeof attendeeAvailabilityArgsSchema>;
 type AttendeeAvailability = z.infer<typeof attendeeAvailabilitySchema>;
+type WorkingHours = z.infer<typeof workingHoursSchema>;
 
 export {
   attendeeAvailabilityArgsSchema,
   attendeeAvailabilitySchema,
   attendeeEmailSchema,
+  workingHoursSchema,
   AVAILABILITY_REQUEST_TIMEOUT_MS,
   AVAILABILITY_RESPONSE_TIMEOUT_MS,
   AVAILABILITY_STATUS_PRIORITY,
   MAX_AVAILABILITY_RANGE_MS,
   type AttendeeAvailabilityArgs,
   type AttendeeAvailability,
+  type WorkingHours,
 };

@@ -25,6 +25,39 @@ function parse(schedule: Record<string, unknown>) {
 }
 
 describe("participant availability", () => {
+  it("preserves working hours with Windows-to-IANA normalization only in planner responses", () => {
+    const workingHours = {
+      daysOfWeek: ["saturday"],
+      startTime: "08:15:00.0000000",
+      endTime: "16:15:00.0000000",
+      timeZone: { name: "Pacific Standard Time" },
+    };
+    const data = { scheduleId: email, availabilityView: "000000000000", workingHours };
+    const result = parseAttendeeSchedule(data, email, start, end, true);
+    expect(result.workingHours).toEqual({
+      ...workingHours,
+      timeZone: { name: "America/Los_Angeles" },
+    });
+    expect(parseAttendeeSchedule(data, email, start, end).workingHours).toBeUndefined();
+    expect(
+      parseAttendeeSchedule(
+        { ...data, workingHours: { ...workingHours, startTime: "25:00:00" } },
+        email,
+        start,
+        end,
+        true,
+      ).schedule,
+    ).toEqual(result.schedule);
+    expect(
+      parseAttendeeSchedule(
+        { ...data, workingHours: { ...workingHours, startTime: "25:00:00" } },
+        email,
+        start,
+        end,
+        true,
+      ).workingHours,
+    ).toBeUndefined();
+  });
   it("keeps room for the organizer when planning with 500 participants without expanding interval-only requests", () => {
     const emails = [
       ...Array.from({ length: 500 }, (_, index) => `participant${index}@example.com`),

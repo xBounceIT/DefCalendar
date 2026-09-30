@@ -247,6 +247,12 @@ describe("detailed scheduling assistant", () => {
       args.emails.map((email) => ({
         email,
         status: "free",
+        workingHours: {
+          daysOfWeek: ["monday", "tuesday", "wednesday", "thursday", "friday"],
+          startTime: "09:00:00",
+          endTime: "18:00:00",
+          timeZone: { name: Intl.DateTimeFormat().resolvedOptions().timeZone },
+        },
         schedule: {
           start: args.start,
           end: args.end,
