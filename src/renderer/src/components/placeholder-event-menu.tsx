@@ -8,6 +8,7 @@ import { TIME_OPTIONS, TimeSelect } from "./event-editor-dialog";
 interface PlaceholderEventRange {
   start: string;
   end: string;
+  title?: string;
 }
 
 interface PlaceholderEventMenuProps {
@@ -35,6 +36,7 @@ function resolveInputInstant(value: string, original: string): string | null {
 function PlaceholderEventMenu({ range, position, onCreate, onDismiss }: PlaceholderEventMenuProps) {
   const { t } = useTranslation();
   const [editing, setEditing] = React.useState(false);
+  const [title, setTitle] = React.useState("");
   const [start, setStart] = React.useState(() => toDateTimeInputValue(range.start, false));
   const [end, setEnd] = React.useState(() => toDateTimeInputValue(range.end, false));
   const [submitting, setSubmitting] = React.useState(false);
@@ -120,6 +122,7 @@ function PlaceholderEventMenu({ range, position, onCreate, onDismiss }: Placehol
       await onCreate({
         start: startIso,
         end: endIso,
+        title,
       });
       if (menuRef.current) {
         onDismiss();
@@ -158,6 +161,16 @@ function PlaceholderEventMenu({ range, position, onCreate, onDismiss }: Placehol
         <>
           <h3 id={titleId}>{t("calendarBoard.placeholderTitle")}</h3>
           <form onSubmit={(event) => void handleSubmit(event)}>
+            <label className="field">
+              <span>{t("calendarBoard.placeholderEventTitle")}</span>
+              <input
+                disabled={submitting}
+                onChange={(event) => setTitle(event.target.value)}
+                placeholder={t("calendarBoard.placeholderDefaultTitle")}
+                type="text"
+                value={title}
+              />
+            </label>
             <div className="placeholder-event-menu__range">
               <div className="field">
                 <label htmlFor={`${titleId}-start-date`}>{t("eventEditor.startDate")}</label>

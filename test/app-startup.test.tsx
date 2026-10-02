@@ -979,6 +979,7 @@ describe("app startup", () => {
         expect(onCreate).toHaveBeenCalledExactlyOnceWith({
           start: start.toISOString(),
           end: new Date(2026, 9, 1, 10, 45).toISOString(),
+          title: "",
         }),
       );
       expect(onDismiss).toHaveBeenCalledOnce();
@@ -1063,57 +1064,136 @@ describe("app startup", () => {
     },
   );
 
-  it("validates edited placeholder ranges and keeps them available after a failed save", async () => {
-    try {
-      const api = createSignedInCalendarApiMock();
-      api.events.create = vi
-        .fn()
-        .mockRejectedValueOnce(new Error("Offline"))
-        .mockResolvedValueOnce(createCalendarEvent());
-      installCalendarApi(api);
-      renderApp();
-      await screen.findByTestId("mock-calendar");
-      const start = new Date(2026, 8, 30, 9);
-      const end = new Date(2026, 8, 30, 11);
-      act(() => {
-        (capturedCalendarProps!.dateContextClick as (arg: DateContextClickArg) => void)({
-          date: start,
-          allDay: false,
-          jsEvent: new MouseEvent("contextmenu"),
+  it.each([
+    { locale: "en", title: "  Preparazione riunione  ", subject: "Preparazione riunione" },
+    { locale: "en", title: "   ", subject: "Provvisorio" },
+    { locale: "it", title: "  Caffè ☕ – 会議  ", subject: "Caffè ☕ – 会議" },
+    { locale: "it", title: "", subject: "Provvisorio" },
+  ])(
+    "creates a placeholder with title '$title' as '$subject' in $locale",
+    async ({ locale, title, subject }) => {
+      try {
+        const api = createSignedInCalendarApiMock();
+        vi.mocked(api.app.getLocale).mockResolvedValue(locale === "it" ? "it-IT" : "en-US");
+        api.events.create = vi.fn().mockResolvedValue(createCalendarEvent({ subject }));
+        installCalendarApi(api);
+        renderApp();
+        await screen.findByTestId("mock-calendar");
+        act(() => {
+          (capturedCalendarProps!.dateContextClick as (arg: DateContextClickArg) => void)({
+            date: new Date(2026, 8, 30, 9),
+            allDay: false,
+            jsEvent: new MouseEvent("contextmenu"),
+          });
         });
-      });
-      choosePlaceholderAction();
-      changePlaceholderBoundary("End", toDateTimeInputValue(start.toISOString(), false));
-      expect(
-        (screen.getByRole("button", { name: "Create placeholder" }) as HTMLButtonElement).disabled,
-      ).toBe(true);
-      expect(screen.getByRole("alert").textContent).toBe("The end must be after the start.");
-      expect(api.events.create).not.toHaveBeenCalled();
-      changePlaceholderBoundary("End", toDateTimeInputValue(end.toISOString(), false));
-      fireEvent.click(screen.getByRole("button", { name: "Create placeholder" }));
-      await screen.findByText("Offline");
-      await waitFor(() =>
+        const createLabel = locale === "it" ? "Crea Provvisorio" : "Create placeholder";
+        const dialogLabel = locale === "it" ? "Provvisorio" : "Placeholder";
+        fireEvent.click(await screen.findByRole("menuitem", { name: createLabel }));
+        const titleInput = screen.getByRole("textbox", {
+          name: locale === "it" ? "Titolo" : "Title",
+        }) as HTMLInputElement;
+        expect({
+          required: titleInput.required,
+          placeholder: titleInput.placeholder,
+        }).toStrictEqual({
+          required: false,
+          placeholder: "Provvisorio",
+        });
+        fireEvent.change(titleInput, { target: { value: title } });
+        fireEvent.click(screen.getByRole("button", { name: createLabel }));
+        await waitFor(() =>
+          expect(api.events.create).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({ subject }),
+          ),
+        );
+        await waitFor(() => expect(screen.queryByRole("dialog", { name: dialogLabel })).toBeNull());
+      } finally {
+        restoreCalendarApi();
+      }
+    },
+  );
+
+  it.each(["Preparazione riunione", "Titolo aggiornato"])(
+    "preserves placeholder inputs after a failed save and retries with title '%s'",
+    async (retryTitle) => {
+      try {
+        const api = createSignedInCalendarApiMock();
+        api.events.create = vi
+          .fn()
+          .mockRejectedValueOnce(new Error("Offline"))
+          .mockResolvedValueOnce(createCalendarEvent());
+        installCalendarApi(api);
+        renderApp();
+        await screen.findByTestId("mock-calendar");
+        const start = new Date(2026, 8, 30, 9);
+        const end = new Date(2026, 8, 30, 11);
+        act(() => {
+          (capturedCalendarProps!.dateContextClick as (arg: DateContextClickArg) => void)({
+            date: start,
+            allDay: false,
+            jsEvent: new MouseEvent("contextmenu"),
+          });
+        });
+        choosePlaceholderAction();
+        fireEvent.change(screen.getByRole("textbox", { name: "Title" }), {
+          target: { value: "Preparazione riunione" },
+        });
+        changePlaceholderBoundary("End", toDateTimeInputValue(start.toISOString(), false));
         expect(
           (screen.getByRole("button", { name: "Create placeholder" }) as HTMLButtonElement)
             .disabled,
-        ).toBe(false),
-      );
-      expect((screen.getByLabelText("End time") as HTMLInputElement).value).toBe(
-        toDateTimeInputValue(end.toISOString(), false).slice(11),
-      );
-      fireEvent.click(screen.getByRole("button", { name: "Create placeholder" }));
-      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Placeholder" })).toBeNull());
-      expect(api.events.create).toHaveBeenCalledTimes(2);
-      expect(vi.mocked(api.events.create).mock.calls[1][0].end).toBe(end.toISOString());
-      const firstDraft = vi.mocked(api.events.create).mock.calls[0][0];
-      const retryDraft = vi.mocked(api.events.create).mock.calls[1][0];
-      expect(firstDraft).toHaveProperty("transactionId", expect.any(String));
-      expect(retryDraft).toStrictEqual(firstDraft);
-      expect(screen.queryByText("Offline")).toBeNull();
-    } finally {
-      restoreCalendarApi();
-    }
-  });
+        ).toBe(true);
+        expect(screen.getByRole("alert").textContent).toBe("The end must be after the start.");
+        expect(api.events.create).not.toHaveBeenCalled();
+        changePlaceholderBoundary("End", toDateTimeInputValue(end.toISOString(), false));
+        fireEvent.click(screen.getByRole("button", { name: "Create placeholder" }));
+        await screen.findByText("Offline");
+        await waitFor(() =>
+          expect(
+            (screen.getByRole("button", { name: "Create placeholder" }) as HTMLButtonElement)
+              .disabled,
+          ).toBe(false),
+        );
+        expect((screen.getByLabelText("End time") as HTMLInputElement).value).toBe(
+          toDateTimeInputValue(end.toISOString(), false).slice(11),
+        );
+        expect((screen.getByRole("textbox", { name: "Title" }) as HTMLInputElement).value).toBe(
+          "Preparazione riunione",
+        );
+        fireEvent.change(screen.getByRole("textbox", { name: "Title" }), {
+          target: { value: retryTitle },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "Create placeholder" }));
+        await waitFor(() =>
+          expect(screen.queryByRole("dialog", { name: "Placeholder" })).toBeNull(),
+        );
+        expect(api.events.create).toHaveBeenCalledTimes(2);
+        expect(vi.mocked(api.events.create).mock.calls[1][0].end).toBe(end.toISOString());
+        const firstDraft = vi.mocked(api.events.create).mock.calls[0][0];
+        const retryDraft = vi.mocked(api.events.create).mock.calls[1][0];
+        expect({
+          subject: firstDraft.subject,
+          firstTransactionId: firstDraft.transactionId,
+          retryTransactionId: retryDraft.transactionId,
+        }).toStrictEqual({
+          subject: "Preparazione riunione",
+          firstTransactionId: expect.any(String),
+          retryTransactionId: expect.any(String),
+        });
+        expect(retryDraft).toStrictEqual({
+          ...firstDraft,
+          subject: retryTitle,
+          transactionId: retryDraft.transactionId,
+        });
+        expect(retryDraft.transactionId === firstDraft.transactionId).toBe(
+          retryTitle === firstDraft.subject,
+        );
+        expect(screen.queryByText("Offline")).toBeNull();
+      } finally {
+        restoreCalendarApi();
+      }
+    },
+  );
 
   it("prevents duplicate placeholder submissions while saving and dismisses without creating", async () => {
     try {

@@ -168,6 +168,8 @@
   "calendarBoard": {
     "contextMenu": "Azioni calendario",
     "placeholderTitle": "Provvisorio",
+    "placeholderEventTitle": "Titolo",
+    "placeholderDefaultTitle": "Provvisorio",
     "createPlaceholder": "Crea Provvisorio",
     "invalidPlaceholderRange": "La fine deve essere successiva all'inizio.",
     "placeholderSaveFailed": "Impossibile creare l'evento provvisorio. Riprova.",

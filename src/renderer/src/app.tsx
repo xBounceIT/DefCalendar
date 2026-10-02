@@ -701,12 +701,13 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
 
       placeholderCreationRef.current = true;
       try {
-        const key = JSON.stringify([editableCalendar.id, range.start, range.end]);
+        const subject = range.title?.trim() || t("calendarBoard.placeholderDefaultTitle");
+        const key = JSON.stringify([editableCalendar.id, range.start, range.end, subject]);
         const transactionId = placeholderTransactionsRef.current.get(key) ?? crypto.randomUUID();
         const draft = eventDraftSchema.parse({
           calendarId: editableCalendar.id,
           transactionId,
-          subject: "Provvisorio",
+          subject,
           attendees: [],
           start: range.start,
           end: range.end,
