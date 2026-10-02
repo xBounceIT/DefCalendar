@@ -168,6 +168,8 @@
   "calendarBoard": {
     "contextMenu": "Calendar actions",
     "placeholderTitle": "Placeholder",
+    "placeholderEventTitle": "Title",
+    "placeholderDefaultTitle": "Provvisorio",
     "createPlaceholder": "Create placeholder",
     "invalidPlaceholderRange": "The end must be after the start.",
     "placeholderSaveFailed": "Could not create the placeholder. Please try again.",
