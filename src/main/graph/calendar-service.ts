@@ -1237,6 +1237,17 @@ class GraphCalendarService {
     draft: EventDraft,
     mode: "create" | "update",
   ): Record<string, unknown> {
+    return {
+      ...this.toGraphEventDetailsPayload(draft, mode),
+      end: toGraphEventBoundary(draft, "end"),
+      start: toGraphEventBoundary(draft, "start"),
+    };
+  }
+
+  private toGraphEventDetailsPayload(
+    draft: EventDraft,
+    mode: "create" | "update",
+  ): Record<string, unknown> {
     const payload: Record<string, unknown> = {
       allowNewTimeProposals: draft.allowNewTimeProposals,
       attendees: draft.attendees.map((attendee) => ({
@@ -1252,14 +1263,12 @@ class GraphCalendarService {
               : "required",
       })),
       categories: draft.categories,
-      end: toGraphEventBoundary(draft, "end"),
       isAllDay: draft.isAllDay,
       isOnlineMeeting: draft.isOnlineMeeting,
       isReminderOn: draft.isReminderOn,
       responseRequested: draft.responseRequested,
       sensitivity: draft.sensitivity,
       showAs: draft.showAs,
-      start: toGraphEventBoundary(draft, "start"),
       subject: draft.subject,
     };
 
@@ -1327,7 +1336,7 @@ class GraphCalendarService {
     draft: EventDraft,
     currentEvent: CalendarEvent,
   ): Record<string, unknown> {
-    const fullPayload = this.toGraphEventPayload(draft, "update");
+    const fullPayload = this.toGraphEventDetailsPayload(draft, "update");
     const payload: Record<string, unknown> = {};
 
     setChanged(payload, fullPayload, "allowNewTimeProposals", draft.allowNewTimeProposals, {
@@ -1340,7 +1349,9 @@ class GraphCalendarService {
     setChanged(payload, fullPayload, "categories", draft.categories, {
       current: currentEvent.categories,
     });
-    setChanged(payload, fullPayload, "end", draft.end, { current: currentEvent.end });
+    if (draft.end !== currentEvent.end) {
+      payload.end = toGraphEventBoundary(draft, "end");
+    }
     setChanged(payload, fullPayload, "isAllDay", draft.isAllDay, {
       current: currentEvent.isAllDay,
     });
@@ -1362,7 +1373,9 @@ class GraphCalendarService {
       current: currentEvent.showAs,
       fallback: "busy",
     });
-    setChanged(payload, fullPayload, "start", draft.start, { current: currentEvent.start });
+    if (draft.start !== currentEvent.start) {
+      payload.start = toGraphEventBoundary(draft, "start");
+    }
     setChanged(payload, fullPayload, "subject", draft.subject, { current: currentEvent.subject });
     setChanged(payload, fullPayload, "body", normalizeBody(draft), {
       current: normalizeCurrentBody(currentEvent),

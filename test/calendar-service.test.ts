@@ -967,6 +967,85 @@ describe("graph event time zones", () => {
     },
   );
 
+  it.each(
+    ["2026-04-05T02:30:00.000Z", "2026-04-05T03:30:00.000Z"].flatMap((start) =>
+      ["subject", "body", "end", "recurrence", "none"].map((field) => ({ start, field })),
+    ),
+  )(
+    "allows a $field-only save with an unchanged ambiguous recurring start $start",
+    async ({ start, field }) => {
+      expect.hasAssertions();
+      const end = "2026-04-05T05:00:00.000Z";
+      const recurrence = createDailyRecurrence("2026-04-04");
+      const current = createCalendarEvent({ start, end, timeZone: "America/Santiago", recurrence });
+      const draft = createEventDraft({ start, end, timeZone: "America/Santiago", recurrence });
+      let expectedPayload: Record<string, unknown> | null = null;
+      if (field === "subject") {
+        draft.subject = "Updated planning";
+        expectedPayload = { subject: draft.subject };
+      } else if (field === "body") {
+        draft.body = "Updated agenda";
+        expectedPayload = { body: { content: draft.body, contentType: "HTML" } };
+      } else if (field === "end") {
+        draft.end = "2026-04-05T05:30:00.000Z";
+        expectedPayload = {
+          end: { dateTime: "2026-04-05T01:30:00", timeZone: "America/Santiago" },
+        };
+      } else if (field === "recurrence") {
+        draft.recurrence = { ...recurrence, pattern: { ...recurrence.pattern, interval: 2 } };
+        expectedPayload = {
+          recurrence: {
+            pattern: { type: "daily", interval: 2, daysOfWeek: [] },
+            range: {
+              type: "noEnd",
+              startDate: "2026-04-04",
+              recurrenceTimeZone: "America/Santiago",
+            },
+          },
+        };
+      }
+      const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
+        Response.json(
+          createGraphEvent({
+            start: { dateTime: start, timeZone: "UTC" },
+            end: { dateTime: draft.end, timeZone: "UTC" },
+          }),
+        ),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      await expect(createService().updateEvent(draft, "account-1", current)).resolves.toMatchObject(
+        { start, end: draft.end },
+      );
+      expect(fetchMock).toHaveBeenCalledOnce();
+      const init = fetchMock.mock.calls[0][1];
+      expect(init.method ?? "GET").toBe(field === "none" ? "GET" : "PATCH");
+      expect(init.body ? JSON.parse(init.body as string) : null).toEqual(expectedPayload);
+    },
+  );
+
+  it.each(["2026-04-05T02:30:00.000Z", "2026-04-05T03:30:00.000Z"])(
+    "still rejects a changed recurring start on an adjacent UTC date at %s",
+    async (start) => {
+      expect.hasAssertions();
+      const recurrence = createDailyRecurrence("2026-04-04");
+      const end = "2026-04-05T05:00:00.000Z";
+      const timeZone = "America/Santiago";
+      const current = createCalendarEvent({
+        start: "2026-04-05T01:30:00.000Z",
+        end,
+        recurrence,
+        timeZone,
+      });
+      const draft = createEventDraft({ start, end, recurrence, timeZone });
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      await expect(createService().updateEvent(draft, "account-1", current)).rejects.toThrow(
+        "Cannot verify the event schedule.",
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
   it.each([
     undefined,
     { dateTime: "invalid", timeZone: "UTC" },
