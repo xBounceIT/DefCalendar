@@ -1490,7 +1490,7 @@ function formatGraphDateTime(iso: string, timeZone: string): string {
 }
 
 function getGraphScheduleTimeZone(draft: EventDraft): string {
-  if (draft.isAllDay || draft.timeZone.toUpperCase() === "UTC") {
+  if (draft.isAllDay || draft.recurrence || draft.timeZone.toUpperCase() === "UTC") {
     return draft.timeZone;
   }
   const hasAmbiguousBoundary = [draft.start, draft.end].some((value) =>

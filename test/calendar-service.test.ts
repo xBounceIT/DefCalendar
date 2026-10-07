@@ -812,6 +812,26 @@ describe("graph event time zones", () => {
         Response.json(graphEvent),
       );
       vi.stubGlobal("fetch", fetchMock);
+      await expect(
+        createService().createEvent(
+          createEventDraft({ id: undefined, start, end, timeZone: "Europe/Rome" }),
+          "account-1",
+        ),
+      ).resolves.toMatchObject({ start, end });
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject({
+        start: { dateTime: start.replace(/\.000Z$/, ""), timeZone: "UTC" },
+        end: { dateTime: end.replace(/\.000Z$/, ""), timeZone: "UTC" },
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it.each(["create", "update"])(
+    "keeps recurring start dates aligned with local boundaries during %s",
+    async (operation) => {
+      expect.hasAssertions();
+      const start = "2026-10-24T23:30:00.000Z";
+      const end = "2026-10-25T00:30:00.000Z";
       const recurrence = {
         pattern: {
           type: "daily" as const,
@@ -830,18 +850,34 @@ describe("graph event time zones", () => {
           recurrenceTimeZone: null,
         },
       };
-      await expect(
-        createService().createEvent(
-          createEventDraft({ id: undefined, start, end, timeZone: "Europe/Rome", recurrence }),
-          "account-1",
-        ),
-      ).resolves.toMatchObject({ start, end });
-      expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject({
-        start: { dateTime: start.replace(/\.000Z$/, ""), timeZone: "UTC" },
-        end: { dateTime: end.replace(/\.000Z$/, ""), timeZone: "UTC" },
-        recurrence: { range: { recurrenceTimeZone: "Europe/Rome" } },
+      const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+        if (init.method === "POST" || init.method === "PATCH") {
+          const payload = JSON.parse(init.body as string);
+          if (payload.start.dateTime.slice(0, 10) !== payload.recurrence.range.startDate) {
+            throw new Error("Recurring start date must match the event start date.");
+          }
+        }
+        return Response.json(
+          createGraphEvent({
+            start: { dateTime: start, timeZone: "UTC" },
+            end: { dateTime: end, timeZone: "UTC" },
+          }),
+        );
       });
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      vi.stubGlobal("fetch", fetchMock);
+      const service = createService();
+      const draft = createEventDraft({ start, end, timeZone: "Europe/Rome", recurrence });
+      const saved =
+        operation === "create"
+          ? service.createEvent({ ...draft, id: undefined }, "account-1")
+          : service.updateEvent(draft, "account-1");
+      await expect(saved).resolves.toMatchObject({ start, end });
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject({
+        start: { dateTime: "2026-10-25T01:30:00", timeZone: "Europe/Rome" },
+        end: { dateTime: "2026-10-25T02:30:00", timeZone: "Europe/Rome" },
+        recurrence: { range: { startDate: "2026-10-25", recurrenceTimeZone: "Europe/Rome" } },
+      });
+      expect(fetchMock.mock.calls[0][1].method).toBe(operation === "create" ? "POST" : "PATCH");
     },
   );
 
