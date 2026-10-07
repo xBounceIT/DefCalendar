@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import delay from "delay";
+import { z } from "zod";
 import {
   contactSuggestionSchema,
   type AttachmentUpload,
@@ -25,6 +26,8 @@ import {
   type AttendeeAvailability,
   type AttendeeAvailabilityArgs,
 } from "@shared/attendee-availability";
+import windowsTimeZones from "@shared/windows-time-zones.json";
+import { DAY_MS } from "@shared/duration";
 import parseAttendeeSchedule from "./attendee-availability";
 
 interface ParsedGraphCollection {
@@ -130,6 +133,13 @@ class GraphRequestError extends Error {
   }
 }
 
+class GraphScheduleError extends Error {
+  constructor() {
+    super("Cannot verify the event schedule.");
+    this.name = "GraphScheduleError";
+  }
+}
+
 interface GraphEvent {
   "@odata.etag"?: string;
   allowNewTimeProposals?: boolean;
@@ -203,6 +213,7 @@ interface SendRequestArgs {
 
 const EVENT_SELECT =
   "id,subject,body,bodyPreview,location,locations,start,end,isAllDay,isReminderOn,reminderMinutesBeforeStart,webLink,changeKey,type,attendees,organizer,recurrence,onlineMeeting,onlineMeetingProvider,isOnlineMeeting,lastModifiedDateTime,allowNewTimeProposals,responseRequested,showAs,sensitivity,categories,seriesMasterId,responseStatus,hasAttachments,isOrganizer,isCancelled,originalStart";
+const graphDateTimeSchema = z.iso.datetime({ offset: true, local: true });
 const MAX_CONTACT_PHOTO_BYTES = 5 * 1024 * 1024;
 const MAX_CONTACT_PHOTO_CACHE_CHARACTERS = 16 * 1024 * 1024;
 const MAX_CONTACT_PHOTO_REQUESTS = 6;
@@ -778,11 +789,9 @@ class GraphCalendarService {
     );
     signal.throwIfAborted();
     assertSession();
-    const start = event.start?.dateTime;
+    const start = event.start;
     const remoteStart = start
-      ? parseGraphDateTimeValue(
-          /(?:Z|[+-]\d{2}:\d{2})$/i.test(start) ? start : `${start}Z`,
-        ).getTime()
+      ? parseGraphDateTimeValue(start.dateTime, start.timeZone).getTime()
       : Number.NaN;
     const queuedStart = Date.parse(expectedStart);
     if (!Number.isFinite(remoteStart) || !Number.isFinite(queuedStart)) {
@@ -1130,7 +1139,7 @@ class GraphCalendarService {
       cancelled: Boolean(event.isCancelled),
       categories: event.categories ?? [],
       changeKey: event.changeKey ?? null,
-      end: normalizeGraphDateTime(event.end?.dateTime),
+      end: normalizeGraphDateTime(event.end),
       etag: event["@odata.etag"] ?? null,
       hasAttachments: Boolean(event.hasAttachments),
       id: event.id,
@@ -1157,11 +1166,11 @@ class GraphCalendarService {
       sensitivity: parseSensitivity(event.sensitivity),
       seriesMasterId: event.seriesMasterId ?? null,
       showAs: parseShowAs(event.showAs),
-      start: normalizeGraphDateTime(event.start?.dateTime),
+      start: normalizeGraphDateTime(event.start),
       subject: trimOrFallback(event.subject, "(no title)"),
       timeZone: this.config.timeZone,
       type: event.type ?? null,
-      unsupportedReason: getUnsupportedReason(event),
+      unsupportedReason: null,
       webLink: event.webLink ?? null,
     };
   }
@@ -1203,7 +1212,13 @@ class GraphCalendarService {
           homeAccountId,
         ),
       );
-      updated = this.toCalendarEvent(response, draft.calendarId, homeAccountId);
+      try {
+        updated = this.toCalendarEvent(response, draft.calendarId, homeAccountId);
+      } catch (error) {
+        if (!(error instanceof GraphScheduleError)) {
+          throw error;
+        }
+      }
     }
 
     if (hasAttachmentChanges) {
@@ -1222,6 +1237,17 @@ class GraphCalendarService {
     draft: EventDraft,
     mode: "create" | "update",
   ): Record<string, unknown> {
+    return {
+      ...this.toGraphEventDetailsPayload(draft, mode),
+      end: toGraphEventBoundary(draft, "end"),
+      start: toGraphEventBoundary(draft, "start"),
+    };
+  }
+
+  private toGraphEventDetailsPayload(
+    draft: EventDraft,
+    mode: "create" | "update",
+  ): Record<string, unknown> {
     const payload: Record<string, unknown> = {
       allowNewTimeProposals: draft.allowNewTimeProposals,
       attendees: draft.attendees.map((attendee) => ({
@@ -1237,20 +1263,12 @@ class GraphCalendarService {
               : "required",
       })),
       categories: draft.categories,
-      end: {
-        dateTime: formatGraphDateTime(draft.end, draft.timeZone),
-        timeZone: draft.timeZone,
-      },
       isAllDay: draft.isAllDay,
       isOnlineMeeting: draft.isOnlineMeeting,
       isReminderOn: draft.isReminderOn,
       responseRequested: draft.responseRequested,
       sensitivity: draft.sensitivity,
       showAs: draft.showAs,
-      start: {
-        dateTime: formatGraphDateTime(draft.start, draft.timeZone),
-        timeZone: draft.timeZone,
-      },
       subject: draft.subject,
     };
 
@@ -1318,7 +1336,7 @@ class GraphCalendarService {
     draft: EventDraft,
     currentEvent: CalendarEvent,
   ): Record<string, unknown> {
-    const fullPayload = this.toGraphEventPayload(draft, "update");
+    const fullPayload = this.toGraphEventDetailsPayload(draft, "update");
     const payload: Record<string, unknown> = {};
 
     setChanged(payload, fullPayload, "allowNewTimeProposals", draft.allowNewTimeProposals, {
@@ -1331,7 +1349,9 @@ class GraphCalendarService {
     setChanged(payload, fullPayload, "categories", draft.categories, {
       current: currentEvent.categories,
     });
-    setChanged(payload, fullPayload, "end", draft.end, { current: currentEvent.end });
+    if (draft.end !== currentEvent.end) {
+      payload.end = toGraphEventBoundary(draft, "end");
+    }
     setChanged(payload, fullPayload, "isAllDay", draft.isAllDay, {
       current: currentEvent.isAllDay,
     });
@@ -1353,7 +1373,9 @@ class GraphCalendarService {
       current: currentEvent.showAs,
       fallback: "busy",
     });
-    setChanged(payload, fullPayload, "start", draft.start, { current: currentEvent.start });
+    if (draft.start !== currentEvent.start) {
+      payload.start = toGraphEventBoundary(draft, "start");
+    }
     setChanged(payload, fullPayload, "subject", draft.subject, { current: currentEvent.subject });
     setChanged(payload, fullPayload, "body", normalizeBody(draft), {
       current: normalizeCurrentBody(currentEvent),
@@ -1470,8 +1492,38 @@ function isStaleGraphItemError(value: unknown): boolean {
 }
 
 function formatGraphDateTime(iso: string, timeZone: string): string {
-  const date = new Date(iso);
-  const formatter = new Intl.DateTimeFormat("en-CA", {
+  return formatGraphDateTimeParts(new Date(iso), createGraphDateTimeFormatter(timeZone));
+}
+
+function toGraphEventBoundary(draft: EventDraft, boundary: "start" | "end"): GraphDateTimeTimeZone {
+  const local = {
+    dateTime: formatGraphDateTime(draft[boundary], draft.timeZone),
+    timeZone: draft.timeZone,
+  };
+  if (
+    draft.isAllDay ||
+    draft.timeZone.toUpperCase() === "UTC" ||
+    !Number.isNaN(parseGraphDateTimeValue(local.dateTime, local.timeZone).getTime())
+  ) {
+    return local;
+  }
+
+  const utc = {
+    dateTime: formatGraphDateTime(draft[boundary], "UTC"),
+    timeZone: "UTC",
+  };
+  if (
+    boundary === "start" &&
+    draft.recurrence &&
+    utc.dateTime.slice(0, 10) !== draft.recurrence.range.startDate
+  ) {
+    throw new GraphScheduleError();
+  }
+  return utc;
+}
+
+function createGraphDateTimeFormatter(timeZone: string): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat("en-CA", {
     day: "2-digit",
     hour: "2-digit",
     hourCycle: "h23",
@@ -1481,19 +1533,14 @@ function formatGraphDateTime(iso: string, timeZone: string): string {
     timeZone,
     year: "numeric",
   });
+}
+
+function formatGraphDateTimeParts(date: Date, formatter: Intl.DateTimeFormat): string {
   const parts = Object.fromEntries(
     formatter.formatToParts(date).map((part) => [part.type, part.value]),
   );
 
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
-}
-
-function getUnsupportedReason(event: GraphEvent): null | string {
-  if (!event.start?.dateTime || !event.end?.dateTime) {
-    return "This event has incomplete schedule data and cannot be edited here.";
-  }
-
-  return null;
 }
 
 async function awaitWithSignal<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -1518,26 +1565,65 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function normalizeGraphDateTime(value?: string): string {
+function normalizeGraphDateTime(value?: GraphDateTimeTimeZone): string {
   if (!value) {
-    return new Date().toISOString();
+    throw new GraphScheduleError();
   }
 
-  const parsed = parseGraphDateTimeValue(value);
+  const parsed = parseGraphDateTimeValue(value.dateTime, value.timeZone);
   if (!Number.isNaN(parsed.getTime())) {
     return parsed.toISOString();
   }
 
-  return new Date().toISOString();
+  throw new GraphScheduleError();
 }
 
-function parseGraphDateTimeValue(value: string): Date {
-  const normalizedFractionalSeconds = value.replace(/\.(\d{3})\d+/, ".$1");
-  return new Date(
-    /(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalizedFractionalSeconds)
-      ? normalizedFractionalSeconds
-      : `${normalizedFractionalSeconds}Z`,
+function parseGraphDateTimeValue(value: string, timeZone?: string): Date {
+  const normalizedFractionalSeconds = value
+    .replace(/\.(\d{3})\d+/, ".$1")
+    .replace(/([+-]\d{2})(\d{2})$/, "$1:$2");
+  if (!graphDateTimeSchema.safeParse(normalizedFractionalSeconds).success) {
+    return new Date(Number.NaN);
+  }
+  const hasOffset = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalizedFractionalSeconds);
+  const parsed = new Date(
+    hasOffset ? normalizedFractionalSeconds : `${normalizedFractionalSeconds}Z`,
   );
+  if (
+    hasOffset ||
+    !timeZone ||
+    timeZone.toUpperCase() === "UTC" ||
+    Number.isNaN(parsed.getTime())
+  ) {
+    return parsed;
+  }
+
+  const zone = Object.hasOwn(windowsTimeZones, timeZone)
+    ? windowsTimeZones[timeZone as keyof typeof windowsTimeZones]
+    : timeZone;
+  const wallTime = Math.floor(parsed.getTime() / 1000) * 1000;
+  let formatter: Intl.DateTimeFormat;
+  try {
+    formatter = createGraphDateTimeFormatter(zone);
+  } catch (error) {
+    if (error instanceof RangeError) {
+      return new Date(Number.NaN);
+    }
+    throw error;
+  }
+
+  const offsets = new Set<number>();
+  for (const shift of [-DAY_MS, 0, DAY_MS]) {
+    const reference = wallTime + shift;
+    const rendered = Date.parse(`${formatGraphDateTimeParts(new Date(reference), formatter)}Z`);
+    offsets.add(rendered - reference);
+  }
+  const candidates = [...offsets]
+    .map((offset) => new Date(parsed.getTime() - offset))
+    .filter(
+      (candidate) => Date.parse(`${formatGraphDateTimeParts(candidate, formatter)}Z`) === wallTime,
+    );
+  return candidates.length === 1 ? candidates[0] : new Date(Number.NaN);
 }
 
 function parseGraphAttachment(value: unknown): EventAttachment {
