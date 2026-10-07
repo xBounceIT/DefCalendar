@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CalendarEvent, EventDraft } from "../src/shared/schemas";
+import windowsTimeZones from "../src/shared/windows-time-zones.json";
 import GraphCalendarService, {
   extractPlainTextFromGraphHtml,
   isMissingGraphItemError,
@@ -15,6 +16,39 @@ afterEach(() => {
 
 describe("reminder dismissal", () => {
   const expectedStart = "2026-03-30T10:00:00Z";
+
+  it("verifies a matching reminder start returned in a local time zone", async () => {
+    expect.hasAssertions();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json(
+          createGraphEvent({
+            start: { dateTime: "2026-03-30T12:00:00.0000000", timeZone: "W. Europe Standard Time" },
+          }),
+        ),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await createService().dismissReminder("calendar-1", "event-1", "account-1", expectedStart);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1][1].method).toBe("POST");
+  });
+
+  it.each([
+    { dateTime: "2026-10-25T02:30:00", timeZone: "Europe/Rome" },
+    { dateTime: "2026-03-29T02:30:00", timeZone: "Europe/Rome" },
+    { dateTime: "2026-03-30T12:00:00", timeZone: "Unknown/Zone" },
+  ])("does not dismiss a reminder with an unverifiable local start %j", async (start) => {
+    expect.hasAssertions();
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(createGraphEvent({ start })));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      createService().dismissReminder("calendar-1", "event-1", "account-1", expectedStart),
+    ).rejects.toThrow("Cannot verify the reminder occurrence start.");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0][1].method).not.toBe("POST");
+  });
 
   it("does not dismiss a remotely rescheduled event even when the queued start is stale", async () => {
     const fetchMock = vi
@@ -676,6 +710,319 @@ function createEventDraft(overrides?: Partial<EventDraft>): EventDraft {
     ...overrides,
   };
 }
+
+describe("graph event time zones", () => {
+  it.each([
+    "2026-01-15T12:34:56.789Z",
+    "2026-04-15T12:34:56.789Z",
+    "2026-07-15T12:34:56.789Z",
+    "2026-10-15T12:34:56.789Z",
+  ])("round-trips %s through every supported Windows time zone", async (instant) => {
+    expect.hasAssertions();
+    const service = createService();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    for (const [timeZone, ianaZone] of Object.entries(windowsTimeZones)) {
+      const parts = Object.fromEntries(
+        new Intl.DateTimeFormat("en-GB", {
+          timeZone: ianaZone,
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hourCycle: "h23",
+        })
+          .formatToParts(new Date(instant))
+          .map((part) => [part.type, part.value]),
+      );
+      const dateTime = `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}.7890000`;
+      fetchMock.mockResolvedValueOnce(
+        Response.json(
+          createGraphEvent({
+            start: { dateTime, timeZone },
+            end: { dateTime, timeZone },
+          }),
+        ),
+      );
+      const event = await service.getEvent("calendar-1", "event-1", "account-1");
+      expect({ timeZone, start: event.start, end: event.end }).toEqual({
+        timeZone,
+        start: instant,
+        end: instant,
+      });
+    }
+  });
+
+  it("rejects an incomplete calendar snapshot instead of returning fabricated event times", async () => {
+    expect.hasAssertions();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json({
+          value: [createGraphEvent(), createGraphEvent({ id: "event-2", end: undefined })],
+        }),
+      ),
+    );
+    await expect(
+      createService().listCalendarView(
+        "calendar-1",
+        "2026-03-30T00:00:00Z",
+        "2026-03-31T00:00:00Z",
+        "account-1",
+      ),
+    ).rejects.toThrow("Cannot verify the event schedule.");
+  });
+
+  it("does not repeat a saved edit when its UTC verification fails", async () => {
+    expect.hasAssertions();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json(
+          createGraphEvent({
+            start: { dateTime: "2026-10-25T02:30:00", timeZone: "Europe/Rome" },
+          }),
+        ),
+      )
+      .mockRejectedValueOnce(new Error("offline"));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(createService().updateEvent(createEventDraft(), "account-1")).rejects.toThrow(
+      "offline",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][1].method).toBe("PATCH");
+    expect(fetchMock.mock.calls[1][1].method).not.toBe("PATCH");
+  });
+
+  it.each([
+    ["2026-10-25T00:30:00.000Z", "2026-10-25T02:00:00.000Z"],
+    ["2026-10-25T01:30:00.000Z", "2026-10-25T02:00:00.000Z"],
+    ["2026-10-24T23:30:00.000Z", "2026-10-25T00:30:00.000Z"],
+  ])(
+    "creates an exact UTC schedule when either boundary is ambiguous: %s to %s",
+    async (start, end) => {
+      expect.hasAssertions();
+      const graphEvent = createGraphEvent({
+        start: { dateTime: start, timeZone: "UTC" },
+        end: { dateTime: end, timeZone: "UTC" },
+      });
+      const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
+        Response.json(graphEvent),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const recurrence = {
+        pattern: {
+          type: "daily" as const,
+          interval: 1,
+          daysOfWeek: [],
+          firstDayOfWeek: null,
+          dayOfMonth: null,
+          month: null,
+          index: null,
+        },
+        range: {
+          type: "noEnd" as const,
+          startDate: "2026-10-25",
+          endDate: null,
+          numberOfOccurrences: null,
+          recurrenceTimeZone: null,
+        },
+      };
+      await expect(
+        createService().createEvent(
+          createEventDraft({ id: undefined, start, end, timeZone: "Europe/Rome", recurrence }),
+          "account-1",
+        ),
+      ).resolves.toMatchObject({ start, end });
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject({
+        start: { dateTime: start.replace(/\.000Z$/, ""), timeZone: "UTC" },
+        end: { dateTime: end.replace(/\.000Z$/, ""), timeZone: "UTC" },
+        recurrence: { range: { recurrenceTimeZone: "Europe/Rome" } },
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it.each([
+    undefined,
+    { dateTime: "invalid", timeZone: "UTC" },
+    { dateTime: "2026-02-30T11:00:00", timeZone: "UTC" },
+    { dateTime: "2026-10-15", timeZone: "UTC" },
+    { dateTime: "2026-10-15T11:00:00", timeZone: "Unknown/Zone" },
+    { dateTime: "2026-03-29T02:30:00", timeZone: "Europe/Rome" },
+    { dateTime: "2026-10-25T02:30:00", timeZone: "Europe/Rome" },
+    { dateTime: "2026-11-01T01:30:00", timeZone: "America/New_York" },
+    { dateTime: "2026-04-05T01:45:00", timeZone: "Australia/Lord_Howe" },
+  ])(
+    "rejects an unverifiable event boundary %j instead of inventing an instant",
+    async (boundary) => {
+      expect.hasAssertions();
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(Response.json(createGraphEvent({ start: boundary })));
+      vi.stubGlobal("fetch", fetchMock);
+      await expect(createService().getEvent("calendar-1", "event-1", "account-1")).rejects.toThrow(
+        "Cannot verify the event schedule.",
+      );
+    },
+  );
+
+  it.each(["2026-10-25T00:30:00.000Z", "2026-10-25T01:30:00.000Z"])(
+    "reads an ambiguous edit response back in UTC to preserve the actual instant %s",
+    async (start) => {
+      expect.hasAssertions();
+      const end = "2026-10-25T02:00:00.000Z";
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce(
+          Response.json(
+            createGraphEvent({
+              start: { dateTime: "2026-10-25T02:30:00", timeZone: "Europe/Rome" },
+              end: { dateTime: "2026-10-25T03:00:00", timeZone: "Europe/Rome" },
+            }),
+          ),
+        )
+        .mockResolvedValueOnce(
+          Response.json(
+            createGraphEvent({
+              start: { dateTime: start, timeZone: "UTC" },
+              end: { dateTime: end, timeZone: "UTC" },
+            }),
+          ),
+        );
+      vi.stubGlobal("fetch", fetchMock);
+      await expect(
+        createService().updateEvent(
+          createEventDraft({ start, end, timeZone: "Europe/Rome" }),
+          "account-1",
+        ),
+      ).resolves.toMatchObject({ start, end });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls[0][1].method).toBe("PATCH");
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject({
+        start: { dateTime: start.replace(/\.000Z$/, ""), timeZone: "UTC" },
+        end: { dateTime: "2026-10-25T02:00:00", timeZone: "UTC" },
+      });
+      expect(fetchMock.mock.calls[1][1].method).not.toBe("PATCH");
+      expect(new Headers(fetchMock.mock.calls[1][1].headers).get("Prefer")).toContain(
+        'outlook.timezone="UTC"',
+      );
+    },
+  );
+
+  it.each([
+    ["2026-10-15T11:00:00.0000000", "Europe/Rome", "2026-10-15T09:00:00.000Z"],
+    ["2026-10-15T11:00:00.1234567", "W. Europe Standard Time", "2026-10-15T09:00:00.123Z"],
+    ["2026-12-03T11:00:00", "Europe/Rome", "2026-12-03T10:00:00.000Z"],
+    ["2026-10-15T11:00:00", "India Standard Time", "2026-10-15T05:30:00.000Z"],
+    ["2026-10-15T11:00:00", "Pacific Standard Time", "2026-10-15T18:00:00.000Z"],
+    ["2026-03-29T01:30:00", "Europe/Rome", "2026-03-29T00:30:00.000Z"],
+    ["2026-04-05T02:15:00", "Australia/Lord_Howe", "2026-04-04T15:45:00.000Z"],
+    ["2026-03-29T03:30:00", "Europe/Rome", "2026-03-29T01:30:00.000Z"],
+    ["2026-10-25T01:30:00", "Europe/Rome", "2026-10-24T23:30:00.000Z"],
+    ["2026-10-25T03:30:00", "Europe/Rome", "2026-10-25T02:30:00.000Z"],
+    ["2026-10-15T00:00:00", "Europe/Rome", "2026-10-14T22:00:00.000Z"],
+    ["2026-10-15T11:00:00.1234567Z", "Europe/Rome", "2026-10-15T11:00:00.123Z"],
+    ["2026-10-15T11:00:00+02:00", "Europe/Rome", "2026-10-15T09:00:00.000Z"],
+    ["2026-10-15T11:00:00+0200", "UTC", "2026-10-15T09:00:00.000Z"],
+    ["2026-10-25T02:30:00+02:00", "Europe/Rome", "2026-10-25T00:30:00.000Z"],
+    ["2026-10-25T02:30:00+01:00", "Europe/Rome", "2026-10-25T01:30:00.000Z"],
+    ["2026-10-15T11:00:00", "UTC", "2026-10-15T11:00:00.000Z"],
+    ["2026-10-15T11:00:00", undefined, "2026-10-15T11:00:00.000Z"],
+  ])("reads %s in %s as %s", async (dateTime, timeZone, expected) => {
+    expect.hasAssertions();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json(
+          createGraphEvent({
+            start: { dateTime, timeZone },
+            end: { dateTime, timeZone },
+          }),
+        ),
+      ),
+    );
+    const event = await createService().getEvent("calendar-1", "event-1", "account-1");
+    expect(event.start).toBe(expected);
+    expect(event.end).toBe(expected);
+  });
+
+  it("uses each boundary's time zone independently", async () => {
+    expect.hasAssertions();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json(
+          createGraphEvent({
+            start: { dateTime: "2026-10-15T11:00:00", timeZone: "Europe/Rome" },
+            end: { dateTime: "2026-10-15T10:45:00", timeZone: "UTC" },
+          }),
+        ),
+      ),
+    );
+    await expect(
+      createService().getEvent("calendar-1", "event-1", "account-1"),
+    ).resolves.toMatchObject({
+      start: "2026-10-15T09:00:00.000Z",
+      end: "2026-10-15T10:45:00.000Z",
+    });
+  });
+
+  it("keeps a rescheduled event at 11:00 through repeated edits and sync", async () => {
+    expect.hasAssertions();
+    const service = createService();
+    let graphEvent = createGraphEvent();
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      if (init.method === "PATCH") {
+        graphEvent = { ...graphEvent, ...JSON.parse(init.body as string) };
+        return Response.json(graphEvent);
+      }
+      return Response.json({
+        value: [
+          createGraphEvent({
+            ...graphEvent,
+            start: { dateTime: "2026-10-15T09:00:00.0000000", timeZone: "UTC" },
+            end: { dateTime: "2026-10-15T10:45:00.0000000", timeZone: "UTC" },
+          }),
+        ],
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const start = "2026-10-15T09:00:00.000Z";
+    let current = createCalendarEvent();
+    for (const end of ["2026-10-15T11:00:00.000Z", "2026-10-15T10:45:00.000Z"]) {
+      current = await service.updateEvent(
+        createEventDraft({ start, end, timeZone: "Europe/Rome" }),
+        "account-1",
+        current,
+      );
+      expect(current).toMatchObject({ start, end });
+      expect(
+        new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Europe/Rome",
+          hour: "2-digit",
+          minute: "2-digit",
+        }).format(new Date(current.start)),
+      ).toBe("11:00");
+    }
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject({
+      start: { dateTime: "2026-10-15T11:00:00", timeZone: "Europe/Rome" },
+      end: { dateTime: "2026-10-15T13:00:00", timeZone: "Europe/Rome" },
+    });
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body as string)).toMatchObject({
+      end: { dateTime: "2026-10-15T12:45:00", timeZone: "Europe/Rome" },
+    });
+    const synced = await service.listCalendarView(
+      "calendar-1",
+      "2026-10-15T00:00:00Z",
+      "2026-10-16T00:00:00Z",
+      "account-1",
+    );
+    expect(synced[0]).toMatchObject({ start: current.start, end: current.end });
+  });
+});
 
 describe("graph calendar service body conversion", () => {
   it("reuses a placeholder transaction after creation succeeds but the following read fails", async () => {
