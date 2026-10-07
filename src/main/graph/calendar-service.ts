@@ -1237,7 +1237,6 @@ class GraphCalendarService {
     draft: EventDraft,
     mode: "create" | "update",
   ): Record<string, unknown> {
-    const timeZone = getGraphScheduleTimeZone(draft);
     const payload: Record<string, unknown> = {
       allowNewTimeProposals: draft.allowNewTimeProposals,
       attendees: draft.attendees.map((attendee) => ({
@@ -1253,20 +1252,14 @@ class GraphCalendarService {
               : "required",
       })),
       categories: draft.categories,
-      end: {
-        dateTime: formatGraphDateTime(draft.end, timeZone),
-        timeZone,
-      },
+      end: toGraphEventBoundary(draft, "end"),
       isAllDay: draft.isAllDay,
       isOnlineMeeting: draft.isOnlineMeeting,
       isReminderOn: draft.isReminderOn,
       responseRequested: draft.responseRequested,
       sensitivity: draft.sensitivity,
       showAs: draft.showAs,
-      start: {
-        dateTime: formatGraphDateTime(draft.start, timeZone),
-        timeZone,
-      },
+      start: toGraphEventBoundary(draft, "start"),
       subject: draft.subject,
     };
 
@@ -1489,16 +1482,31 @@ function formatGraphDateTime(iso: string, timeZone: string): string {
   return formatGraphDateTimeParts(new Date(iso), createGraphDateTimeFormatter(timeZone));
 }
 
-function getGraphScheduleTimeZone(draft: EventDraft): string {
-  if (draft.isAllDay || draft.recurrence || draft.timeZone.toUpperCase() === "UTC") {
-    return draft.timeZone;
+function toGraphEventBoundary(draft: EventDraft, boundary: "start" | "end"): GraphDateTimeTimeZone {
+  const local = {
+    dateTime: formatGraphDateTime(draft[boundary], draft.timeZone),
+    timeZone: draft.timeZone,
+  };
+  if (
+    draft.isAllDay ||
+    draft.timeZone.toUpperCase() === "UTC" ||
+    !Number.isNaN(parseGraphDateTimeValue(local.dateTime, local.timeZone).getTime())
+  ) {
+    return local;
   }
-  const hasAmbiguousBoundary = [draft.start, draft.end].some((value) =>
-    Number.isNaN(
-      parseGraphDateTimeValue(formatGraphDateTime(value, draft.timeZone), draft.timeZone).getTime(),
-    ),
-  );
-  return hasAmbiguousBoundary ? "UTC" : draft.timeZone;
+
+  const utc = {
+    dateTime: formatGraphDateTime(draft[boundary], "UTC"),
+    timeZone: "UTC",
+  };
+  if (
+    boundary === "start" &&
+    draft.recurrence &&
+    utc.dateTime.slice(0, 10) !== draft.recurrence.range.startDate
+  ) {
+    throw new GraphScheduleError();
+  }
+  return utc;
 }
 
 function createGraphDateTimeFormatter(timeZone: string): Intl.DateTimeFormat {

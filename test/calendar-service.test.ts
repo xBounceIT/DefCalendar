@@ -711,6 +711,27 @@ function createEventDraft(overrides?: Partial<EventDraft>): EventDraft {
   };
 }
 
+function createDailyRecurrence(startDate: string): NonNullable<EventDraft["recurrence"]> {
+  return {
+    pattern: {
+      type: "daily",
+      interval: 1,
+      daysOfWeek: [],
+      firstDayOfWeek: null,
+      dayOfMonth: null,
+      month: null,
+      index: null,
+    },
+    range: {
+      type: "noEnd",
+      startDate,
+      endDate: null,
+      numberOfOccurrences: null,
+      recurrenceTimeZone: null,
+    },
+  };
+}
+
 describe("graph event time zones", () => {
   it.each([
     "2026-01-15T12:34:56.789Z",
@@ -797,12 +818,27 @@ describe("graph event time zones", () => {
   });
 
   it.each([
-    ["2026-10-25T00:30:00.000Z", "2026-10-25T02:00:00.000Z"],
-    ["2026-10-25T01:30:00.000Z", "2026-10-25T02:00:00.000Z"],
-    ["2026-10-24T23:30:00.000Z", "2026-10-25T00:30:00.000Z"],
+    {
+      start: "2026-10-25T00:30:00.000Z",
+      end: "2026-10-25T02:00:00.000Z",
+      graphStart: { dateTime: "2026-10-25T00:30:00", timeZone: "UTC" },
+      graphEnd: { dateTime: "2026-10-25T03:00:00", timeZone: "Europe/Rome" },
+    },
+    {
+      start: "2026-10-25T01:30:00.000Z",
+      end: "2026-10-25T02:00:00.000Z",
+      graphStart: { dateTime: "2026-10-25T01:30:00", timeZone: "UTC" },
+      graphEnd: { dateTime: "2026-10-25T03:00:00", timeZone: "Europe/Rome" },
+    },
+    {
+      start: "2026-10-24T23:30:00.000Z",
+      end: "2026-10-25T00:30:00.000Z",
+      graphStart: { dateTime: "2026-10-25T01:30:00", timeZone: "Europe/Rome" },
+      graphEnd: { dateTime: "2026-10-25T00:30:00", timeZone: "UTC" },
+    },
   ])(
-    "creates an exact UTC schedule when either boundary is ambiguous: %s to %s",
-    async (start, end) => {
+    "serializes start $start and end $end independently",
+    async ({ start, end, graphStart, graphEnd }) => {
       expect.hasAssertions();
       const graphEvent = createGraphEvent({
         start: { dateTime: start, timeZone: "UTC" },
@@ -819,37 +855,24 @@ describe("graph event time zones", () => {
         ),
       ).resolves.toMatchObject({ start, end });
       expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject({
-        start: { dateTime: start.replace(/\.000Z$/, ""), timeZone: "UTC" },
-        end: { dateTime: end.replace(/\.000Z$/, ""), timeZone: "UTC" },
+        start: graphStart,
+        end: graphEnd,
       });
       expect(fetchMock).toHaveBeenCalledTimes(2);
     },
   );
 
-  it.each(["create", "update"])(
-    "keeps recurring start dates aligned with local boundaries during %s",
-    async (operation) => {
+  it.each([
+    ["create", "2026-10-25T00:30:00.000Z"],
+    ["create", "2026-10-25T01:30:00.000Z"],
+    ["update", "2026-10-25T00:30:00.000Z"],
+    ["update", "2026-10-25T01:30:00.000Z"],
+  ])(
+    "keeps recurring start dates aligned while preserving the selected end during %s at %s",
+    async (operation, end) => {
       expect.hasAssertions();
       const start = "2026-10-24T23:30:00.000Z";
-      const end = "2026-10-25T00:30:00.000Z";
-      const recurrence = {
-        pattern: {
-          type: "daily" as const,
-          interval: 1,
-          daysOfWeek: [],
-          firstDayOfWeek: null,
-          dayOfMonth: null,
-          month: null,
-          index: null,
-        },
-        range: {
-          type: "noEnd" as const,
-          startDate: "2026-10-25",
-          endDate: null,
-          numberOfOccurrences: null,
-          recurrenceTimeZone: null,
-        },
-      };
+      const recurrence = createDailyRecurrence("2026-10-25");
       const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
         if (init.method === "POST" || init.method === "PATCH") {
           const payload = JSON.parse(init.body as string);
@@ -874,10 +897,73 @@ describe("graph event time zones", () => {
       await expect(saved).resolves.toMatchObject({ start, end });
       expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject({
         start: { dateTime: "2026-10-25T01:30:00", timeZone: "Europe/Rome" },
-        end: { dateTime: "2026-10-25T02:30:00", timeZone: "Europe/Rome" },
+        end: { dateTime: end.replace(/\.000Z$/, ""), timeZone: "UTC" },
         recurrence: { range: { startDate: "2026-10-25", recurrenceTimeZone: "Europe/Rome" } },
       });
       expect(fetchMock.mock.calls[0][1].method).toBe(operation === "create" ? "POST" : "PATCH");
+    },
+  );
+
+  it.each([
+    ["create", "2026-10-25T00:30:00.000Z"],
+    ["create", "2026-10-25T01:30:00.000Z"],
+    ["update", "2026-10-25T00:30:00.000Z"],
+    ["update", "2026-10-25T01:30:00.000Z"],
+  ])("preserves a recurring repeated-hour start during %s at %s", async (operation, start) => {
+    expect.hasAssertions();
+    const end = "2026-10-25T02:00:00.000Z";
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) =>
+      Response.json(
+        createGraphEvent({
+          start: { dateTime: start, timeZone: "UTC" },
+          end: { dateTime: end, timeZone: "UTC" },
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createService();
+    const draft = createEventDraft({
+      start,
+      end,
+      timeZone: "Europe/Rome",
+      recurrence: createDailyRecurrence("2026-10-25"),
+    });
+    const saved =
+      operation === "create"
+        ? service.createEvent({ ...draft, id: undefined }, "account-1")
+        : service.updateEvent(draft, "account-1");
+    await expect(saved).resolves.toMatchObject({ start, end });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject({
+      start: { dateTime: start.replace(/\.000Z$/, ""), timeZone: "UTC" },
+      end: { dateTime: "2026-10-25T03:00:00", timeZone: "Europe/Rome" },
+      recurrence: { range: { startDate: "2026-10-25", recurrenceTimeZone: "Europe/Rome" } },
+    });
+  });
+
+  it.each([
+    ["create", "2026-04-05T02:30:00.000Z"],
+    ["create", "2026-04-05T03:30:00.000Z"],
+    ["update", "2026-04-05T02:30:00.000Z"],
+    ["update", "2026-04-05T03:30:00.000Z"],
+  ])(
+    "rejects a recurring ambiguous start that would change its date during %s at %s",
+    async (operation, start) => {
+      expect.hasAssertions();
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      const service = createService();
+      const draft = createEventDraft({
+        start,
+        end: "2026-04-05T05:00:00.000Z",
+        timeZone: "America/Santiago",
+        recurrence: createDailyRecurrence("2026-04-04"),
+      });
+      const saved =
+        operation === "create"
+          ? service.createEvent({ ...draft, id: undefined }, "account-1")
+          : service.updateEvent(draft, "account-1");
+      await expect(saved).rejects.toThrow("Cannot verify the event schedule.");
+      expect(fetchMock).not.toHaveBeenCalled();
     },
   );
 
@@ -939,7 +1025,7 @@ describe("graph event time zones", () => {
       expect(fetchMock.mock.calls[0][1].method).toBe("PATCH");
       expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toMatchObject({
         start: { dateTime: start.replace(/\.000Z$/, ""), timeZone: "UTC" },
-        end: { dateTime: "2026-10-25T02:00:00", timeZone: "UTC" },
+        end: { dateTime: "2026-10-25T03:00:00", timeZone: "Europe/Rome" },
       });
       expect(fetchMock.mock.calls[1][1].method).not.toBe("PATCH");
       expect(new Headers(fetchMock.mock.calls[1][1].headers).get("Prefer")).toContain(
