@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import delay from "delay";
+import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import {
   contactSuggestionSchema,
@@ -218,6 +218,7 @@ const MAX_CONTACT_PHOTO_BYTES = 5 * 1024 * 1024;
 const MAX_CONTACT_PHOTO_CACHE_CHARACTERS = 16 * 1024 * 1024;
 const MAX_CONTACT_PHOTO_REQUESTS = 6;
 const MAX_PENDING_CONTACT_PHOTOS = 256;
+const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 class GraphCalendarService {
   private readonly auth: MsalAuthService;
@@ -1052,9 +1053,12 @@ class GraphCalendarService {
 
     const shouldRetry = (response.status === 429 || response.status === 503) && retryCount < 3;
     if (shouldRetry) {
-      await delay(this.getRetryDelay(response.headers.get("Retry-After"), retryCount), {
-        signal: init.signal ?? undefined,
-      });
+      let remainingMs = this.getRetryDelay(response.headers.get("Retry-After"), retryCount);
+      do {
+        const waitMs = Math.min(remainingMs, MAX_TIMER_DELAY_MS);
+        await delay(waitMs, undefined, { signal: init.signal ?? undefined });
+        remainingMs -= waitMs;
+      } while (remainingMs > 0);
       return this.sendRequest({
         ...args,
         retryCount: retryCount + 1,
@@ -1108,8 +1112,9 @@ class GraphCalendarService {
   private getRetryDelay(retryAfter: null | string, retryCount: number): number {
     if (retryAfter) {
       const seconds = Number.parseInt(retryAfter, 10);
-      if (!Number.isNaN(seconds)) {
-        return seconds * 1000;
+      const milliseconds = seconds * 1000;
+      if (Number.isSafeInteger(milliseconds) && milliseconds >= 0) {
+        return milliseconds;
       }
     }
 
