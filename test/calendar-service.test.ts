@@ -147,7 +147,6 @@ describe("reminder dismissal", () => {
   });
 
   it("does not retry a throttled dismissal after its account session changes", async () => {
-    vi.useFakeTimers();
     let valid = true;
     const assertSession = () => {
       if (!valid) {
@@ -160,15 +159,13 @@ describe("reminder dismissal", () => {
       .mockResolvedValueOnce(Response.json(createGraphEvent()))
       .mockImplementationOnce(async () => {
         valid = false;
-        return new Response(null, { status: 429, headers: { "Retry-After": "1" } });
+        return new Response(null, { status: 429, headers: { "Retry-After": "0" } });
       })
       .mockResolvedValue(new Response(null, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
-    const outcome = service
-      .dismissReminder("calendar-1", "event-1", "account-1", expectedStart)
-      .catch((error) => error);
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(await outcome).toMatchObject({ message: "Session changed" });
+    await expect(
+      service.dismissReminder("calendar-1", "event-1", "account-1", expectedStart),
+    ).rejects.toMatchObject({ message: "Session changed" });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
