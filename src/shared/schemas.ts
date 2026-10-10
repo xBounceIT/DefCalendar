@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { locationCoordinatesSchema } from "./locations";
 
 const dateTimeStringSchema = z
   .string()
@@ -198,6 +199,8 @@ const calendarEventSchema = z.object({
   bodyContentType: bodyContentTypeSchema.default("html"),
   bodyPreview: z.string().nullable(),
   location: z.string().nullable(),
+  isPhysicalLocation: z.boolean().optional(),
+  locationCoordinates: locationCoordinatesSchema.nullable().optional(),
   start: dateTimeStringSchema,
   end: dateTimeStringSchema,
   timeZone: z.string(),
@@ -239,6 +242,8 @@ const eventDraftSchema = z
     subject: z.string().trim().min(1, "Subject is required"),
     body: z.string().nullable().optional(),
     location: z.string().nullable().optional(),
+    isPhysicalLocation: z.boolean().optional(),
+    locationCoordinates: locationCoordinatesSchema.nullable().optional(),
     attendees: z.array(eventParticipantSchema).default([]),
     start: dateTimeStringSchema,
     end: dateTimeStringSchema,

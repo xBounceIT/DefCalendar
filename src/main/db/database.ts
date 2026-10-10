@@ -20,6 +20,7 @@ import {
   userSettingsSchema,
 } from "@shared/schema-values";
 import { isDeclinedEventResponse } from "@shared/event-response";
+import { preserveLocationDetails } from "@shared/locations";
 import { dirname, join } from "pathe";
 import Database from "better-sqlite3";
 import { app } from "electron";
@@ -457,6 +458,17 @@ class AppDatabase {
     `);
 
     const transaction = this.db.transaction((items: CalendarEvent[]) => {
+      const current = new Map(
+        this.db
+          .prepare(
+            "SELECT id, payload_json FROM events WHERE calendar_id = ? AND id IN (SELECT value FROM json_each(?))",
+          )
+          .all(calendarId, JSON.stringify(items.map((event) => event.id)))
+          .map((row) => [
+            readStringProperty(row, "id"),
+            parseCachedLocationEvent(readStringProperty(row, "payload_json")),
+          ]),
+      );
       this.db
         .prepare("DELETE FROM events WHERE calendar_id = ? AND start_sort < ? AND end_sort > ?")
         .run(calendarId, rangeEnd, rangeStart);
@@ -468,7 +480,9 @@ class AppDatabase {
           id: event.id,
           is_all_day: toSqliteBoolean(event.isAllDay),
           is_reminder_on: toSqliteBoolean(event.isReminderOn),
-          payload_json: JSON.stringify(event),
+          payload_json: JSON.stringify(
+            preserveLocationDetails(event, current.get(event.id) ?? null),
+          ),
           reminder_minutes_before_start: event.reminderMinutesBeforeStart,
           start_sort: event.start,
           subject: event.subject,
@@ -483,6 +497,13 @@ class AppDatabase {
   }
 
   upsertEvent(event: CalendarEvent): void {
+    const storedEvent =
+      event.isPhysicalLocation === undefined
+        ? preserveLocationDetails(
+            event,
+            parseCachedLocationEvent(this.getEventPayload(event.calendarId, event.id)),
+          )
+        : event;
     this.db
       .prepare(
         `
@@ -532,7 +553,7 @@ class AppDatabase {
         id: event.id,
         is_all_day: toSqliteBoolean(event.isAllDay),
         is_reminder_on: toSqliteBoolean(event.isReminderOn),
-        payload_json: JSON.stringify(event),
+        payload_json: JSON.stringify(storedEvent),
         reminder_minutes_before_start: event.reminderMinutesBeforeStart,
         start_sort: event.start,
         subject: event.subject,
@@ -547,15 +568,8 @@ class AppDatabase {
   }
 
   getEvent(calendarId: string, eventId: string): CalendarEvent | null {
-    const row = this.db
-      .prepare("SELECT payload_json FROM events WHERE calendar_id = ? AND id = ?")
-      .get(calendarId, eventId);
-
-    if (!row) {
-      return null;
-    }
-
-    return parseStoredEvent(readStringProperty(row, "payload_json"));
+    const payload = this.getEventPayload(calendarId, eventId);
+    return payload === null ? null : parseStoredEvent(payload);
   }
 
   listEvents(args: EventListArgs): CalendarEvent[] {
@@ -1324,6 +1338,13 @@ class AppDatabase {
     this.db.prepare("DELETE FROM accounts WHERE home_account_id = ?").run(homeAccountId);
   }
 
+  private getEventPayload(calendarId: string, eventId: string): string | null {
+    const row = this.db
+      .prepare("SELECT payload_json FROM events WHERE calendar_id = ? AND id = ?")
+      .get(calendarId, eventId);
+    return row ? readStringProperty(row, "payload_json") : null;
+  }
+
   private migrate(): void {
     const hadReminderStateTable = this.hasTable("reminder_state");
 
@@ -1616,6 +1637,17 @@ function normalizeStoredEvent(raw: unknown): unknown {
 
 function parseStoredEvent(payloadJson: string): CalendarEvent {
   return calendarEventSchema.parse(normalizeStoredEvent(JSON.parse(payloadJson)));
+}
+
+function parseCachedLocationEvent(payloadJson: string | null): CalendarEvent | null {
+  if (payloadJson === null) {
+    return null;
+  }
+  try {
+    return parseStoredEvent(payloadJson);
+  } catch {
+    return null;
+  }
 }
 
 function readNumberProperty(row: unknown, key: string): number {

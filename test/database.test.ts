@@ -94,6 +94,90 @@ function createStoredReminderEvent(overrides?: {
 }
 
 describe("database", () => {
+  it.each(["upsert", "range"])(
+    "repairs invalid cached event payloads during %s refresh",
+    (mode) => {
+      expect.hasAssertions();
+      const sqlite = new DatabaseSync(":memory:");
+      try {
+        const db = createSqliteDatabase(sqlite);
+        seedReminderCalendar(sqlite);
+        const remote = createStoredReminderEvent();
+        for (const payload of [
+          "{broken",
+          JSON.stringify({ ...remote, subject: 42 }),
+          JSON.stringify({
+            ...remote,
+            isPhysicalLocation: true,
+            locationCoordinates: { latitude: 100, longitude: 0 },
+          }),
+        ]) {
+          db.upsertEvent(remote);
+          sqlite
+            .prepare("UPDATE events SET payload_json = ? WHERE id = ? AND calendar_id = ?")
+            .run(payload, remote.id, remote.calendarId);
+          const refresh = () => {
+            if (mode === "upsert") {
+              db.upsertEvent(remote);
+            } else {
+              db.replaceEventsForCalendarRange({
+                calendarId: remote.calendarId,
+                rangeStart: "2026-03-01T00:00:00Z",
+                rangeEnd: "2026-04-01T00:00:00Z",
+                events: [remote],
+              });
+            }
+          };
+          expect(refresh).not.toThrow();
+          expect(db.getEvent(remote.calendarId, remote.id)).toMatchObject(remote);
+          expect(db.getEvent(remote.calendarId, remote.id)?.isPhysicalLocation).toBeUndefined();
+        }
+      } finally {
+        sqlite.close();
+      }
+      expect(sqlite.isOpen).toBe(false);
+    },
+  );
+
+  it("retains physical place preferences and coordinates across refreshes but clears them when the remote place changes", () => {
+    expect.hasAssertions();
+    const sqlite = new DatabaseSync(":memory:");
+    try {
+      const db = createSqliteDatabase(sqlite);
+      seedReminderCalendar(sqlite);
+      const remote = createStoredReminderEvent();
+      const coordinates = { latitude: 41.8902, longitude: 12.4922 };
+      db.upsertEvent({ ...remote, isPhysicalLocation: true, locationCoordinates: coordinates });
+      db.upsertEvent({ ...remote, subject: "Updated remotely" });
+      expect(db.getEvent(remote.calendarId, remote.id)).toMatchObject({
+        isPhysicalLocation: true,
+        locationCoordinates: coordinates,
+      });
+      db.replaceEventsForCalendarRange({
+        calendarId: remote.calendarId,
+        rangeStart: "2026-03-01T00:00:00Z",
+        rangeEnd: "2026-04-01T00:00:00Z",
+        events: [remote],
+      });
+      expect(db.getEvent(remote.calendarId, remote.id)).toMatchObject({
+        isPhysicalLocation: true,
+        locationCoordinates: coordinates,
+      });
+      db.upsertEvent({ ...remote, isPhysicalLocation: false, locationCoordinates: null });
+      db.upsertEvent(remote);
+      expect(db.getEvent(remote.calendarId, remote.id)).toMatchObject({
+        isPhysicalLocation: false,
+        locationCoordinates: null,
+      });
+      db.upsertEvent({ ...remote, location: "Microsoft Teams Meeting" });
+      expect(db.getEvent(remote.calendarId, remote.id)?.isPhysicalLocation).toBeUndefined();
+      expect(db.getEvent(remote.calendarId, remote.id)?.locationCoordinates).toBeUndefined();
+    } finally {
+      sqlite.close();
+    }
+    expect(sqlite.isOpen).toBe(false);
+  });
+
   it("preserves local dismissals and snoozes, repairs corrupted keys, and migrates legacy keys once", () => {
     const sqlite = new DatabaseSync(":memory:");
     try {

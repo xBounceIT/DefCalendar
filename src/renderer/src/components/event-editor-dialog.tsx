@@ -27,6 +27,11 @@ import {
   toDateTimeInputValue,
 } from "@shared/calendar";
 import type { SyncWindowDays } from "@shared/sync";
+import type {
+  LocationCoordinates,
+  LocationSuggestion,
+  SearchLocationsArgs,
+} from "@shared/locations";
 import {
   attendeeAvailabilityArgsSchema,
   attendeeEmailSchema,
@@ -47,6 +52,9 @@ import ContactAvatar from "./contact-avatar";
 import SettingsSelect from "./settings-select";
 import useAttendeeAvailability from "../hooks/use-attendee-availability";
 import MeetingPlanner from "./meeting-planner";
+import LocationInput from "./location-input";
+import LocationMapPreview from "./location-map-preview";
+import LocationModeToggle from "./location-mode-toggle";
 import SchedulingAssistant from "./scheduling-assistant";
 import { getSchedulingWindow, type SchedulingView } from "../scheduling-assistant";
 import {
@@ -84,6 +92,7 @@ interface EventEditorDialogProps {
     targetEventId?: string,
   ) => Promise<void>;
   onSearchContacts: (args: SearchContactsArgs) => Promise<ContactSuggestion[]>;
+  onSearchLocations: (args: SearchLocationsArgs) => Promise<LocationSuggestion[]>;
   onGetAttendeeAvailability: (args: AttendeeAvailabilityArgs) => Promise<AttendeeAvailability[]>;
   onSave: (draft: EventDraft) => Promise<void>;
   state: EditorState | null;
@@ -103,6 +112,8 @@ interface EditorFormState {
   isOnlineMeeting: boolean;
   isReminderOn: boolean;
   location: string;
+  isPhysicalLocation: boolean;
+  locationCoordinates: LocationCoordinates | null;
   optionalAttendeesInput: string;
   recurrenceDayOfMonth: string;
   recurrenceDaysOfWeek: string[];
@@ -153,6 +164,8 @@ const SAVABLE_FORM_FIELDS = [
   "isOnlineMeeting",
   "isReminderOn",
   "location",
+  "isPhysicalLocation",
+  "locationCoordinates",
   "optionalAttendeesInput",
   "recurrenceDayOfMonth",
   "recurrenceDaysOfWeek",
@@ -215,6 +228,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
   const [attachmentsBusy, setAttachmentsBusy] = useState(false);
   const [form, setForm] = useState<EditorFormState | null>(null);
   const [initialForm, setInitialForm] = useState<EditorFormState | null>(null);
+  const [locationComposing, setLocationComposing] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<"attendees" | "scheduling">("attendees");
   const [assistantDate, setAssistantDate] = useState<string | null>(null);
   const [assistantView, setAssistantView] = useState<SchedulingView>("day");
@@ -287,6 +301,7 @@ function EventEditorDialog(props: EventEditorDialogProps) {
     const next = buildFormState(props.state);
     setForm(next);
     setInitialForm(next);
+    setLocationComposing(false);
     setSidebarTab("attendees");
     setAssistantDate(null);
     setAssistantView("day");
@@ -348,10 +363,6 @@ function EventEditorDialog(props: EventEditorDialogProps) {
   }
 
   const editedEvent = props.state.mode === "edit" ? props.state.event : null;
-  const locationQuery = form.location.trim();
-  const locationMapsUrl = locationQuery
-    ? `https://www.google.com/maps/search/?${new URLSearchParams({ api: "1", query: locationQuery })}`
-    : null;
   const isEdit = Boolean(editedEvent);
   const readOnlyForAttendee = Boolean(editedEvent && !editedEvent.isOrganizer);
   const selectedCalendar =
@@ -772,30 +783,36 @@ function EventEditorDialog(props: EventEditorDialogProps) {
                   </div>
 
                   <div className="field-row field-row--location">
-                    <LocationIcon />
-                    <input
-                      className="field-input field-input--underline"
+                    <LocationModeToggle
+                      physical={form.isPhysicalLocation}
                       disabled={readOnlyForAttendee}
-                      onChange={(event) => updateForm(setForm, { location: event.target.value })}
-                      placeholder={t("eventEditor.location")}
-                      spellCheck
-                      type="text"
-                      value={form.location}
+                      onChange={(isPhysicalLocation) =>
+                        updateForm(setForm, { isPhysicalLocation, locationCoordinates: null })
+                      }
                     />
-                    {locationMapsUrl && locationMapsUrl.length <= 2048 && (
-                      <a
-                        className="ghost-button location-maps-link"
-                        href={locationMapsUrl}
-                        rel="noopener noreferrer"
-                        target="_blank"
-                      >
-                        {t("eventEditor.openInGoogleMaps")}
-                      </a>
-                    )}
-                    {locationMapsUrl && locationMapsUrl.length > 2048 && (
-                      <span className="location-maps-error" role="status">
-                        {t("eventEditor.locationTooLongForMaps")}
-                      </span>
+                    <div className="location-field-group">
+                      <LocationInput
+                        disabled={readOnlyForAttendee}
+                        physical={form.isPhysicalLocation}
+                        onCompositionChange={setLocationComposing}
+                        onChange={(location) =>
+                          updateForm(setForm, { location, locationCoordinates: null })
+                        }
+                        onSelect={(item) =>
+                          updateForm(setForm, { locationCoordinates: item.coordinates ?? null })
+                        }
+                        onSearch={props.onSearchLocations}
+                        resetToken={props.state}
+                        value={form.location}
+                      />
+                    </div>
+                    {form.isPhysicalLocation && (
+                      <LocationMapPreview
+                        location={form.location}
+                        composing={locationComposing}
+                        coordinates={form.locationCoordinates}
+                        onSearch={props.onSearchLocations}
+                      />
                     )}
                   </div>
                 </div>
@@ -3147,25 +3164,6 @@ function SubjectIcon() {
   );
 }
 
-function LocationIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      fill="none"
-      height="20"
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth="2"
-      viewBox="0 0 24 24"
-      width="20"
-    >
-      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-      <circle cx="12" cy="10" r="3" />
-    </svg>
-  );
-}
-
 function AttendeesIcon() {
   return (
     <svg
@@ -4102,6 +4100,8 @@ function buildFormState(state: EventEditorDialogProps["state"]): EditorFormState
     isOnlineMeeting: event?.isOnlineMeeting ?? draft?.isOnlineMeeting ?? false,
     isReminderOn: event?.isReminderOn ?? draft?.isReminderOn ?? true,
     location: event?.location ?? draft?.location ?? "",
+    isPhysicalLocation: event?.isPhysicalLocation ?? draft?.isPhysicalLocation ?? false,
+    locationCoordinates: event?.locationCoordinates ?? draft?.locationCoordinates ?? null,
     optionalAttendeesInput: "",
     recurrenceDayOfMonth: recurrence?.pattern.dayOfMonth?.toString() ?? "",
     recurrenceDaysOfWeek: recurrence?.pattern.daysOfWeek ?? [],
@@ -4230,6 +4230,8 @@ function buildDraft(form: EditorFormState, event: CalendarEvent | null): EventDr
     isOnlineMeeting: form.isOnlineMeeting,
     isReminderOn: form.isReminderOn,
     location: form.location.trim() || null,
+    isPhysicalLocation: form.isPhysicalLocation,
+    locationCoordinates: form.isPhysicalLocation ? form.locationCoordinates : null,
     recurrence: buildRecurrence(form, start),
     recurrenceEditScope: "single",
     reminderMinutesBeforeStart: form.isReminderOn
