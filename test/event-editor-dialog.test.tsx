@@ -31,7 +31,14 @@ import type {
 } from "../src/shared/schemas";
 
 beforeEach(() => {
-  vi.stubGlobal("calendarApi", { contacts: { getPhoto: vi.fn().mockResolvedValue(null) } });
+  vi.stubGlobal("calendarApi", {
+    contacts: { getPhoto: vi.fn().mockResolvedValue(null) },
+    locations: {
+      map: vi
+        .fn()
+        .mockResolvedValue([{ src: "data:image/png;base64,iVBORw0KGgo=", left: 0, top: 0 }]),
+    },
+  });
 });
 
 afterEach(() => {
@@ -82,6 +89,7 @@ function createEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
     id: "event-1",
     isAllDay: false,
     isOnlineMeeting: false,
+    isPhysicalLocation: true,
     isOrganizer: true,
     isReminderOn: true,
     lastModifiedDateTime: null,
@@ -201,6 +209,7 @@ function renderDialog(props?: Partial<React.ComponentProps<typeof EventEditorDia
           onRemoveAttachment={onRemoveAttachment}
           onRespond={vi.fn().mockResolvedValue(undefined)}
           onSearchContacts={onSearchContacts}
+          onSearchLocations={vi.fn().mockResolvedValue([])}
           onGetAttendeeAvailability={vi.fn().mockResolvedValue([])}
           onSave={onSave}
           state={state}
@@ -2307,6 +2316,350 @@ describe("event editor dialog", () => {
     expect(screen.queryByRole("button", { name: "Save Changes" })).not.toBeInTheDocument();
   });
 
+  it.each(["create", "edit"] as const)(
+    "selects location suggestions and saves the address in %s mode",
+    async (mode) => {
+      const search = vi
+        .fn()
+        .mockResolvedValue([
+          { label: "Roma, Lazio, Italia" },
+          { label: "Roma Termini, Roma, Italia" },
+        ]);
+      const { onSave } = renderDialog({
+        onSearchLocations: search,
+        state:
+          mode === "edit"
+            ? { event: createEvent(), mode }
+            : createMeetingState({ draft: { subject: "Planning" } }),
+      });
+      const input = screen.getByRole("combobox", { name: "Location" });
+      if (mode === "create") {
+        fireEvent.click(screen.getByRole("button", { name: "Map", exact: true }));
+      }
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: "Roma" } });
+      await screen.findByRole("option", { name: "Roma, Lazio, Italia" });
+      expect(search).toHaveBeenCalledWith({ query: "Roma", language: "en" });
+      fireEvent.keyDown(input, { key: "ArrowDown" });
+      expect(screen.getByRole("option", { name: "Roma, Lazio, Italia" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(input).toHaveValue("Roma, Lazio, Italia");
+      expect(screen.queryByRole("option")).not.toBeInTheDocument();
+      fireEvent.click(
+        screen.getByRole("button", { name: mode === "edit" ? "Save Changes" : "Create Event" }),
+      );
+      await waitFor(() =>
+        expect(onSave).toHaveBeenCalledWith(
+          expect.objectContaining({ location: "Roma, Lazio, Italia" }),
+        ),
+      );
+    },
+  );
+
+  it("debounces location typing and discards late results after the query or event changes", async () => {
+    let resolveFirst!: (items: { label: string }[]) => void;
+    const search = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockResolvedValue([{ label: "Milano, Italia" }]);
+    const { rerenderDialog } = renderDialog({ onSearchLocations: search });
+    const input = screen.getByRole("combobox", { name: "Location" });
+    fireEvent.change(input, { target: { value: "Ro" } });
+    fireEvent.change(input, { target: { value: "Rom" } });
+    fireEvent.change(input, { target: { value: "Roma" } });
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(1));
+    fireEvent.change(input, { target: { value: "Milano" } });
+    await act(async () => resolveFirst([{ label: "Roma, Italia" }]));
+    expect(screen.queryByRole("option", { name: "Roma, Italia" })).not.toBeInTheDocument();
+    await screen.findByRole("option", { name: "Milano, Italia" });
+    rerenderDialog({
+      state: { event: createEvent({ id: "event-2", location: "Milano" }), mode: "edit" },
+    });
+    expect(screen.queryByRole("option")).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Location")).toHaveValue("Milano");
+  });
+
+  it("saves an unverified house number without losing the entered number or persisting its warning", async () => {
+    expect.hasAssertions();
+    const { onSave } = renderDialog({
+      onSearchLocations: vi
+        .fn()
+        .mockResolvedValue([
+          { label: "Via Anco Marzio 73, Milano, Italia", houseNumberVerified: false },
+        ]),
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "Location" }), {
+      target: { value: "Via Anco marzio 73" },
+    });
+    fireEvent.click(
+      await screen.findByRole("option", {
+        name: "Via Anco Marzio 73, Milano, Italia House number to verify",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({ location: "Via Anco Marzio 73, Milano, Italia" }),
+      ),
+    );
+    expect(onSave).toHaveBeenCalledOnce();
+  });
+
+  it("supports mouse selection and closes location suggestions with Escape and blur", async () => {
+    const search = vi.fn().mockResolvedValue([{ label: "Roma, Italia" }]);
+    renderDialog({ onSearchLocations: search });
+    const input = screen.getByRole("combobox", { name: "Location" });
+    fireEvent.change(input, { target: { value: "Roma" } });
+    fireEvent.click(await screen.findByRole("option", { name: "Roma, Italia" }));
+    expect(input).toHaveValue("Roma, Italia");
+    fireEvent.change(input, { target: { value: "Roma" } });
+    await screen.findByRole("option", { name: "Roma, Italia" });
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(input).toHaveAttribute("aria-expanded", "false");
+    fireEvent.focus(input);
+    await screen.findByRole("option", { name: "Roma, Italia" });
+    fireEvent.blur(input, { relatedTarget: screen.getByPlaceholderText("Subject") });
+    expect(screen.queryByRole("option")).not.toBeInTheDocument();
+  });
+
+  it("scrolls keyboard-selected location suggestions into view", async () => {
+    expect.hasAssertions();
+    const originalScroll = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollIntoView");
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    onTestFinished(() => {
+      if (originalScroll) {
+        Object.defineProperty(HTMLElement.prototype, "scrollIntoView", originalScroll);
+      } else {
+        delete (HTMLElement.prototype as Partial<HTMLElement>).scrollIntoView;
+      }
+    });
+    renderDialog({
+      onSearchLocations: vi.fn().mockResolvedValue(
+        Array.from({ length: 5 }, (_, index) => ({
+          label: `Long address ${index}, Via Roma 100, Roma, Lazio, Italia`,
+        })),
+      ),
+    });
+    const input = screen.getByRole("combobox", { name: "Location" });
+    fireEvent.change(input, { target: { value: "Roma" } });
+    const last = await screen.findByRole("option", {
+      name: "Long address 4, Via Roma 100, Roma, Lazio, Italia",
+    });
+    fireEvent.keyDown(input, { key: "ArrowUp" });
+    expect(last).toHaveAttribute("aria-selected", "true");
+    expect(scrollIntoView).toHaveBeenLastCalledWith({ block: "nearest" });
+    expect(scrollIntoView.mock.contexts.at(-1)).toBe(last);
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(scrollIntoView.mock.contexts.at(-1)).toBe(
+      screen.getByRole("option", { name: "Long address 0, Via Roma 100, Roma, Lazio, Italia" }),
+    );
+  });
+
+  it("waits for IME composition to finish before searching or selecting locations", async () => {
+    expect.hasAssertions();
+    const search = vi.fn().mockResolvedValue([{ label: "Tokyo, Japan" }]);
+    renderDialog({ onSearchLocations: search });
+    const input = screen.getByRole("combobox", { name: "Location" });
+    fireEvent.compositionStart(input);
+    fireEvent.change(input, { target: { value: "Tokyo" } });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 950));
+    });
+    expect(search).not.toHaveBeenCalled();
+    fireEvent.compositionEnd(input);
+    await screen.findByRole("option", { name: "Tokyo, Japan" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(input).toHaveValue("Tokyo");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(input).toHaveValue("Tokyo, Japan");
+  });
+
+  it("resets location composition when switching to another event", async () => {
+    expect.hasAssertions();
+    const search = vi.fn().mockResolvedValue([{ label: "Milano, Italia" }]);
+    const { rerenderDialog } = renderDialog({ onSearchLocations: search });
+    const input = screen.getByRole("combobox", { name: "Location" });
+    fireEvent.compositionStart(input);
+    fireEvent.change(input, { target: { value: "Tokyo" } });
+    rerenderDialog({
+      state: { event: createEvent({ id: "event-2", location: "" }), mode: "edit" },
+    });
+    fireEvent.change(input, { target: { value: "Milano" } });
+    const option = await screen.findByRole("option", { name: "Milano, Italia" });
+    expect(option).toBeEnabled();
+    expect(search).toHaveBeenCalledWith({ query: "Milano", language: "en" });
+  });
+
+  it.each(["blur", "escape", "event change", "dismiss"])(
+    "ignores pending location results after %s",
+    async (action) => {
+      expect.hasAssertions();
+      let resolveSearch: (items: { label: string }[]) => void = () => {
+        throw new Error("Location search has not started.");
+      };
+      const search = vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSearch = resolve;
+          }),
+      );
+      const view = renderDialog({ onSearchLocations: search });
+      const input = screen.getByRole("combobox", { name: "Location" });
+      fireEvent.change(input, { target: { value: "Roma" } });
+      await waitFor(() => expect(search).toHaveBeenCalledOnce());
+      if (action === "blur") {
+        fireEvent.blur(input, { relatedTarget: screen.getByPlaceholderText("Subject") });
+      } else if (action === "escape") {
+        fireEvent.keyDown(input, { key: "Escape" });
+      } else if (action === "event change") {
+        view.rerenderDialog({
+          state: { event: createEvent({ id: "event-2", location: "Roma" }), mode: "edit" },
+        });
+      } else {
+        view.rerenderDialog({ state: null });
+      }
+      await act(async () => resolveSearch([{ label: "Roma, Italia" }]));
+      expect(screen.queryByRole("option")).not.toBeInTheDocument();
+      expect(screen.queryByPlaceholderText<HTMLInputElement>("Location")?.value).toBe(
+        action === "dismiss" ? undefined : "Roma",
+      );
+    },
+  );
+
+  it.each([[], new Error("Offline")])(
+    "retains manual locations when suggestions fail or are empty: %s",
+    async (result) => {
+      const search =
+        result instanceof Error
+          ? vi.fn().mockRejectedValue(result)
+          : vi.fn().mockResolvedValue(result);
+      const { onSave } = renderDialog({ onSearchLocations: search });
+      fireEvent.change(screen.getByPlaceholderText("Location"), {
+        target: { value: "Sala privata" },
+      });
+      await waitFor(() =>
+        expect(screen.getByRole("status")).toHaveTextContent("You can enter a location manually."),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+      await waitFor(() =>
+        expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ location: "Sala privata" })),
+      );
+    },
+  );
+
+  it("does not search read-only locations, short queries, or overlong queries", async () => {
+    const search = vi.fn().mockResolvedValue([]);
+    const { rerenderDialog } = renderDialog({
+      onSearchLocations: search,
+      state: { event: createAttendeeEvent({ location: "Roma" }), mode: "edit" },
+    });
+    const input = screen.getByPlaceholderText("Location");
+    expect(input).toBeDisabled();
+    fireEvent.focus(input);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 550));
+    });
+    expect(search).not.toHaveBeenCalled();
+    rerenderDialog({ state: { event: createEvent(), mode: "edit" } });
+    for (const value of ["Ro", "x".repeat(201)]) {
+      fireEvent.change(input, { target: { value } });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 550));
+      });
+      expect(search).not.toHaveBeenCalled();
+      expect(input).toHaveValue(value);
+    }
+  });
+
+  it("keeps new and legacy free-text places nonphysical, including Microsoft Teams Meeting", async () => {
+    expect.hasAssertions();
+    const search = vi.fn().mockResolvedValue([]);
+    const { onSave, rerenderDialog } = renderDialog({
+      onSearchLocations: search,
+      state: createMeetingState({
+        draft: { subject: "Planning", location: "Microsoft Teams Meeting" },
+      }),
+    });
+    expect(screen.getByRole("button", { name: "Location", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    const input = screen.getByRole("combobox", { name: "Location" });
+    fireEvent.focus(input);
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 900)));
+    expect(search).not.toHaveBeenCalled();
+    expect(screen.queryByRole("link", { name: "Open in Google Maps" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          location: "Microsoft Teams Meeting",
+          isPhysicalLocation: false,
+          locationCoordinates: null,
+        }),
+      ),
+    );
+    rerenderDialog({
+      state: {
+        event: createEvent({ isPhysicalLocation: undefined, location: "Microsoft Teams Meeting" }),
+        mode: "edit",
+      },
+    });
+    expect(screen.getByRole("button", { name: "Location", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("retains selected coordinates in a physical place and removes the preview when toggled off", async () => {
+    expect.hasAssertions();
+    const coordinates = { latitude: 41.8902, longitude: 12.4922 };
+    const search = vi.fn().mockResolvedValue([{ label: "Colosseo, Roma, Italia", coordinates }]);
+    const { onSave } = renderDialog({ onSearchLocations: search });
+    const input = screen.getByRole("combobox", { name: "Location" });
+    fireEvent.change(input, { target: { value: "Colosseo" } });
+    fireEvent.click(await screen.findByRole("option", { name: "Colosseo, Roma, Italia" }));
+    await screen.findByRole("img", { name: "Location area map" });
+    expect(globalThis.calendarApi.locations.map).toHaveBeenCalledWith(coordinates);
+    const mapMode = screen.getByRole("button", { name: "Map", exact: true });
+    fireEvent.click(mapMode);
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({ isPhysicalLocation: true, locationCoordinates: coordinates }),
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Location", exact: true }));
+    expect(screen.queryByRole("img", { name: "Location area map" })).not.toBeInTheDocument();
+    expect(input).toHaveValue("Colosseo, Roma, Italia");
+    fireEvent.focus(input);
+    expect(screen.queryByRole("option")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    await waitFor(() =>
+      expect(onSave).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          isPhysicalLocation: false,
+          locationCoordinates: null,
+          location: "Colosseo, Roma, Italia",
+        }),
+      ),
+    );
+    expect(search).toHaveBeenCalledOnce();
+  });
+
   it("opens the current unsaved location in Google Maps while creating an event", () => {
     expect.hasAssertions();
     const onSave = vi.fn().mockResolvedValue(undefined);
@@ -2323,6 +2676,7 @@ describe("event editor dialog", () => {
 
     expect(screen.queryByRole("link", { name: "Open in Google Maps" })).not.toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "Map", exact: true }));
     fireEvent.change(screen.getByPlaceholderText("Location"), {
       target: { value: "  Caffè & Bar #1, Via Roma 10, Milano  " },
     });
@@ -2375,6 +2729,8 @@ describe("event editor dialog", () => {
     });
 
     expect(screen.getByPlaceholderText("Location")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Location", exact: true })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Map", exact: true })).toBeDisabled();
     expect(screen.getByRole("link", { name: "Open in Google Maps" })).toHaveAttribute(
       "href",
       "https://www.google.com/maps/search/?api=1&query=Via+Roma+10%2C+Milano",
@@ -2417,7 +2773,7 @@ describe("event editor dialog", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Location is too long for Google Maps");
 
     fireEvent.change(input, { target: { value: "Roma" } });
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByText("Location is too long for Google Maps")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open in Google Maps" })).toHaveAttribute(
       "href",
       "https://www.google.com/maps/search/?api=1&query=Roma",

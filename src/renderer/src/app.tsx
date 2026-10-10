@@ -579,6 +579,8 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         isOnlineMeeting: source.isOnlineMeeting,
         isReminderOn: source.isReminderOn,
         location: source.location,
+        isPhysicalLocation: source.isPhysicalLocation,
+        locationCoordinates: source.locationCoordinates,
         recurrence: null,
         recurrenceEditScope: "single",
         reminderMinutesBeforeStart: source.reminderMinutesBeforeStart,
@@ -811,6 +813,8 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
       isOnlineMeeting: source.isOnlineMeeting,
       isReminderOn: source.isReminderOn,
       location: source.location,
+      isPhysicalLocation: source.isPhysicalLocation,
+      locationCoordinates: source.locationCoordinates,
       recurrence: source.recurrence,
       recurrenceEditScope: "single",
       reminderMinutesBeforeStart: source.reminderMinutesBeforeStart,
@@ -1193,6 +1197,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
         onRemoveAttachment={removeEventAttachment}
         onRespond={respondToMeeting}
         onSearchContacts={searchContacts}
+        onSearchLocations={searchLocations}
         onGetAttendeeAvailability={getAttendeeAvailability}
         onSave={saveDraft}
         state={editorState}
@@ -1458,6 +1463,9 @@ async function searchContacts(args: SearchContactsArgs) {
 
 const getAttendeeAvailability: CalendarApi["events"]["getAttendeeAvailability"] = (args) =>
   globalThis.calendarApi.events.getAttendeeAvailability(args);
+
+const searchLocations: CalendarApi["locations"]["search"] = (args) =>
+  globalThis.calendarApi.locations.search(args);
 
 function resetEditor(
   setDialogError: React.Dispatch<React.SetStateAction<string | null>>,

@@ -12,6 +12,7 @@ export const {
   Notification,
   Tray,
   nativeImage,
+  net,
   powerMonitor,
   safeStorage,
   screen,

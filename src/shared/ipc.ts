@@ -27,6 +27,12 @@ import type {
   UserSettingsPatch,
 } from "./schemas";
 import type { VisualTheme } from "./theme";
+import type {
+  LocationCoordinates,
+  LocationMapTile,
+  LocationSuggestion,
+  SearchLocationsArgs,
+} from "./locations";
 import type { AttendeeAvailability, AttendeeAvailabilityArgs } from "./attendee-availability";
 import type {
   EventResponseAction,
@@ -50,6 +56,8 @@ export const IPC_CHANNELS = {
   categoriesList: "categories:list",
   contactsSearch: "contacts:search",
   contactsGetPhoto: "contacts:get-photo",
+  locationsSearch: "locations:search",
+  locationsMap: "locations:map",
   attendeesGetAvailability: "attendees:get-availability",
   eventsList: "events:list",
   eventsSearch: "events:search",
@@ -136,6 +144,10 @@ interface CalendarApi {
   contacts: {
     getPhoto: (args: ContactSuggestion & { homeAccountId: string }) => Promise<string | null>;
     search: (args: SearchContactsArgs) => Promise<ContactSuggestion[]>;
+  };
+  locations: {
+    search: (args: SearchLocationsArgs) => Promise<LocationSuggestion[]>;
+    map: (args: LocationCoordinates) => Promise<LocationMapTile[]>;
   };
   events: {
     getAttendeeAvailability: (args: AttendeeAvailabilityArgs) => Promise<AttendeeAvailability[]>;

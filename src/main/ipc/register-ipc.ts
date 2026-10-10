@@ -7,6 +7,7 @@ import type {
   CalendarEvent,
   ContactSuggestion,
   EventAttachment,
+  EventDraft,
   EventListArgs,
   UserSettings,
 } from "@shared/schemas";
@@ -41,6 +42,9 @@ import {
   spellcheckWordSchema,
 } from "@shared/schemas";
 import { visualThemeSchema } from "@shared/theme";
+import { locationCoordinatesSchema, searchLocationsArgsSchema } from "@shared/locations";
+import PhotonLocationService from "@main/locations/photon-location-service";
+import OsmMapService from "@main/locations/osm-map-service";
 import type AppDatabase from "@main/db/database";
 import type EventActionService from "@main/events/event-action-service";
 import { isMissingGraphItemError } from "@main/graph/calendar-service";
@@ -55,7 +59,7 @@ import type SystemInviteNotificationService from "@main/notifications/system-inv
 import type TaskbarInviteAttentionService from "@main/notifications/taskbar-invite-attention-service";
 import type { SyncService } from "@main/sync/sync-service";
 import type UpdateService from "@main/update/update-service";
-import { app, dialog, ipcMain, shell } from "@main/electron-runtime";
+import { app, dialog, ipcMain, net, shell } from "@main/electron-runtime";
 import { showAndFocusMainWindow, setTitleBarScrim } from "@main/window";
 import { IPC_CHANNELS } from "@shared/ipc";
 import {
@@ -118,6 +122,10 @@ function mergeContactSuggestions(
 }
 
 function registerIpc(dependencies: RegisterIpcDependencies): void {
+  const locations = new PhotonLocationService();
+  const maps = new OsmMapService((input, init) =>
+    net.fetch(input instanceof Request ? input : String(input), init),
+  );
   const enrichCalendars = () => {
     const settings = dependencies.settings.getSettings();
     const visible = new Set(settings.visibleCalendarIds);
@@ -302,6 +310,16 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     return categories.map((category) => outlookCategorySchema.parse(category));
   });
 
+  ipcMain.handle(IPC_CHANNELS.locationsSearch, async (event, input) => {
+    validateMainSender(event);
+    return locations.search(searchLocationsArgsSchema.parse(input));
+  });
+
+  ipcMain.handle(IPC_CHANNELS.locationsMap, async (event, input) => {
+    validateMainSender(event);
+    return maps.render(locationCoordinatesSchema.parse(input));
+  });
+
   ipcMain.handle(IPC_CHANNELS.contactsSearch, async (event, input) => {
     validateMainSender(event);
     const args = searchContactsArgsSchema.parse(input);
@@ -376,7 +394,10 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     const draft = eventDraftSchema.parse(input);
     const homeAccountId = resolveCalendarHomeAccountId(draft.calendarId);
     const assertSession = dependencies.auth.createAccountSessionGuard(homeAccountId);
-    const created = await dependencies.graph.createEvent(draft, homeAccountId);
+    const created = applyLocationDetails(
+      await dependencies.graph.createEvent(draft, homeAccountId),
+      draft,
+    );
     assertSession();
     dependencies.db.upsertEvent(created);
     await dependencies.reminders.checkNow();
@@ -399,7 +420,10 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
 
     const homeAccountId = resolveCalendarHomeAccountId(draft.calendarId);
     const assertSession = dependencies.auth.createAccountSessionGuard(homeAccountId);
-    const updated = await dependencies.graph.updateEvent(draft, homeAccountId, current);
+    const updated = applyLocationDetails(
+      await dependencies.graph.updateEvent(draft, homeAccountId, current),
+      draft,
+    );
     assertSession();
     replaceStoredEvent(current, mergeCachedAttachments(updated, current));
     await dependencies.reminders.checkNow();
@@ -858,6 +882,20 @@ function sanitizeAttachmentFileName(name: string): string {
   return /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i.test(sanitized)
     ? `_${sanitized}`
     : sanitized;
+}
+
+function applyLocationDetails(event: CalendarEvent, draft: EventDraft): CalendarEvent {
+  if (
+    draft.isPhysicalLocation === undefined ||
+    (event.location ?? "").trim() !== (draft.location ?? "").trim()
+  ) {
+    return event;
+  }
+  return {
+    ...event,
+    isPhysicalLocation: draft.isPhysicalLocation,
+    locationCoordinates: draft.isPhysicalLocation ? (draft.locationCoordinates ?? null) : null,
+  };
 }
 
 export default registerIpc;

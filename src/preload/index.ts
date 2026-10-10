@@ -60,6 +60,10 @@ const calendarApi: CalendarApi = {
     getPhoto: (args) => ipcRenderer.invoke(IPC_CHANNELS.contactsGetPhoto, args),
     search: (args) => ipcRenderer.invoke(IPC_CHANNELS.contactsSearch, args),
   },
+  locations: {
+    map: (args) => ipcRenderer.invoke(IPC_CHANNELS.locationsMap, args),
+    search: (args) => ipcRenderer.invoke(IPC_CHANNELS.locationsSearch, args),
+  },
   events: {
     getAttendeeAvailability: (args) =>
       ipcRenderer.invoke(IPC_CHANNELS.attendeesGetAvailability, args),

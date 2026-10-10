@@ -1,10 +1,12 @@
 import { readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import EventActionService from "../src/main/events/event-action-service";
 import registerIpc from "../src/main/ipc/register-ipc";
+import PhotonLocationService from "../src/main/locations/photon-location-service";
+import OsmMapService from "../src/main/locations/osm-map-service";
 import { IPC_CHANNELS } from "../src/shared/ipc";
 import { createDefaultSettings, type ContactSuggestion } from "../src/shared/schemas";
 
@@ -30,6 +32,7 @@ vi.mock(import("@main/electron-runtime"), () => ({
   app,
   dialog,
   ipcMain,
+  net: { fetch: vi.fn() },
   shell,
 }));
 
@@ -321,6 +324,73 @@ function createFixture() {
 }
 
 describe("register ipc", () => {
+  it("validates map coordinates and sender before loading tiles", async () => {
+    expect.hasAssertions();
+    const map = vi.spyOn(OsmMapService.prototype, "render").mockResolvedValue([]);
+    onTestFinished(() => map.mockRestore());
+    const fixture = createFixture();
+    const handler = fixture.handlers.get(IPC_CHANNELS.locationsMap)!;
+    await expect(handler({ sender: {} }, { latitude: 0, longitude: 0 })).rejects.toThrow(
+      "untrusted sender",
+    );
+    await expect(
+      handler({ sender: fixture.mainWebContents }, { latitude: 100, longitude: 0 }),
+    ).rejects.toThrow();
+    expect(map).not.toHaveBeenCalled();
+    await expect(
+      handler({ sender: fixture.mainWebContents }, { latitude: 0, longitude: 0 }),
+    ).resolves.toStrictEqual([]);
+    expect(map).toHaveBeenCalledExactlyOnceWith({ latitude: 0, longitude: 0 });
+  });
+
+  it.each([IPC_CHANNELS.eventsCreate, IPC_CHANNELS.eventsUpdate])(
+    "stores and returns local physical place preferences after %s",
+    async (channel) => {
+      expect.hasAssertions();
+      const fixture = createFixture();
+      const coordinates = { latitude: 41.8902, longitude: 12.4922 };
+      const result = await fixture.handlers.get(channel)!(
+        { sender: fixture.mainWebContents },
+        {
+          ...createEventDraft({ id: "event-1" }),
+          location: "Room 3",
+          isPhysicalLocation: true,
+          locationCoordinates: coordinates,
+        },
+      );
+      expect(result).toMatchObject({ isPhysicalLocation: true, locationCoordinates: coordinates });
+      expect(fixture.db.upsertEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ isPhysicalLocation: true, locationCoordinates: coordinates }),
+      );
+    },
+  );
+
+  it("validates location search input and sender before calling Photon", async () => {
+    const search = vi
+      .spyOn(PhotonLocationService.prototype, "search")
+      .mockResolvedValue([{ label: "Roma, Italia" }]);
+    try {
+      const fixture = createFixture();
+      const handler = fixture.handlers.get(IPC_CHANNELS.locationsSearch)!;
+      await expect(handler({ sender: {} }, { query: "Roma", language: "it" })).rejects.toThrow(
+        "untrusted sender",
+      );
+      await expect(
+        handler({ sender: fixture.mainWebContents }, { query: "ab", language: "it" }),
+      ).rejects.toThrow();
+      await expect(
+        handler({ sender: fixture.mainWebContents }, { query: "Roma", language: "xx" }),
+      ).rejects.toThrow();
+      expect(search).not.toHaveBeenCalled();
+      await expect(
+        handler({ sender: fixture.mainWebContents }, { query: " Roma ", language: "it" }),
+      ).resolves.toEqual([{ label: "Roma, Italia" }]);
+      expect(search).toHaveBeenCalledWith({ query: "Roma", language: "it" });
+    } finally {
+      search.mockRestore();
+    }
+  });
+
   it("does not persist spelling settings when a native setter fails", async () => {
     expect.hasAssertions();
     const fixture = createFixture();
