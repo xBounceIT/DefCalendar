@@ -50,6 +50,16 @@ Desktop calendar app for Microsoft 365 Exchange Online built with Electron.
 - `npm run dist` — Create installer artifacts with electron-builder
 - `npm run dist:publish` — Create installer artifacts and publish a GitHub Release
 
+## Releases
+
+Pushing a `v*` tag matching `package.json` creates a draft GitHub Release with generated notes, then builds Windows and macOS assets in parallel. The release becomes public only after both builds and uploads succeed.
+
+- Windows: NSIS installer.
+- macOS: universal DMG and ZIP containing both Intel (`x64`) and Apple Silicon (`arm64`) binaries, plus update metadata. The workflow checks both architectures in the app executable and the native SQLite module before publishing the release.
+- To build the macOS artifacts locally on a Mac, run `npm run dist -- --mac --universal`.
+
+For Developer ID signing and notarization, configure the repository Actions secrets `MAC_CSC_LINK` (base64-encoded `.p12` certificate), `MAC_CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`. Without these credentials, the workflow still builds macOS artifacts, but they are not Developer ID signed or notarized; normal Gatekeeper distribution and macOS auto-updates require signing. See the [electron-builder macOS signing documentation](https://www.electron.build/v26/docs/features/code-signing/).
+
 ## Notes
 
 - Targets Microsoft 365 work/school accounts only.

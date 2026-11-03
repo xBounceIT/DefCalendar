@@ -412,7 +412,7 @@ describe("startup session permission validation", () => {
     await service.initialize();
     const otherAccount = { ...account, homeAccountId: "other-account" };
     pca.acquireTokenSilent.mockRejectedValueOnce(
-      new InteractionRequiredAuthError("interaction_required"),
+      new InteractionRequiredAuthError("interaction_required", "test-correlation-id"),
     );
     pca.acquireTokenInteractive.mockResolvedValue({ ...createToken(), account: otherAccount });
 
@@ -554,16 +554,22 @@ describe("startup session permission validation", () => {
   });
 
   it.each([
-    [new InteractionRequiredAuthError("consent_required"), "consent_required"],
-    [new InteractionRequiredAuthError("interaction_required"), "session_expired"],
+    [
+      new InteractionRequiredAuthError("consent_required", "test-correlation-id"),
+      "consent_required",
+    ],
+    [
+      new InteractionRequiredAuthError("interaction_required", "test-correlation-id"),
+      "session_expired",
+    ],
     [{ errorCode: "invalid_grant" }, "session_expired"],
     [{ errorCode: "no_tokens_found" }, "session_expired"],
     [{ errorCode: "invalid_grant", subError: "consent_required" }, "consent_required"],
     [
       new InteractionRequiredAuthError(
         "invalid_grant",
+        "test-correlation-id",
         "AADSTS65001: The user or administrator has not consented",
-        undefined,
         undefined,
         undefined,
         undefined,
