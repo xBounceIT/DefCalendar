@@ -128,8 +128,8 @@ jobs:
         shell: bash
         run: |
           app="release/mac-universal/DefCalendar.app/Contents"
-          lipo -verify_arch x86_64 arm64 "$app/MacOS/DefCalendar"
-          lipo -verify_arch x86_64 arm64 "$app/Resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node"
+          lipo "$app/MacOS/DefCalendar" -verify_arch x86_64 arm64
+          lipo "$app/Resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node" -verify_arch x86_64 arm64
 
   publish:
     needs: build
