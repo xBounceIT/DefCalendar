@@ -53,6 +53,7 @@
       ]
     },
     "mac": {
+      "icon": "resources/icon.icns",
       "target": [
         {
           "target": "dmg",
