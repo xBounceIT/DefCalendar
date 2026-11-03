@@ -464,7 +464,7 @@ class SyncService {
       const syncedCalendars = [];
       for (const syncedCalendar of calendarsToStore) {
         syncedCalendar.assertSession();
-        const { calendarId, fetchedEvents, isDeepBackfill, rangeStart } = syncedCalendar;
+        const { calendarId, fetchedEvents, rangeStart } = syncedCalendar;
         const persistedEvents = this.dependencies.db.listEvents({
           calendarIds: [calendarId],
           end: rangeEnd,
@@ -490,9 +490,6 @@ class SyncService {
           rangeStart,
           syncedAt: finishedAt,
         });
-        if (isDeepBackfill) {
-          this.dependencies.db.markDeepBackfillCompleted(calendarId, finishedAt);
-        }
         syncedCalendars.push({
           ...syncedCalendar,
           events,
@@ -535,7 +532,17 @@ class SyncService {
 
       const reminderTrigger: ReminderCheckTrigger =
         reason === "startup" || reason === "switch-account" ? "startup" : "tick";
+      const reminderCalendarIds = new Set(
+        this.dependencies.settings.getSettings().visibleCalendarIds,
+      );
       await this.dependencies.reminders.checkNow(reminderTrigger);
+
+      for (const calendar of syncedCalendars) {
+        calendar.assertSession();
+        if (calendar.isDeepBackfill && reminderCalendarIds.has(calendar.calendarId)) {
+          this.dependencies.db.markDeepBackfillCompleted(calendar.calendarId, finishedAt);
+        }
+      }
 
       let calendarSuffix = "s";
       if (calendarsToSync.length === 1) {

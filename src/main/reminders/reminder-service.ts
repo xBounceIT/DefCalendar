@@ -11,6 +11,11 @@ import { REMINDER_TYPE } from "@shared/schema-values";
 import { MINUTE_MS, DAY_MS } from "@shared/duration";
 
 type ReminderCheckTrigger = "startup" | "tick";
+type ReminderStartupFilter = (
+  calendarId: string,
+  dedupeKey: string,
+  snoozedUntil: number | null,
+) => boolean;
 
 const MAX_REMINDER_MINUTES = 20_160;
 const REMINDER_REFRESH_INTERVAL_MS = MINUTE_MS;
@@ -41,6 +46,7 @@ class ReminderService {
   private readonly reminderSync: ReminderSyncService;
   private readonly listeners = new Set<(state: ReminderDialogState) => void>();
   private timer: NodeJS.Timeout | null = null;
+  private knownReminderKeys = new Set<string>();
   private state: ReminderDialogState = {
     items: [],
     locale: "en",
@@ -163,18 +169,38 @@ class ReminderService {
 
   private evaluate(now: number, trigger: ReminderCheckTrigger): ReminderEvaluation {
     const settings = this.settings.getSettings();
+    const initialCalendarIds = new Set(
+      settings.visibleCalendarIds.filter(
+        (calendarId) => this.db.getDeepBackfillCompletedAt(calendarId) === null,
+      ),
+    );
+    const nextKnownKeys = new Set<string>();
+    const applyStartupFilter: ReminderStartupFilter = (calendarId, dedupeKey, snoozedUntil) => {
+      nextKnownKeys.add(dedupeKey);
+      return (
+        trigger === "startup" ||
+        (initialCalendarIds.has(calendarId) &&
+          !this.knownReminderKeys.has(dedupeKey) &&
+          snoozedUntil === null)
+      );
+    };
     const computation = settings.localReminderOverrideEnabled
       ? this.evaluateWithLocalReminderRules(
           now,
           settings.visibleCalendarIds,
           settings.localReminderRules,
-          trigger,
+          applyStartupFilter,
         )
-      : this.evaluateWithSyncedReminderSettings(now, settings.visibleCalendarIds, trigger);
+      : this.evaluateWithSyncedReminderSettings(
+          now,
+          settings.visibleCalendarIds,
+          applyStartupFilter,
+        );
 
     if (computation.staleKeys.length > 0) {
       this.db.dismissReminders(computation.staleKeys);
     }
+    this.knownReminderKeys = nextKnownKeys;
 
     return this.toReminderEvaluation(now, computation, settings);
   }
@@ -182,7 +208,7 @@ class ReminderService {
   private evaluateWithSyncedReminderSettings(
     now: number,
     visibleCalendarIds: string[],
-    trigger: ReminderCheckTrigger,
+    applyStartupFilter: ReminderStartupFilter,
   ): ReminderComputation {
     const dueItems: DueReminderEntry[] = [];
     let nextCheckAt: null | number = null;
@@ -232,7 +258,7 @@ class ReminderService {
           : eventStart;
 
       if (
-        trigger === "startup" &&
+        applyStartupFilter(candidate.event.calendarId, candidate.dedupeKey, snoozedUntil) &&
         startupStaleTime < now &&
         (snoozedUntil === null || snoozedUntil <= now)
       ) {
@@ -281,7 +307,7 @@ class ReminderService {
     now: number,
     visibleCalendarIds: string[],
     localReminderRules: LocalReminderRule[],
-    trigger: ReminderCheckTrigger,
+    applyStartupFilter: ReminderStartupFilter,
   ): ReminderComputation {
     const dueItems: DueReminderEntry[] = [];
     let nextCheckAt: null | number = null;
@@ -363,7 +389,7 @@ class ReminderService {
 
         const startupStaleTime = rule.when === "after" ? reminderAt : eventStart;
         if (
-          trigger === "startup" &&
+          applyStartupFilter(event.calendarId, dedupeKey, snoozedUntil) &&
           startupStaleTime < now &&
           (snoozedUntil === null || snoozedUntil <= now)
         ) {
@@ -412,7 +438,7 @@ class ReminderService {
             : eventStart;
 
         if (
-          trigger === "startup" &&
+          applyStartupFilter(event.calendarId, startKey, startSnoozedUntil) &&
           eventStart + STARTUP_START_REMINDER_GRACE_MS < now &&
           (startSnoozedUntil === null || startSnoozedUntil <= now)
         ) {

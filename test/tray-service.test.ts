@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "pathe";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import TrayService from "../src/main/tray-service";
 
 interface MockTrayInstance {
@@ -15,6 +17,7 @@ interface MenuItemTemplate {
 }
 
 const menuTemplates: MenuItemTemplate[][] = [];
+const originalPlatform = process.platform;
 
 const { TrayMock, trayInstances, buildFromTemplateMock, createFromPathMock, isPackagedRef } =
   vi.hoisted(() => {
@@ -55,6 +58,7 @@ vi.mock(import("@main/electron-runtime"), () => ({
 }));
 
 beforeEach(() => {
+  Object.defineProperty(process, "platform", { configurable: true, value: "win32" });
   trayInstances.length = 0;
   menuTemplates.length = 0;
   isPackagedRef.value = false;
@@ -64,6 +68,10 @@ beforeEach(() => {
     return { template };
   });
   createFromPathMock.mockClear();
+});
+
+afterEach(() => {
+  Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
 });
 
 function createHandlers() {
@@ -76,6 +84,44 @@ function createHandlers() {
 }
 
 describe("trayService.create", () => {
+  it.each([false, true])("uses the macOS template icon when packaged is %s", (isPackaged) => {
+    Object.defineProperty(process, "platform", { configurable: true, value: "darwin" });
+    isPackagedRef.value = isPackaged;
+    const originalResourcesPath = process.resourcesPath;
+    Object.defineProperty(process, "resourcesPath", {
+      configurable: true,
+      value: "/app/resources",
+    });
+
+    try {
+      new TrayService(createHandlers()).create();
+      const iconPath = createFromPathMock.mock.calls[0]?.[0];
+      expect(iconPath).toMatch(/resources[\\/]trayTemplate\.png$/);
+      expect(iconPath).toBe(
+        isPackaged
+          ? "/app/resources/trayTemplate.png"
+          : join(process.cwd(), "resources", "trayTemplate.png"),
+      );
+    } finally {
+      Object.defineProperty(process, "resourcesPath", {
+        configurable: true,
+        value: originalResourcesPath,
+      });
+    }
+  });
+
+  it.each([
+    ["trayTemplate.png", 16],
+    ["trayTemplate@2x.png", 32],
+  ] as const)("ships %s at the menu bar size", (filename, size) => {
+    const png = readFileSync(new URL(`../resources/${filename}`, import.meta.url));
+
+    expect(png.subarray(1, 4).toString()).toBe("PNG");
+    expect(png.readUInt32BE(16)).toBe(size);
+    expect(png.readUInt32BE(20)).toBe(size);
+    expect(png[25]).toBe(6);
+  });
+
   it("creates a Tray with icon, tooltip, click handler, and context menu", () => {
     new TrayService(createHandlers()).create();
 

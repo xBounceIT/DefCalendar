@@ -65,9 +65,10 @@ class TrayService {
 }
 
 function createTrayIcon() {
+  const iconName = process.platform === "darwin" ? "trayTemplate.png" : "logo.png";
   const iconPath = app.isPackaged
-    ? join(process.resourcesPath, "logo.png")
-    : join(process.cwd(), "resources", "logo.png");
+    ? join(process.resourcesPath, iconName)
+    : join(process.cwd(), "resources", iconName);
 
   return nativeImage.createFromPath(iconPath);
 }

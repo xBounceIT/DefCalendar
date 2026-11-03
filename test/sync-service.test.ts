@@ -261,6 +261,84 @@ function createDeferred<T>() {
 }
 
 describe("sync service", () => {
+  it.each(["startup", "switch-account"] as const)(
+    "filters overdue reminders after %s",
+    async (reason) => {
+      const fixture = createFixture();
+
+      await fixture.service.syncAll(reason);
+
+      expect(fixture.reminders.checkNow).toHaveBeenCalledExactlyOnceWith("startup");
+    },
+  );
+
+  it("filters overdue reminders after signing in and selecting calendars on a fresh install", async () => {
+    const fixture = createFixture();
+    fixture.db.getDeepBackfillCompletedAt.mockReturnValue(null);
+
+    await fixture.service.syncAll("sign-in");
+    expect(fixture.reminders.checkNow).not.toHaveBeenCalled();
+
+    await fixture.service.syncAll("manual");
+    expect(fixture.reminders.checkNow).toHaveBeenCalledExactlyOnceWith("tick");
+    expect(fixture.reminders.checkNow).toHaveBeenCalledBefore(fixture.db.markDeepBackfillCompleted);
+  });
+
+  it.each(["manual", "interval", "mutation"] as const)(
+    "checks reminders before marking initial backfill complete during %s sync",
+    async (reason) => {
+      const fixture = createFixture();
+      fixture.db.getDeepBackfillCompletedAt.mockReturnValue(null);
+
+      await fixture.service.syncAll(reason);
+
+      expect(fixture.reminders.checkNow).toHaveBeenCalledExactlyOnceWith("tick");
+      expect(fixture.reminders.checkNow).toHaveBeenCalledBefore(
+        fixture.db.markDeepBackfillCompleted,
+      );
+    },
+  );
+
+  it("retries initial reminder cleanup before committing backfill after a failed check", async () => {
+    const fixture = createFixture();
+    fixture.db.getDeepBackfillCompletedAt.mockReturnValue(null);
+    fixture.reminders.checkNow.mockRejectedValueOnce(new Error("Cannot save reminder dismissals"));
+
+    expect((await fixture.service.syncAll("manual")).state).toBe("error");
+    expect(fixture.db.markDeepBackfillCompleted).not.toHaveBeenCalled();
+
+    expect((await fixture.service.syncAll("interval")).state).toBe("idle");
+    expect(fixture.reminders.checkNow).toHaveBeenCalledTimes(2);
+    expect(fixture.db.markDeepBackfillCompleted).toHaveBeenCalledOnce();
+  });
+
+  it("keeps initial cleanup pending for a calendar hidden while its events are loading", async () => {
+    const fixture = createFixture();
+    fixture.db.getDeepBackfillCompletedAt.mockReturnValue(null);
+    fixture.graph.listCalendarView.mockImplementation(async () => {
+      fixture.settings.getSettings.mockReturnValue({
+        visibleCalendarIds: [],
+      });
+      return [];
+    });
+
+    expect((await fixture.service.syncAll("manual")).state).toBe("idle");
+
+    expect(fixture.reminders.checkNow).toHaveBeenCalledOnce();
+    expect(fixture.db.markDeepBackfillCompleted).not.toHaveBeenCalled();
+  });
+
+  it.each(["manual", "interval", "mutation"] as const)(
+    "preserves normal reminder checks for %s sync of existing calendars",
+    async (reason) => {
+      const fixture = createFixture();
+
+      await fixture.service.syncAll(reason);
+
+      expect(fixture.reminders.checkNow).toHaveBeenCalledExactlyOnceWith("tick");
+    },
+  );
+
   it("discards an on-demand response after reset while its account remains connected", async () => {
     expect.hasAssertions();
     const fixture = createFixture();
@@ -324,6 +402,7 @@ describe("sync service", () => {
   it("keeps the signed-out status when an active sync finishes its reminder check after reset", async () => {
     expect.hasAssertions();
     const fixture = createFixture();
+    fixture.db.getDeepBackfillCompletedAt.mockReturnValue(null);
     const deferred = createDeferred<void>();
     fixture.reminders.checkNow.mockReturnValueOnce(deferred.promise);
     const sync = fixture.service.syncAll("manual");
@@ -338,6 +417,7 @@ describe("sync service", () => {
       messageKey: "sync.signInToSync",
       lastSyncedAt: null,
     });
+    expect(fixture.db.markDeepBackfillCompleted).not.toHaveBeenCalled();
   });
 
   it("starts a fresh account sync after reset without letting the old run replace its status", async () => {
