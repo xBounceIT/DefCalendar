@@ -28,6 +28,7 @@ function createMainWindow(visualTheme: VisualTheme): BrowserWindow {
     icon: iconPath,
     title: t("windowTitle"),
     titleBarStyle: "hidden",
+    trafficLightPosition: process.platform === "darwin" ? { x: 12, y: 13 } : undefined,
     titleBarOverlay:
       process.platform === "win32"
         ? {
@@ -35,7 +36,9 @@ function createMainWindow(visualTheme: VisualTheme): BrowserWindow {
             symbolColor: titleBarStyle.symbolColor,
             height: TITLE_BAR_HEIGHT,
           }
-        : undefined,
+        : process.platform === "darwin"
+          ? { height: TITLE_BAR_HEIGHT }
+          : undefined,
     webPreferences: {
       preload: join(__dirname, "../preload/index.cjs"),
       sandbox: true,

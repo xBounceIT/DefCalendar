@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import createMainWindow from "../src/main/window";
 
+const originalPlatform = process.platform;
+
 interface MockBrowserWindowInstance {
   loadURL: ReturnType<typeof vi.fn>;
   loadFile: ReturnType<typeof vi.fn>;
@@ -55,12 +57,32 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
   delete process.env.ELECTRON_RENDERER_URL;
 });
 
 function makeWindow(): MockBrowserWindowInstance {
   return createMainWindow("light") as unknown as MockBrowserWindowInstance;
 }
+
+describe("createMainWindow title bar", () => {
+  it("exposes the macOS control bounds and positions traffic lights within the title bar", () => {
+    Object.defineProperty(process, "platform", { configurable: true, value: "darwin" });
+    const win = makeWindow();
+
+    expect(win.options.titleBarStyle).toBe("hidden");
+    expect(win.options.titleBarOverlay).toStrictEqual({ height: 40 });
+    expect(win.options.trafficLightPosition).toStrictEqual({ x: 12, y: 13 });
+  });
+
+  it("preserves the Windows title bar overlay", () => {
+    Object.defineProperty(process, "platform", { configurable: true, value: "win32" });
+    const win = makeWindow();
+
+    expect(win.options.titleBarOverlay).toMatchObject({ height: 40 });
+    expect(win.options.trafficLightPosition).toBeUndefined();
+  });
+});
 
 describe("createMainWindow — security configuration", () => {
   it("creates the window with sandbox + contextIsolation enforced", () => {

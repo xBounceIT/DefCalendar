@@ -55,6 +55,7 @@ function createCandidate(overrides?: {
 
 function createFixture(args?: {
   candidates?: ReturnType<typeof createCandidate>[];
+  initialCalendarIds?: string[];
   hasWindow?: boolean;
   localEvents?: {
     calendarId: string;
@@ -77,6 +78,11 @@ function createFixture(args?: {
   const localEvents = args?.localEvents ?? [];
   const reminderStateByKey = args?.reminderStateByKey ?? {};
   const db = {
+    getDeepBackfillCompletedAt: vi
+      .fn()
+      .mockImplementation((calendarId: string) =>
+        args?.initialCalendarIds?.includes(calendarId) ? null : "2026-03-01T00:00:00.000Z",
+      ),
     dismissReminder: vi.fn().mockImplementation((dedupeKey: string) => {
       const candidate = candidates.find((c) => c.dedupeKey === dedupeKey);
       if (candidate) {
@@ -175,6 +181,145 @@ describe("reminder service", () => {
     vi.useRealTimers();
     vi.clearAllMocks();
   });
+
+  it.each([false, true])(
+    "filters old initial imports on a tick without dismissing other calendars with local override %s",
+    async (localReminderOverrideEnabled) => {
+      const candidates = ["calendar-1", "calendar-2"].flatMap((calendarId) => [
+        createCandidate({ calendarId, start: "2026-03-29T08:00:00.000Z" }),
+        createCandidate({ calendarId, start: "2026-03-30T08:00:00.000Z" }),
+      ]);
+      const fixture = createFixture({
+        candidates,
+        initialCalendarIds: ["calendar-2"],
+        localEvents: candidates.map((candidate) => candidate.event),
+        localReminderOverrideEnabled,
+        visibleCalendarIds: ["calendar-1", "calendar-2"],
+      });
+
+      await fixture.service.checkNow();
+
+      expect(fixture.service.getState().items.map((item) => item.calendarId)).toStrictEqual(
+        localReminderOverrideEnabled
+          ? ["calendar-1", "calendar-1", "calendar-1", "calendar-1"]
+          : ["calendar-1", "calendar-1"],
+      );
+      expect(fixture.db.dismissReminders.mock.calls[0]?.[0]).toStrictEqual(
+        localReminderOverrideEnabled
+          ? [
+              "calendar-2:event-1:2026-03-29T08:00:00.000Z:before:15",
+              "calendar-2:event-1:2026-03-29T08:00:00.000Z:start",
+              "calendar-2:event-1:2026-03-30T08:00:00.000Z:before:15",
+              "calendar-2:event-1:2026-03-30T08:00:00.000Z:start",
+            ]
+          : candidates
+              .filter((candidate) => candidate.event.calendarId === "calendar-2")
+              .map((candidate) => candidate.dedupeKey),
+      );
+      fixture.db.getDeepBackfillCompletedAt.mockReturnValue("2026-03-30T09:45:00.000Z");
+      await fixture.service.checkNow();
+      expect(fixture.db.dismissReminders).toHaveBeenCalledOnce();
+      expect(
+        fixture.service.getState().items.every((item) => item.calendarId === "calendar-1"),
+      ).toBeTruthy();
+      expect(fixture.reminderSync.flush).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([false, true])(
+    "preserves a displayed reminder while its first sync is pending with local override %s",
+    async (localReminderOverrideEnabled) => {
+      const candidate = createCandidate();
+      const fixture = createFixture({
+        candidates: [candidate],
+        initialCalendarIds: ["calendar-1"],
+        localEvents: [candidate.event],
+        localReminderOverrideEnabled,
+      });
+      await fixture.service.checkNow();
+      const activeKey = fixture.service.getState().items[0]?.dedupeKey;
+      expect(activeKey).toBeDefined();
+
+      vi.setSystemTime(new Date("2026-03-30T10:10:00.000Z"));
+      await fixture.service.checkNow();
+
+      expect(fixture.service.getState().items.map((item) => item.dedupeKey)).toContain(activeKey);
+    },
+  );
+
+  it.each([false, true])(
+    "delivers an explicit snooze when it expires during initial sync with local override %s",
+    async (localReminderOverrideEnabled) => {
+      const candidate = createCandidate({
+        start: "2026-03-30T08:00:00.000Z",
+        snoozedUntil: "2026-03-30T09:50:00.000Z",
+      });
+      const localKey = "calendar-1:event-1:2026-03-30T08:00:00.000Z:before:15";
+      const fixture = createFixture({
+        candidates: [candidate],
+        initialCalendarIds: ["calendar-1"],
+        localEvents: [candidate.event],
+        localReminderOverrideEnabled,
+        reminderStateByKey: {
+          [localKey]: { dismissedAt: null, snoozedUntil: candidate.snoozedUntil },
+        },
+      });
+      await fixture.service.checkNow();
+      expect(fixture.service.getState().items).toStrictEqual([]);
+
+      vi.setSystemTime(new Date("2026-03-30T09:50:00.000Z"));
+      await fixture.service.checkNow();
+
+      expect(fixture.service.getState().items.map((item) => item.dedupeKey)).toStrictEqual([
+        localReminderOverrideEnabled ? localKey : candidate.dedupeKey,
+      ]);
+    },
+  );
+
+  it("delivers an already scheduled after-start rule while initial sync remains pending", async () => {
+    const candidate = createCandidate({ start: "2026-03-30T09:45:00.000Z" });
+    const fixture = createFixture({
+      initialCalendarIds: ["calendar-1"],
+      localEvents: [candidate.event],
+      localReminderOverrideEnabled: true,
+      localReminderRules: [{ minutes: 5, when: "after" }],
+    });
+    await fixture.service.checkNow();
+    vi.setSystemTime(new Date("2026-03-30T09:50:00.001Z"));
+
+    await fixture.service.checkNow();
+
+    expect(fixture.service.getState().items.map((item) => item.dedupeKey)).toContain(
+      "calendar-1:event-1:2026-03-30T09:45:00.000Z:after:5",
+    );
+    expect(fixture.db.dismissReminders).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])(
+    "keeps imported reminders from today and yesterday dismissed on later ticks with local override %s",
+    async (localReminderOverrideEnabled) => {
+      const candidates = ["2026-03-29T10:00:00.000Z", "2026-03-30T08:00:00.000Z"].flatMap(
+        (start) => [createCandidate({ start }), createCandidate({ start, reminderType: "start" })],
+      );
+      const fixture = createFixture({
+        candidates,
+        localEvents: candidates
+          .filter((candidate) => candidate.reminderType === "pre")
+          .map((candidate) => candidate.event),
+        localReminderOverrideEnabled,
+      });
+
+      await fixture.service.checkNow("startup");
+      await fixture.service.checkNow();
+      await fixture.service.checkNow();
+
+      expect(fixture.db.dismissReminders).toHaveBeenCalledOnce();
+      expect(fixture.db.dismissReminders.mock.calls[0]?.[0]).toHaveLength(4);
+      expect(fixture.service.getState().items).toStrictEqual([]);
+      expect(fixture.reminderManager.show).not.toHaveBeenCalled();
+      expect(fixture.reminderSync.flush).not.toHaveBeenCalled();
+    },
+  );
 
   it("shows a reminder when its configured reminder time is due", async () => {
     const fixture = createFixture({ candidates: [createCandidate()] });
