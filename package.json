@@ -66,7 +66,7 @@
     }
   },
   "dependencies": {
-    "@azure/msal-node": "^5.1.5",
+    "@azure/msal-node": "^7.1.0",
     "@fortawesome/fontawesome-svg-core": "^7.2.0",
     "@fortawesome/free-regular-svg-icons": "^7.2.0",
     "@fortawesome/free-solid-svg-icons": "^7.2.0",
@@ -87,7 +87,7 @@
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-i18next": "^17.0.6",
-    "zod": "^4.4.1",
+    "zod": "^4.6.6",
     "zustand": "^5.0.12"
   },
   "devDependencies": {
