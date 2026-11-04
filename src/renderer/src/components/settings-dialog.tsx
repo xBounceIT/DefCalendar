@@ -603,7 +603,7 @@ function AboutSection({ onSave, settings }: AboutSectionProps) {
   const isBusy = isChecking || isDownloading;
   const canCheck = !isBusy && status?.state !== "unsupported";
   const canDownload = !isBusy && status?.state === "available";
-  const canInstall = status?.state === "downloaded";
+  const canInstall = !status?.manualInstall && status?.state === "downloaded";
 
   let lastChecked = t("settings.updates.notCheckedYet");
   if (status?.checkedAt) {
@@ -647,6 +647,7 @@ function AboutSection({ onSave, settings }: AboutSectionProps) {
           >
             {updateStatusLabel}
           </div>
+          {status?.manualInstall && <p>{t("settings.updates.manualInstall")}</p>}
           {status?.state === "downloading" && (
             <progress
               className="settings-updates__progress"
@@ -685,20 +686,24 @@ function AboutSection({ onSave, settings }: AboutSectionProps) {
               onClick={download}
               type="button"
             >
-              {isDownloading
-                ? t("settings.updates.actions.downloading")
-                : t("settings.updates.actions.download")}
+              {status?.manualInstall
+                ? t("settings.updates.actions.openRelease")
+                : isDownloading
+                  ? t("settings.updates.actions.downloading")
+                  : t("settings.updates.actions.download")}
             </button>
-            <button
-              className="settings-updates__action settings-updates__action--primary"
-              disabled={!canInstall}
-              onClick={() => {
-                install();
-              }}
-              type="button"
-            >
-              {t("settings.updates.actions.install")}
-            </button>
+            {!status?.manualInstall && (
+              <button
+                className="settings-updates__action settings-updates__action--primary"
+                disabled={!canInstall}
+                onClick={() => {
+                  install();
+                }}
+                type="button"
+              >
+                {t("settings.updates.actions.install")}
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -1,6 +1,7 @@
-import { app } from "@main/electron-runtime";
-import type { AppUpdateStatus } from "@shared/schemas";
 import { autoUpdater, type UpdateDownloadedEvent } from "electron-updater";
+import { app, shell } from "@main/electron-runtime";
+import type { AppUpdateStatus } from "@shared/schemas";
+import { buildReleaseUrl } from "@shared/update-release";
 
 interface ReleaseNote {
   note: null | string;
@@ -16,12 +17,14 @@ interface ReleaseInfo {
 class UpdateService {
   private readonly listeners = new Set<(status: AppUpdateStatus) => void>();
   private readonly isPackaged = app.isPackaged;
+  private openingRelease = false;
   private status: AppUpdateStatus = {
     checkedAt: null,
     currentVersion: `v${app.getVersion()}`,
     downloadPercent: null,
     error: null,
     latestVersion: null,
+    manualInstall: process.platform === "darwin",
     releaseNotes: null,
     state: "unsupported",
   };
@@ -175,6 +178,31 @@ class UpdateService {
       return this.status;
     }
 
+    if (this.status.manualInstall) {
+      const version = this.status.latestVersion;
+      if (!version || this.openingRelease) {
+        return this.status;
+      }
+
+      this.openingRelease = true;
+      const openingStatus = { ...this.status, error: null };
+      this.setStatus(openingStatus);
+      try {
+        await shell.openExternal(buildReleaseUrl(version));
+      } catch (error) {
+        if (this.status === openingStatus) {
+          this.setStatus({
+            ...openingStatus,
+            error: this.toErrorMessage(error),
+          });
+        }
+      } finally {
+        this.openingRelease = false;
+      }
+
+      return this.status;
+    }
+
     this.setStatus({
       ...this.status,
       downloadPercent: this.status.downloadPercent ?? 0,
@@ -197,7 +225,7 @@ class UpdateService {
   }
 
   installUpdate(): void {
-    if (!this.isPackaged || this.status.state !== "downloaded") {
+    if (!this.isPackaged || this.status.manualInstall || this.status.state !== "downloaded") {
       return;
     }
 

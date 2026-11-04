@@ -320,6 +320,7 @@ function createCalendarApiMock(): CalendarApi {
     updates: {
       getStatus: vi.fn().mockResolvedValue({
         checkedAt: null,
+        manualInstall: false,
         currentVersion: "0.1.0",
         downloadPercent: null,
         error: null,
@@ -478,6 +479,7 @@ function createSignedInCalendarApiMock(): CalendarApi {
     updates: {
       getStatus: vi.fn().mockResolvedValue({
         checkedAt: null,
+        manualInstall: false,
         currentVersion: "0.1.0",
         downloadPercent: null,
         error: null,
@@ -665,6 +667,7 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
     updates: {
       getStatus: vi.fn().mockResolvedValue({
         checkedAt: null,
+        manualInstall: false,
         currentVersion: "0.1.0",
         downloadPercent: null,
         error: null,
