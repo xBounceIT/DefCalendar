@@ -1,14 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { buildReleaseUrl } from "@shared/update-release";
 import { useUpdater } from "../hooks/use-updater";
-
-const GITHUB_OWNER = "xBounceIT";
-const GITHUB_REPO = "DefCalendar";
-
-function buildReleaseUrl(version: string): string {
-  const normalized = version.startsWith("v") ? version : `v${version}`;
-  return `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/tag/${normalized}`;
-}
 
 function normalizeVersion(version: null | string): string {
   if (!version) {
@@ -30,7 +23,7 @@ function UpdateAvailablePopup(): null | React.ReactElement {
     (status?.state === "downloaded" && initiatedDownloadRef.current);
 
   useEffect(() => {
-    if (status?.state === "downloaded" && initiatedDownloadRef.current) {
+    if (status?.state === "downloaded" && !status.manualInstall && initiatedDownloadRef.current) {
       install();
       initiatedDownloadRef.current = false;
     }
@@ -38,7 +31,7 @@ function UpdateAvailablePopup(): null | React.ReactElement {
     if (status?.state === "error") {
       initiatedDownloadRef.current = false;
     }
-  }, [status?.state, install]);
+  }, [status?.state, status?.manualInstall, install]);
 
   if (dismissed || !shouldShow) {
     return null;
@@ -48,7 +41,7 @@ function UpdateAvailablePopup(): null | React.ReactElement {
   const releaseUrl = status?.latestVersion ? buildReleaseUrl(status.latestVersion) : null;
 
   const handleDownloadAndRestart = async () => {
-    initiatedDownloadRef.current = true;
+    initiatedDownloadRef.current = !status?.manualInstall;
     await download();
   };
 
@@ -63,6 +56,14 @@ function UpdateAvailablePopup(): null | React.ReactElement {
         <p className="update-popup__description">
           {t("updatePopup.description", { version: displayVersion })}
         </p>
+        {status?.manualInstall && (
+          <p className="update-popup__description">{t("settings.updates.manualInstall")}</p>
+        )}
+        {status?.manualInstall && status.error && (
+          <p className="settings-updates__error" role="alert">
+            {status.error}
+          </p>
+        )}
         <a
           className="update-popup__link"
           href={releaseUrl}
@@ -78,7 +79,11 @@ function UpdateAvailablePopup(): null | React.ReactElement {
             onClick={handleDownloadAndRestart}
             type="button"
           >
-            {isDownloading ? t("updatePopup.downloading") : t("updatePopup.downloadAndRestart")}
+            {status?.manualInstall
+              ? t("settings.updates.actions.openRelease")
+              : isDownloading
+                ? t("updatePopup.downloading")
+                : t("updatePopup.downloadAndRestart")}
           </button>
           <button
             className="update-popup__button update-popup__button--secondary"

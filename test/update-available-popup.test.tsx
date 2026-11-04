@@ -12,6 +12,7 @@ import UpdateAvailablePopup from "../src/renderer/src/components/update-availabl
 
 const BASE_STATUS: AppUpdateStatus = {
   checkedAt: null,
+  manualInstall: false,
   currentVersion: "v0.5.0",
   downloadPercent: null,
   error: null,
@@ -107,6 +108,47 @@ describe("updateAvailablePopup visibility", () => {
 });
 
 describe("updateAvailablePopup actions", () => {
+  it("shows manual browser errors and allows retrying in the popup", async () => {
+    const status: AppUpdateStatus = {
+      ...BASE_STATUS,
+      manualInstall: true,
+      state: "available",
+      latestVersion: "1.0.0",
+    };
+    downloadMock.mockResolvedValueOnce({ ...status, error: "Cannot open browser" });
+    downloadMock.mockResolvedValueOnce(status);
+    renderPopup(status);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open download page" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Cannot open browser");
+    const retry = screen.getByRole("button", { name: "Open download page" });
+    await waitFor(() => expect(retry).toBeEnabled());
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(downloadMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(installMock).not.toHaveBeenCalled();
+  });
+
+  it("opens the manual download page without requesting a restart on macOS", async () => {
+    const status: AppUpdateStatus = {
+      ...BASE_STATUS,
+      manualInstall: true,
+      state: "available",
+      latestVersion: "1.0.0",
+    };
+    downloadMock.mockResolvedValue(status);
+    renderPopup(status);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open download page" }));
+
+    await waitFor(() => expect(downloadMock).toHaveBeenCalledOnce());
+    expect(screen.getByText(/updates require manual installation/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Download and Restart" })).toBeNull();
+    act(() => lastListener?.({ ...status, state: "downloaded" }));
+    expect(installMock).not.toHaveBeenCalled();
+  });
+
   it("clicking the primary button calls download()", async () => {
     renderPopup({ ...BASE_STATUS, state: "available", latestVersion: "1.0.0" });
     await waitFor(() => expect(document.querySelector(".update-popup")).not.toBeNull());

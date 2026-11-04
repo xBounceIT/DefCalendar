@@ -1,12 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import UpdateService from "../src/main/update/update-service";
 
-const { isPackagedRef, getVersionMock } = vi.hoisted(() => ({
+const { isPackagedRef, getVersionMock, openExternalMock } = vi.hoisted(() => ({
   getVersionMock: vi.fn().mockReturnValue("0.5.0"),
   isPackagedRef: { value: true },
+  openExternalMock: vi.fn(),
 }));
 
-vi.mock(import("@main/electron-runtime"), () => ({
+vi.mock("@main/electron-runtime", () => ({
+  shell: { openExternal: openExternalMock },
   app: {
     get isPackaged() {
       return isPackagedRef.value;
@@ -30,6 +32,17 @@ vi.mock(import("electron-updater"), () => ({
 }));
 
 type Listener = (arg: unknown) => void;
+const originalPlatform = process.platform;
+
+function createDeferred() {
+  let resolveDeferred: () => void = () => undefined;
+  let rejectDeferred: (error: Error) => void = () => undefined;
+  const promise = new Promise<void>((resolve, reject) => {
+    resolveDeferred = resolve;
+    rejectDeferred = reject;
+  });
+  return { promise, resolve: resolveDeferred, reject: rejectDeferred };
+}
 
 function getHandler(event: string): Listener {
   const call = autoUpdaterMock.on.mock.calls.find(([name]) => name === event);
@@ -40,6 +53,8 @@ function getHandler(event: string): Listener {
 }
 
 beforeEach(() => {
+  Object.defineProperty(process, "platform", { configurable: true, value: "win32" });
+  openExternalMock.mockReset().mockResolvedValue(undefined);
   isPackagedRef.value = true;
   autoUpdaterMock.allowPrerelease = false;
   autoUpdaterMock.autoDownload = true;
@@ -48,6 +63,117 @@ beforeEach(() => {
   autoUpdaterMock.downloadUpdate.mockReset();
   autoUpdaterMock.on.mockReset();
   autoUpdaterMock.quitAndInstall.mockReset();
+});
+
+afterEach(() => {
+  Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
+});
+
+describe("manual macOS updates", () => {
+  beforeEach(() => {
+    Object.defineProperty(process, "platform", { configurable: true, value: "darwin" });
+  });
+
+  it.each(["1.0.0", "v1.0.0", "1.0.0-beta.1"])(
+    "opens the matching release for %s without downloading or installing through Squirrel",
+    async (version) => {
+      const service = new UpdateService();
+      getHandler("update-available")({ version, releaseNotes: null });
+
+      const status = await service.downloadUpdate();
+
+      expect(status.manualInstall).toBe(true);
+      expect(status.state).toBe("available");
+      expect(openExternalMock).toHaveBeenCalledExactlyOnceWith(
+        `https://github.com/xBounceIT/DefCalendar/releases/tag/${version.startsWith("v") ? version : `v${version}`}`,
+      );
+      expect(autoUpdaterMock.downloadUpdate).not.toHaveBeenCalled();
+      getHandler("update-downloaded")({ version, releaseNotes: null });
+      service.installUpdate();
+      expect(autoUpdaterMock.quitAndInstall).not.toHaveBeenCalled();
+    },
+  );
+
+  it("continues to check for updates and preserves manual installation mode", async () => {
+    autoUpdaterMock.checkForUpdates.mockResolvedValue({
+      isUpdateAvailable: true,
+      updateInfo: { version: "1.0.0", releaseNotes: "Notes" },
+    });
+    const service = new UpdateService();
+
+    expect(await service.checkForUpdates()).toMatchObject({
+      manualInstall: true,
+      latestVersion: "1.0.0",
+      state: "available",
+    });
+    expect(autoUpdaterMock.autoDownload).toBe(false);
+    expect(autoUpdaterMock.autoInstallOnAppQuit).toBe(false);
+  });
+
+  it("preserves the available update after a browser error and allows a direct retry", async () => {
+    openExternalMock.mockRejectedValueOnce(new Error("Cannot open browser"));
+    const service = new UpdateService();
+    getHandler("update-available")({ version: "1.0.0", releaseNotes: null });
+
+    expect(await service.downloadUpdate()).toMatchObject({
+      error: "Cannot open browser",
+      state: "available",
+      manualInstall: true,
+    });
+    expect(await service.downloadUpdate()).toMatchObject({ state: "available", error: null });
+    expect(openExternalMock).toHaveBeenCalledTimes(2);
+    expect(autoUpdaterMock.downloadUpdate).not.toHaveBeenCalled();
+  });
+
+  it("does not overwrite a newer check with a delayed browser launch failure", async () => {
+    const opening = createDeferred();
+    openExternalMock.mockReturnValue(opening.promise);
+    const service = new UpdateService();
+    getHandler("update-available")({ version: "1.0.0", releaseNotes: null });
+    const pending = service.downloadUpdate();
+    autoUpdaterMock.checkForUpdates.mockResolvedValue({
+      isUpdateAvailable: true,
+      updateInfo: { version: "2.0.0", releaseNotes: "New release" },
+    });
+    await service.checkForUpdates();
+
+    opening.reject(new Error("Old launch failed"));
+
+    expect(await pending).toMatchObject({
+      state: "available",
+      latestVersion: "2.0.0",
+      error: null,
+    });
+  });
+
+  it.each([true, false])(
+    "deduplicates concurrent launches and unlocks after success=%s",
+    async (success) => {
+      const opening = createDeferred();
+      openExternalMock.mockReturnValueOnce(opening.promise);
+      const service = new UpdateService();
+      getHandler("update-available")({ version: "1.0.0", releaseNotes: null });
+
+      const first = service.downloadUpdate();
+      const second = service.downloadUpdate();
+      expect(openExternalMock).toHaveBeenCalledOnce();
+      if (success) {
+        opening.resolve();
+      } else {
+        opening.reject(new Error("Cannot open browser"));
+      }
+      await Promise.all([first, second]);
+      expect(await service.downloadUpdate()).toMatchObject({ state: "available", error: null });
+      expect(openExternalMock).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it("does not open a release when unpackaged or no update is available", async () => {
+    await new UpdateService().downloadUpdate();
+    isPackagedRef.value = false;
+    await new UpdateService().downloadUpdate();
+    expect(openExternalMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("updateService construction", () => {

@@ -13,7 +13,7 @@ Desktop calendar app for Microsoft 365 Exchange Online built with Electron.
 - System tray integration
 - React 19 renderer with month/week/day views and mini calendar
 - Internationalization (English/Italian)
-- Auto-updates via GitHub Releases (stable/prerelease channels)
+- Update checks via GitHub Releases (stable/prerelease channels), with automatic installation on Windows and manual DMG installation on macOS
 
 ## Stack
 
@@ -60,6 +60,8 @@ Pushing a `v*` tag matching `package.json` creates a draft GitHub Release with g
 
 For Developer ID signing and notarization, configure the repository Actions secrets `MAC_CSC_LINK` (base64-encoded `.p12` certificate), `MAC_CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`. Without these credentials, the workflow still builds macOS artifacts, but they are not Developer ID signed or notarized; normal Gatekeeper distribution and macOS auto-updates require signing. See the [electron-builder macOS signing documentation](https://www.electron.build/v26/docs/features/code-signing/).
 
+The app currently uses manual installation on macOS because releases are distributed without Developer ID signing. Both the update popup and Settings open the detected version's GitHub release page instead of invoking the native updater. Download its universal DMG, quit DefCalendar, and replace the app in Applications without deleting application data. This also recovers older installations showing `Code signature ... did not pass validation`. Configuring signing credentials alone does not enable automatic installation in the app; that mode must be enabled and tested separately after migrating existing installations to a compatible signing identity.
+
 ## Notes
 
 - Targets Microsoft 365 work/school accounts only.
@@ -71,5 +73,5 @@ For Developer ID signing and notarization, configure the repository Actions secr
 - Shared/delegate calendars are not implemented.
 - Recurring events and attendee-managed meetings are shown but edited as read-only, with an Outlook handoff.
 - Build Windows installers on native Windows or CI (WSL2 is not suitable).
-- Auto-updates use GitHub Releases and are user-initiated from `Settings > Sync`.
+- Updates use GitHub Releases and are user-initiated from the update popup or `Settings > About`.
 - Publishing updates requires a `GH_TOKEN` with repository release permissions.

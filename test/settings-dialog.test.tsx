@@ -19,9 +19,10 @@ import type { UserSettings, UserSettingsPatch } from "../src/shared/schemas";
 
 const originalCalendarApiDescriptor = Object.getOwnPropertyDescriptor(globalThis, "calendarApi");
 
-function createCalendarApiMock(releaseNotes: null | string): CalendarApi {
+function createCalendarApiMock(releaseNotes: null | string, manualInstall = false): CalendarApi {
   const status = {
     checkedAt: "2026-04-01T10:00:00.000Z",
+    manualInstall,
     currentVersion: "v0.2.0",
     downloadPercent: null,
     error: null,
@@ -89,13 +90,14 @@ function createTestI18n() {
 function renderDialog(
   releaseNotes: null | string,
   options?: {
+    manualInstall?: boolean;
     onSave?: (patch: UserSettingsPatch) => void | Promise<boolean>;
     settings?: UserSettings;
   },
 ) {
   const i18n = createTestI18n();
 
-  installCalendarApi(createCalendarApiMock(releaseNotes));
+  installCalendarApi(createCalendarApiMock(releaseNotes, options?.manualInstall));
   const onSave = options?.onSave ?? vi.fn();
 
   const queryClient = new QueryClient({
@@ -788,6 +790,28 @@ describe("settings dialog", () => {
     await screen.findByRole("button", { name: "Show introduction" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+  it("offers manual installation in About without a restart action on macOS", async () => {
+    renderDialog(null, { manualInstall: true });
+    fireEvent.click(screen.getByRole("button", { name: "About" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open download page" }));
+
+    await waitFor(() => expect(globalThis.calendarApi.updates.download).toHaveBeenCalledOnce());
+    expect(screen.getByText(/updates require manual installation/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Restart to install" })).toBeNull();
+    expect(globalThis.calendarApi.updates.install).not.toHaveBeenCalled();
+  });
+
+  it("keeps the automatic update controls for Windows", async () => {
+    renderDialog(null);
+    fireEvent.click(screen.getByRole("button", { name: "About" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Download update" })).toBeEnabled(),
+    );
+    expect(screen.getByRole("button", { name: "Restart to install" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Open download page" })).toBeNull();
+  });
+
   it("renders HTML release notes instead of showing escaped markup", async () => {
     const releaseNotes = [
       "<h2>Highlights</h2>",

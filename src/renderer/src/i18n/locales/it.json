@@ -535,6 +535,7 @@
     },
     "updates": {
       "title": "Aggiornamenti applicazione",
+      "manualInstall": "Su macOS l'aggiornamento richiede l'installazione manuale. Apri la release, scarica il DMG, chiudi DefCalendar e sostituisci l'app in Applicazioni.",
       "currentVersion": "Versione corrente",
       "unknownVersion": "Versione sconosciuta",
       "loading": "Caricamento…",
@@ -558,6 +559,7 @@
       },
       "actions": {
         "check": "Controlla aggiornamenti",
+        "openRelease": "Apri pagina di download",
         "checking": "Controllo…",
         "download": "Scarica aggiornamento",
         "downloading": "Download…",

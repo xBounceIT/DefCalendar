@@ -155,6 +155,7 @@ describe("shared schemas", () => {
   it("accepts a valid app update status payload", () => {
     const status = appUpdateStatusSchema.parse({
       checkedAt: "2026-03-28T09:30:00.000Z",
+      manualInstall: false,
       currentVersion: "0.1.0",
       downloadPercent: 64.5,
       error: null,
@@ -170,6 +171,7 @@ describe("shared schemas", () => {
     expect(() =>
       appUpdateStatusSchema.parse({
         checkedAt: "2026-03-28T09:30:00.000Z",
+        manualInstall: false,
         currentVersion: "0.1.0",
         downloadPercent: 122,
         error: null,

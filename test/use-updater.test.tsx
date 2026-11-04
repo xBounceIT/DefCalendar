@@ -9,6 +9,7 @@ import { useUpdater } from "../src/renderer/src/hooks/use-updater";
 
 const IDLE_STATUS: AppUpdateStatus = {
   checkedAt: null,
+  manualInstall: false,
   currentVersion: "v0.5.0",
   downloadPercent: null,
   error: null,
