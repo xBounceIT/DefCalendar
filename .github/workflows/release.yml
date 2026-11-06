@@ -118,10 +118,12 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          signingArgs=()
           if [[ -z "${CSC_LINK:-}" ]]; then
             unset CSC_LINK
+            signingArgs+=("-c.mac.identity=-" "-c.mac.notarize=false")
           fi
-          npm run dist:publish -- --mac --universal
+          npm run dist:publish -- --mac --universal "${signingArgs[@]}"
 
       - name: Verify macOS universal binaries
         if: matrix.platform == 'mac'
@@ -130,6 +132,8 @@ jobs:
           app="release/mac-universal/DefCalendar.app/Contents"
           lipo "$app/MacOS/DefCalendar" -verify_arch x86_64 arm64
           lipo "$app/Resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node" -verify_arch x86_64 arm64
+          codesign --verify --deep --strict "$app/.."
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :NSUserNotificationAlertStyle' "$app/Info.plist")" == "alert" ]]
 
   publish:
     needs: build

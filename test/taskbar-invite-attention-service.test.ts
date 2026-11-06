@@ -1,7 +1,18 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import TaskbarInviteAttentionService from "../src/main/notifications/taskbar-invite-attention-service";
 import { createDefaultSettings } from "../src/shared/schemas";
 import type { NewEventNotificationItem, UserSettings } from "../src/shared/schemas";
+import type { ReminderDialogState } from "../src/shared/ipc";
+
+const originalPlatform = process.platform;
+
+beforeEach(() => {
+  Object.defineProperty(process, "platform", { configurable: true, value: "win32" });
+});
+
+afterEach(() => {
+  Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
+});
 
 const electronRuntimeMock = vi.hoisted(() => ({
   app: {
@@ -61,6 +72,7 @@ function createService(args?: {
   window?: MockWindow | null;
 }) {
   let listener: ItemsListener | null = null;
+  let reminderListener: ((state: ReminderDialogState) => void) | null = null;
   const items = args?.items ?? [];
   const settings = args?.settings ?? createDefaultSettings();
   const window = args?.window === undefined ? createWindow() : args.window;
@@ -76,13 +88,27 @@ function createService(args?: {
   const settingsService = {
     getSettings: vi.fn().mockReturnValue(settings),
   };
+  const reminders = {
+    getState: vi.fn().mockReturnValue({ items: [] }),
+    onState: vi.fn((nextListener: (state: ReminderDialogState) => void) => {
+      reminderListener = nextListener;
+      return () => {
+        reminderListener = null;
+      };
+    }),
+  };
   const service = new TaskbarInviteAttentionService({
     getMainWindow: () => window as never,
     newEventNotifications: newEventNotifications as never,
+    reminders,
     settings: settingsService as never,
   });
 
   return {
+    get reminderListener() {
+      return reminderListener;
+    },
+    reminders,
     get listener() {
       return listener;
     },
@@ -98,6 +124,61 @@ function resetMocks(): void {
 }
 
 describe("taskbar invite attention service", () => {
+  it.each([false, true])(
+    "only badges macOS invitations with a hidden or minimized window (%s)",
+    (minimized) => {
+      resetMocks();
+      Object.defineProperty(process, "platform", { configurable: true, value: "darwin" });
+      const window = createWindow({
+        isVisible: vi.fn().mockReturnValue(false),
+        isMinimized: vi.fn().mockReturnValue(minimized),
+      });
+      const fixture = createService({ items: [createItem()], window });
+
+      fixture.service.start();
+
+      expect(electronRuntimeMock.app.setBadgeCount).toHaveBeenLastCalledWith(1);
+      expect(window.showInactive).not.toHaveBeenCalled();
+      expect(window.flashFrame).not.toHaveBeenCalled();
+      expect(window.setOverlayIcon).not.toHaveBeenCalled();
+      expect(electronRuntimeMock.nativeImage.createFromBuffer).not.toHaveBeenCalled();
+    },
+  );
+
+  it("combines macOS invites and reminders without counting the same event twice", () => {
+    resetMocks();
+    Object.defineProperty(process, "platform", { configurable: true, value: "darwin" });
+    const fixture = createService({ items: [createItem()] });
+    fixture.service.start();
+    const state = {
+      items: [
+        { ...createItem(), dedupeKey: "pre" },
+        { ...createItem(), dedupeKey: "start" },
+        { ...createItem({ calendarId: "calendar-2" }), dedupeKey: "other-calendar" },
+      ].map((item) => ({ ...item, onlineMeeting: null, reminderMinutesBeforeStart: 15 })),
+      locale: "en" as const,
+      timeFormat: "system" as const,
+      theme: "system" as const,
+    };
+    fixture.reminders.getState.mockReturnValue(state);
+    fixture.reminderListener?.(state);
+    expect(electronRuntimeMock.app.setBadgeCount).toHaveBeenLastCalledWith(2);
+
+    fixture.settings.getSettings.mockReturnValue({
+      ...createDefaultSettings(),
+      taskbarInviteNotificationsEnabled: false,
+    });
+    fixture.service.refresh();
+    expect(electronRuntimeMock.app.setBadgeCount).toHaveBeenLastCalledWith(2);
+    fixture.reminders.getState.mockReturnValue({ items: [] });
+    fixture.reminderListener?.({ ...state, items: [] });
+    expect(electronRuntimeMock.app.setBadgeCount).toHaveBeenLastCalledWith(0);
+
+    fixture.service.stop();
+    expect(fixture.listener).toBeNull();
+    expect(fixture.reminderListener).toBeNull();
+  });
+
   it("flashes and badges pending invitations", () => {
     expect.hasAssertions();
     resetMocks();

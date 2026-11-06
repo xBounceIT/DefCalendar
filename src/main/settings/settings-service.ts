@@ -17,15 +17,17 @@ class SettingsService {
   }
 
   getSettings(): UserSettings {
-    return this.db.getSettings();
+    return this.normalizeNotifications(this.db.getSettings());
   }
 
   updateSettings(patch: UserSettingsPatch): UserSettings {
-    const current = this.db.getSettings();
-    const next = userSettingsSchema.parse({
-      ...current,
-      ...patch,
-    });
+    const current = this.getSettings();
+    const next = this.normalizeNotifications(
+      userSettingsSchema.parse({
+        ...current,
+        ...patch,
+      }),
+    );
 
     this.db.saveSettings(next);
     return next;
@@ -86,12 +88,24 @@ class SettingsService {
 
   private safeCurrentSettings(): UserSettings {
     try {
-      return this.db.getSettings();
+      return this.getSettings();
     } catch {
       const defaults = createDefaultSettings();
       this.db.saveSettings(defaults);
       return defaults;
     }
+  }
+
+  private normalizeNotifications(settings: UserSettings): UserSettings {
+    if (process.platform === "darwin" && settings.newEventPopupEnabled) {
+      return {
+        ...settings,
+        newEventPopupEnabled: false,
+        systemInviteNotificationsEnabled: true,
+      };
+    }
+
+    return settings;
   }
 }
 

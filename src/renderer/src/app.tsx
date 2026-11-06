@@ -53,6 +53,7 @@ import type { EditorState } from "./event-editor-state";
 import EventEditorDialog from "./components/event-editor-dialog";
 import EventSearchDialog from "./components/event-search-dialog";
 import NewEventPopup from "./components/new-event-popup";
+import { isMacOS } from "./platform";
 import TitleBar from "./components/title-bar";
 import UpdateAvailablePopup from "./components/update-available-popup";
 import WorkspacePanel from "./components/workspace-panel";
@@ -189,6 +190,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     appSettings.theme ?? "system",
   );
   const shouldShowNewEventPopup =
+    !isMacOS() &&
     signedIn &&
     settingsQuery.data !== undefined &&
     (appSettings.newEventPopupEnabled || (appSettings.taskbarInviteNotificationsEnabled ?? true));

@@ -863,4 +863,18 @@ describe("settings dialog", () => {
 
     expect(onSave).toHaveBeenCalledWith({ taskbarInviteNotificationsEnabled: false });
   });
+
+  it("offers native notifications and the Dock badge on macOS", () => {
+    const platformMock = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    onTestFinished(() => platformMock.mockRestore());
+    const onSave = vi.fn();
+    renderDialog(null, { onSave });
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    expect(screen.queryByLabelText("Show popup when new event invitations are synced")).toBeNull();
+    expect(
+      screen.getByLabelText("Show system notifications for new event invitations"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Show Dock badge for new event invitations"));
+    expect(onSave).toHaveBeenCalledWith({ taskbarInviteNotificationsEnabled: false });
+  });
 });

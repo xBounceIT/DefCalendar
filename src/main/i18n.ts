@@ -11,6 +11,9 @@ interface MainTranslations {
   quit: string;
   windowTitle: string;
   reminderTitle: string;
+  reminderNotificationSnooze: string;
+  reminderNotificationDismiss: string;
+  reminderNotificationActionFailed: string;
   inviteNotificationTitle: string;
   inviteNotificationUntitledEvent: string;
   inviteNotificationUnknownOrganizer: string;
@@ -37,6 +40,9 @@ const translations: Record<AppLocale, MainTranslations> = {
     quit: "Quit",
     windowTitle: "DefCalendar",
     reminderTitle: "Reminder",
+    reminderNotificationSnooze: "Snooze for 5 minutes",
+    reminderNotificationDismiss: "Dismiss",
+    reminderNotificationActionFailed: "Could not save the reminder action. Please try again.",
     inviteNotificationTitle: "New invitation",
     inviteNotificationUntitledEvent: "Untitled event",
     inviteNotificationUnknownOrganizer: "Unknown organizer",
@@ -61,6 +67,9 @@ const translations: Record<AppLocale, MainTranslations> = {
     quit: "Esci dall\u2019applicazione",
     windowTitle: "DefCalendar",
     reminderTitle: "Promemoria",
+    reminderNotificationSnooze: "Ricordamelo tra 5 minuti",
+    reminderNotificationDismiss: "Chiudi promemoria",
+    reminderNotificationActionFailed: "Impossibile salvare l'azione sul promemoria. Riprova.",
     inviteNotificationTitle: "Nuovo invito",
     inviteNotificationUntitledEvent: "Evento senza titolo",
     inviteNotificationUnknownOrganizer: "Organizzatore sconosciuto",

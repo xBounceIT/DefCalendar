@@ -110,6 +110,75 @@ function resetNotificationMock(): void {
 }
 
 describe("system invite notification service", () => {
+  it("retries failed delivery without allowing stale handlers to affect the replacement", () => {
+    resetNotificationMock();
+    const { eventActions, service } = createService();
+    service.sync([createItem()]);
+    const failed = notificationMock.instances[0];
+    failed.emit("failed", {}, "Delivery failed");
+    service.sync([createItem()]);
+    failed.emit("click");
+    failed.emit("action", { actionIndex: 2 });
+
+    expect(notificationMock.instances).toHaveLength(2);
+    expect(eventActions.openInApp).not.toHaveBeenCalled();
+    expect(eventActions.respondToEvent).not.toHaveBeenCalled();
+    expect(notificationMock.instances[1].close).not.toHaveBeenCalled();
+  });
+
+  it.each(["cleared", "stopped", "disabled"])(
+    "ignores stale clicks and actions after notifications are %s",
+    (reason) => {
+      resetNotificationMock();
+      const { eventActions, service, settings } = createService();
+      service.sync([createItem()]);
+      const notification = notificationMock.instances[0];
+
+      if (reason === "stopped") {
+        service.stop();
+      } else if (reason === "disabled") {
+        settings.getSettings.mockReturnValue(createDefaultSettings());
+        service.sync([createItem()]);
+      } else {
+        service.sync([]);
+      }
+      notification.emit("click");
+      notification.emit("action", { actionIndex: 1 });
+
+      expect(eventActions.openInApp).not.toHaveBeenCalled();
+      expect(eventActions.respondToEvent).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["resolved", "rejected"])(
+    "ignores an obsolete response completion when it is %s",
+    async (outcome) => {
+      resetNotificationMock();
+      let resolve!: () => void;
+      let reject!: (reason: Error) => void;
+      const promise = new Promise<void>((resolvePromise, rejectPromise) => {
+        resolve = resolvePromise;
+        reject = rejectPromise;
+      });
+      const respondToEvent = vi.fn().mockReturnValue(promise);
+      const { eventActions, service } = createService({ respondToEvent });
+      service.sync([createItem()]);
+      notificationMock.instances[0].emit("action", { actionIndex: 1 });
+      service.sync([]);
+      service.sync([createItem()]);
+      const replacement = notificationMock.instances[1];
+      if (outcome === "resolved") {
+        resolve();
+      } else {
+        reject(new Error("Graph failed"));
+      }
+      await flushPromises();
+
+      expect(eventActions.openInApp).not.toHaveBeenCalled();
+      expect(replacement.close).not.toHaveBeenCalled();
+    },
+  );
+
   it("does not show notifications when the setting is disabled", () => {
     expect.hasAssertions();
     resetNotificationMock();

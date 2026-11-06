@@ -13,6 +13,7 @@ import SettingsService from "@main/settings/settings-service";
 import { applySpellcheckSettings } from "@main/spellcheck";
 import { SyncService } from "@main/sync/sync-service";
 import SystemInviteNotificationService from "@main/notifications/system-invite-notification-service";
+import SystemReminderNotificationService from "@main/notifications/system-reminder-notification-service";
 import TaskbarInviteAttentionService from "@main/notifications/taskbar-invite-attention-service";
 import TrayService from "@main/tray-service";
 import UpdateService from "@main/update/update-service";
@@ -100,8 +101,13 @@ async function bootstrap(): Promise<void> {
   const taskbarInviteAttention = new TaskbarInviteAttentionService({
     getMainWindow: () => mainWindow,
     newEventNotifications,
+    reminders,
     settings,
   });
+  const systemReminderNotifications =
+    process.platform === "darwin"
+      ? new SystemReminderNotificationService({ eventActions, reminders })
+      : null;
   const updates = new UpdateService(savedSettings.updateChannel === "prerelease");
 
   ipcMain.handle(IPC_CHANNELS.appSetLocale, async (_event, locale: unknown) => {
@@ -205,6 +211,7 @@ async function bootstrap(): Promise<void> {
 
   systemInviteNotifications.start();
   taskbarInviteAttention.start();
+  systemReminderNotifications?.start();
   reminders.start();
   reminderSync.start();
   sync.start();
@@ -238,6 +245,7 @@ async function bootstrap(): Promise<void> {
     reminderSync.stop();
     systemInviteNotifications.stop();
     taskbarInviteAttention.stop();
+    systemReminderNotifications?.stop();
     sync.stop();
     trayService?.destroy();
   });

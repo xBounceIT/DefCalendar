@@ -1408,6 +1408,25 @@ describe("register ipc", () => {
     expect(fixture.taskbarInviteAttention.refresh).toHaveBeenCalledOnce();
   });
 
+  it("never raises the macOS main window when pending invites change", () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, "platform", { configurable: true, value: "darwin" });
+    onTestFinished(() => {
+      Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
+    });
+    const fixture = createFixture();
+    fixture.settings.getSettings.mockReturnValue({
+      ...createDefaultSettings(),
+      newEventPopupEnabled: true,
+    });
+    const listener = fixture.newEventNotifications.onChange.mock.calls[0][0];
+
+    listener([{ calendarId: "calendar-1", eventId: "event-1" }]);
+
+    expect(fixture.mainWindow.show).not.toHaveBeenCalled();
+    expect(fixture.mainWindow.focus).not.toHaveBeenCalled();
+  });
+
   it("keeps a declined attendee event locally when Graph can no longer fetch it", async () => {
     const fixture = createFixture();
     const invokeEvent = { sender: fixture.mainWebContents };

@@ -12,6 +12,7 @@ import { faBell } from "@fortawesome/free-regular-svg-icons";
 import type { ThemeSetting, UpdateChannel, UserSettings } from "@shared/schemas";
 import { useUpdater } from "../hooks/use-updater";
 import { useVersion } from "../hooks/use-version";
+import { isMacOS } from "../platform";
 import SafeHtmlBody from "./safe-html-body";
 import SettingsSelect from "./settings-select";
 import SpellcheckSettings from "./spellcheck-settings";
@@ -223,6 +224,7 @@ function NotificationsSection({
 }: Pick<SettingsDialogProps, "onSave" | "settings">) {
   const { t } = useTranslation();
   const whenOptions: LocalReminderWhenSetting[] = ["before", "after"];
+  const macOS = isMacOS();
   const whenLabels: Record<LocalReminderWhenSetting, string> = {
     before: t("settings.sections.notifications.whenOptions.before"),
     after: t("settings.sections.notifications.whenOptions.after"),
@@ -304,19 +306,21 @@ function NotificationsSection({
       <p className="settings-description">{t("settings.sections.notifications.description")}</p>
       <div className="settings-fields">
         <div className="settings-group">
-          <label className="toggle-field settings-group__row">
-            <input
-              checked={newEventPopupEnabled}
-              onChange={(e) => {
-                onSave({ newEventPopupEnabled: e.target.checked });
-              }}
-              type="checkbox"
-            />
-            <span className="toggle-slider" />
-            <span className="settings-group__label">
-              {t("settings.sections.notifications.newEventPopup")}
-            </span>
-          </label>
+          {!macOS && (
+            <label className="toggle-field settings-group__row">
+              <input
+                checked={newEventPopupEnabled}
+                onChange={(e) => {
+                  onSave({ newEventPopupEnabled: e.target.checked });
+                }}
+                type="checkbox"
+              />
+              <span className="toggle-slider" />
+              <span className="settings-group__label">
+                {t("settings.sections.notifications.newEventPopup")}
+              </span>
+            </label>
+          )}
           <label className="toggle-field settings-group__row">
             <input
               checked={systemInviteNotificationsEnabled}
@@ -340,7 +344,9 @@ function NotificationsSection({
             />
             <span className="toggle-slider" />
             <span className="settings-group__label">
-              {t("settings.sections.notifications.taskbarInviteNotifications")}
+              {macOS
+                ? t("settings.sections.notifications.dockInviteNotifications")
+                : t("settings.sections.notifications.taskbarInviteNotifications")}
             </span>
           </label>
           <label className="toggle-field settings-group__row">

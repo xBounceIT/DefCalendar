@@ -845,7 +845,10 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     if (items.length === 0) {
       return;
     }
-    if (!dependencies.settings.getSettings().newEventPopupEnabled) {
+    if (
+      process.platform === "darwin" ||
+      !dependencies.settings.getSettings().newEventPopupEnabled
+    ) {
       return;
     }
 

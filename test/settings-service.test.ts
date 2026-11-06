@@ -1,5 +1,5 @@
 import { createDefaultSettings, userSettingsSchema } from "../src/shared/schemas";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import SettingsService from "../src/main/settings/settings-service";
 
 type UserSettings = ReturnType<typeof createDefaultSettings>;
@@ -9,9 +9,13 @@ interface SettingsFixture {
   service: SettingsService;
 }
 
-function createSettingsFixture(visibleCalendarIds: string[]): SettingsFixture {
+function createSettingsFixture(
+  visibleCalendarIds: string[],
+  preferences: Partial<UserSettings> = {},
+): SettingsFixture {
   let settings = userSettingsSchema.parse({
     ...createDefaultSettings(),
+    ...preferences,
     visibleCalendarIds,
   });
 
@@ -29,6 +33,23 @@ function createSettingsFixture(visibleCalendarIds: string[]): SettingsFixture {
 }
 
 describe("settings service", () => {
+  it.each(["darwin", "win32"])("routes legacy popup preferences on %s", (platform) => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, "platform", { configurable: true, value: platform });
+    onTestFinished(() => {
+      Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
+    });
+    const fixture = createSettingsFixture(["calendar-a"], { newEventPopupEnabled: true });
+
+    expect(fixture.service.getSettings()).toMatchObject({
+      newEventPopupEnabled: platform !== "darwin",
+      systemInviteNotificationsEnabled: platform === "darwin",
+      taskbarInviteNotificationsEnabled: true,
+    });
+    fixture.service.updateSettings({ systemInviteNotificationsEnabled: false });
+    expect(fixture.service.getSettings().systemInviteNotificationsEnabled).toBe(false);
+  });
+
   it("persists spelling preferences and onboarding without changing calendar preferences", () => {
     expect.hasAssertions();
     const fixture = createSettingsFixture(["calendar-a"]);
