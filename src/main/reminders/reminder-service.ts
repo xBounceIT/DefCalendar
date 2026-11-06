@@ -153,7 +153,10 @@ class ReminderService {
 
     if (this.state.items.length === 0) {
       this.reminderManager.close();
-    } else if (stateChanged || !this.reminderManager.hasWindow()) {
+    } else if (
+      process.platform !== "darwin" &&
+      (stateChanged || !this.reminderManager.hasWindow())
+    ) {
       this.reminderManager.show(this.state, hasNewDueItems || !this.reminderManager.hasWindow());
     }
 

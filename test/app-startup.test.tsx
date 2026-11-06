@@ -1792,61 +1792,83 @@ describe("app startup", () => {
     }
   });
 
-  it("shows the in-app invite popup when taskbar invite notifications are enabled", async () => {
-    try {
-      installResizeObserverMock();
-      const calendarApi = createSignedInCalendarApiMock();
-      const settings = {
-        ...createDefaultSettings(),
-        selectedDate: signedInSelectedDate,
-        visibleCalendarIds: ["calendar-1"],
-        newEventPopupEnabled: false,
-        systemInviteNotificationsEnabled: false,
-        taskbarInviteNotificationsEnabled: true,
-      };
-      calendarApi.settings.get = vi.fn().mockResolvedValue(settings);
-      calendarApi.settings.update = vi.fn().mockResolvedValue(settings);
-      calendarApi.newEventNotifications.get = vi
-        .fn()
-        .mockResolvedValue([createNewEventNotificationItem()]);
-      installCalendarApi(calendarApi);
+  it.each(["Win32", "MacIntel"])(
+    "uses the platform invite presentation for badge-only invitations on %s",
+    async (platform) => {
+      const platformMock = vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+      try {
+        installResizeObserverMock();
+        const calendarApi = createSignedInCalendarApiMock();
+        const settings = {
+          ...createDefaultSettings(),
+          selectedDate: signedInSelectedDate,
+          visibleCalendarIds: ["calendar-1"],
+          newEventPopupEnabled: false,
+          systemInviteNotificationsEnabled: false,
+          taskbarInviteNotificationsEnabled: true,
+        };
+        calendarApi.settings.get = vi.fn().mockResolvedValue(settings);
+        calendarApi.settings.update = vi.fn().mockResolvedValue(settings);
+        calendarApi.newEventNotifications.get = vi
+          .fn()
+          .mockResolvedValue([createNewEventNotificationItem()]);
+        installCalendarApi(calendarApi);
 
-      renderApp();
+        renderApp();
 
-      await expect(screen.findByText("New invitations")).resolves.not.toBeNull();
-      expect(screen.getByText("Planning invite")).not.toBeNull();
-    } finally {
-      restoreCalendarApi();
-      restoreResizeObserver();
-    }
-  });
+        await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
+        await waitFor(() => {
+          expect(Boolean(screen.queryByText("New invitations"))).toBe(platform !== "MacIntel");
+        });
+        expect(Boolean(screen.queryByText("Planning invite"))).toBe(platform !== "MacIntel");
+        expect(calendarApi.newEventNotifications.get).toHaveBeenCalledTimes(
+          platform === "MacIntel" ? 0 : 1,
+        );
+      } finally {
+        platformMock.mockRestore();
+        restoreCalendarApi();
+        restoreResizeObserver();
+      }
+    },
+  );
 
-  it("shows the in-app invite popup when popup invite notifications are enabled", async () => {
-    try {
-      installResizeObserverMock();
-      const calendarApi = createSignedInCalendarApiMock();
-      const settings = {
-        ...createDefaultSettings(),
-        selectedDate: signedInSelectedDate,
-        visibleCalendarIds: ["calendar-1"],
-        newEventPopupEnabled: true,
-      };
-      calendarApi.settings.get = vi.fn().mockResolvedValue(settings);
-      calendarApi.settings.update = vi.fn().mockResolvedValue(settings);
-      calendarApi.newEventNotifications.get = vi
-        .fn()
-        .mockResolvedValue([createNewEventNotificationItem()]);
-      installCalendarApi(calendarApi);
+  it.each(["Win32", "MacIntel"])(
+    "uses the platform invite presentation for enabled popups on %s",
+    async (platform) => {
+      const platformMock = vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
+      try {
+        installResizeObserverMock();
+        const calendarApi = createSignedInCalendarApiMock();
+        const settings = {
+          ...createDefaultSettings(),
+          selectedDate: signedInSelectedDate,
+          visibleCalendarIds: ["calendar-1"],
+          newEventPopupEnabled: true,
+        };
+        calendarApi.settings.get = vi.fn().mockResolvedValue(settings);
+        calendarApi.settings.update = vi.fn().mockResolvedValue(settings);
+        calendarApi.newEventNotifications.get = vi
+          .fn()
+          .mockResolvedValue([createNewEventNotificationItem()]);
+        installCalendarApi(calendarApi);
 
-      renderApp();
+        renderApp();
 
-      await expect(screen.findByText("New invitations")).resolves.not.toBeNull();
-      expect(screen.getByText("Planning invite")).not.toBeNull();
-    } finally {
-      restoreCalendarApi();
-      restoreResizeObserver();
-    }
-  });
+        await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
+        await waitFor(() => {
+          expect(Boolean(screen.queryByText("New invitations"))).toBe(platform !== "MacIntel");
+        });
+        expect(Boolean(screen.queryByText("Planning invite"))).toBe(platform !== "MacIntel");
+        expect(calendarApi.newEventNotifications.get).toHaveBeenCalledTimes(
+          platform === "MacIntel" ? 0 : 1,
+        );
+      } finally {
+        platformMock.mockRestore();
+        restoreCalendarApi();
+        restoreResizeObserver();
+      }
+    },
+  );
 
   it("opens the event editor when the main process requests an in-app event open", async () => {
     try {

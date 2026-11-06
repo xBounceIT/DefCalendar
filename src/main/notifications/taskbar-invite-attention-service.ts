@@ -4,11 +4,14 @@ import { app, nativeImage } from "@main/electron-runtime";
 import { t } from "@main/i18n";
 import type NewEventNotificationService from "@main/notifications/new-event-notification-service";
 import type SettingsService from "@main/settings/settings-service";
+import type ReminderService from "@main/reminders/reminder-service";
+import buildEventReferenceKey from "@shared/event-reference";
 import type { NewEventNotificationItem } from "@shared/schemas";
 
 interface TaskbarInviteAttentionDependencies {
   getMainWindow: () => BrowserWindow | null;
   newEventNotifications: NewEventNotificationService;
+  reminders: Pick<ReminderService, "getState" | "onState">;
   settings: SettingsService;
 }
 
@@ -25,6 +28,7 @@ class TaskbarInviteAttentionService {
   private readonly overlayCache = new Map<string, NativeImage>();
   private isFlashing = false;
   private unsubscribe: null | (() => void) = null;
+  private unsubscribeReminders: null | (() => void) = null;
 
   constructor(dependencies: TaskbarInviteAttentionDependencies) {
     this.dependencies = dependencies;
@@ -38,12 +42,17 @@ class TaskbarInviteAttentionService {
     this.unsubscribe = this.dependencies.newEventNotifications.onChange((items) => {
       this.sync(items);
     });
+    if (process.platform === "darwin") {
+      this.unsubscribeReminders = this.dependencies.reminders.onState(() => this.refresh());
+    }
     this.refresh();
   }
 
   stop(): void {
     this.unsubscribe?.();
     this.unsubscribe = null;
+    this.unsubscribeReminders?.();
+    this.unsubscribeReminders = null;
     this.clearAttention();
   }
 
@@ -63,11 +72,19 @@ class TaskbarInviteAttentionService {
   }
 
   sync(items: NewEventNotificationItem[]): void {
+    const invitesEnabled =
+      this.dependencies.settings.getSettings().taskbarInviteNotificationsEnabled;
+    if (process.platform === "darwin") {
+      const eventKeys = new Set([
+        ...(invitesEnabled ? items.map(buildEventReferenceKey) : []),
+        ...this.dependencies.reminders.getState().items.map(buildEventReferenceKey),
+      ]);
+      this.setBadgeCount(eventKeys.size);
+      return;
+    }
+
     const count = items.length;
-    if (
-      !this.dependencies.settings.getSettings().taskbarInviteNotificationsEnabled ||
-      count === 0
-    ) {
+    if (!invitesEnabled || count === 0) {
       this.clearAttention();
       return;
     }

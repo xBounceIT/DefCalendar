@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ReminderService from "../src/main/reminders/reminder-service";
 
+const originalPlatform = process.platform;
+
 const { getLocale, powerMonitor } = vi.hoisted(() => ({
   getLocale: vi.fn().mockReturnValue("en-US"),
   powerMonitor: {
@@ -172,14 +174,31 @@ function createFixture(args?: {
 
 describe("reminder service", () => {
   beforeEach(() => {
+    Object.defineProperty(process, "platform", { configurable: true, value: "win32" });
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-30T09:45:00.000Z"));
     getLocale.mockReturnValue("en-US");
   });
 
   afterEach(() => {
+    Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
     vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  it("publishes macOS reminders without creating or focusing the custom popup", async () => {
+    Object.defineProperty(process, "platform", { configurable: true, value: "darwin" });
+    const fixture = createFixture({ candidates: [createCandidate()] });
+    const listener = vi.fn();
+    fixture.service.onState(listener);
+
+    await fixture.service.checkNow();
+    await fixture.service.checkNow();
+
+    expect(listener).toHaveBeenCalledOnce();
+    expect(fixture.service.getState().items).toHaveLength(1);
+    expect(fixture.reminderManager.show).not.toHaveBeenCalled();
+    expect(fixture.reminderManager.hasWindow).not.toHaveBeenCalled();
   });
 
   it.each([false, true])(

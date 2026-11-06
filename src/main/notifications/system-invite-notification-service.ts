@@ -1,6 +1,7 @@
+import { formatNotificationTime } from "@main/notifications/notification-time";
 import type EventActionService from "@main/events/event-action-service";
 import { Notification } from "@main/electron-runtime";
-import { getMainLocale, t } from "@main/i18n";
+import { t } from "@main/i18n";
 import type NewEventNotificationService from "@main/notifications/new-event-notification-service";
 import type SettingsService from "@main/settings/settings-service";
 import type { EventResponseAction, NewEventNotificationItem, UserSettings } from "@shared/schemas";
@@ -86,6 +87,7 @@ class SystemInviteNotificationService {
   }
 
   private show(item: NewEventNotificationItem, settings: UserSettings): void {
+    const eventKey = buildEventReferenceKey(item);
     const notification = new Notification({
       actions: [
         { text: t("inviteNotificationAccept"), type: "button" },
@@ -99,21 +101,35 @@ class SystemInviteNotificationService {
     });
 
     notification.on("action", (event: unknown, actionIndex?: number) => {
+      if (this.activeNotifications.get(eventKey) !== notification) {
+        return;
+      }
       const resolvedIndex = typeof actionIndex === "number" ? actionIndex : readActionIndex(event);
-      this.handleAction(item, resolvedIndex);
+      this.handleAction(item, resolvedIndex, notification);
     });
     notification.on("click", () => {
-      this.dependencies.eventActions.openInApp({
-        calendarId: item.calendarId,
-        eventId: item.eventId,
-      });
+      if (this.activeNotifications.get(eventKey) === notification) {
+        this.dependencies.eventActions.openInApp({
+          calendarId: item.calendarId,
+          eventId: item.eventId,
+        });
+      }
+    });
+    notification.on("failed", () => {
+      if (this.activeNotifications.get(eventKey) === notification) {
+        this.close(eventKey);
+      }
     });
 
-    this.activeNotifications.set(buildEventReferenceKey(item), notification);
+    this.activeNotifications.set(eventKey, notification);
     notification.show();
   }
 
-  private handleAction(item: NewEventNotificationItem, actionIndex: number | undefined): void {
+  private handleAction(
+    item: NewEventNotificationItem,
+    actionIndex: number | undefined,
+    notification: InviteNotification,
+  ): void {
     if (actionIndex === undefined) {
       return;
     }
@@ -146,13 +162,18 @@ class SystemInviteNotificationService {
         sendResponse: true,
       })
       .then(() => {
-        this.close(buildEventReferenceKey(item));
+        const eventKey = buildEventReferenceKey(item);
+        if (this.activeNotifications.get(eventKey) === notification) {
+          this.close(eventKey);
+        }
       })
       .catch(() => {
-        this.dependencies.eventActions.openInApp({
-          calendarId: item.calendarId,
-          eventId: item.eventId,
-        });
+        if (this.activeNotifications.get(buildEventReferenceKey(item)) === notification) {
+          this.dependencies.eventActions.openInApp({
+            calendarId: item.calendarId,
+            eventId: item.eventId,
+          });
+        }
       });
   }
 
@@ -190,63 +211,10 @@ function buildBody(item: NewEventNotificationItem, settings: UserSettings): stri
   const subject = item.subject || t("inviteNotificationUntitledEvent");
   const organizer =
     item.organizerName ?? item.organizerEmail ?? t("inviteNotificationUnknownOrganizer");
-  const time = formatInviteTime(item, settings.timeFormat);
+  const time = formatNotificationTime(item, settings.timeFormat);
   const location = item.location?.trim();
 
   return [subject, time, organizer, location].filter(Boolean).join("\n");
-}
-
-function formatInviteTime(
-  item: Pick<NewEventNotificationItem, "end" | "isAllDay" | "start">,
-  timeFormat: UserSettings["timeFormat"],
-): string {
-  const start = new Date(item.start);
-  if (Number.isNaN(start.getTime())) {
-    return item.start;
-  }
-
-  const locale = getMainLocale() === "it" ? "it-IT" : "en-US";
-  if (item.isAllDay) {
-    return new Intl.DateTimeFormat(locale, {
-      day: "numeric",
-      month: "short",
-      weekday: "short",
-    }).format(start);
-  }
-
-  const startText = formatDateTime(start, locale, timeFormat, {
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    month: "short",
-    weekday: "short",
-  });
-  const end = new Date(item.end);
-  if (Number.isNaN(end.getTime())) {
-    return startText;
-  }
-
-  const endText = formatDateTime(end, locale, timeFormat, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  return `${startText} - ${endText}`;
-}
-
-function formatDateTime(
-  date: Date,
-  locale: string,
-  timeFormat: UserSettings["timeFormat"],
-  options: Intl.DateTimeFormatOptions,
-): string {
-  if (timeFormat === "system") {
-    return new Intl.DateTimeFormat(locale, options).format(date);
-  }
-
-  return new Intl.DateTimeFormat(locale, {
-    ...options,
-    hour12: timeFormat === "12h",
-  }).format(date);
 }
 
 export default SystemInviteNotificationService;
