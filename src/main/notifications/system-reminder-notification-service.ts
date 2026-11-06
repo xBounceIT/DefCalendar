@@ -4,6 +4,7 @@ import { t } from "@main/i18n";
 import { formatNotificationTime } from "@main/notifications/notification-time";
 import type ReminderService from "@main/reminders/reminder-service";
 import type { ReminderDialogItem, ReminderDialogState } from "@shared/ipc";
+import { MINUTE_MS } from "@shared/duration";
 
 interface SystemReminderNotificationDependencies {
   eventActions: Pick<EventActionService, "openInApp">;
@@ -14,6 +15,7 @@ class SystemReminderNotificationService {
   private readonly activeNotifications = new Map<string, InstanceType<typeof Notification>>();
   private readonly dependencies: SystemReminderNotificationDependencies;
   private unsubscribe: null | (() => void) = null;
+  private retryTimer: NodeJS.Timeout | null = null;
 
   constructor(dependencies: SystemReminderNotificationDependencies) {
     this.dependencies = dependencies;
@@ -31,6 +33,7 @@ class SystemReminderNotificationService {
   stop(): void {
     this.unsubscribe?.();
     this.unsubscribe = null;
+    this.clearRetryTimer();
     for (const key of this.activeNotifications.keys()) {
       this.close(key);
     }
@@ -44,6 +47,11 @@ class SystemReminderNotificationService {
       }
     }
 
+    if (nextKeys.size === 0) {
+      this.clearRetryTimer();
+      return;
+    }
+
     if (!Notification.isSupported()) {
       return;
     }
@@ -52,6 +60,10 @@ class SystemReminderNotificationService {
       if (!this.activeNotifications.has(item.dedupeKey)) {
         this.show(item, state);
       }
+    }
+
+    if (this.activeNotifications.size === nextKeys.size) {
+      this.clearRetryTimer();
     }
   }
 
@@ -91,6 +103,7 @@ class SystemReminderNotificationService {
     notification.on("failed", () => {
       if (this.activeNotifications.get(item.dedupeKey) === notification) {
         this.close(item.dedupeKey);
+        this.scheduleRetry();
       }
     });
     notification.on("action", (event: unknown, actionIndex?: number) => {
@@ -112,6 +125,24 @@ class SystemReminderNotificationService {
 
     this.activeNotifications.set(item.dedupeKey, notification);
     notification.show();
+  }
+
+  private scheduleRetry(): void {
+    if (this.retryTimer !== null || !this.unsubscribe) {
+      return;
+    }
+
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      this.sync(this.dependencies.reminders.getState());
+    }, MINUTE_MS);
+  }
+
+  private clearRetryTimer(): void {
+    if (this.retryTimer !== null) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
   }
 
   private runReminderAction(

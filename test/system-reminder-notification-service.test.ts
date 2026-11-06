@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SystemReminderNotificationService from "../src/main/notifications/system-reminder-notification-service";
 import { setMainLocale } from "../src/main/i18n";
 import type { ReminderDialogState } from "../src/shared/ipc";
+import { MINUTE_MS } from "../src/shared/duration";
 
 const notificationMock = vi.hoisted(() => {
   class MockNotification {
@@ -61,7 +62,9 @@ function createState(): ReminderDialogState {
 function createFixture() {
   let listener: ((state: ReminderDialogState) => void) | null = null;
   const state = createState();
-  const unsubscribe = vi.fn();
+  const unsubscribe = vi.fn(() => {
+    listener = null;
+  });
   const reminders = {
     dismiss: vi.fn(),
     getState: vi.fn(() => state),
@@ -79,22 +82,90 @@ function createFixture() {
     service,
     state,
     unsubscribe,
-    publish: (next: ReminderDialogState) => listener?.(next),
+    publish: (next: ReminderDialogState) => {
+      reminders.getState.mockReturnValue(next);
+      listener?.(next);
+    },
   };
 }
 
 beforeEach(() => {
+  vi.useFakeTimers();
   notificationMock.MockNotification.instances.length = 0;
   notificationMock.MockNotification.isSupported.mockReturnValue(true);
   setMainLocale("en");
 });
 
 afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
   vi.clearAllMocks();
   setMainLocale("en");
 });
 
 describe("system reminder notifications", () => {
+  it("retries a failed notification without waiting for a reminder state change", () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    fixture.service.start();
+    notificationMock.MockNotification.instances[0].emit("failed", {}, "Delivery failed");
+
+    vi.advanceTimersByTime(MINUTE_MS - 1);
+    expect(notificationMock.MockNotification.instances).toHaveLength(1);
+    vi.advanceTimersByTime(1);
+
+    expect(notificationMock.MockNotification.instances).toHaveLength(2);
+    expect(notificationMock.MockNotification.instances[1].show).toHaveBeenCalledOnce();
+    expect(fixture.reminders.getState).toHaveBeenCalledTimes(2);
+    expect(fixture.eventActions.openInApp).not.toHaveBeenCalled();
+    expect(fixture.reminders.dismiss).not.toHaveBeenCalled();
+  });
+
+  it("coalesces failures and keeps retrying while reminders are due", () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    fixture.state.items.push({
+      ...fixture.state.items[0],
+      dedupeKey: "second",
+      eventId: "event-2",
+    });
+    fixture.service.start();
+    notificationMock.MockNotification.instances[0].emit("failed");
+    notificationMock.MockNotification.instances[1].emit("failed");
+    expect(vi.getTimerCount()).toBe(1);
+
+    vi.advanceTimersByTime(MINUTE_MS);
+    expect(notificationMock.MockNotification.instances).toHaveLength(4);
+    notificationMock.MockNotification.instances[2].emit("failed");
+    notificationMock.MockNotification.instances[3].emit("failed");
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(MINUTE_MS);
+    expect(notificationMock.MockNotification.instances).toHaveLength(6);
+    expect(fixture.reminders.dismiss).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { change: "removed", expectedCount: 1 },
+    { change: "recovered", expectedCount: 2 },
+    { change: "stopped", expectedCount: 1 },
+  ])("cancels the retry when notifications are $change", ({ change, expectedCount }) => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    fixture.service.start();
+    notificationMock.MockNotification.instances[0].emit("failed");
+    expect(vi.getTimerCount()).toBe(1);
+    if (change === "stopped") {
+      fixture.service.stop();
+    } else {
+      fixture.publish({ ...fixture.state, items: change === "removed" ? [] : fixture.state.items });
+    }
+
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(2 * MINUTE_MS);
+    expect(notificationMock.MockNotification.instances).toHaveLength(expectedCount);
+    expect(fixture.reminders.dismiss).not.toHaveBeenCalled();
+  });
+
   it.each([
     { event: "close", args: [], operation: "dismiss" },
     { event: "action", args: [{ actionIndex: 0 }], operation: "snooze" },
