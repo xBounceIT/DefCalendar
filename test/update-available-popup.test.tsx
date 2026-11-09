@@ -11,6 +11,7 @@ import { createTestI18n } from "./setup-i18n";
 import UpdateAvailablePopup from "../src/renderer/src/components/update-available-popup";
 
 const BASE_STATUS: AppUpdateStatus = {
+  revision: 0,
   checkedAt: null,
   manualInstall: false,
   currentVersion: "v0.5.0",
@@ -108,20 +109,20 @@ describe("updateAvailablePopup visibility", () => {
 });
 
 describe("updateAvailablePopup actions", () => {
-  it("shows manual browser errors and allows retrying in the popup", async () => {
+  it("shows macOS download errors and allows retrying in the popup", async () => {
     const status: AppUpdateStatus = {
       ...BASE_STATUS,
       manualInstall: true,
       state: "available",
       latestVersion: "1.0.0",
     };
-    downloadMock.mockResolvedValueOnce({ ...status, error: "Cannot open browser" });
+    downloadMock.mockResolvedValueOnce({ ...status, error: "Network error" });
     downloadMock.mockResolvedValueOnce(status);
     renderPopup(status);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Open download page" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Cannot open browser");
-    const retry = screen.getByRole("button", { name: "Open download page" });
+    fireEvent.click(await screen.findByRole("button", { name: "Download and install" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Network error");
+    const retry = screen.getByRole("button", { name: "Download and install" });
     await waitFor(() => expect(retry).toBeEnabled());
     fireEvent.click(retry);
 
@@ -130,7 +131,7 @@ describe("updateAvailablePopup actions", () => {
     expect(installMock).not.toHaveBeenCalled();
   });
 
-  it("opens the manual download page without requesting a restart on macOS", async () => {
+  it("downloads on macOS and explains replacement, relaunch and ejecting the disk", async () => {
     const status: AppUpdateStatus = {
       ...BASE_STATUS,
       manualInstall: true,
@@ -140,11 +141,12 @@ describe("updateAvailablePopup actions", () => {
     downloadMock.mockResolvedValue(status);
     renderPopup(status);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Open download page" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Download and install" }));
 
     await waitFor(() => expect(downloadMock).toHaveBeenCalledOnce());
-    expect(screen.getByText(/updates require manual installation/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Download and Restart" })).toBeNull();
+    expect(screen.getByText(/confirm Replace/)).toHaveTextContent(
+      /reopens automatically.*eject the disk/,
+    );
     act(() => lastListener?.({ ...status, state: "downloaded" }));
     expect(installMock).not.toHaveBeenCalled();
   });
@@ -159,7 +161,7 @@ describe("updateAvailablePopup actions", () => {
     await waitFor(() => expect(downloadMock).toHaveBeenCalledOnce());
   });
 
-  it("auto-installs once status transitions to downloaded after a download", async () => {
+  it("leaves automatic installation to the main process", async () => {
     renderPopup({ ...BASE_STATUS, state: "available", latestVersion: "1.0.0" });
     await waitFor(() => expect(document.querySelector(".update-popup")).not.toBeNull());
 
@@ -177,10 +179,10 @@ describe("updateAvailablePopup actions", () => {
       });
     });
 
-    await waitFor(() => expect(installMock).toHaveBeenCalledOnce());
+    expect(installMock).not.toHaveBeenCalled();
   });
 
-  it("does not call install when state is 'downloaded' but no download was initiated", async () => {
+  it("offers an installer retry for an already downloaded update", async () => {
     renderPopup({
       ...BASE_STATUS,
       state: "downloaded",
@@ -190,6 +192,15 @@ describe("updateAvailablePopup actions", () => {
     await waitFor(() => expect(getStatusMock).toHaveBeenCalled());
 
     expect(installMock).not.toHaveBeenCalled();
-    expect(document.querySelector(".update-popup")).toBeNull();
+    fireEvent.click(await screen.findByRole("button", { name: "Install update" }));
+    expect(installMock).toHaveBeenCalledOnce();
+    expect(downloadMock).not.toHaveBeenCalled();
+  });
+
+  it("shows shared progress and disables actions for downloads started in Settings", async () => {
+    renderPopup({ ...BASE_STATUS, manualInstall: true, state: "downloading", downloadPercent: 42 });
+    expect(await screen.findByRole("progressbar")).toHaveAttribute("value", "42");
+    expect(screen.getByRole("button", { name: "Downloading…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Remind me later" })).toBeDisabled();
   });
 });

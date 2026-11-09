@@ -536,7 +536,7 @@
     },
     "updates": {
       "title": "Aggiornamenti applicazione",
-      "manualInstall": "Su macOS l'aggiornamento richiede l'installazione manuale. Apri la release, scarica il DMG, chiudi DefCalendar e sostituisci l'app in Applicazioni.",
+      "manualInstall": "Al termine del download DefCalendar si chiude e apre il DMG. Trascina l'app in Applicazioni e conferma Sostituisci. L'app si riapre automaticamente; poi puoi espellere il disco dalla Scrivania.",
       "currentVersion": "Versione corrente",
       "unknownVersion": "Versione sconosciuta",
       "loading": "Caricamento…",
@@ -560,11 +560,10 @@
       },
       "actions": {
         "check": "Controlla aggiornamenti",
-        "openRelease": "Apri pagina di download",
         "checking": "Controllo…",
-        "download": "Scarica aggiornamento",
+        "download": "Scarica e installa",
         "downloading": "Download…",
-        "install": "Riavvia per installare"
+        "install": "Installa aggiornamento"
       }
     }
   },
@@ -572,7 +571,6 @@
     "title": "Un nuovo aggiornamento è disponibile",
     "description": "{{version}} pronta per l'installazione.",
     "changelog": "Note di rilascio",
-    "downloadAndRestart": "Scarica e riavvia",
     "downloading": "Download…",
     "remindLater": "Ricordamelo più tardi"
   },

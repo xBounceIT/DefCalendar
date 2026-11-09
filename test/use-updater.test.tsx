@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useUpdater } from "../src/renderer/src/hooks/use-updater";
 
 const IDLE_STATUS: AppUpdateStatus = {
+  revision: 0,
   checkedAt: null,
   manualInstall: false,
   currentVersion: "v0.5.0",
@@ -73,10 +74,54 @@ function renderUseUpdater() {
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
-  return renderHook(() => useUpdater(), { wrapper });
+  return { ...renderHook(() => useUpdater(), { wrapper }), queryClient };
 }
 
 describe(useUpdater, () => {
+  it("keeps newer status events when an older status request completes", async () => {
+    let finish: (status: AppUpdateStatus) => void = () => undefined;
+    getStatusMock.mockReturnValue(
+      new Promise<AppUpdateStatus>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const { result, queryClient } = renderUseUpdater();
+    await waitFor(() => expect(onStatusMock).toHaveBeenCalledOnce());
+    const newer = { ...DOWNLOADED_STATUS, revision: 3 };
+    act(() => lastStatusListener?.(newer));
+    await act(async () => {
+      finish({ ...AVAILABLE_STATUS, revision: 1 });
+    });
+    await waitFor(() => expect(queryClient.isFetching()).toBe(0));
+    expect(result.current.status).toStrictEqual(newer);
+  });
+
+  it.each(["check", "download"] as const)(
+    "does not roll back newer events with a delayed %s response",
+    async (action) => {
+      let finish: (status: AppUpdateStatus) => void = () => undefined;
+      const mutation = action === "check" ? checkMock : downloadMock;
+      mutation.mockReturnValue(
+        new Promise<AppUpdateStatus>((resolve) => {
+          finish = resolve;
+        }),
+      );
+      const { result } = renderUseUpdater();
+      await waitFor(() => expect(result.current.status).toStrictEqual(IDLE_STATUS));
+      act(() => result.current[action]());
+      await waitFor(() => expect(mutation).toHaveBeenCalledOnce());
+      const newer = { ...DOWNLOADED_STATUS, revision: 3, error: "Cannot mount disk" };
+      act(() => lastStatusListener?.(newer));
+      await act(async () => {
+        finish({ ...AVAILABLE_STATUS, revision: 1 });
+      });
+      await waitFor(() =>
+        expect(result.current.isChecking || result.current.isDownloading).toBe(false),
+      );
+      expect(result.current.status).toStrictEqual(newer);
+    },
+  );
+
   it("calls getStatus on mount and exposes the result", async () => {
     const { result } = renderUseUpdater();
 

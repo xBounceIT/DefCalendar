@@ -4,34 +4,42 @@ import { useCallback, useEffect } from "react";
 
 const QUERY_KEY = ["app-update-status"] as const;
 
+function newestStatus(
+  current: AppUpdateStatus | undefined,
+  incoming: AppUpdateStatus,
+): AppUpdateStatus {
+  return current && current.revision > incoming.revision ? current : incoming;
+}
+
 export function useUpdater() {
   const queryClient = useQueryClient();
-
-  const statusQuery = useQuery({
-    queryFn: () => globalThis.calendarApi.updates.getStatus(),
-    queryKey: QUERY_KEY,
-  });
-
-  useEffect(
-    () =>
-      globalThis.calendarApi.updates.onStatus((status) => {
-        queryClient.setQueryData<AppUpdateStatus>(QUERY_KEY, status);
-      }),
+  const updateStatus = useCallback(
+    (status: AppUpdateStatus) => {
+      queryClient.setQueryData<AppUpdateStatus>(QUERY_KEY, (current) =>
+        newestStatus(current, status),
+      );
+    },
     [queryClient],
   );
 
+  const statusQuery = useQuery({
+    queryFn: async () => {
+      const status = await globalThis.calendarApi.updates.getStatus();
+      return newestStatus(queryClient.getQueryData<AppUpdateStatus>(QUERY_KEY), status);
+    },
+    queryKey: QUERY_KEY,
+  });
+
+  useEffect(() => globalThis.calendarApi.updates.onStatus(updateStatus), [updateStatus]);
+
   const checkMutation = useMutation({
     mutationFn: () => globalThis.calendarApi.updates.check(),
-    onSuccess: (status) => {
-      queryClient.setQueryData<AppUpdateStatus>(QUERY_KEY, status);
-    },
+    onSuccess: updateStatus,
   });
 
   const downloadMutation = useMutation({
     mutationFn: () => globalThis.calendarApi.updates.download(),
-    onSuccess: (status) => {
-      queryClient.setQueryData<AppUpdateStatus>(QUERY_KEY, status);
-    },
+    onSuccess: updateStatus,
   });
 
   function check(): void {
@@ -50,8 +58,8 @@ export function useUpdater() {
     check,
     download,
     install,
-    isChecking: checkMutation.isPending,
-    isDownloading: downloadMutation.isPending,
+    isChecking: checkMutation.isPending || statusQuery.data?.state === "checking",
+    isDownloading: downloadMutation.isPending || statusQuery.data?.state === "downloading",
     status: statusQuery.data ?? null,
     statusError: statusQuery.error ?? null,
     statusLoading: statusQuery.isLoading,
