@@ -64,7 +64,7 @@ describe("new event window", () => {
     expect(window.options).toMatchObject({
       alwaysOnTop: true,
       show: false,
-      skipTaskbar: true,
+      skipTaskbar: false,
       webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
     });
     expect(window.options).not.toHaveProperty("parent");
@@ -85,6 +85,24 @@ describe("new event window", () => {
     expect(electron.instances[0].loadURL).toHaveBeenCalledWith(
       "http://localhost:5173/new-event-popup.html",
     );
+  });
+
+  it("refreshes taskbar attention after showing or focusing the active popup", () => {
+    const onAttentionChanged = vi.fn();
+    const manager = new NewEventWindowManager(vi.fn(), onAttentionChanged);
+    manager.sync(items, true, true);
+    const window = electron.instances[0];
+    expect(manager.getWindow()).toBe(window);
+
+    window.handlers.get("show")?.();
+    window.handlers.get("focus")?.();
+    expect(onAttentionChanged).toHaveBeenCalledTimes(2);
+
+    manager.close();
+    expect(manager.getWindow()).toBeNull();
+    window.handlers.get("show")?.();
+    window.handlers.get("focus")?.();
+    expect(onAttentionChanged).toHaveBeenCalledTimes(2);
   });
 
   it("replaces a closing popup before native closed arrives and ignores its late events", () => {

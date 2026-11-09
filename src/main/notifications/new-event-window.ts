@@ -14,7 +14,10 @@ class NewEventWindowManager {
   private isReadyToShow = false;
   private shouldFocusOnReady = false;
 
-  constructor(private readonly onDismiss: () => void) {}
+  constructor(
+    private readonly onDismiss: () => void,
+    private readonly onAttentionChanged: () => void = () => undefined,
+  ) {}
 
   sync(items: NewEventNotificationItem[], enabled: boolean, focus = false): void {
     this.items = items;
@@ -52,9 +55,11 @@ class NewEventWindowManager {
   }
 
   ownsWebContents(contents: WebContents): boolean {
-    return Boolean(
-      this.window && !this.window.isDestroyed() && this.window.webContents === contents,
-    );
+    return this.getWindow()?.webContents === contents;
+  }
+
+  getWindow(): ElectronBrowserWindow | null {
+    return this.window && !this.window.isDestroyed() ? this.window : null;
   }
 
   private ensureWindow(): ElectronBrowserWindow {
@@ -73,7 +78,7 @@ class NewEventWindowManager {
       minimizable: true,
       resizable: false,
       show: false,
-      skipTaskbar: true,
+      skipTaskbar: false,
       title: t("inviteNotificationTitle"),
       width: POPUP_WIDTH,
       x: x + Math.round((width - POPUP_WIDTH) / 2),
@@ -111,6 +116,14 @@ class NewEventWindowManager {
     };
     window.on("close", dismissWindow);
     window.on("closed", dismissWindow);
+
+    const refreshAttention = () => {
+      if (this.window === window) {
+        this.onAttentionChanged();
+      }
+    };
+    window.on("show", refreshAttention);
+    window.on("focus", refreshAttention);
 
     const closeFailedWindow = () => {
       if (this.window === window) {

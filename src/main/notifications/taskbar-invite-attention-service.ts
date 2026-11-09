@@ -9,7 +9,7 @@ import buildEventReferenceKey from "@shared/event-reference";
 import type { NewEventNotificationItem } from "@shared/schemas";
 
 interface TaskbarInviteAttentionDependencies {
-  getMainWindow: () => BrowserWindow | null;
+  getAttentionWindow: () => BrowserWindow | null;
   newEventNotifications: NewEventNotificationService;
   reminders: Pick<ReminderService, "getState" | "onState">;
   settings: SettingsService;
@@ -26,6 +26,7 @@ const BADGE_TEXT_SIZE_BY_LENGTH: Record<number, number> = {
 class TaskbarInviteAttentionService {
   private readonly dependencies: TaskbarInviteAttentionDependencies;
   private readonly overlayCache = new Map<string, NativeImage>();
+  private attentionWindow: BrowserWindow | null = null;
   private isFlashing = false;
   private unsubscribe: null | (() => void) = null;
   private unsubscribeReminders: null | (() => void) = null;
@@ -61,8 +62,8 @@ class TaskbarInviteAttentionService {
   }
 
   stopFlashing(): void {
-    const window = this.getWindow();
-    if (!window || !this.isFlashing) {
+    const window = this.attentionWindow;
+    if (!window || window.isDestroyed() || !this.isFlashing) {
       this.isFlashing = false;
       return;
     }
@@ -91,6 +92,7 @@ class TaskbarInviteAttentionService {
 
     this.setBadgeCount(count);
     const window = this.getWindow();
+    this.setWindow(window);
     if (!window) {
       return;
     }
@@ -112,14 +114,27 @@ class TaskbarInviteAttentionService {
     this.stopFlashing();
     this.setBadgeCount(0);
 
-    const window = this.getWindow();
-    if (window) {
+    const window = this.attentionWindow ?? this.getWindow();
+    if (window && !window.isDestroyed()) {
       this.clearOverlayIcon(window);
     }
+    this.attentionWindow = null;
+  }
+
+  private setWindow(window: BrowserWindow | null): void {
+    if (this.attentionWindow === window) {
+      return;
+    }
+
+    this.stopFlashing();
+    if (this.attentionWindow && !this.attentionWindow.isDestroyed()) {
+      this.clearOverlayIcon(this.attentionWindow);
+    }
+    this.attentionWindow = window;
   }
 
   private getWindow(): BrowserWindow | null {
-    const window = this.dependencies.getMainWindow();
+    const window = this.dependencies.getAttentionWindow();
     if (!window || window.isDestroyed()) {
       return null;
     }

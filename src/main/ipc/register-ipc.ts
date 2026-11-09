@@ -761,12 +761,12 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
 
     void dependencies.reminders.checkNow();
     dependencies.systemInviteNotifications.refresh();
-    dependencies.taskbarInviteAttention.refresh();
     dependencies.newEventWindow.sync(
       dependencies.newEventNotifications.getItems(),
       updatedSettings.newEventPopupEnabled,
       updatedSettings.newEventPopupEnabled && !previousSettings.newEventPopupEnabled,
     );
+    dependencies.taskbarInviteAttention.refresh();
     return updatedSettings;
   });
 

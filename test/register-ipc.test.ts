@@ -380,6 +380,9 @@ describe("register ipc", () => {
       { newEventPopupEnabled: false },
     );
     expect(fixture.newEventWindow.sync).toHaveBeenCalledWith([], false, false);
+    expect(fixture.newEventWindow.sync.mock.invocationCallOrder[0]).toBeLessThan(
+      fixture.taskbarInviteAttention.refresh.mock.invocationCallOrder[0],
+    );
     expect(fixture.mainWindow.show).not.toHaveBeenCalled();
   });
 

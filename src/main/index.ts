@@ -63,7 +63,10 @@ async function bootstrap(): Promise<void> {
 
   const reminderManager = new ReminderWindowManager();
   const newEventNotifications = new NewEventNotificationService();
-  const newEventWindow = new NewEventWindowManager(() => newEventNotifications.clear());
+  const newEventWindow: NewEventWindowManager = new NewEventWindowManager(
+    () => newEventNotifications.clear(),
+    () => taskbarInviteAttention.refresh(),
+  );
   const auth = new MsalAuthService(
     config,
     new SafeStorageTokenCache(join(app.getPath("userData"), "msal-token-cache.bin")),
@@ -100,7 +103,7 @@ async function bootstrap(): Promise<void> {
     settings,
   });
   const taskbarInviteAttention = new TaskbarInviteAttentionService({
-    getMainWindow: () => mainWindow,
+    getAttentionWindow: () => newEventWindow.getWindow() ?? mainWindow,
     newEventNotifications,
     reminders,
     settings,
