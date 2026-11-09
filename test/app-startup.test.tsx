@@ -3,7 +3,7 @@
 import type { DateSelectArg, EventInput } from "@fullcalendar/core";
 import type { DateClickArg } from "@fullcalendar/interaction";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import React from "react";
 import App from "../src/renderer/src/app";
@@ -1793,7 +1793,7 @@ describe("app startup", () => {
   });
 
   it.each(["Win32", "MacIntel"])(
-    "uses the platform invite presentation for badge-only invitations on %s",
+    "shows pending invitations when opening the app with only badges enabled on %s",
     async (platform) => {
       const platformMock = vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
       try {
@@ -1817,13 +1817,9 @@ describe("app startup", () => {
         renderApp();
 
         await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
-        await waitFor(() => {
-          expect(Boolean(screen.queryByText("New invitations"))).toBe(platform !== "MacIntel");
-        });
-        expect(Boolean(screen.queryByText("Planning invite"))).toBe(platform !== "MacIntel");
-        expect(calendarApi.newEventNotifications.get).toHaveBeenCalledTimes(
-          platform === "MacIntel" ? 0 : 1,
-        );
+        await expect(screen.findByText("New invitations")).resolves.not.toBeNull();
+        expect(screen.queryByText("Planning invite")).not.toBeNull();
+        expect(calendarApi.newEventNotifications.get).toHaveBeenCalledOnce();
       } finally {
         platformMock.mockRestore();
         restoreCalendarApi();
@@ -1833,7 +1829,7 @@ describe("app startup", () => {
   );
 
   it.each(["Win32", "MacIntel"])(
-    "uses the platform invite presentation for enabled popups on %s",
+    "shows pending invitations at startup with only popups enabled on %s",
     async (platform) => {
       const platformMock = vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
       try {
@@ -1844,6 +1840,8 @@ describe("app startup", () => {
           selectedDate: signedInSelectedDate,
           visibleCalendarIds: ["calendar-1"],
           newEventPopupEnabled: true,
+          systemInviteNotificationsEnabled: false,
+          taskbarInviteNotificationsEnabled: false,
         };
         calendarApi.settings.get = vi.fn().mockResolvedValue(settings);
         calendarApi.settings.update = vi.fn().mockResolvedValue(settings);
@@ -1855,13 +1853,9 @@ describe("app startup", () => {
         renderApp();
 
         await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
-        await waitFor(() => {
-          expect(Boolean(screen.queryByText("New invitations"))).toBe(platform !== "MacIntel");
-        });
-        expect(Boolean(screen.queryByText("Planning invite"))).toBe(platform !== "MacIntel");
-        expect(calendarApi.newEventNotifications.get).toHaveBeenCalledTimes(
-          platform === "MacIntel" ? 0 : 1,
-        );
+        await expect(screen.findByText("New invitations")).resolves.not.toBeNull();
+        expect(screen.queryByText("Planning invite")).not.toBeNull();
+        expect(calendarApi.newEventNotifications.get).toHaveBeenCalledOnce();
       } finally {
         platformMock.mockRestore();
         restoreCalendarApi();
@@ -1870,13 +1864,17 @@ describe("app startup", () => {
     },
   );
 
-  it("opens the event editor when the main process requests an in-app event open", async () => {
+  it("defers pending invitations while a native notification opens the event editor", async () => {
+    expect.hasAssertions();
     try {
       installResizeObserverMock();
       const calendarApi = createSignedInCalendarApiMock();
       const event = createCalendarEvent({ subject: "Reminder planning" });
+      vi.spyOn(calendarApi.newEventNotifications, "get").mockResolvedValue([
+        createNewEventNotificationItem(),
+      ]);
       let openInAppListener: ((event: CalendarEvent) => void) | null = null;
-      calendarApi.events.onOpenInApp = vi.fn().mockImplementation((listener) => {
+      vi.spyOn(calendarApi.events, "onOpenInApp").mockImplementation((listener) => {
         openInAppListener = listener;
         return () => undefined;
       });
@@ -1884,15 +1882,24 @@ describe("app startup", () => {
 
       renderApp();
 
-      await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
+      await screen.findByTestId("mock-calendar");
+      await screen.findByRole("dialog", { name: "New invitations" });
       expect(openInAppListener).toBeInstanceOf(Function);
 
       act(() => {
         openInAppListener?.(event);
       });
 
-      await expect(screen.findByDisplayValue("Reminder planning")).resolves.not.toBeNull();
-      expect(screen.getByRole("dialog")).not.toBeNull();
+      await screen.findByDisplayValue("Reminder planning");
+      expect({
+        popup: screen.queryByRole("dialog", { name: "New invitations" }),
+        dismissed: vi.mocked(calendarApi.newEventNotifications.dismiss).mock.calls,
+        dismissedAll: vi.mocked(calendarApi.newEventNotifications.dismissAll).mock.calls,
+      }).toStrictEqual({ popup: null, dismissed: [], dismissedAll: [] });
+
+      fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
+      await screen.findByRole("dialog", { name: "New invitations" });
+      expect(calendarApi.newEventNotifications.get).toHaveBeenCalledTimes(2);
     } finally {
       restoreCalendarApi();
       restoreResizeObserver();

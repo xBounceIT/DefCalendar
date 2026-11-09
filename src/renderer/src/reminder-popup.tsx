@@ -110,8 +110,10 @@ function ReminderPopup() {
     }
 
     let cancelled = false;
+    let receivedUpdate = false;
     const unsubscribe = calendarApi.reminder.onState((nextState) => {
       if (!cancelled) {
+        receivedUpdate = true;
         setState(nextState);
       }
     });
@@ -119,7 +121,7 @@ function ReminderPopup() {
     async function loadState(): Promise<void> {
       try {
         const nextState = await calendarApi.reminder.getState();
-        if (!cancelled) {
+        if (!cancelled && !receivedUpdate) {
           setState(nextState);
         }
       } catch {

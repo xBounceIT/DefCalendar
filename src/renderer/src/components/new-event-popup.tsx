@@ -66,28 +66,39 @@ function NewEventPopup({
   const [overlapErrorEventKey, setOverlapErrorEventKey] = useState<null | string>(null);
   const [overlapPrompt, setOverlapPrompt] = useState<PendingOverlapPrompt | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
-  const lookupSequenceRef = useRef(0);
+  const pendingLookupRef = useRef<{ eventKey: string } | null>(null);
   const hasItems = items.length > 0;
 
   useEffect(() => {
     let cancelled = false;
     let receivedUpdate = false;
+    const updateItems = (next: NewEventNotificationItem[]) => {
+      const eventKeys = new Set(next.map(buildEventReferenceKey));
+      if (pendingLookupRef.current && !eventKeys.has(pendingLookupRef.current.eventKey)) {
+        pendingLookupRef.current = null;
+        setCheckingEventKey(null);
+      }
+      setOverlapPrompt((current) => (current && eventKeys.has(current.eventKey) ? current : null));
+      setOverlapErrorEventKey((current) => (current && eventKeys.has(current) ? current : null));
+      setItems(next);
+    };
 
     const unsubscribe = globalThis.calendarApi.newEventNotifications.onChanged((next) => {
       if (!cancelled) {
         receivedUpdate = true;
-        setItems(next);
+        updateItems(next);
       }
     });
 
     void globalThis.calendarApi.newEventNotifications.get().then((initial) => {
       if (!cancelled && !receivedUpdate) {
-        setItems(initial);
+        updateItems(initial);
       }
     });
 
     return () => {
       cancelled = true;
+      pendingLookupRef.current = null;
       unsubscribe();
     };
   }, []);
@@ -135,21 +146,22 @@ function NewEventPopup({
     };
 
     if (action !== "accept") {
-      lookupSequenceRef.current += 1;
+      pendingLookupRef.current = null;
+      setCheckingEventKey(null);
       setOverlapErrorEventKey(null);
       setOverlapPrompt(null);
       respondMutation.mutate(args);
       return;
     }
 
-    const lookupSequence = lookupSequenceRef.current + 1;
-    lookupSequenceRef.current = lookupSequence;
+    const lookup = { eventKey };
+    pendingLookupRef.current = lookup;
     setCheckingEventKey(eventKey);
     setOverlapErrorEventKey(null);
     setOverlapPrompt(null);
     try {
       const conflicts = await onFindAcceptConflicts(toOverlapTarget(item));
-      if (lookupSequenceRef.current !== lookupSequence) {
+      if (pendingLookupRef.current !== lookup) {
         return;
       }
 
@@ -164,21 +176,33 @@ function NewEventPopup({
 
       respondMutation.mutate(args);
     } catch {
-      if (lookupSequenceRef.current === lookupSequence) {
+      if (pendingLookupRef.current === lookup) {
         setOverlapErrorEventKey(eventKey);
       }
     } finally {
-      if (lookupSequenceRef.current === lookupSequence) {
+      if (pendingLookupRef.current === lookup) {
+        pendingLookupRef.current = null;
         setCheckingEventKey(null);
       }
     }
   };
 
   const handleDismissAll = () => {
+    pendingLookupRef.current = null;
+    setCheckingEventKey(null);
+    setOverlapPrompt(null);
+    setOverlapErrorEventKey(null);
     void globalThis.calendarApi.newEventNotifications.dismissAll();
   };
 
   const handleDismissOne = (item: NewEventNotificationItem) => {
+    const eventKey = buildEventReferenceKey(item);
+    if (pendingLookupRef.current?.eventKey === eventKey) {
+      pendingLookupRef.current = null;
+      setCheckingEventKey(null);
+    }
+    setOverlapPrompt((current) => (current?.eventKey === eventKey ? null : current));
+    setOverlapErrorEventKey((current) => (current === eventKey ? null : current));
     void globalThis.calendarApi.newEventNotifications.dismiss({
       calendarId: item.calendarId,
       eventId: item.eventId,

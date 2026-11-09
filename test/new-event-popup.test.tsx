@@ -216,6 +216,128 @@ function renderPopup(props?: Partial<React.ComponentProps<typeof NewEventPopup>>
 }
 
 describe("new event popup", () => {
+  it.each(["item", "all", "removed", "unmounted"])(
+    "does not accept after the pending lookup is cancelled by %s",
+    async (change) => {
+      expect.hasAssertions();
+      const item = createNotificationItem();
+      const other = createNotificationItem({ eventId: "other", subject: "Other invitation" });
+      const calendarApi = installCalendarApi([item, other]);
+      let publish: (items: NewEventNotificationItem[]) => void = () => undefined;
+      vi.spyOn(calendarApi.newEventNotifications, "onChanged").mockImplementation((listener) => {
+        publish = listener;
+        return () => undefined;
+      });
+      let resolveLookup: (events: CalendarEvent[]) => void = () => undefined;
+      const lookup = new Promise<CalendarEvent[]>((resolve) => {
+        resolveLookup = resolve;
+      });
+      const onFindAcceptConflicts = vi.fn().mockReturnValueOnce(lookup).mockResolvedValue([]);
+      const view = renderPopup({ onFindAcceptConflicts });
+      const title = await screen.findByText(item.subject);
+      fireEvent.click(title.closest("li")!.querySelector(".new-event-popup__action--accept")!);
+      expect(onFindAcceptConflicts).toHaveBeenCalledOnce();
+
+      if (change === "item") {
+        fireEvent.click(title.closest("li")!.querySelector("button")!);
+      } else if (change === "all") {
+        fireEvent.click(screen.getAllByRole("button", { name: "Close" })[0]);
+      } else if (change === "removed") {
+        act(() => publish([other]));
+      } else {
+        view.unmount();
+      }
+
+      await act(async () => {
+        resolveLookup([]);
+        await lookup;
+      });
+      expect(calendarApi.events.respond).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps checking an invitation when a different calendar's matching event id is removed", async () => {
+    expect.hasAssertions();
+    const item = createNotificationItem();
+    const other = createNotificationItem({ calendarId: "calendar-2", subject: "Other invitation" });
+    const calendarApi = installCalendarApi([item, other]);
+    let publish: (items: NewEventNotificationItem[]) => void = () => undefined;
+    vi.spyOn(calendarApi.newEventNotifications, "onChanged").mockImplementation((listener) => {
+      publish = listener;
+      return () => undefined;
+    });
+    let resolveLookup: (events: CalendarEvent[]) => void = () => undefined;
+    const lookup = new Promise<CalendarEvent[]>((resolve) => {
+      resolveLookup = resolve;
+    });
+    renderPopup({ onFindAcceptConflicts: vi.fn().mockReturnValue(lookup) });
+    await screen.findByText(item.subject);
+    fireEvent.click(screen.getAllByRole("button", { name: "Accept" })[0]);
+
+    await act(async () => {
+      publish([item]);
+      resolveLookup([]);
+      await lookup;
+    });
+
+    await waitFor(() => {
+      expect(calendarApi.events.respond).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ calendarId: item.calendarId, eventId: item.eventId }),
+      );
+    });
+    expect(screen.queryByText(other.subject)).toBeNull();
+  });
+
+  it("ignores an old lookup failure while checking a new invitation", async () => {
+    expect.hasAssertions();
+    const item = createNotificationItem();
+    const other = createNotificationItem({ calendarId: "calendar-2", subject: "Other invitation" });
+    const calendarApi = installCalendarApi([item, other]);
+    let publish: (items: NewEventNotificationItem[]) => void = () => undefined;
+    vi.spyOn(calendarApi.newEventNotifications, "onChanged").mockImplementation((listener) => {
+      publish = listener;
+      return () => undefined;
+    });
+    let rejectFirst: (error: Error) => void = () => undefined;
+    const firstLookup = new Promise<CalendarEvent[]>((_resolve, reject) => {
+      rejectFirst = reject;
+    });
+    let resolveSecond: (events: CalendarEvent[]) => void = () => undefined;
+    const secondLookup = new Promise<CalendarEvent[]>((resolve) => {
+      resolveSecond = resolve;
+    });
+    const onFindAcceptConflicts = vi
+      .fn()
+      .mockReturnValueOnce(firstLookup)
+      .mockReturnValueOnce(secondLookup);
+    renderPopup({ onFindAcceptConflicts });
+    await screen.findByText(item.subject);
+    fireEvent.click(screen.getAllByRole("button", { name: "Accept" })[0]);
+    act(() => publish([other]));
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+
+    await act(async () => {
+      rejectFirst(new Error("Old lookup failed"));
+      await firstLookup.catch(() => undefined);
+    });
+    expect(screen.getByRole("button", { name: "Accept" })).toBeDisabled();
+    expect(
+      screen.queryByText("Unable to check for overlapping events. Try again before accepting."),
+    ).toBeNull();
+    expect(calendarApi.events.respond).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveSecond([]);
+      await secondLookup;
+    });
+    await waitFor(() => {
+      expect(calendarApi.events.respond).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ calendarId: other.calendarId, eventId: other.eventId }),
+      );
+    });
+    expect(onFindAcceptConflicts).toHaveBeenCalledTimes(2);
+  });
+
   it("focuses the dialog when pending invitations are present", async () => {
     installCalendarApi([createNotificationItem()]);
 

@@ -33,22 +33,41 @@ function createSettingsFixture(
 }
 
 describe("settings service", () => {
-  it.each(["darwin", "win32"])("routes legacy popup preferences on %s", (platform) => {
-    const originalPlatform = process.platform;
-    Object.defineProperty(process, "platform", { configurable: true, value: platform });
-    onTestFinished(() => {
-      Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
-    });
-    const fixture = createSettingsFixture(["calendar-a"], { newEventPopupEnabled: true });
+  it.each(["darwin", "win32"])(
+    "preserves independent notification preferences on %s",
+    (platform) => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, "platform", { configurable: true, value: platform });
+      onTestFinished(() => {
+        Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
+      });
+      const fixture = createSettingsFixture(["calendar-a"], { newEventPopupEnabled: true });
 
-    expect(fixture.service.getSettings()).toMatchObject({
-      newEventPopupEnabled: platform !== "darwin",
-      systemInviteNotificationsEnabled: platform === "darwin",
-      taskbarInviteNotificationsEnabled: true,
-    });
-    fixture.service.updateSettings({ systemInviteNotificationsEnabled: false });
-    expect(fixture.service.getSettings().systemInviteNotificationsEnabled).toBe(false);
-  });
+      expect(fixture.service.getSettings()).toMatchObject({
+        newEventPopupEnabled: true,
+        systemInviteNotificationsEnabled: false,
+        taskbarInviteNotificationsEnabled: true,
+      });
+      fixture.service.updateSettings({ language: "it" });
+      expect(fixture.readSettings()).toMatchObject({
+        newEventPopupEnabled: true,
+        systemInviteNotificationsEnabled: false,
+      });
+      fixture.service.updateSettings({
+        newEventPopupEnabled: false,
+        systemInviteNotificationsEnabled: true,
+      });
+      expect(fixture.service.getSettings()).toMatchObject({
+        newEventPopupEnabled: false,
+        systemInviteNotificationsEnabled: true,
+      });
+      fixture.service.updateSettings({ newEventPopupEnabled: true });
+      expect(fixture.readSettings()).toMatchObject({
+        newEventPopupEnabled: true,
+        systemInviteNotificationsEnabled: true,
+      });
+    },
+  );
 
   it("persists spelling preferences and onboarding without changing calendar preferences", () => {
     expect.hasAssertions();
