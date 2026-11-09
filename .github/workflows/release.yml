@@ -122,6 +122,9 @@ jobs:
           if [[ -z "${CSC_LINK:-}" ]]; then
             unset CSC_LINK
             signingArgs+=("-c.mac.identity=-" "-c.mac.notarize=false")
+            echo "::warning::macOS artifacts use ad-hoc signing because MAC_CSC_LINK is not configured. Keychain access may require renewed consent after updates; configure a consistent Developer ID Application certificate to preserve the app identity."
+          else
+            signingArgs+=("-c.forceCodeSigning=true" "-c.mac.type=distribution")
           fi
           npm run dist:publish -- --mac --universal "${signingArgs[@]}"
 
