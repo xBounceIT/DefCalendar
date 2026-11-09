@@ -47,11 +47,14 @@ vi.mock("@main/electron-runtime", () => electron);
 const items = [{ calendarId: "calendar-1", eventId: "event-1" }] as NewEventNotificationItem[];
 
 beforeEach(() => {
+  vi.useFakeTimers();
   electron.instances.length = 0;
   electron.load.mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
   vi.unstubAllEnvs();
 });
 
@@ -205,6 +208,130 @@ describe("new event window", () => {
     manager.sync(items, true, true);
     crashed.webHandlers.get("render-process-gone")?.();
     expect(electron.instances[1].close).not.toHaveBeenCalled();
+  });
+
+  it("automatically reopens current invitations after a renderer crash", async () => {
+    const onDismiss = vi.fn();
+    const manager = new NewEventWindowManager(onDismiss);
+    const other = { ...items[0], eventId: "event-2" };
+    manager.sync([...items, other], true, true);
+    electron.instances[0].webHandlers.get("render-process-gone")?.();
+    manager.sync([other], true);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(electron.instances).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(electron.instances).toHaveLength(2);
+    const recovered = electron.instances[1];
+    recovered.webHandlers.get("did-finish-load")?.();
+    recovered.handlers.get("ready-to-show")?.();
+    expect(recovered.focus).toHaveBeenCalledOnce();
+    expect(recovered.webContents.send).toHaveBeenLastCalledWith(
+      IPC_CHANNELS.newEventNotificationsChanged,
+      [other],
+    );
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
+  it.each(["development", "bundled"])(
+    "automatically retries a failed %s load without another invitation",
+    async (entry) => {
+      if (entry === "development") {
+        vi.stubEnv("ELECTRON_RENDERER_URL", "http://localhost:5173");
+      }
+      electron.load.mockRejectedValueOnce(new Error("temporary failure"));
+      const manager = new NewEventWindowManager(vi.fn());
+      manager.sync(items, true, true);
+
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(electron.instances).toHaveLength(2);
+      expect(manager.getWindow()).toBe(electron.instances[1]);
+    },
+  );
+
+  it.each(["disabled", "empty", "closed"])("cancels pending recovery when %s", async (reason) => {
+    const manager = new NewEventWindowManager(vi.fn());
+    manager.sync(items, true, true);
+    electron.instances[0].webHandlers.get("render-process-gone")?.();
+    expect(vi.getTimerCount()).toBe(1);
+
+    if (reason === "closed") {
+      manager.close();
+    } else {
+      manager.sync(reason === "empty" ? [] : items, reason !== "disabled");
+    }
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(vi.getTimerCount()).toBe(0);
+    expect(electron.instances).toHaveLength(1);
+  });
+
+  it("preempts pending recovery when a fresh invitation opens a replacement", async () => {
+    const manager = new NewEventWindowManager(vi.fn());
+    manager.sync(items, true, true);
+    electron.instances[0].webHandlers.get("render-process-gone")?.();
+    manager.sync([...items, { ...items[0], eventId: "event-2" }], true, true);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(vi.getTimerCount()).toBe(0);
+    expect(electron.instances).toHaveLength(2);
+  });
+
+  it("backs off repeated load failures and caps the retry delay", async () => {
+    electron.load.mockRejectedValue(new Error("persistent failure"));
+    const manager = new NewEventWindowManager(vi.fn());
+    manager.sync(items, true, true);
+    await vi.advanceTimersByTimeAsync(0);
+    let delay = 1000;
+
+    for (let attempt = 0; attempt < 7; attempt += 1) {
+      const previousCount = electron.instances.length;
+      await vi.advanceTimersByTimeAsync(delay - 1);
+      expect(electron.instances).toHaveLength(previousCount);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(electron.instances).toHaveLength(previousCount + 1);
+      delay = Math.min(delay * 2, 30_000);
+    }
+
+    expect(vi.getTimerCount()).toBe(1);
+    manager.close();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("schedules only one retry when a crash is followed by a rejected load", async () => {
+    let rejectLoad: (reason: Error) => void = () => undefined;
+    const pendingLoad = new Promise<void>((_resolve, reject) => {
+      rejectLoad = reject;
+    });
+    electron.load.mockReturnValueOnce(pendingLoad);
+    const manager = new NewEventWindowManager(vi.fn());
+    manager.sync(items, true, true);
+    electron.instances[0].webHandlers.get("render-process-gone")?.();
+    rejectLoad(new Error("ERR_ABORTED"));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(electron.instances).toHaveLength(2);
+  });
+
+  it("resets recovery backoff after a replacement loads successfully", async () => {
+    electron.load.mockRejectedValueOnce(new Error("first failure"));
+    electron.load.mockRejectedValueOnce(new Error("second failure"));
+    const manager = new NewEventWindowManager(vi.fn());
+    manager.sync(items, true, true);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(electron.instances).toHaveLength(3);
+    const recovered = electron.instances[2];
+    recovered.webHandlers.get("did-finish-load")?.();
+    recovered.webHandlers.get("render-process-gone")?.();
+
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(electron.instances).toHaveLength(4);
+    expect(manager.getWindow()).toBe(electron.instances[3]);
   });
 
   it("ignores a failed load after that popup was replaced", async () => {

@@ -6,6 +6,8 @@ import { IPC_CHANNELS, type NewEventNotificationItem } from "@shared/ipc";
 
 const POPUP_WIDTH = 560;
 const POPUP_HEIGHT = 460;
+const INITIAL_RETRY_DELAY_MS = 1000;
+const MAX_RETRY_DELAY_MS = 30_000;
 
 class NewEventWindowManager {
   private window: ElectronBrowserWindow | null = null;
@@ -13,6 +15,9 @@ class NewEventWindowManager {
   private isLoaded = false;
   private isReadyToShow = false;
   private shouldFocusOnReady = false;
+  private enabled = false;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private retryDelayMs = INITIAL_RETRY_DELAY_MS;
 
   constructor(
     private readonly onDismiss: () => void,
@@ -21,8 +26,10 @@ class NewEventWindowManager {
 
   sync(items: NewEventNotificationItem[], enabled: boolean, focus = false): void {
     this.items = items;
+    this.enabled = enabled;
     if (!enabled || items.length === 0) {
       this.close();
+      this.retryDelayMs = INITIAL_RETRY_DELAY_MS;
       return;
     }
 
@@ -30,6 +37,7 @@ class NewEventWindowManager {
       return;
     }
 
+    this.cancelRetry();
     const window = this.ensureWindow();
     this.pushState();
     if (!this.isReadyToShow) {
@@ -40,11 +48,32 @@ class NewEventWindowManager {
   }
 
   close(): void {
+    this.cancelRetry();
     const window = this.window;
     this.releaseWindow();
     if (window && !window.isDestroyed()) {
       window.close();
     }
+  }
+
+  private cancelRetry(): void {
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+  }
+
+  private scheduleRetry(): void {
+    if (!this.enabled || this.items.length === 0 || this.retryTimer) {
+      return;
+    }
+
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      this.sync(this.items, this.enabled, true);
+    }, this.retryDelayMs);
+    this.retryTimer.unref();
+    this.retryDelayMs = Math.min(this.retryDelayMs * 2, MAX_RETRY_DELAY_MS);
   }
 
   private releaseWindow(): void {
@@ -105,6 +134,7 @@ class NewEventWindowManager {
     window.webContents.on("did-finish-load", () => {
       if (this.window === window) {
         this.isLoaded = true;
+        this.retryDelayMs = INITIAL_RETRY_DELAY_MS;
         this.pushState();
       }
     });
@@ -128,6 +158,7 @@ class NewEventWindowManager {
     const closeFailedWindow = () => {
       if (this.window === window) {
         this.close();
+        this.scheduleRetry();
       }
     };
     window.webContents.on("render-process-gone", closeFailedWindow);
