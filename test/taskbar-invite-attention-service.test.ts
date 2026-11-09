@@ -217,6 +217,21 @@ describe("taskbar invite attention service", () => {
     expect(window.flashFrame).toHaveBeenCalledWith(true);
   });
 
+  it("keeps the tray window hidden when the separate invite popup is enabled", () => {
+    const window = createWindow({ isVisible: vi.fn().mockReturnValue(false) });
+    const fixture = createService({
+      items: [createItem()],
+      settings: { ...createDefaultSettings(), newEventPopupEnabled: true },
+      window,
+    });
+
+    fixture.service.start();
+
+    expect(window.showInactive).not.toHaveBeenCalled();
+    expect(window.flashFrame).toHaveBeenCalledWith(true);
+    expect(window.setOverlayIcon).toHaveBeenCalledWith(expect.anything(), expect.any(String));
+  });
+
   it("updates and clears attention as the invite queue changes", () => {
     expect.hasAssertions();
     resetMocks();

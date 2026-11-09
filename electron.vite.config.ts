@@ -48,6 +48,7 @@ export default defineConfig({
         input: {
           index: resolve(currentDirectory, "src/renderer/index.html"),
           "reminder-popup": resolve(currentDirectory, "src/renderer/reminder-popup.html"),
+          "new-event-popup": resolve(currentDirectory, "src/renderer/new-event-popup.html"),
         },
       },
     },

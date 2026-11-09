@@ -72,8 +72,8 @@ class TaskbarInviteAttentionService {
   }
 
   sync(items: NewEventNotificationItem[]): void {
-    const invitesEnabled =
-      this.dependencies.settings.getSettings().taskbarInviteNotificationsEnabled;
+    const settings = this.dependencies.settings.getSettings();
+    const invitesEnabled = settings.taskbarInviteNotificationsEnabled;
     if (process.platform === "darwin") {
       const eventKeys = new Set([
         ...(invitesEnabled ? items.map(buildEventReferenceKey) : []),
@@ -95,7 +95,9 @@ class TaskbarInviteAttentionService {
       return;
     }
 
-    this.showHiddenWindowForAttention(window);
+    if (!settings.newEventPopupEnabled) {
+      this.showHiddenWindowForAttention(window);
+    }
     this.showOverlayIcon(window, count);
     if (window.isFocused()) {
       this.stopFlashing();

@@ -5,6 +5,7 @@ import GraphCalendarService from "@main/graph/calendar-service";
 import { IPC_CHANNELS } from "@shared/ipc";
 import MsalAuthService from "@main/auth/msal-auth-service";
 import NewEventNotificationService from "@main/notifications/new-event-notification-service";
+import NewEventWindowManager from "@main/notifications/new-event-window";
 import ReminderService from "@main/reminders/reminder-service";
 import ReminderSyncService from "@main/reminders/reminder-sync-service";
 import ReminderWindowManager from "@main/reminders/reminder-window";
@@ -62,6 +63,7 @@ async function bootstrap(): Promise<void> {
 
   const reminderManager = new ReminderWindowManager();
   const newEventNotifications = new NewEventNotificationService();
+  const newEventWindow = new NewEventWindowManager(() => newEventNotifications.clear());
   const auth = new MsalAuthService(
     config,
     new SafeStorageTokenCache(join(app.getPath("userData"), "msal-token-cache.bin")),
@@ -192,6 +194,7 @@ async function bootstrap(): Promise<void> {
     newEventNotifications,
     reminders,
     reminderManager,
+    newEventWindow,
     settings,
     systemInviteNotifications,
     taskbarInviteAttention,
@@ -238,6 +241,7 @@ async function bootstrap(): Promise<void> {
     reminders.stop();
     reminderSync.stop();
     systemInviteNotifications.stop();
+    newEventWindow.close();
     taskbarInviteAttention.stop();
     sync.stop();
     trayService?.destroy();
