@@ -212,17 +212,19 @@ describe("macOS installer handoff", () => {
     expect(openPathMock).not.toHaveBeenCalled();
     expect(spawnMock).toHaveBeenCalledExactlyOnceWith(
       "/bin/sh",
-      [
-        "-c",
-        expect.any(String),
-        "defcalendar-update",
-        String(process.pid),
-        "/Applications/DefCalendar.app",
-        "1.0.0",
-        diskImage,
-        "/Applications/DefCalendar.app",
-      ],
-      { cwd: "/", detached: true, stdio: "ignore" },
+      ["-c", expect.any(String), "defcalendar-update"],
+      {
+        cwd: "/",
+        detached: true,
+        stdio: "ignore",
+        env: expect.objectContaining({
+          DEFCALENDAR_UPDATE_PID: String(process.pid),
+          DEFCALENDAR_UPDATE_DESTINATION: "/Applications/DefCalendar.app",
+          DEFCALENDAR_UPDATE_VERSION: "1.0.0",
+          DEFCALENDAR_UPDATE_DMG: diskImage,
+          DEFCALENDAR_UPDATE_BUNDLE: "/Applications/DefCalendar.app",
+        }),
+      },
     );
     expect(spawnMock.mock.results[0]!.value.unref).toHaveBeenCalledOnce();
     expect(quitMock).toHaveBeenCalledOnce();
@@ -261,7 +263,7 @@ describe("macOS installer handoff", () => {
   ])("watches the installed destination for %s", async (exe, destination) => {
     paths.exe = exe;
     await installMacUpdate(diskImage, "1.0.0");
-    expect(spawnMock.mock.calls[0]![1][4]).toBe(destination);
+    expect(spawnMock.mock.calls[0]![2].env.DEFCALENDAR_UPDATE_DESTINATION).toBe(destination);
   });
 
   async function runHelper(mode = "success") {
@@ -287,7 +289,10 @@ ${script}`;
       process.platform === "win32"
         ? join(process.env.ProgramFiles ?? "C:/Program Files", "Git/bin/bash.exe")
         : "/bin/sh";
-    return execFileAsync(shellPath, ["-c", harness, ...args.slice(2)], { timeout: 5000 });
+    return execFileAsync(shellPath, ["-c", harness, ...args.slice(2)], {
+      env: spawnMock.mock.calls[0]![2].env,
+      timeout: 5000,
+    });
   }
 
   it("opens the DMG after exit and relaunches only after version and signature verification", async () => {
@@ -300,6 +305,16 @@ ${script}`;
 
   it("does not open the installer when the parent does not quit", async () => {
     await expect(runHelper("parent-running")).rejects.toMatchObject({ code: 1, stdout: "" });
+  });
+
+  it("keeps shell metacharacters in paths as literal data", async () => {
+    diskImage = join(paths.userData, "image ' $(printf INJECTED); `printf CODE`.dmg");
+    await writeFile(diskImage, payload);
+    const { stdout } = await runHelper();
+    expect(stdout.trim().split(/\r?\n/)).toStrictEqual([
+      `OPEN:2:${diskImage}`,
+      "OPEN:5:/Applications/DefCalendar.app",
+    ]);
   });
 
   it("reopens the existing app if opening the DMG fails after quitting", async () => {

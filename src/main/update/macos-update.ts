@@ -100,6 +100,7 @@ export async function downloadMacUpdate(
 }
 
 const RELAUNCH_SCRIPT = `
+set -- "$DEFCALENDAR_UPDATE_PID" "$DEFCALENDAR_UPDATE_DESTINATION" "$DEFCALENDAR_UPDATE_VERSION" "$DEFCALENDAR_UPDATE_DMG" "$DEFCALENDAR_UPDATE_BUNDLE"
 attempt=0
 while kill -0 "$1" 2>/dev/null; do
   if [ "$attempt" -ge 60 ]; then
@@ -133,20 +134,19 @@ export async function installMacUpdate(dmgPath: string, version: string): Promis
   const destination = applications.some((directory) => bundle.startsWith(directory))
     ? bundle
     : "/Applications/DefCalendar.app";
-  const helper = spawn(
-    "/bin/sh",
-    [
-      "-c",
-      RELAUNCH_SCRIPT,
-      "defcalendar-update",
-      String(process.pid),
-      destination,
-      version.replace(/^v/, ""),
-      dmgPath,
-      bundle,
-    ],
-    { cwd: "/", detached: true, stdio: "ignore" },
-  );
+  const helper = spawn("/bin/sh", ["-c", RELAUNCH_SCRIPT, "defcalendar-update"], {
+    cwd: "/",
+    detached: true,
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      DEFCALENDAR_UPDATE_PID: String(process.pid),
+      DEFCALENDAR_UPDATE_DESTINATION: destination,
+      DEFCALENDAR_UPDATE_VERSION: version.replace(/^v/, ""),
+      DEFCALENDAR_UPDATE_DMG: dmgPath,
+      DEFCALENDAR_UPDATE_BUNDLE: bundle,
+    },
+  });
   await new Promise<void>((resolve, reject) => {
     helper.once("error", reject);
     helper.once("spawn", resolve);
