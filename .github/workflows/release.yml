@@ -122,17 +122,25 @@ jobs:
           if [[ -z "${CSC_LINK:-}" ]]; then
             unset CSC_LINK
             signingArgs+=("-c.mac.identity=-" "-c.mac.notarize=false")
+            echo "::warning::macOS artifacts use ad-hoc signing because MAC_CSC_LINK is not configured. Keychain access may require renewed consent after updates; configure a consistent Developer ID Application certificate to preserve the app identity."
+          else
+            signingArgs+=("-c.forceCodeSigning=true" "-c.mac.type=distribution")
           fi
           npm run dist:publish -- --mac --universal "${signingArgs[@]}"
 
       - name: Verify macOS universal binaries
         if: matrix.platform == 'mac'
         shell: bash
+        env:
+          REQUIRE_DEVELOPER_ID: ${{ secrets.MAC_CSC_LINK != '' }}
         run: |
           app="release/mac-universal/DefCalendar.app/Contents"
           lipo "$app/MacOS/DefCalendar" -verify_arch x86_64 arm64
           lipo "$app/Resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node" -verify_arch x86_64 arm64
           codesign --verify --deep --strict "$app/.."
+          if [[ "$REQUIRE_DEVELOPER_ID" == "true" ]]; then
+            codesign --verify --strict --test-requirement '=anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists' "$app/.."
+          fi
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :NSUserNotificationAlertStyle' "$app/Info.plist")" == "alert" ]]
 
   publish:
