@@ -112,7 +112,6 @@ function renderDialog(
     <I18nextProvider i18n={i18n}>
       <QueryClientProvider client={queryClient}>
         <SettingsDialog
-          calendars={[]}
           isOpen
           onClose={vi.fn()}
           onSave={onSave}
@@ -790,14 +789,44 @@ describe("settings dialog", () => {
     await screen.findByRole("button", { name: "Show introduction" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  it("offers manual installation in About without a restart action on macOS", async () => {
+  it.each([true, false])(
+    "enables download only when checking finds an update: %s",
+    async (hasUpdate) => {
+      renderDialog(null, { manualInstall: true });
+      const available = await globalThis.calendarApi.updates.getStatus();
+      vi.mocked(globalThis.calendarApi.updates.getStatus).mockResolvedValue({
+        ...available,
+        state: "idle",
+        latestVersion: null,
+      });
+      vi.mocked(globalThis.calendarApi.updates.check).mockResolvedValue({
+        ...available,
+        state: hasUpdate ? "available" : "not_available",
+      });
+      fireEvent.click(screen.getByRole("button", { name: "About" }));
+      const check = await screen.findByRole("button", { name: "Check for updates" });
+      const download = screen.getByRole("button", { name: "Download and install" });
+      await waitFor(() => expect(check).toBeEnabled());
+      expect(download).toBeDisabled();
+      fireEvent.click(check);
+      await screen.findByText(hasUpdate ? "Update available: v0.3.0" : "You are up to date.");
+      expect(download).toHaveProperty("disabled", !hasUpdate);
+      expect(globalThis.calendarApi.updates.download).not.toHaveBeenCalled();
+    },
+  );
+
+  it("offers download and install with DMG replacement instructions on macOS", async () => {
     renderDialog(null, { manualInstall: true });
     fireEvent.click(screen.getByRole("button", { name: "About" }));
 
-    fireEvent.click(await screen.findByRole("button", { name: "Open download page" }));
+    const download = await screen.findByRole("button", { name: "Download and install" });
+    await waitFor(() => expect(download).toBeEnabled());
+    fireEvent.click(download);
 
     await waitFor(() => expect(globalThis.calendarApi.updates.download).toHaveBeenCalledOnce());
-    expect(screen.getByText(/updates require manual installation/)).toBeInTheDocument();
+    expect(screen.getByText(/confirm Replace/)).toHaveTextContent(
+      /reopens automatically.*eject the disk/,
+    );
     expect(screen.queryByRole("button", { name: "Restart to install" })).toBeNull();
     expect(globalThis.calendarApi.updates.install).not.toHaveBeenCalled();
   });
@@ -806,9 +835,11 @@ describe("settings dialog", () => {
     renderDialog(null);
     fireEvent.click(screen.getByRole("button", { name: "About" }));
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Download update" })).toBeEnabled(),
+      expect(screen.getByRole("button", { name: "Download and install" })).toBeEnabled(),
     );
-    expect(screen.getByRole("button", { name: "Restart to install" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Download and install" }));
+    await waitFor(() => expect(globalThis.calendarApi.updates.download).toHaveBeenCalledOnce());
+    expect(globalThis.calendarApi.updates.install).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Open download page" })).toBeNull();
   });
 

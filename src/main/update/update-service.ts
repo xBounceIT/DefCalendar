@@ -1,24 +1,31 @@
 import { autoUpdater, type UpdateDownloadedEvent } from "electron-updater";
-import { app, shell } from "@main/electron-runtime";
+import { app } from "@main/electron-runtime";
+import {
+  downloadMacUpdate,
+  installMacUpdate,
+  type MacUpdateRelease,
+} from "@main/update/macos-update";
 import type { AppUpdateStatus } from "@shared/schemas";
-import { buildReleaseUrl } from "@shared/update-release";
 
 interface ReleaseNote {
   note: null | string;
   version?: string;
 }
 
-interface ReleaseInfo {
-  releaseName?: string;
+interface ReleaseInfo extends MacUpdateRelease {
   releaseNotes?: null | string | ReleaseNote[];
-  version: string;
 }
 
 class UpdateService {
   private readonly listeners = new Set<(status: AppUpdateStatus) => void>();
   private readonly isPackaged = app.isPackaged;
-  private openingRelease = false;
+  private checking = false;
+  private downloading = false;
+  private installing = false;
+  private release: ReleaseInfo | null = null;
+  private dmgPath: string | null = null;
   private status: AppUpdateStatus = {
+    revision: 0,
     checkedAt: null,
     currentVersion: `v${app.getVersion()}`,
     downloadPercent: null,
@@ -51,6 +58,11 @@ class UpdateService {
     });
 
     autoUpdater.on("update-available", (info) => {
+      if (this.downloading || this.installing) {
+        return;
+      }
+      this.release = info;
+      this.dmgPath = null;
       this.setStatus({
         ...this.status,
         checkedAt: new Date().toISOString(),
@@ -63,6 +75,11 @@ class UpdateService {
     });
 
     autoUpdater.on("update-not-available", (info) => {
+      if (this.downloading || this.installing) {
+        return;
+      }
+      this.release = null;
+      this.dmgPath = null;
       this.setStatus({
         ...this.status,
         checkedAt: new Date().toISOString(),
@@ -75,6 +92,9 @@ class UpdateService {
     });
 
     autoUpdater.on("download-progress", (progress) => {
+      if (!Number.isFinite(progress.percent)) {
+        return;
+      }
       this.setStatus({
         ...this.status,
         checkedAt: this.status.checkedAt ?? new Date().toISOString(),
@@ -97,11 +117,13 @@ class UpdateService {
     });
 
     autoUpdater.on("error", (error) => {
+      const state = this.installing ? "downloaded" : this.downloading ? "available" : "error";
+      this.installing = false;
       this.setStatus({
         ...this.status,
         checkedAt: this.status.checkedAt ?? new Date().toISOString(),
         error: error.message,
-        state: "error",
+        state,
       });
     });
   }
@@ -119,13 +141,24 @@ class UpdateService {
   }
 
   async checkForUpdates(): Promise<AppUpdateStatus> {
-    if (!this.isPackaged) {
+    if (
+      !this.isPackaged ||
+      this.checking ||
+      this.downloading ||
+      this.installing ||
+      this.status.state === "downloaded"
+    ) {
       return this.status;
     }
 
+    this.checking = true;
     try {
       const checked = await autoUpdater.checkForUpdates();
+      if (this.downloading || this.installing || this.getStatus().state === "downloaded") {
+        return this.status;
+      }
       if (!checked) {
+        this.release = null;
         this.setStatus({
           ...this.status,
           checkedAt: new Date().toISOString(),
@@ -136,6 +169,8 @@ class UpdateService {
       }
 
       if (checked.isUpdateAvailable && checked.updateInfo) {
+        this.release = checked.updateInfo;
+        this.dmgPath = null;
         this.setStatus({
           ...this.status,
           checkedAt: new Date().toISOString(),
@@ -148,6 +183,7 @@ class UpdateService {
         return this.status;
       }
 
+      this.release = null;
       this.setStatus({
         ...this.status,
         checkedAt: new Date().toISOString(),
@@ -159,6 +195,9 @@ class UpdateService {
       });
       return this.status;
     } catch (error) {
+      if (this.downloading || this.installing) {
+        return this.status;
+      }
       this.setStatus({
         ...this.status,
         checkedAt: new Date().toISOString(),
@@ -166,6 +205,8 @@ class UpdateService {
         state: "error",
       });
       return this.status;
+    } finally {
+      this.checking = false;
     }
   }
 
@@ -174,62 +215,78 @@ class UpdateService {
       return this.status;
     }
 
-    if (this.status.state !== "available" && this.status.state !== "downloading") {
+    if (this.downloading || this.installing || this.status.state !== "available") {
       return this.status;
     }
 
-    if (this.status.manualInstall) {
-      const version = this.status.latestVersion;
-      if (!version || this.openingRelease) {
-        return this.status;
-      }
-
-      this.openingRelease = true;
-      const openingStatus = { ...this.status, error: null };
-      this.setStatus(openingStatus);
-      try {
-        await shell.openExternal(buildReleaseUrl(version));
-      } catch (error) {
-        if (this.status === openingStatus) {
-          this.setStatus({
-            ...openingStatus,
-            error: this.toErrorMessage(error),
-          });
-        }
-      } finally {
-        this.openingRelease = false;
-      }
-
-      return this.status;
-    }
-
+    this.downloading = true;
     this.setStatus({
       ...this.status,
-      downloadPercent: this.status.downloadPercent ?? 0,
+      downloadPercent: 0,
       error: null,
       state: "downloading",
     });
 
     try {
-      await autoUpdater.downloadUpdate();
+      if (this.status.manualInstall) {
+        if (!this.release) {
+          throw new Error("Check for updates before downloading.");
+        }
+        this.dmgPath = await downloadMacUpdate(this.release, (percent) => {
+          this.setStatus({ ...this.status, downloadPercent: percent, state: "downloading" });
+        });
+        this.setStatus({ ...this.status, downloadPercent: 100, state: "downloaded" });
+      } else {
+        await autoUpdater.downloadUpdate();
+      }
+      await this.installUpdate();
     } catch (error) {
       this.setStatus({
         ...this.status,
         checkedAt: this.status.checkedAt ?? new Date().toISOString(),
         error: this.toErrorMessage(error),
-        state: "error",
+        state: "available",
       });
+    } finally {
+      this.downloading = false;
     }
 
     return this.status;
   }
 
-  installUpdate(): void {
-    if (!this.isPackaged || this.status.manualInstall || this.status.state !== "downloaded") {
+  async installUpdate(): Promise<void> {
+    if (!this.isPackaged || this.installing || this.status.state !== "downloaded") {
       return;
     }
 
-    autoUpdater.quitAndInstall();
+    this.installing = true;
+    this.setStatus({ ...this.status, error: null });
+    try {
+      if (this.status.manualInstall) {
+        if (!this.dmgPath || !this.status.latestVersion) {
+          throw new Error("Download the macOS update before installing.");
+        }
+        await installMacUpdate(this.dmgPath, this.status.latestVersion);
+      } else {
+        autoUpdater.quitAndInstall(true, true);
+      }
+    } catch (error) {
+      this.installing = false;
+      const missingDmg =
+        this.status.manualInstall &&
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "ENOENT";
+      if (missingDmg) {
+        this.dmgPath = null;
+      }
+      this.setStatus({
+        ...this.status,
+        downloadPercent: missingDmg ? null : this.status.downloadPercent,
+        error: this.toErrorMessage(error),
+        state: missingDmg ? "available" : this.status.state,
+      });
+    }
   }
 
   setAllowPrerelease(allow: boolean): void {
@@ -268,10 +325,10 @@ class UpdateService {
   }
 
   private setStatus(status: AppUpdateStatus): void {
-    this.status = status;
+    this.status = { ...status, revision: this.status.revision + 1 };
 
     for (const listener of this.listeners) {
-      listener(status);
+      listener(this.status);
     }
   }
 }

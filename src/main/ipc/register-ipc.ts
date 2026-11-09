@@ -693,7 +693,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
 
   ipcMain.handle(IPC_CHANNELS.updatesInstall, async (event) => {
     validateMainSender(event);
-    dependencies.updates.installUpdate();
+    await dependencies.updates.installUpdate();
   });
 
   ipcMain.handle(IPC_CHANNELS.settingsGet, async (event) => {

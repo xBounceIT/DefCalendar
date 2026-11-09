@@ -493,6 +493,7 @@ const appUpdateStateSchema = z.enum([
 ]);
 
 const appUpdateStatusSchema = z.object({
+  revision: z.number().int().nonnegative().default(0),
   state: appUpdateStateSchema,
   manualInstall: z.boolean(),
   currentVersion: z.string().min(1),
