@@ -62,6 +62,7 @@ import type UpdateService from "@main/update/update-service";
 import { app, dialog, ipcMain, net, shell } from "@main/electron-runtime";
 import { showAndFocusMainWindow, setTitleBarScrim } from "@main/window";
 import { IPC_CHANNELS } from "@shared/ipc";
+import buildEventReferenceKey from "@shared/event-reference";
 import {
   attendeeAvailabilityArgsSchema,
   attendeeAvailabilitySchema,
@@ -840,15 +841,15 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     broadcast(IPC_CHANNELS.authStateChanged, state);
   });
 
+  let previousInviteKeys = new Set(
+    dependencies.newEventNotifications.getItems().map(buildEventReferenceKey),
+  );
   dependencies.newEventNotifications.onChange((items) => {
+    const inviteKeys = new Set(items.map(buildEventReferenceKey));
+    const hasNewInvites = [...inviteKeys].some((key) => !previousInviteKeys.has(key));
+    previousInviteKeys = inviteKeys;
     broadcast(IPC_CHANNELS.newEventNotificationsChanged, items);
-    if (items.length === 0) {
-      return;
-    }
-    if (
-      process.platform === "darwin" ||
-      !dependencies.settings.getSettings().newEventPopupEnabled
-    ) {
+    if (!hasNewInvites || !dependencies.settings.getSettings().newEventPopupEnabled) {
       return;
     }
 

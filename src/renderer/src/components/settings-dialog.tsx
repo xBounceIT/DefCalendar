@@ -306,21 +306,19 @@ function NotificationsSection({
       <p className="settings-description">{t("settings.sections.notifications.description")}</p>
       <div className="settings-fields">
         <div className="settings-group">
-          {!macOS && (
-            <label className="toggle-field settings-group__row">
-              <input
-                checked={newEventPopupEnabled}
-                onChange={(e) => {
-                  onSave({ newEventPopupEnabled: e.target.checked });
-                }}
-                type="checkbox"
-              />
-              <span className="toggle-slider" />
-              <span className="settings-group__label">
-                {t("settings.sections.notifications.newEventPopup")}
-              </span>
-            </label>
-          )}
+          <label className="toggle-field settings-group__row">
+            <input
+              checked={newEventPopupEnabled}
+              onChange={(e) => {
+                onSave({ newEventPopupEnabled: e.target.checked });
+              }}
+              type="checkbox"
+            />
+            <span className="toggle-slider" />
+            <span className="settings-group__label">
+              {t("settings.sections.notifications.newEventPopup")}
+            </span>
+          </label>
           <label className="toggle-field settings-group__row">
             <input
               checked={systemInviteNotificationsEnabled}

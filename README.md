@@ -10,6 +10,7 @@ Desktop calendar app for Microsoft 365 Exchange Online built with Electron.
 - Participant free/busy indicators when creating meetings, refreshed as attendees or times change
 - Local SQLite cache with configurable periodic sync
 - Desktop reminder popup with snooze/dismiss and meeting join
+- In-app invitation popups on Windows and macOS, including new invitations synced at startup; popup and system notification preferences are independent in Settings > Notifications
 - System tray integration
 - React 19 renderer with month/week/day views and mini calendar
 - Internationalization (English/Italian)

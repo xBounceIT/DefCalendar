@@ -79,6 +79,38 @@ describe("reminder popup", () => {
     restoreCalendarApi();
   });
 
+  it.each([false, true])(
+    "keeps a newer live state when the initial snapshot arrives (empty %s)",
+    async (empty) => {
+      expect.hasAssertions();
+      const stale = createReminder();
+      const fresh = createReminder({ dedupeKey: "fresh", subject: "Fresh reminder" });
+      const calendarApi = installCalendarApi(stale);
+      let publish: (state: ReminderDialogState) => void = () => undefined;
+      vi.spyOn(calendarApi.reminder, "onState").mockImplementation((listener) => {
+        publish = listener;
+        return () => undefined;
+      });
+      let resolveInitial: (state: ReminderDialogState) => void = () => undefined;
+      const initial = new Promise<ReminderDialogState>((resolve) => {
+        resolveInitial = resolve;
+      });
+      vi.spyOn(calendarApi.reminder, "getState").mockReturnValue(initial);
+      render(<ReminderPopup />);
+
+      await act(async () => {
+        publish({ items: empty ? [] : [fresh], locale: "en", timeFormat: "24h", theme: "dark" });
+        resolveInitial({ items: [stale], locale: "en", timeFormat: "system", theme: "light" });
+        await initial;
+      });
+
+      expect(calendarApi.reminder.getState).toHaveBeenCalledOnce();
+      expect(screen.queryByText(stale.subject)).toBeNull();
+      expect(Boolean(screen.queryByText(fresh.subject))).toBe(!empty);
+      expect(document.documentElement.dataset.theme).toBe("dark");
+    },
+  );
+
   it("renders the future start countdown", async () => {
     expect.hasAssertions();
     vi.spyOn(Date, "now").mockReturnValue(new Date("2026-03-30T09:45:00.000Z").getTime());

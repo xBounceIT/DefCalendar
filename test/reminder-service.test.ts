@@ -186,20 +186,36 @@ describe("reminder service", () => {
     vi.clearAllMocks();
   });
 
-  it("publishes macOS reminders without creating or focusing the custom popup", async () => {
-    Object.defineProperty(process, "platform", { configurable: true, value: "darwin" });
-    const fixture = createFixture({ candidates: [createCandidate()] });
-    const listener = vi.fn();
-    fixture.service.onState(listener);
+  it.each([false, true])(
+    "shows macOS reminders in the custom popup with local override %s",
+    async (localReminderOverrideEnabled) => {
+      expect.hasAssertions();
+      Object.defineProperty(process, "platform", { configurable: true, value: "darwin" });
+      const candidate = createCandidate();
+      const fixture = createFixture({
+        candidates: [candidate],
+        localEvents: [candidate.event],
+        localReminderOverrideEnabled,
+      });
+      const listener = vi.fn();
+      fixture.service.onState(listener);
 
-    await fixture.service.checkNow();
-    await fixture.service.checkNow();
+      await fixture.service.checkNow("startup");
+      fixture.reminderManager.hasWindow.mockReturnValue(true);
+      await fixture.service.checkNow();
 
-    expect(listener).toHaveBeenCalledOnce();
-    expect(fixture.service.getState().items).toHaveLength(1);
-    expect(fixture.reminderManager.show).not.toHaveBeenCalled();
-    expect(fixture.reminderManager.hasWindow).not.toHaveBeenCalled();
-  });
+      expect(listener).toHaveBeenCalledOnce();
+      expect(fixture.service.getState().items).toHaveLength(1);
+      expect(fixture.reminderManager.show).toHaveBeenCalledExactlyOnceWith(
+        fixture.service.getState(),
+        true,
+      );
+
+      fixture.service.dismiss(fixture.service.getState().items[0].dedupeKey);
+      expect(fixture.service.getState().items).toHaveLength(0);
+      expect(fixture.reminderManager.close).toHaveBeenCalledOnce();
+    },
+  );
 
   it.each([false, true])(
     "filters old initial imports on a tick without dismissing other calendars with local override %s",
