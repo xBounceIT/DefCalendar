@@ -51,6 +51,7 @@ import { isMissingGraphItemError } from "@main/graph/calendar-service";
 import type GraphCalendarService from "@main/graph/calendar-service";
 import type MsalAuthService from "@main/auth/msal-auth-service";
 import type NewEventNotificationService from "@main/notifications/new-event-notification-service";
+import type NewEventWindowManager from "@main/notifications/new-event-window";
 import type ReminderService from "@main/reminders/reminder-service";
 import type ReminderWindowManager from "@main/reminders/reminder-window";
 import type SettingsService from "@main/settings/settings-service";
@@ -60,7 +61,7 @@ import type TaskbarInviteAttentionService from "@main/notifications/taskbar-invi
 import type { SyncService } from "@main/sync/sync-service";
 import type UpdateService from "@main/update/update-service";
 import { app, dialog, ipcMain, net, shell } from "@main/electron-runtime";
-import { showAndFocusMainWindow, setTitleBarScrim } from "@main/window";
+import { setTitleBarScrim } from "@main/window";
 import { IPC_CHANNELS } from "@shared/ipc";
 import buildEventReferenceKey from "@shared/event-reference";
 import {
@@ -77,6 +78,7 @@ interface RegisterIpcDependencies {
   eventActions: EventActionService;
   graph: GraphCalendarService;
   newEventNotifications: NewEventNotificationService;
+  newEventWindow: NewEventWindowManager;
   reminders: ReminderService;
   reminderManager: ReminderWindowManager;
   settings: SettingsService;
@@ -186,6 +188,12 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     }
   };
 
+  const validateInviteSender = (event: IpcMainInvokeEvent) => {
+    if (!dependencies.newEventWindow.ownsWebContents(event.sender)) {
+      validateMainSender(event);
+    }
+  };
+
   const ensureEventsRangeForList = async (args: EventListArgs) => {
     try {
       await dependencies.sync.ensureEventsRange(args);
@@ -207,7 +215,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   };
 
   ipcMain.handle(IPC_CHANNELS.appGetLocale, async (event) => {
-    validateMainSender(event);
+    validateInviteSender(event);
     return app.getLocale();
   });
 
@@ -370,7 +378,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsList, async (event, input) => {
-    validateMainSender(event);
+    validateInviteSender(event);
     const args = eventListArgsSchema.parse(input);
     await ensureEventsRangeForList(args);
     return dependencies.db.listEvents(args);
@@ -468,7 +476,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.eventsRespond, async (event, input) => {
-    validateMainSender(event);
+    validateInviteSender(event);
     const args = respondToEventArgsSchema.parse(input);
     await dependencies.eventActions.respondToEvent(args);
   });
@@ -697,7 +705,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.settingsGet, async (event) => {
-    validateMainSender(event);
+    validateInviteSender(event);
     return dependencies.settings.getSettings();
   });
 
@@ -753,6 +761,11 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
 
     void dependencies.reminders.checkNow();
     dependencies.systemInviteNotifications.refresh();
+    dependencies.newEventWindow.sync(
+      dependencies.newEventNotifications.getItems(),
+      updatedSettings.newEventPopupEnabled,
+      updatedSettings.newEventPopupEnabled && !previousSettings.newEventPopupEnabled,
+    );
     dependencies.taskbarInviteAttention.refresh();
     return updatedSettings;
   });
@@ -814,18 +827,18 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.newEventNotificationsGet, async (event) => {
-    validateMainSender(event);
+    validateInviteSender(event);
     return dependencies.newEventNotifications.getItems();
   });
 
   ipcMain.handle(IPC_CHANNELS.newEventNotificationsDismiss, async (event, input) => {
-    validateMainSender(event);
+    validateInviteSender(event);
     const args = eventReferenceArgsSchema.parse(input);
     dependencies.newEventNotifications.dismiss(args);
   });
 
   ipcMain.handle(IPC_CHANNELS.newEventNotificationsDismissAll, async (event) => {
-    validateMainSender(event);
+    validateInviteSender(event);
     dependencies.newEventNotifications.clear();
   });
 
@@ -849,16 +862,11 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     const hasNewInvites = [...inviteKeys].some((key) => !previousInviteKeys.has(key));
     previousInviteKeys = inviteKeys;
     broadcast(IPC_CHANNELS.newEventNotificationsChanged, items);
-    if (!hasNewInvites || !dependencies.settings.getSettings().newEventPopupEnabled) {
-      return;
-    }
-
-    const window = dependencies.getMainWindow();
-    if (!window || window.isDestroyed()) {
-      return;
-    }
-
-    showAndFocusMainWindow(window);
+    dependencies.newEventWindow.sync(
+      items,
+      dependencies.settings.getSettings().newEventPopupEnabled,
+      hasNewInvites,
+    );
   });
 
   dependencies.sync.onStatus((status) => {

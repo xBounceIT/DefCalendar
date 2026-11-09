@@ -9,9 +9,10 @@ import { I18nextProvider, initReactI18next } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import NewEventPopup from "../src/renderer/src/components/new-event-popup";
+import NewEventWindow from "../src/renderer/src/components/new-event-window";
 import enTranslations from "../src/renderer/src/i18n/locales/en.json";
 import type { CalendarApi, NewEventNotificationItem } from "../src/shared/ipc";
-import type { CalendarEvent } from "../src/shared/schemas";
+import { createDefaultSettings, type CalendarEvent } from "../src/shared/schemas";
 
 const originalCalendarApiDescriptor = Object.getOwnPropertyDescriptor(globalThis, "calendarApi");
 
@@ -216,6 +217,192 @@ function renderPopup(props?: Partial<React.ComponentProps<typeof NewEventPopup>>
 }
 
 describe("new event popup", () => {
+  it("checks overlaps and responds inside the independent popup", async () => {
+    const item = createNotificationItem();
+    const calendarApi = installCalendarApi([item]);
+    vi.mocked(calendarApi.settings.get).mockResolvedValue({
+      ...createDefaultSettings(),
+      language: "en",
+      theme: "dark",
+      visibleCalendarIds: ["calendar-1"],
+    });
+    vi.mocked(calendarApi.events.list).mockResolvedValue([createCalendarEvent()]);
+
+    const view = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <NewEventWindow />
+      </QueryClientProvider>,
+    );
+    await screen.findByText(item.subject);
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+
+    await screen.findByRole("alertdialog");
+    expect(calendarApi.events.list).toHaveBeenCalledWith({
+      calendarIds: ["calendar-1"],
+      start: item.start,
+      end: item.end,
+    });
+    expect(calendarApi.events.respond).not.toHaveBeenCalled();
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    fireEvent.click(screen.getByRole("button", { name: "Accept anyway" }));
+    await waitFor(() =>
+      expect(calendarApi.events.respond).toHaveBeenCalledWith({
+        action: "accept",
+        calendarId: item.calendarId,
+        comment: "",
+        eventId: item.eventId,
+        sendResponse: true,
+      }),
+    );
+    expect(calendarApi.events.openInApp).not.toHaveBeenCalled();
+    view.unmount();
+  });
+
+  it("checks the latest selected calendars before accepting from an already open popup", async () => {
+    const item = createNotificationItem();
+    const calendarApi = installCalendarApi([item]);
+    const initialSettings = {
+      ...createDefaultSettings(),
+      language: "en" as const,
+      visibleCalendarIds: ["calendar-1"],
+    };
+    vi.mocked(calendarApi.settings.get).mockResolvedValue(initialSettings);
+    vi.mocked(calendarApi.events.list).mockResolvedValue([
+      createCalendarEvent({ calendarId: "calendar-2" }),
+    ]);
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <NewEventWindow />
+      </QueryClientProvider>,
+    );
+    await screen.findByText(item.subject);
+
+    vi.mocked(calendarApi.settings.get).mockResolvedValue({
+      ...initialSettings,
+      visibleCalendarIds: ["calendar-1", "calendar-2"],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+
+    await screen.findByRole("alertdialog");
+    expect(calendarApi.events.list).toHaveBeenCalledWith({
+      calendarIds: ["calendar-1", "calendar-2"],
+      start: item.start,
+      end: item.end,
+    });
+    expect(calendarApi.events.respond).not.toHaveBeenCalled();
+  });
+
+  it("does not accept when current calendar selections cannot be read", async () => {
+    const item = createNotificationItem();
+    const calendarApi = installCalendarApi([item]);
+    vi.mocked(calendarApi.settings.get).mockResolvedValue({
+      ...createDefaultSettings(),
+      language: "en",
+      visibleCalendarIds: ["calendar-1"],
+    });
+    vi.mocked(calendarApi.events.list).mockResolvedValue([]);
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <NewEventWindow />
+      </QueryClientProvider>,
+    );
+    await screen.findByText(item.subject);
+
+    vi.mocked(calendarApi.settings.get).mockRejectedValue(new Error("settings unavailable"));
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+
+    await screen.findByText("Unable to check for overlapping events. Try again before accepting.");
+    expect(calendarApi.events.list).not.toHaveBeenCalled();
+    expect(calendarApi.events.respond).not.toHaveBeenCalled();
+  });
+
+  it("lets the invitation popup be closed while initial settings are still loading", () => {
+    const calendarApi = installCalendarApi([createNotificationItem()]);
+    vi.mocked(calendarApi.settings.get).mockReturnValue(new Promise(() => undefined));
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <NewEventWindow />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    expect(calendarApi.newEventNotifications.dismissAll).toHaveBeenCalledOnce();
+    expect(calendarApi.events.respond).not.toHaveBeenCalled();
+  });
+
+  it("reports initial settings errors and lets the user retry without opening the main app", async () => {
+    const item = createNotificationItem();
+    const calendarApi = installCalendarApi([item]);
+    vi.mocked(calendarApi.settings.get)
+      .mockRejectedValueOnce(new Error("settings unavailable"))
+      .mockResolvedValue({ ...createDefaultSettings(), language: "en" });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <NewEventWindow />
+      </QueryClientProvider>,
+    );
+
+    await screen.findByRole("alert");
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    await screen.findByText(item.subject);
+    expect(calendarApi.events.openInApp).not.toHaveBeenCalled();
+    expect(calendarApi.settings.get).toHaveBeenCalledTimes(2);
+  });
+
+  it("ignores stale settings refreshes and removes popup subscriptions on unmount", async () => {
+    const item = createNotificationItem();
+    const calendarApi = installCalendarApi([item]);
+    const settings = {
+      ...createDefaultSettings(),
+      language: "en" as const,
+      theme: "dark" as const,
+    };
+    vi.mocked(calendarApi.settings.get).mockResolvedValue(settings);
+    const listeners = new Set<(next: NewEventNotificationItem[]) => void>();
+    vi.mocked(calendarApi.newEventNotifications.onChanged).mockImplementation((listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    });
+    const view = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <NewEventWindow />
+      </QueryClientProvider>,
+    );
+    await screen.findByText(item.subject);
+
+    let resolveStale: (value: typeof settings) => void = () => undefined;
+    const stale = new Promise<typeof settings>((resolve) => {
+      resolveStale = resolve;
+    });
+    vi.mocked(calendarApi.settings.get)
+      .mockReturnValueOnce(stale)
+      .mockResolvedValue({ ...settings, theme: "light" });
+    fireEvent(window, new Event("focus"));
+    act(() => {
+      for (const listener of listeners) {
+        listener([item]);
+      }
+    });
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe("light"));
+    await act(async () => {
+      resolveStale(settings);
+      await stale;
+    });
+
+    expect(document.documentElement.dataset.theme).toBe("light");
+    view.unmount();
+    const previousCalls = vi.mocked(calendarApi.settings.get).mock.calls.length;
+    fireEvent(window, new Event("focus"));
+    expect(listeners.size).toBe(0);
+    expect(calendarApi.settings.get).toHaveBeenCalledTimes(previousCalls);
+  });
+
   it.each(["item", "all", "removed", "unmounted"])(
     "does not accept after the pending lookup is cancelled by %s",
     async (change) => {

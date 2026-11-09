@@ -1829,7 +1829,7 @@ describe("app startup", () => {
   );
 
   it.each(["Win32", "MacIntel"])(
-    "shows pending invitations at startup with only popups enabled on %s",
+    "leaves invitations to the separate window when popups are enabled on %s",
     async (platform) => {
       const platformMock = vi.spyOn(navigator, "platform", "get").mockReturnValue(platform);
       try {
@@ -1853,9 +1853,9 @@ describe("app startup", () => {
         renderApp();
 
         await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
-        await expect(screen.findByText("New invitations")).resolves.not.toBeNull();
-        expect(screen.queryByText("Planning invite")).not.toBeNull();
-        expect(calendarApi.newEventNotifications.get).toHaveBeenCalledOnce();
+        expect(screen.queryByText("New invitations")).toBeNull();
+        expect(screen.queryByText("Planning invite")).toBeNull();
+        expect(calendarApi.newEventNotifications.get).not.toHaveBeenCalled();
       } finally {
         platformMock.mockRestore();
         restoreCalendarApi();

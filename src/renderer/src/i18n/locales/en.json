@@ -576,6 +576,8 @@
   },
   "newEventPopup": {
     "title": "New invitations",
+    "loadError": "Unable to load invitations. Try again.",
+    "retry": "Try again",
     "subtitle_one": "{{count}} new event awaiting your response",
     "subtitle_other": "{{count}} new events awaiting your response",
     "noOrganizer": "Unknown organizer",

@@ -126,6 +126,11 @@ function createFixture() {
   };
   const mainWebContents = { send: vi.fn(), session: spellingSession };
   const reminderWebContents = {};
+  const inviteWebContents = {};
+  const newEventWindow = {
+    ownsWebContents: vi.fn((contents: unknown) => contents === inviteWebContents),
+    sync: vi.fn(),
+  };
   const mainWindow = {
     focus: vi.fn(),
     isDestroyed: vi.fn().mockReturnValue(false),
@@ -296,12 +301,14 @@ function createFixture() {
     graph: graph as never,
     newEventNotifications: newEventNotifications as never,
     reminderManager: reminderManager as never,
+    newEventWindow: newEventWindow as never,
     reminders: reminders as never,
     settings: settings as never,
     systemInviteNotifications: systemInviteNotifications as never,
     taskbarInviteAttention: taskbarInviteAttention as never,
     sync: sync as never,
     updates: updates as never,
+    onThemePreferenceChange: vi.fn(),
   });
 
   return {
@@ -314,6 +321,8 @@ function createFixture() {
     mainWebContents,
     mainWindow,
     newEventNotifications,
+    newEventWindow,
+    inviteWebContents,
     reminderManager,
     reminderWebContents,
     reminders,
@@ -324,6 +333,59 @@ function createFixture() {
 }
 
 describe("register ipc", () => {
+  it("allows the invite popup to read its state and respond without opening the app", async () => {
+    const fixture = createFixture();
+    const sender = { sender: fixture.inviteWebContents };
+    const reference = { calendarId: "calendar-1", eventId: "event-1" };
+
+    await expect(fixture.handlers.get(IPC_CHANNELS.settingsGet)?.(sender)).resolves.toMatchObject({
+      newEventPopupEnabled: false,
+    });
+    await expect(fixture.handlers.get(IPC_CHANNELS.appGetLocale)?.(sender)).resolves.toBe("en-US");
+    await expect(
+      fixture.handlers.get(IPC_CHANNELS.newEventNotificationsGet)?.(sender),
+    ).resolves.toEqual([]);
+    await fixture.handlers.get(IPC_CHANNELS.newEventNotificationsDismiss)?.(sender, reference);
+    await fixture.handlers.get(IPC_CHANNELS.eventsList)?.(sender, {
+      calendarIds: ["calendar-1"],
+      start: "2026-03-30T10:00:00.000Z",
+      end: "2026-03-30T11:00:00.000Z",
+    });
+    await fixture.handlers.get(IPC_CHANNELS.eventsRespond)?.(sender, {
+      ...reference,
+      action: "tentative",
+      comment: "",
+      sendResponse: true,
+    });
+
+    expect(fixture.newEventNotifications.dismiss).toHaveBeenCalledWith(reference);
+    expect(fixture.graph.respondToEvent).toHaveBeenCalled();
+    expect(fixture.mainWindow.focus).not.toHaveBeenCalled();
+    await expect(fixture.handlers.get(IPC_CHANNELS.settingsUpdate)?.(sender, {})).rejects.toThrow(
+      "untrusted sender",
+    );
+    await expect(
+      fixture.handlers.get(IPC_CHANNELS.newEventNotificationsGet)?.({ sender: {} }),
+    ).rejects.toThrow("untrusted sender");
+  });
+
+  it("closes the independent popup when its preference is disabled", async () => {
+    const fixture = createFixture();
+    fixture.settings.getSettings.mockReturnValue({
+      ...createDefaultSettings(),
+      newEventPopupEnabled: true,
+    });
+    await fixture.handlers.get(IPC_CHANNELS.settingsUpdate)?.(
+      { sender: fixture.mainWebContents },
+      { newEventPopupEnabled: false },
+    );
+    expect(fixture.newEventWindow.sync).toHaveBeenCalledWith([], false, false);
+    expect(fixture.newEventWindow.sync.mock.invocationCallOrder[0]).toBeLessThan(
+      fixture.taskbarInviteAttention.refresh.mock.invocationCallOrder[0],
+    );
+    expect(fixture.mainWindow.show).not.toHaveBeenCalled();
+  });
+
   it("validates map coordinates and sender before loading tiles", async () => {
     expect.hasAssertions();
     const map = vi.spyOn(OsmMapService.prototype, "render").mockResolvedValue([]);
@@ -1408,63 +1470,87 @@ describe("register ipc", () => {
     expect(fixture.taskbarInviteAttention.refresh).toHaveBeenCalledOnce();
   });
 
-  it.each([false, true])("honors the macOS invite popup preference %s", (newEventPopupEnabled) => {
-    expect.hasAssertions();
-    const originalPlatform = process.platform;
-    Object.defineProperty(process, "platform", { configurable: true, value: "darwin" });
-    onTestFinished(() => {
-      Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
-    });
-    const fixture = createFixture();
-    fixture.settings.getSettings.mockReturnValue({
-      ...createDefaultSettings(),
-      newEventPopupEnabled,
-    });
-    fixture.mainWindow.isMinimized.mockReturnValue(true);
-    const listener = fixture.newEventNotifications.onChange.mock.calls[0][0];
+  it.each([false, true])(
+    "honors the invite popup preference without raising the main window: %s",
+    (newEventPopupEnabled) => {
+      expect.hasAssertions();
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, "platform", { configurable: true, value: "darwin" });
+      onTestFinished(() => {
+        Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
+      });
+      const fixture = createFixture();
+      fixture.settings.getSettings.mockReturnValue({
+        ...createDefaultSettings(),
+        newEventPopupEnabled,
+      });
+      fixture.mainWindow.isMinimized.mockReturnValue(true);
+      const listener = fixture.newEventNotifications.onChange.mock.calls[0][0];
 
-    listener([{ calendarId: "calendar-1", eventId: "event-1" }]);
+      listener([{ calendarId: "calendar-1", eventId: "event-1" }]);
 
-    expect(fixture.mainWebContents.send).toHaveBeenCalledWith(
-      IPC_CHANNELS.newEventNotificationsChanged,
-      [{ calendarId: "calendar-1", eventId: "event-1" }],
-    );
-    const expectedCalls = newEventPopupEnabled ? 1 : 0;
-    expect(fixture.mainWindow.restore).toHaveBeenCalledTimes(expectedCalls);
-    expect(fixture.mainWindow.show).toHaveBeenCalledTimes(expectedCalls);
-    expect(fixture.mainWindow.focus).toHaveBeenCalledTimes(expectedCalls);
+      expect(fixture.mainWebContents.send).toHaveBeenCalledWith(
+        IPC_CHANNELS.newEventNotificationsChanged,
+        [{ calendarId: "calendar-1", eventId: "event-1" }],
+      );
+      expect(fixture.newEventWindow.sync).toHaveBeenCalledWith(
+        [{ calendarId: "calendar-1", eventId: "event-1" }],
+        newEventPopupEnabled,
+        true,
+      );
+      expect(fixture.mainWindow.restore).not.toHaveBeenCalled();
+      expect(fixture.mainWindow.show).not.toHaveBeenCalled();
+      expect(fixture.mainWindow.focus).not.toHaveBeenCalled();
 
-    listener([]);
-    expect(fixture.mainWindow.focus).toHaveBeenCalledTimes(expectedCalls);
-  });
+      listener([]);
+      expect(fixture.newEventWindow.sync).toHaveBeenLastCalledWith([], newEventPopupEnabled, false);
+      expect(fixture.mainWindow.focus).not.toHaveBeenCalled();
+    },
+  );
 
-  it.each(["darwin", "win32"])("only focuses new invitation arrivals on %s", (platform) => {
-    expect.hasAssertions();
-    const originalPlatform = process.platform;
-    Object.defineProperty(process, "platform", { configurable: true, value: platform });
-    onTestFinished(() => {
-      Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
-    });
-    const fixture = createFixture();
-    fixture.settings.getSettings.mockReturnValue({
-      ...createDefaultSettings(),
-      newEventPopupEnabled: true,
-    });
-    const listener = fixture.newEventNotifications.onChange.mock.calls[0][0];
-    const first = { calendarId: "calendar-1", eventId: "shared:event" };
-    const second = { calendarId: "calendar-2", eventId: "shared:event" };
+  it.each(["darwin", "win32"])(
+    "only focuses the popup for new invitation arrivals on %s",
+    (platform) => {
+      expect.hasAssertions();
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, "platform", { configurable: true, value: platform });
+      onTestFinished(() => {
+        Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
+      });
+      const fixture = createFixture();
+      fixture.settings.getSettings.mockReturnValue({
+        ...createDefaultSettings(),
+        newEventPopupEnabled: true,
+      });
+      const listener = fixture.newEventNotifications.onChange.mock.calls[0][0];
+      const first = { calendarId: "calendar-1", eventId: "shared:event" };
+      const second = { calendarId: "calendar-2", eventId: "shared:event" };
 
-    listener([first, second]);
-    listener([second, first]);
-    listener([second]);
+      listener([first, second]);
+      listener([second, first]);
+      listener([second]);
 
-    expect(fixture.mainWindow.focus).toHaveBeenCalledOnce();
-    expect(fixture.mainWebContents.send).toHaveBeenCalledTimes(3);
+      expect(fixture.newEventWindow.sync.mock.calls.map((call) => call[2])).toEqual([
+        true,
+        false,
+        false,
+      ]);
+      expect(fixture.mainWindow.focus).not.toHaveBeenCalled();
+      expect(fixture.mainWebContents.send).toHaveBeenCalledTimes(3);
 
-    listener([]);
-    listener([first]);
-    expect(fixture.mainWindow.focus).toHaveBeenCalledTimes(2);
-  });
+      listener([]);
+      listener([first]);
+      expect(fixture.newEventWindow.sync.mock.calls.map((call) => call[2])).toEqual([
+        true,
+        false,
+        false,
+        false,
+        true,
+      ]);
+      expect(fixture.mainWindow.show).not.toHaveBeenCalled();
+      expect(fixture.mainWindow.focus).not.toHaveBeenCalled();
+    },
+  );
 
   it("keeps a declined attendee event locally when Graph can no longer fetch it", async () => {
     const fixture = createFixture();

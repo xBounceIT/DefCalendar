@@ -576,6 +576,8 @@
   },
   "newEventPopup": {
     "title": "Nuovi inviti",
+    "loadError": "Impossibile caricare gli inviti. Riprova.",
+    "retry": "Riprova",
     "subtitle_one": "{{count}} nuovo evento in attesa di risposta",
     "subtitle_other": "{{count}} nuovi eventi in attesa di risposta",
     "noOrganizer": "Organizzatore sconosciuto",

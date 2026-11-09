@@ -192,7 +192,8 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     signedIn &&
     editorState === null &&
     settingsQuery.data !== undefined &&
-    (appSettings.newEventPopupEnabled || (appSettings.taskbarInviteNotificationsEnabled ?? true));
+    !appSettings.newEventPopupEnabled &&
+    (appSettings.taskbarInviteNotificationsEnabled ?? true);
 
   const calendarsQuery = useQuery({
     enabled: signedIn,

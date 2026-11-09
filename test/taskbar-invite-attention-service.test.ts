@@ -68,6 +68,7 @@ function createWindow(overrides: Partial<MockWindow> = {}): MockWindow {
 
 function createService(args?: {
   items?: NewEventNotificationItem[];
+  popup?: MockWindow | null;
   settings?: UserSettings;
   window?: MockWindow | null;
 }) {
@@ -76,6 +77,7 @@ function createService(args?: {
   const items = args?.items ?? [];
   const settings = args?.settings ?? createDefaultSettings();
   const window = args?.window === undefined ? createWindow() : args.window;
+  const getAttentionWindow = vi.fn(() => args?.popup ?? window);
   const newEventNotifications = {
     getItems: vi.fn().mockReturnValue(items),
     onChange: vi.fn((nextListener: ItemsListener) => {
@@ -98,7 +100,7 @@ function createService(args?: {
     }),
   };
   const service = new TaskbarInviteAttentionService({
-    getMainWindow: () => window as never,
+    getAttentionWindow: () => getAttentionWindow() as never,
     newEventNotifications: newEventNotifications as never,
     reminders,
     settings: settingsService as never,
@@ -113,6 +115,7 @@ function createService(args?: {
       return listener;
     },
     newEventNotifications,
+    getAttentionWindow,
     service,
     settings: settingsService,
     window,
@@ -215,6 +218,114 @@ describe("taskbar invite attention service", () => {
       "1 pending event invitation",
     );
     expect(window.flashFrame).toHaveBeenCalledWith(true);
+  });
+
+  it("keeps the tray window hidden when the separate invite popup is enabled", () => {
+    const window = createWindow({ isVisible: vi.fn().mockReturnValue(false) });
+    const popup = createWindow();
+    const fixture = createService({
+      items: [createItem()],
+      popup,
+      settings: { ...createDefaultSettings(), newEventPopupEnabled: true },
+      window,
+    });
+
+    fixture.service.start();
+
+    expect(window.showInactive).not.toHaveBeenCalled();
+    expect(window.flashFrame).not.toHaveBeenCalled();
+    expect(window.setOverlayIcon).not.toHaveBeenCalled();
+    expect(popup.setOverlayIcon).toHaveBeenCalledWith(
+      expect.anything(),
+      "1 pending event invitation",
+    );
+    expect(popup.flashFrame).toHaveBeenCalledWith(true);
+  });
+
+  it("clears the old attention target when the popup becomes available or is disabled", () => {
+    const window = createWindow();
+    const popup = createWindow();
+    const fixture = createService({ items: [createItem()], window });
+    fixture.service.start();
+
+    fixture.settings.getSettings.mockReturnValue({
+      ...createDefaultSettings(),
+      newEventPopupEnabled: true,
+    });
+    fixture.getAttentionWindow.mockReturnValue(popup);
+    fixture.service.refresh();
+
+    expect(window.flashFrame).toHaveBeenLastCalledWith(false);
+    expect(window.setOverlayIcon).toHaveBeenLastCalledWith(null, "");
+    expect(popup.flashFrame).toHaveBeenLastCalledWith(true);
+    expect(popup.setOverlayIcon).toHaveBeenLastCalledWith(
+      expect.anything(),
+      "1 pending event invitation",
+    );
+
+    fixture.getAttentionWindow.mockReturnValue(window);
+    fixture.settings.getSettings.mockReturnValue(createDefaultSettings());
+    fixture.service.refresh();
+
+    expect(popup.flashFrame).toHaveBeenLastCalledWith(false);
+    expect(popup.setOverlayIcon).toHaveBeenLastCalledWith(null, "");
+    expect(window.flashFrame).toHaveBeenLastCalledWith(true);
+  });
+
+  it("clears popup attention when taskbar notifications are turned off independently", () => {
+    const popup = createWindow();
+    const fixture = createService({
+      items: [createItem()],
+      popup,
+      settings: { ...createDefaultSettings(), newEventPopupEnabled: true },
+    });
+    fixture.service.start();
+    fixture.settings.getSettings.mockReturnValue({
+      ...createDefaultSettings(),
+      newEventPopupEnabled: true,
+      taskbarInviteNotificationsEnabled: false,
+    });
+    fixture.service.refresh();
+
+    expect(popup.flashFrame).toHaveBeenLastCalledWith(false);
+    expect(popup.setOverlayIcon).toHaveBeenLastCalledWith(null, "");
+    expect(fixture.window?.showInactive).not.toHaveBeenCalled();
+  });
+
+  it("clears attention from the tracked popup when it closes before the queue update", () => {
+    const popup = createWindow();
+    const window = createWindow({ isVisible: vi.fn().mockReturnValue(false) });
+    const fixture = createService({
+      items: [createItem()],
+      popup,
+      window,
+      settings: { ...createDefaultSettings(), newEventPopupEnabled: true },
+    });
+    fixture.service.start();
+    fixture.getAttentionWindow.mockReturnValue(window);
+    fixture.listener?.([]);
+
+    expect(popup.flashFrame).toHaveBeenLastCalledWith(false);
+    expect(popup.setOverlayIcon).toHaveBeenLastCalledWith(null, "");
+    expect(window.showInactive).not.toHaveBeenCalled();
+  });
+
+  it("stops flashing when the popup receives focus without clearing its badge", () => {
+    const popup = createWindow();
+    const fixture = createService({
+      items: [createItem()],
+      popup,
+      settings: { ...createDefaultSettings(), newEventPopupEnabled: true },
+    });
+    fixture.service.start();
+    popup.isFocused.mockReturnValue(true);
+    fixture.service.refresh();
+
+    expect(popup.flashFrame).toHaveBeenLastCalledWith(false);
+    expect(popup.setOverlayIcon).toHaveBeenLastCalledWith(
+      expect.anything(),
+      "1 pending event invitation",
+    );
   });
 
   it("updates and clears attention as the invite queue changes", () => {
