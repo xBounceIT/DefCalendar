@@ -100,7 +100,7 @@ export async function downloadMacUpdate(
 }
 
 const RELAUNCH_SCRIPT = `
-set -- "$DEFCALENDAR_UPDATE_PID" "$DEFCALENDAR_UPDATE_DESTINATION" "$DEFCALENDAR_UPDATE_VERSION" "$DEFCALENDAR_UPDATE_DMG" "$DEFCALENDAR_UPDATE_BUNDLE"
+set -- "$DEFCALENDAR_UPDATE_PID" "$DEFCALENDAR_UPDATE_DESTINATION" "$DEFCALENDAR_UPDATE_VERSION" "$DEFCALENDAR_UPDATE_DMG" "$DEFCALENDAR_UPDATE_BUNDLE" "$DEFCALENDAR_UPDATE_USER_APPLICATION"
 attempt=0
 while kill -0 "$1" 2>/dev/null; do
   if [ "$attempt" -ge 60 ]; then
@@ -115,7 +115,7 @@ if ! /usr/bin/open "$4"; then
 fi
 attempt=0
 while [ "$attempt" -lt 1800 ]; do
-  for destination in "$2" "/Applications/DefCalendar.app"; do
+  for destination in "$2" "/Applications/DefCalendar.app" "$6"; do
     version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$destination/Contents/Info.plist" 2>/dev/null)
     if [ "$version" = "$3" ] && /usr/bin/codesign --verify --deep --strict "$destination" 2>/dev/null; then
       /usr/bin/open "$destination"
@@ -130,7 +130,8 @@ done
 export async function installMacUpdate(dmgPath: string, version: string): Promise<void> {
   await access(dmgPath);
   const bundle = posix.resolve(app.getPath("exe"), "../../..");
-  const applications = ["/Applications/", `${app.getPath("home")}/Applications/`];
+  const userApplications = posix.join(app.getPath("home"), "Applications");
+  const applications = ["/Applications/", `${userApplications}/`];
   const destination = applications.some((directory) => bundle.startsWith(directory))
     ? bundle
     : "/Applications/DefCalendar.app";
@@ -145,6 +146,7 @@ export async function installMacUpdate(dmgPath: string, version: string): Promis
       DEFCALENDAR_UPDATE_VERSION: version.replace(/^v/, ""),
       DEFCALENDAR_UPDATE_DMG: dmgPath,
       DEFCALENDAR_UPDATE_BUNDLE: bundle,
+      DEFCALENDAR_UPDATE_USER_APPLICATION: posix.join(userApplications, "DefCalendar.app"),
     },
   });
   await new Promise<void>((resolve, reject) => {

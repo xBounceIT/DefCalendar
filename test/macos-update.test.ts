@@ -223,6 +223,7 @@ describe("macOS installer handoff", () => {
           DEFCALENDAR_UPDATE_VERSION: "1.0.0",
           DEFCALENDAR_UPDATE_DMG: diskImage,
           DEFCALENDAR_UPDATE_BUNDLE: "/Applications/DefCalendar.app",
+          DEFCALENDAR_UPDATE_USER_APPLICATION: "/Users/test/Applications/DefCalendar.app",
         }),
       },
     );
@@ -272,7 +273,8 @@ describe("macOS installer handoff", () => {
     const script = args[1]!
       .replaceAll("/usr/bin/open", "open_test")
       .replaceAll("/usr/libexec/PlistBuddy", "plist_test")
-      .replaceAll("/usr/bin/codesign", "verify_test");
+      .replaceAll("/usr/bin/codesign", "verify_test")
+      .replace('"$attempt" -lt 1800', '"$attempt" -lt 6');
     const harness = `
 ticks=0
 kill() { ${mode === "parent-running" ? "return 0" : '[ "$ticks" -lt 2 ]'}; }
@@ -282,7 +284,13 @@ open_test() {
   ${mode === "open-error" ? 'case "$1" in *.dmg) return 1;; esac' : ""}
   return 0
 }
-plist_test() { if [ "$ticks" -lt 4 ]; then printf 0.5.0; else printf 1.0.0; fi; }
+plist_test() {
+  if [ "$ticks" -lt 4 ] || { [ "$DEFCALENDAR_TEST_USER_ONLY" = 1 ] && [ "$3" != "/Users/test/Applications/DefCalendar.app/Contents/Info.plist" ]; }; then
+    printf 0.5.0
+  else
+    printf 1.0.0
+  fi
+}
 verify_test() { [ "$ticks" -ge 5 ]; }
 ${script}`;
     const shellPath =
@@ -290,7 +298,10 @@ ${script}`;
         ? join(process.env.ProgramFiles ?? "C:/Program Files", "Git/bin/bash.exe")
         : "/bin/sh";
     return execFileAsync(shellPath, ["-c", harness, ...args.slice(2)], {
-      env: spawnMock.mock.calls[0]![2].env,
+      env: {
+        ...spawnMock.mock.calls[0]![2].env,
+        DEFCALENDAR_TEST_USER_ONLY: mode === "user-install" ? "1" : "0",
+      },
       timeout: 5000,
     });
   }
@@ -305,6 +316,19 @@ ${script}`;
 
   it("does not open the installer when the parent does not quit", async () => {
     await expect(runHelper("parent-running")).rejects.toMatchObject({ code: 1, stdout: "" });
+  });
+
+  it.each([
+    "/Volumes/DefCalendar/DefCalendar.app/Contents/MacOS/DefCalendar",
+    "/Users/test/Downloads/DefCalendar.app/Contents/MacOS/DefCalendar",
+    "/private/var/AppTranslocation/random/DefCalendar.app/Contents/MacOS/DefCalendar",
+  ])("relaunches a per-user installation when updating from %s", async (exe) => {
+    paths.exe = exe;
+    const { stdout } = await runHelper("user-install");
+    expect(stdout.trim().split(/\r?\n/)).toStrictEqual([
+      `OPEN:2:${diskImage}`,
+      "OPEN:5:/Users/test/Applications/DefCalendar.app",
+    ]);
   });
 
   it("keeps shell metacharacters in paths as literal data", async () => {
