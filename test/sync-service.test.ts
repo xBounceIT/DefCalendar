@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { SyncService } from "../src/main/sync/sync-service";
+import NewEventNotificationService from "../src/main/notifications/new-event-notification-service";
 import { DAY_MS } from "../src/shared/duration";
 import type {
   CalendarEvent,
@@ -41,6 +42,7 @@ interface SyncFixture {
     upsertCalendars: ReturnType<typeof vi.fn>;
   };
   graph: {
+    getEvent: ReturnType<typeof vi.fn>;
     listCalendarView: ReturnType<typeof vi.fn>;
     listCalendars: ReturnType<typeof vi.fn>;
     listContacts: ReturnType<typeof vi.fn>;
@@ -51,6 +53,8 @@ interface SyncFixture {
     getItems: ReturnType<typeof vi.fn>;
     onChange: ReturnType<typeof vi.fn>;
     recordCandidates: ReturnType<typeof vi.fn>;
+    reconcile: ReturnType<typeof vi.fn>;
+    reload: ReturnType<typeof vi.fn>;
   };
   reminders: {
     checkNow: ReturnType<typeof vi.fn>;
@@ -166,6 +170,7 @@ function createFixture(args?: {
   };
 
   const graph = {
+    getEvent: vi.fn().mockRejectedValue(new Error("item not found")),
     listCalendarView: vi.fn().mockResolvedValue([]),
     listCalendars: vi.fn().mockResolvedValue(calendars),
     listContacts: vi.fn().mockResolvedValue([]),
@@ -210,6 +215,8 @@ function createFixture(args?: {
     getItems: vi.fn().mockReturnValue([]),
     onChange: vi.fn(),
     recordCandidates: vi.fn(),
+    reconcile: vi.fn((_events, _previous, _notify, persist?: () => void) => persist?.()),
+    reload: vi.fn(),
   };
 
   const service = new SyncService(
@@ -688,6 +695,164 @@ describe("sync service", () => {
     expect(fixture.reminders.checkNow).toHaveBeenCalledOnce();
   });
 
+  it("retains closed invitations through syncs and exposes later updates and cancellations", async () => {
+    const fixture = createFixture({ newEventPopupEnabled: true });
+    const notifications = new NewEventNotificationService(() =>
+      Date.parse("2026-03-30T00:00:00.000Z"),
+    );
+    fixture.newEventNotifications.getItems.mockImplementation(() => notifications.getItems());
+    fixture.newEventNotifications.reconcile.mockImplementation(
+      (events, previous, notify, persist) =>
+        notifications.reconcile(events, previous, notify, persist),
+    );
+    fixture.newEventNotifications.recordCandidates.mockImplementation((events) =>
+      notifications.recordCandidates(events),
+    );
+    const invite = createEvent({ id: "invite-1", isOrganizer: false, responseStatus: null });
+    fixture.graph.listCalendarView.mockResolvedValue([invite]);
+    await fixture.service.syncAll("manual");
+    notifications.hideAll();
+    fixture.db.hasNotificationFired.mockReturnValue(true);
+    fixture.db.listEvents.mockReturnValue([invite]);
+    await fixture.service.syncAll("manual");
+    expect(notifications.getItems()).toEqual([expect.objectContaining({ popupDismissed: true })]);
+    const updated = { ...invite, subject: "Updated meeting" };
+    fixture.graph.listCalendarView.mockResolvedValue([updated]);
+    await fixture.service.syncAll("manual");
+    expect(notifications.getItems()).toEqual([
+      expect.objectContaining({
+        kind: "updated",
+        popupDismissed: false,
+        subject: "Updated meeting",
+      }),
+    ]);
+    const accepted = { ...updated, responseStatus: { response: "accepted", time: null } };
+    fixture.db.listEvents.mockReturnValue([updated]);
+    fixture.graph.listCalendarView.mockResolvedValue([accepted]);
+    await fixture.service.syncAll("manual");
+    expect(notifications.getItems()).toEqual([]);
+    fixture.db.listEvents.mockReturnValue([accepted]);
+    fixture.graph.listCalendarView.mockResolvedValue([]);
+    await fixture.service.syncAll("manual");
+    expect(notifications.getItems()).toEqual([expect.objectContaining({ kind: "cancelled" })]);
+  });
+
+  it.each(["manual", "on-demand"])(
+    "preserves local responses and deletions during missing-item recovery: %s",
+    async (mode) => {
+      const fixture = createFixture({ newEventPopupEnabled: true });
+      const answered = createEvent({
+        id: "answered",
+        isOrganizer: false,
+        responseStatus: null,
+        lastModifiedDateTime: "2026-03-30T08:00:00.000Z",
+      });
+      const deleted = createEvent({ id: "deleted", isOrganizer: false, responseStatus: null });
+      const accepted = {
+        ...answered,
+        responseStatus: { response: "accepted", time: "2026-03-30T09:00:00.000Z" },
+      };
+      let cache = [answered, deleted];
+      fixture.db.listEvents.mockImplementation(() => cache);
+      fixture.graph.listCalendarView.mockResolvedValue([answered]);
+      const recovery = createDeferred<CalendarEvent>();
+      fixture.graph.getEvent.mockReturnValue(recovery.promise);
+      const notifications = new NewEventNotificationService(() =>
+        Date.parse("2026-03-30T00:00:00.000Z"),
+      );
+      notifications.recordCandidates([answered, deleted]);
+      fixture.newEventNotifications.reconcile.mockImplementation(
+        (events, previous, notify, persist) =>
+          notifications.reconcile(events, previous, notify, persist),
+      );
+      fixture.newEventNotifications.getItems.mockImplementation(() => notifications.getItems());
+      fixture.newEventNotifications.recordCandidates.mockImplementation((events) =>
+        notifications.recordCandidates(events),
+      );
+      const result =
+        mode === "manual"
+          ? fixture.service.syncAll("manual")
+          : fixture.service.ensureEventsRange({
+              calendarIds: ["calendar-a"],
+              start: "2026-03-30T00:00:00.000Z",
+              end: "2026-03-31T00:00:00.000Z",
+            });
+      await vi.waitFor(() => expect(fixture.graph.getEvent).toHaveBeenCalledOnce());
+      cache = [accepted];
+      notifications.clear();
+      recovery.reject(new Error("item not found"));
+      await result;
+      expect(fixture.db.replaceEventsForCalendarRange).toHaveBeenCalledWith(
+        expect.objectContaining({ events: [accepted] }),
+      );
+      expect(notifications.getItems()).toEqual([]);
+    },
+  );
+
+  it("preserves the remaining missing items after a transient lookup failure without repeating failed requests", async () => {
+    const fixture = createFixture({ newEventPopupEnabled: true });
+    const previous = Array.from({ length: 5 }, (_, index) =>
+      createEvent({ id: `missing-${index}`, isOrganizer: false }),
+    );
+    fixture.db.listEvents.mockReturnValue(previous);
+    fixture.graph.listCalendarView.mockResolvedValue([]);
+    fixture.graph.getEvent.mockRejectedValue(new Error("offline"));
+    await fixture.service.syncAll("manual");
+    expect(fixture.graph.getEvent).toHaveBeenCalledOnce();
+    expect(fixture.db.replaceEventsForCalendarRange).toHaveBeenCalledWith(
+      expect.objectContaining({ events: previous }),
+    );
+  });
+
+  it("retains confirmed removals when a later missing-item lookup is temporarily unavailable", async () => {
+    const fixture = createFixture({ newEventPopupEnabled: true });
+    const previous = [
+      createEvent({ id: "deleted", isOrganizer: false }),
+      createEvent({ id: "unavailable", isOrganizer: false }),
+    ];
+    fixture.db.listEvents.mockReturnValue(previous);
+    fixture.graph.listCalendarView.mockResolvedValue([]);
+    fixture.graph.getEvent
+      .mockRejectedValueOnce(new Error("item not found"))
+      .mockRejectedValueOnce(new Error("offline"));
+    await fixture.service.syncAll("manual");
+    expect(fixture.db.replaceEventsForCalendarRange).toHaveBeenCalledWith(
+      expect.objectContaining({ events: [previous[1]] }),
+    );
+  });
+
+  it.each(["moved", "offline"])(
+    "does not infer a cancellation when a missing view item is %s",
+    async (reason) => {
+      const fixture = createFixture({ newEventPopupEnabled: true });
+      const previous = createEvent({
+        isOrganizer: false,
+        responseStatus: { response: "accepted", time: null },
+      });
+      const moved = {
+        ...previous,
+        start: "2027-03-30T10:00:00.000Z",
+        end: "2027-03-30T11:00:00.000Z",
+      };
+      fixture.db.listEvents.mockReturnValue([previous]);
+      fixture.graph.listCalendarView.mockResolvedValue([]);
+      if (reason === "moved") {
+        fixture.graph.getEvent.mockResolvedValue(moved);
+      } else {
+        fixture.graph.getEvent.mockRejectedValue(new Error("offline"));
+      }
+      await fixture.service.syncAll("manual");
+      expect(fixture.graph.getEvent).toHaveBeenCalledWith(
+        previous.calendarId,
+        previous.id,
+        "account-1",
+      );
+      expect(fixture.db.replaceEventsForCalendarRange).toHaveBeenCalledWith(
+        expect.objectContaining({ events: [reason === "moved" ? moved : previous] }),
+      );
+    },
+  );
+
   it("does not record invite candidates when invite notifications are disabled", async () => {
     const fixture = createFixture();
     fixture.graph.listCalendarView.mockResolvedValue([
@@ -781,11 +946,11 @@ describe("sync service", () => {
     expect(fixture.db.markNotificationFired).toHaveBeenCalledExactlyOnceWith(
       "calendar-a:future-pending:invite",
     );
-    expect(fixture.newEventNotifications.dismiss.mock.calls).toStrictEqual(
-      expect.arrayContaining([
-        [{ calendarId: "calendar-a", eventId: "past-pending" }],
-        [{ calendarId: "calendar-a", eventId: "future-accepted" }],
-      ]),
+    expect(fixture.newEventNotifications.reconcile).toHaveBeenCalledWith(
+      expect.arrayContaining([futurePendingInvite]),
+      [],
+      true,
+      expect.any(Function),
     );
   });
 
@@ -816,10 +981,12 @@ describe("sync service", () => {
     expect(fixture.db.clearNotificationFired).toHaveBeenCalledExactlyOnceWith(
       "calendar-a:rescheduled-invite:invite",
     );
-    expect(fixture.newEventNotifications.dismiss).toHaveBeenCalledExactlyOnceWith({
-      calendarId: "calendar-a",
-      eventId: "rescheduled-invite",
-    });
+    expect(fixture.newEventNotifications.reconcile).toHaveBeenCalledWith(
+      [rescheduledInvite],
+      [previousInvite],
+      true,
+      expect.any(Function),
+    );
     expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledExactlyOnceWith([
       rescheduledInvite,
     ]);
@@ -956,14 +1123,16 @@ describe("sync service", () => {
 
     await fixture.service.syncAll("manual");
 
-    expect(fixture.newEventNotifications.dismiss).toHaveBeenCalledWith({
-      calendarId: "calendar-a",
-      eventId: "invite-1",
-    });
+    expect(fixture.newEventNotifications.reconcile).toHaveBeenCalledWith(
+      [acceptedInvite],
+      [pendingInvite],
+      true,
+      expect.any(Function),
+    );
     expect(fixture.newEventNotifications.recordCandidates).not.toHaveBeenCalled();
   });
 
-  it("dismisses a queued invite that is removed from the calendar", async () => {
+  it("reconciles a removed invite so its cancellation remains reviewable", async () => {
     expect.hasAssertions();
     const fixture = createFixture({ newEventPopupEnabled: true });
     const pendingInvite = createEvent({
@@ -976,10 +1145,12 @@ describe("sync service", () => {
 
     await fixture.service.syncAll("manual");
 
-    expect(fixture.newEventNotifications.dismiss).toHaveBeenCalledWith({
-      calendarId: "calendar-a",
-      eventId: "invite-1",
-    });
+    expect(fixture.newEventNotifications.reconcile).toHaveBeenCalledWith(
+      [],
+      [pendingInvite],
+      true,
+      expect.any(Function),
+    );
     expect(fixture.db.clearNotificationFired).toHaveBeenCalledWith("calendar-a:invite-1:invite");
   });
 

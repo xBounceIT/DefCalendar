@@ -5,8 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import AppDatabase from "../src/main/db/database";
+import NewEventNotificationService from "../src/main/notifications/new-event-notification-service";
 
 function createSqliteDatabase(sqlite: DatabaseSync): AppDatabase {
+  let transactionId = 0;
   sqlite.exec("PRAGMA foreign_keys = ON");
   const db = Object.create(AppDatabase.prototype) as AppDatabase;
   Object.assign(db, {
@@ -16,13 +18,15 @@ function createSqliteDatabase(sqlite: DatabaseSync): AppDatabase {
       transaction:
         <T extends unknown[], R>(callback: (...args: T) => R) =>
         (...args: T): R => {
-          sqlite.exec("BEGIN");
+          const savepoint = `test_transaction_${transactionId++}`;
+          sqlite.exec(`SAVEPOINT ${savepoint}`);
           try {
             const result = callback(...args);
-            sqlite.exec("COMMIT");
+            sqlite.exec(`RELEASE SAVEPOINT ${savepoint}`);
             return result;
           } catch (error) {
-            sqlite.exec("ROLLBACK");
+            sqlite.exec(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+            sqlite.exec(`RELEASE SAVEPOINT ${savepoint}`);
             throw error;
           }
         },
@@ -94,6 +98,99 @@ function createStoredReminderEvent(overrides?: {
 }
 
 describe("database", () => {
+  it("rolls back an explicit deletion if the pending queue cannot be persisted", () => {
+    const sqlite = new DatabaseSync(":memory:");
+    try {
+      const db = createSqliteDatabase(sqlite);
+      seedReminderCalendar(sqlite);
+      const event = createStoredReminderEvent({ isOrganizer: false });
+      db.upsertEvent(event);
+      const notifications = new NewEventNotificationService(
+        () => Date.parse("2026-03-30T09:00:00.000Z"),
+        db,
+      );
+      notifications.recordCandidates([event]);
+      const saved = notifications.getItems();
+      vi.spyOn(db, "savePendingInvites").mockImplementationOnce(() => {
+        throw new Error("disk full");
+      });
+      expect(() =>
+        notifications.dismiss(saved[0], () => db.deleteEvent(event.calendarId, event.id)),
+      ).toThrow("disk full");
+      expect(db.getEvent(event.calendarId, event.id)).not.toBeNull();
+      expect(db.listPendingInvites()).toEqual(saved);
+      expect(notifications.getItems()).toEqual(saved);
+    } finally {
+      sqlite.close();
+    }
+  });
+  it("commits cache and pending notices together and publishes nothing after a failed transaction", () => {
+    const sqlite = new DatabaseSync(":memory:");
+    try {
+      const db = createSqliteDatabase(sqlite);
+      seedReminderCalendar(sqlite);
+      const previous = createStoredReminderEvent({
+        isOrganizer: false,
+        responseStatus: { response: "accepted", time: null },
+      });
+      const updated = { ...previous, subject: "Updated subject" };
+      db.upsertEvent(previous);
+      const service = new NewEventNotificationService(
+        () => Date.parse("2026-03-30T09:00:00.000Z"),
+        db,
+      );
+      const listener = vi.fn();
+      service.onChange(listener);
+      const save = vi.spyOn(db, "savePendingInvites").mockImplementationOnce(() => {
+        throw new Error("disk full");
+      });
+      expect(() =>
+        service.reconcile([updated], [previous], true, () => db.upsertEvent(updated)),
+      ).toThrow("disk full");
+      expect(db.getEvent(previous.calendarId, previous.id)?.subject).toBe(previous.subject);
+      expect(service.getItems()).toEqual([]);
+      expect(db.listPendingInvites()).toEqual([]);
+      expect(listener).not.toHaveBeenCalled();
+      save.mockRestore();
+      service.reconcile([updated], [previous], true, () => db.upsertEvent(updated));
+      expect(db.getEvent(previous.calendarId, previous.id)?.subject).toBe("Updated subject");
+      expect(db.listPendingInvites()).toEqual(service.getItems());
+      expect(listener).toHaveBeenCalledOnce();
+    } finally {
+      sqlite.close();
+    }
+  });
+  it("persists closed invitations independently of reminders and removes only a signed-out account", () => {
+    const sqlite = new DatabaseSync(":memory:");
+    try {
+      const db = createSqliteDatabase(sqlite);
+      seedReminderCalendar(sqlite);
+      seedReminderCalendar(sqlite, "calendar-2", "account-2");
+      const now = () => Date.parse("2026-03-30T09:00:00.000Z");
+      const service = new NewEventNotificationService(now, db);
+      service.recordCandidates([
+        createStoredReminderEvent({ isOrganizer: false }),
+        createStoredReminderEvent({ calendarId: "calendar-2", isOrganizer: false }),
+      ]);
+      service.hideAll();
+      const listener = vi.fn();
+      service.onChange(listener);
+      service.reload();
+      expect(listener).not.toHaveBeenCalled();
+      const restarted = new NewEventNotificationService(now, db);
+      expect(restarted.getItems()).toEqual(service.getItems());
+      expect(restarted.getItems()).toHaveLength(2);
+      db.clearUserData("account-1");
+      restarted.reload();
+      expect(restarted.getItems()).toEqual([
+        expect.objectContaining({ calendarId: "calendar-2", popupDismissed: true }),
+      ]);
+      db.clearUserData();
+      expect(db.listPendingInvites()).toEqual([]);
+    } finally {
+      sqlite.close();
+    }
+  });
   it.each(["upsert", "range"])(
     "repairs invalid cached event payloads during %s refresh",
     (mode) => {

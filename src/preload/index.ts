@@ -150,6 +150,7 @@ const calendarApi: CalendarApi = {
     },
     dismiss: (args) => ipcRenderer.invoke(IPC_CHANNELS.newEventNotificationsDismiss, args),
     dismissAll: () => ipcRenderer.invoke(IPC_CHANNELS.newEventNotificationsDismissAll),
+    acknowledge: (args) => ipcRenderer.invoke(IPC_CHANNELS.newEventNotificationsAcknowledge, args),
   },
 };
 

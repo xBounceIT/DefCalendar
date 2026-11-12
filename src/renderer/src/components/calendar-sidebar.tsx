@@ -8,6 +8,7 @@ import { formatSyncTimestamp } from "../date-formatting";
 import { useTranslation } from "react-i18next";
 
 interface CalendarSidebarProps {
+  pendingInvitations?: React.ReactNode;
   onSettingsClick: () => void;
   accounts: AccountSummary[];
   calendars: CalendarSummary[];
@@ -441,6 +442,7 @@ function CalendarSidebar(props: CalendarSidebarProps) {
       </div>
 
       <div className="sync-section">
+        {props.pendingInvitations}
         <SyncCard
           isRefreshing={props.isRefreshing}
           onRefresh={props.onRefresh}

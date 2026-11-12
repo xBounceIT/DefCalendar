@@ -14,6 +14,7 @@ import type {
   EventDraft,
   EventListArgs,
   EventReferenceArgs,
+  InviteNotificationReference,
   ForwardEventArgs,
   ListOutlookCategoriesArgs,
   OutlookCategory,
@@ -100,6 +101,7 @@ export const IPC_CHANNELS = {
   newEventNotificationsChanged: "new-event-notifications:changed",
   newEventNotificationsDismiss: "new-event-notifications:dismiss",
   newEventNotificationsDismissAll: "new-event-notifications:dismiss-all",
+  newEventNotificationsAcknowledge: "new-event-notifications:acknowledge",
 } as const;
 
 type SpellcheckDictionaryState = "downloading" | "ready" | "failed";
@@ -200,6 +202,7 @@ interface CalendarApi {
     onChanged: (listener: (items: NewEventNotificationItem[]) => void) => () => void;
     dismiss: (args: EventReferenceArgs) => Promise<void>;
     dismissAll: () => Promise<void>;
+    acknowledge: (args: InviteNotificationReference) => Promise<void>;
   };
 }
 

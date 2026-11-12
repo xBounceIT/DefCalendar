@@ -110,6 +110,29 @@ function resetNotificationMock(): void {
 }
 
 describe("system invite notification service", () => {
+  it("keeps hidden invitations out of system notifications and does not offer RSVP for cancellations", () => {
+    notificationMock.instances.length = 0;
+    const fixture = createService({ items: [createItem({ popupDismissed: true })] });
+    fixture.service.start();
+    expect(notificationMock.instances).toHaveLength(0);
+    fixture.service.sync([createItem({ kind: "cancelled" })]);
+    expect(notificationMock.instances[0].options).toMatchObject({
+      title: "Meeting cancelled",
+      actions: [],
+    });
+    notificationMock.instances[0].emit("action", {}, 0);
+    expect(fixture.eventActions.respondToEvent).not.toHaveBeenCalled();
+  });
+
+  it("replaces a displayed invitation when its organizer sends an update", () => {
+    notificationMock.instances.length = 0;
+    const fixture = createService({ items: [createItem()] });
+    fixture.service.start();
+    fixture.service.sync([createItem({ kind: "updated", subject: "Changed subject" })]);
+    expect(notificationMock.instances[0].close).toHaveBeenCalledOnce();
+    expect(notificationMock.instances[1].options).toMatchObject({ title: "Meeting updated" });
+    expect(notificationMock.instances[1].options.body).toContain("Changed subject");
+  });
   it("retries failed delivery without allowing stale handlers to affect the replacement", () => {
     resetNotificationMock();
     const { eventActions, service } = createService();

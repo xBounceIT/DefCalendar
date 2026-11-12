@@ -4,6 +4,7 @@ import type {
   ContactSuggestion,
   EventListArgs,
   ReminderType,
+  NewEventNotificationItem,
   SearchContactsArgs,
   SearchEventsArgs,
   StoredAccount,
@@ -20,6 +21,7 @@ import {
   userSettingsSchema,
 } from "@shared/schema-values";
 import { isDeclinedEventResponse } from "@shared/event-response";
+import { newEventNotificationItemSchema } from "@shared/schemas";
 import { preserveLocationDetails } from "@shared/locations";
 import { dirname, join } from "pathe";
 import Database from "better-sqlite3";
@@ -134,6 +136,31 @@ class AppDatabase {
     `)
       .all()
       .map((row) => readCalendarSummary(row));
+  }
+
+  listPendingInvites(): NewEventNotificationItem[] {
+    return this.db
+      .prepare("SELECT payload_json FROM pending_invites ORDER BY rowid")
+      .all()
+      .map((row) =>
+        newEventNotificationItemSchema.parse(JSON.parse(readStringProperty(row, "payload_json"))),
+      );
+  }
+
+  runInTransaction(operation: () => void): void {
+    this.db.transaction(operation)();
+  }
+
+  savePendingInvites(items: NewEventNotificationItem[]): void {
+    this.db.transaction(() => {
+      this.db.prepare("DELETE FROM pending_invites").run();
+      const insert = this.db.prepare(
+        "INSERT INTO pending_invites (calendar_id, event_id, payload_json) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM calendars WHERE id = ?)",
+      );
+      for (const item of items) {
+        insert.run(item.calendarId, item.eventId, JSON.stringify(item), item.calendarId);
+      }
+    })();
   }
 
   listCalendarIds(homeAccountId?: string): string[] {
@@ -1266,6 +1293,7 @@ class AppDatabase {
     this.db.exec(`
       DELETE FROM reminder_state;
       DELETE FROM notification_state;
+      DELETE FROM pending_invites;
       DELETE FROM sync_state;
       DELETE FROM calendar_sync_ranges;
       DELETE FROM events;
@@ -1377,6 +1405,14 @@ class AppDatabase {
         payload_json TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         PRIMARY KEY (id, calendar_id),
+        FOREIGN KEY (calendar_id) REFERENCES calendars(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS pending_invites (
+        calendar_id TEXT NOT NULL,
+        event_id TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        PRIMARY KEY (calendar_id, event_id),
         FOREIGN KEY (calendar_id) REFERENCES calendars(id) ON DELETE CASCADE
       );
 

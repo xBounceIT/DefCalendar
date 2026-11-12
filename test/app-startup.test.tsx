@@ -341,15 +341,16 @@ function createCalendarApiMock(): CalendarApi {
       }),
       onState: vi.fn().mockReturnValue(() => undefined),
       snooze: vi.fn(),
-      dismiss: vi.fn(),
-      dismissAll: vi.fn(),
+      dismiss: vi.fn().mockResolvedValue(undefined),
+      dismissAll: vi.fn().mockResolvedValue(undefined),
       minimizeWindow: vi.fn(),
     },
     newEventNotifications: {
+      acknowledge: vi.fn().mockResolvedValue(undefined),
       get: vi.fn().mockResolvedValue([]),
       onChanged: vi.fn().mockReturnValue(() => undefined),
-      dismiss: vi.fn(),
-      dismissAll: vi.fn(),
+      dismiss: vi.fn().mockResolvedValue(undefined),
+      dismissAll: vi.fn().mockResolvedValue(undefined),
     },
   };
 }
@@ -500,15 +501,16 @@ function createSignedInCalendarApiMock(): CalendarApi {
       }),
       onState: vi.fn().mockReturnValue(() => undefined),
       snooze: vi.fn(),
-      dismiss: vi.fn(),
-      dismissAll: vi.fn(),
+      dismiss: vi.fn().mockResolvedValue(undefined),
+      dismissAll: vi.fn().mockResolvedValue(undefined),
       minimizeWindow: vi.fn(),
     },
     newEventNotifications: {
+      acknowledge: vi.fn().mockResolvedValue(undefined),
       get: vi.fn().mockResolvedValue([]),
       onChanged: vi.fn().mockReturnValue(() => undefined),
-      dismiss: vi.fn(),
-      dismissAll: vi.fn(),
+      dismiss: vi.fn().mockResolvedValue(undefined),
+      dismissAll: vi.fn().mockResolvedValue(undefined),
     },
   };
 }
@@ -688,15 +690,16 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
       }),
       onState: vi.fn().mockReturnValue(() => undefined),
       snooze: vi.fn(),
-      dismiss: vi.fn(),
-      dismissAll: vi.fn(),
+      dismiss: vi.fn().mockResolvedValue(undefined),
+      dismissAll: vi.fn().mockResolvedValue(undefined),
       minimizeWindow: vi.fn(),
     },
     newEventNotifications: {
+      acknowledge: vi.fn().mockResolvedValue(undefined),
       get: vi.fn().mockResolvedValue([]),
       onChanged: vi.fn().mockReturnValue(() => undefined),
-      dismiss: vi.fn(),
-      dismissAll: vi.fn(),
+      dismiss: vi.fn().mockResolvedValue(undefined),
+      dismissAll: vi.fn().mockResolvedValue(undefined),
     },
   };
 }
@@ -1760,6 +1763,101 @@ describe("app startup", () => {
     }
   });
 
+  it("keeps one invitation dialog when a new invite arrives while the pending list is open", async () => {
+    try {
+      installResizeObserverMock();
+      const api = createSignedInCalendarApiMock();
+      let items = [createNewEventNotificationItem({ popupDismissed: true })];
+      const listeners = new Set<(items: NewEventNotificationItem[]) => void>();
+      vi.mocked(api.newEventNotifications.get).mockImplementation(async () => items);
+      vi.mocked(api.newEventNotifications.onChanged).mockImplementation((listener) => {
+        listeners.add(listener);
+        return () => {
+          listeners.delete(listener);
+        };
+      });
+      vi.mocked(api.newEventNotifications.dismissAll).mockImplementation(async () => {
+        items = items.map((item) => ({ ...item, popupDismissed: true }));
+        for (const listener of listeners) {
+          listener(items);
+        }
+      });
+      installCalendarApi(api);
+      renderApp();
+      fireEvent.click(await screen.findByRole("button", { name: "Pending invitations 1" }));
+      await screen.findByRole("dialog", { name: "Invitations to manage" });
+      act(() => {
+        items = [
+          ...items,
+          createNewEventNotificationItem({ eventId: "new-invite", subject: "New arrival" }),
+        ];
+        for (const listener of listeners) {
+          listener(items);
+        }
+      });
+      expect(screen.getAllByRole("dialog", { name: "Invitations to manage" })).toHaveLength(1);
+      fireEvent.click(
+        within(screen.getByRole("dialog", { name: "Invitations to manage" })).getByRole("button", {
+          name: "Close",
+        }),
+      );
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog", { name: "Invitations to manage" })).toBeNull(),
+      );
+      expect(screen.getByRole("button", { name: "Pending invitations 2" })).not.toBeNull();
+    } finally {
+      restoreCalendarApi();
+      restoreResizeObserver();
+    }
+  });
+
+  it("reopens closed invitations from the pending button even with automatic notifications disabled", async () => {
+    try {
+      installResizeObserverMock();
+      const api = createSignedInCalendarApiMock();
+      const settings = {
+        ...createDefaultSettings(),
+        selectedDate: signedInSelectedDate,
+        visibleCalendarIds: ["calendar-1"],
+        newEventPopupEnabled: false,
+        taskbarInviteNotificationsEnabled: false,
+        systemInviteNotificationsEnabled: false,
+      };
+      vi.mocked(api.settings.get).mockResolvedValue(settings);
+      vi.mocked(api.newEventNotifications.get).mockResolvedValue([
+        { ...createNewEventNotificationItem(), popupDismissed: true },
+      ]);
+      installCalendarApi(api);
+      renderApp();
+      const button = await screen.findByRole("button", { name: "Pending invitations 1" });
+      expect(screen.queryByRole("dialog", { name: "Invitations to manage" })).toBeNull();
+      fireEvent.click(button);
+      const dialog = await screen.findByRole("dialog", { name: "Invitations to manage" });
+      expect(within(dialog).getByText("Awaiting response")).not.toBeNull();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog", { name: "Invitations to manage" })).toBeNull(),
+      );
+      expect(screen.getByRole("button", { name: "Pending invitations 1" })).not.toBeNull();
+      fireEvent.click(button);
+      await screen.findByRole("dialog", { name: "Invitations to manage" });
+      fireEvent.click(screen.getByRole("button", { name: "View event" }));
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog", { name: "Invitations to manage" })).toBeNull(),
+      );
+      expect(api.events.openInApp).toHaveBeenCalledWith({
+        calendarId: "calendar-1",
+        eventId: "event-1",
+      });
+      expect(screen.getByRole("button", { name: "Pending invitations 1" })).not.toBeNull();
+      expect(api.newEventNotifications.dismissAll).toHaveBeenCalledOnce();
+      expect(api.events.respond).not.toHaveBeenCalled();
+    } finally {
+      restoreCalendarApi();
+      restoreResizeObserver();
+    }
+  });
+
   it("does not show the in-app invite popup for system-only invite notifications", async () => {
     try {
       installResizeObserverMock();
@@ -1783,9 +1881,9 @@ describe("app startup", () => {
 
       await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
       await waitFor(() => {
-        expect(screen.queryByText("New invitations")).toBeNull();
+        expect(screen.queryByText("Invitations to manage")).toBeNull();
       });
-      expect(calendarApi.newEventNotifications.get).not.toHaveBeenCalled();
+      expect(calendarApi.newEventNotifications.get).toHaveBeenCalledOnce();
     } finally {
       restoreCalendarApi();
       restoreResizeObserver();
@@ -1817,9 +1915,9 @@ describe("app startup", () => {
         renderApp();
 
         await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
-        await expect(screen.findByText("New invitations")).resolves.not.toBeNull();
+        await expect(screen.findByText("Invitations to manage")).resolves.not.toBeNull();
         expect(screen.queryByText("Planning invite")).not.toBeNull();
-        expect(calendarApi.newEventNotifications.get).toHaveBeenCalledOnce();
+        expect(calendarApi.newEventNotifications.get).toHaveBeenCalledTimes(2);
       } finally {
         platformMock.mockRestore();
         restoreCalendarApi();
@@ -1853,9 +1951,9 @@ describe("app startup", () => {
         renderApp();
 
         await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
-        expect(screen.queryByText("New invitations")).toBeNull();
+        expect(screen.queryByText("Invitations to manage")).toBeNull();
         expect(screen.queryByText("Planning invite")).toBeNull();
-        expect(calendarApi.newEventNotifications.get).not.toHaveBeenCalled();
+        expect(calendarApi.newEventNotifications.get).toHaveBeenCalledOnce();
       } finally {
         platformMock.mockRestore();
         restoreCalendarApi();
@@ -1883,7 +1981,7 @@ describe("app startup", () => {
       renderApp();
 
       await screen.findByTestId("mock-calendar");
-      await screen.findByRole("dialog", { name: "New invitations" });
+      await screen.findByRole("dialog", { name: "Invitations to manage" });
       expect(openInAppListener).toBeInstanceOf(Function);
 
       act(() => {
@@ -1892,14 +1990,14 @@ describe("app startup", () => {
 
       await screen.findByDisplayValue("Reminder planning");
       expect({
-        popup: screen.queryByRole("dialog", { name: "New invitations" }),
+        popup: screen.queryByRole("dialog", { name: "Invitations to manage" }),
         dismissed: vi.mocked(calendarApi.newEventNotifications.dismiss).mock.calls,
         dismissedAll: vi.mocked(calendarApi.newEventNotifications.dismissAll).mock.calls,
       }).toStrictEqual({ popup: null, dismissed: [], dismissedAll: [] });
 
       fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
-      await screen.findByRole("dialog", { name: "New invitations" });
-      expect(calendarApi.newEventNotifications.get).toHaveBeenCalledTimes(2);
+      await screen.findByRole("dialog", { name: "Invitations to manage" });
+      expect(calendarApi.newEventNotifications.get).toHaveBeenCalledTimes(3);
     } finally {
       restoreCalendarApi();
       restoreResizeObserver();

@@ -23,6 +23,7 @@ import {
   eventDraftSchema,
   eventListArgsSchema,
   eventReferenceArgsSchema,
+  inviteNotificationReferenceSchema,
   forwardEventArgsSchema,
   listOutlookCategoriesArgsSchema,
   outlookCategorySchema,
@@ -274,7 +275,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     if (dependencies.auth.hasSession()) {
       await dependencies.sync.syncAll("manual");
     }
-    dependencies.newEventNotifications.clear();
+    dependencies.newEventNotifications.reload();
     await dependencies.reminders.checkNow();
     const state = dependencies.auth.getAuthState();
     broadcast(IPC_CHANNELS.authStateChanged, state);
@@ -285,7 +286,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   ipcMain.handle(IPC_CHANNELS.authSwitchAccount, async (event, homeAccountId: string) => {
     validateMainSender(event);
     const state = await dependencies.auth.switchAccount(homeAccountId);
-    dependencies.newEventNotifications.clear();
+    dependencies.newEventNotifications.reload();
     await dependencies.sync.syncAll("switch-account", homeAccountId);
     broadcast(IPC_CHANNELS.authStateChanged, state);
     broadcast(IPC_CHANNELS.syncStatusChanged, dependencies.sync.getStatus());
@@ -462,13 +463,24 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
     assertSession();
 
     if (!isSeriesTarget) {
-      dependencies.db.deleteEvent(args.calendarId, args.eventId);
+      dependencies.newEventNotifications.dismiss(
+        {
+          calendarId: args.calendarId,
+          eventId: args.eventId,
+        },
+        () => dependencies.db.deleteEvent(args.calendarId, args.eventId),
+      );
     }
 
     await dependencies.reminders.checkNow();
     assertSession();
     if (isSeriesTarget) {
       await dependencies.sync.syncAll("mutation", homeAccountId);
+      assertSession();
+      dependencies.newEventNotifications.dismiss({
+        calendarId: args.calendarId,
+        eventId: args.eventId,
+      });
       return;
     }
 
@@ -660,7 +672,10 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   ipcMain.handle(IPC_CHANNELS.eventsOpenInApp, async (event, input) => {
     validateReminderSender(event);
     const args = eventReferenceArgsSchema.parse(input);
-    if (dependencies.eventActions.openInApp(args)) {
+    if (
+      dependencies.eventActions.openInApp(args) &&
+      dependencies.reminderManager.ownsWebContents(event.sender)
+    ) {
       dependencies.reminderManager.minimize();
     }
   });
@@ -834,17 +849,23 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   ipcMain.handle(IPC_CHANNELS.newEventNotificationsDismiss, async (event, input) => {
     validateInviteSender(event);
     const args = eventReferenceArgsSchema.parse(input);
-    dependencies.newEventNotifications.dismiss(args);
+    dependencies.newEventNotifications.hide(args);
   });
 
   ipcMain.handle(IPC_CHANNELS.newEventNotificationsDismissAll, async (event) => {
     validateInviteSender(event);
-    dependencies.newEventNotifications.clear();
+    dependencies.newEventNotifications.hideAll();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.newEventNotificationsAcknowledge, async (event, input) => {
+    validateInviteSender(event);
+    const args = inviteNotificationReferenceSchema.parse(input);
+    dependencies.newEventNotifications.acknowledge(args);
   });
 
   dependencies.auth.onSessionValidation((state, removedHomeAccountId) => {
     if (removedHomeAccountId) {
-      dependencies.newEventNotifications.clear();
+      dependencies.newEventNotifications.reload();
       void dependencies.reminders.checkNow();
       dependencies.sync.reset();
       if (state.accounts.length > 0) {
@@ -855,10 +876,15 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   });
 
   let previousInviteKeys = new Set(
-    dependencies.newEventNotifications.getItems().map(buildEventReferenceKey),
+    dependencies.newEventNotifications
+      .getItems()
+      .filter((item) => !item.popupDismissed)
+      .map(buildEventReferenceKey),
   );
   dependencies.newEventNotifications.onChange((items) => {
-    const inviteKeys = new Set(items.map(buildEventReferenceKey));
+    const inviteKeys = new Set(
+      items.filter((item) => !item.popupDismissed).map(buildEventReferenceKey),
+    );
     const hasNewInvites = [...inviteKeys].some((key) => !previousInviteKeys.has(key));
     previousInviteKeys = inviteKeys;
     broadcast(IPC_CHANNELS.newEventNotificationsChanged, items);

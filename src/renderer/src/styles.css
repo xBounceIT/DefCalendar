@@ -4029,6 +4029,25 @@ button {
   line-height: 1.35;
 }
 
+.pending-invitations {
+  justify-content: space-between;
+}
+
+.pending-invitations__badge {
+  min-width: 1.5rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  text-align: center;
+  font-weight: 700;
+}
+
+.new-event-popup__item-status {
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+
 .settings-notifications__toggle {
   width: fit-content;
 }

@@ -575,14 +575,24 @@
     "remindLater": "Ricordamelo più tardi"
   },
   "newEventPopup": {
-    "title": "Nuovi inviti",
+    "title": "Inviti da gestire",
+    "pendingButton": "In attesa",
+    "keepPending": "Chiudere questa finestra mantiene gli elementi in attesa e il badge.",
+    "actionError": "Impossibile completare l'operazione. Riprova.",
+    "status": {
+      "invitation": "In attesa di risposta",
+      "updated": "Modifica da verificare",
+      "cancelled": "Annullamento da verificare"
+    },
     "loadError": "Impossibile caricare gli inviti. Riprova.",
     "retry": "Riprova",
-    "subtitle_one": "{{count}} nuovo evento in attesa di risposta",
-    "subtitle_other": "{{count}} nuovi eventi in attesa di risposta",
+    "subtitle_one": "{{count}} evento da gestire",
+    "subtitle_other": "{{count}} eventi da gestire",
     "noOrganizer": "Organizzatore sconosciuto",
     "closeAria": "Chiudi",
     "actions": {
+      "acknowledge": "Presa visione",
+      "openEvent": "Apri evento",
       "accept": "Accetta",
       "tentative": "Provvisorio",
       "decline": "Rifiuta"

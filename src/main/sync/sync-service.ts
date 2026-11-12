@@ -1,6 +1,7 @@
 import type { AppConfig } from "@main/config";
 import type AppDatabase from "@main/db/database";
 import type GraphCalendarService from "@main/graph/calendar-service";
+import { isMissingGraphItemError } from "@main/graph/calendar-service";
 import type MsalAuthService from "@main/auth/msal-auth-service";
 import type NewEventNotificationService from "@main/notifications/new-event-notification-service";
 import type ReminderService from "@main/reminders/reminder-service";
@@ -119,8 +120,6 @@ class SyncService {
     const freshAfter = new Date(Date.now() - ON_DEMAND_SYNC_RANGE_FRESHNESS_MS).toISOString();
     const settings = this.dependencies.settings.getSettings();
     const shouldRecordInviteCandidates = areInviteNotificationsEnabled(settings);
-    const shouldReconcileCoveredEvents =
-      shouldRecordInviteCandidates || this.dependencies.newEventNotifications.getItems().length > 0;
 
     await Promise.all(
       calendarIds.map(async (calendarId) => {
@@ -130,24 +129,22 @@ class SyncService {
           args.end,
           freshAfter,
         );
-        if (shouldReconcileCoveredEvents) {
-          const coveredEvents = this.dependencies.db
-            .listEvents({
-              calendarIds: [calendarId],
-              end: args.end,
-              start: args.start,
-            })
-            .filter((event) =>
-              uncoveredRanges.every(
-                (range) => event.start >= range.rangeEnd || event.end <= range.rangeStart,
-              ),
-            );
-          this.recordInviteCandidates(
-            coveredEvents,
-            buildEventsById(coveredEvents),
-            shouldRecordInviteCandidates,
+        const coveredEvents = this.dependencies.db
+          .listEvents({
+            calendarIds: [calendarId],
+            end: args.end,
+            start: args.start,
+          })
+          .filter((event) =>
+            uncoveredRanges.every(
+              (range) => event.start >= range.rangeEnd || event.end <= range.rangeStart,
+            ),
           );
-        }
+        this.recordInviteCandidates(
+          coveredEvents,
+          buildEventsById(coveredEvents),
+          shouldRecordInviteCandidates,
+        );
         if (uncoveredRanges.length === 0) {
           return;
         }
@@ -177,27 +174,43 @@ class SyncService {
             end: range.rangeEnd,
             start: range.rangeStart,
           });
-          const previousEventsById = buildEventsById(persistedEvents);
-          const mergedEvents = mergeFetchedAndPersistedEvents(fetchedEvents, persistedEvents);
-
-          this.dependencies.db.replaceEventsForCalendarRange({
-            calendarId,
-            events: mergedEvents,
-            rangeEnd: range.rangeEnd,
-            rangeStart: range.rangeStart,
+          const recoveredEvents = await this.recoverMissingEvents(
+            mergeFetchedAndPersistedEvents(fetchedEvents, persistedEvents),
+            persistedEvents,
+            homeAccountId,
+            assertSession,
+          );
+          assertSession();
+          const currentEvents = this.dependencies.db.listEvents({
+            calendarIds: [calendarId],
+            end: range.rangeEnd,
+            start: range.rangeStart,
           });
-          this.dependencies.db.recordCalendarSyncRange({
-            calendarId,
-            preserveOverlappingCoverage: true,
-            rangeEnd: range.rangeEnd,
-            rangeStart: range.rangeStart,
-            syncedAt,
-          });
+          const mergedEvents = mergeConcurrentCalendarEvents(
+            recoveredEvents,
+            persistedEvents,
+            currentEvents,
+          );
 
           this.recordInviteCandidates(
             mergedEvents,
-            previousEventsById,
+            buildEventsById(currentEvents),
             shouldRecordInviteCandidates,
+            () => {
+              this.dependencies.db.replaceEventsForCalendarRange({
+                calendarId,
+                events: mergedEvents,
+                rangeEnd: range.rangeEnd,
+                rangeStart: range.rangeStart,
+              });
+              this.dependencies.db.recordCalendarSyncRange({
+                calendarId,
+                preserveOverlappingCoverage: true,
+                rangeEnd: range.rangeEnd,
+                rangeStart: range.rangeStart,
+                syncedAt,
+              });
+            },
           );
         }
       }),
@@ -338,6 +351,7 @@ class SyncService {
         const accountCalendars = await this.dependencies.graph.listCalendars(accountId);
         assertSession();
         this.dependencies.db.upsertCalendars(accountCalendars, accountId);
+        this.dependencies.newEventNotifications.reload();
         settings = this.dependencies.settings.syncVisibleCalendars({
           calendarIds: accountCalendars.map((calendar) => calendar.id),
           knownCalendarIds,
@@ -448,6 +462,7 @@ class SyncService {
             }
             return {
               calendarId: calendar.id,
+              homeAccountId: calendar.homeAccountId,
               assertSession,
               fetchedEvents,
               isDeepBackfill,
@@ -470,30 +485,53 @@ class SyncService {
           end: rangeEnd,
           start: rangeStart,
         });
-        const events = mergeFetchedAndPersistedEvents(fetchedEvents, persistedEvents);
-        this.dependencies.db.replaceEventsForCalendarRange({
-          calendarId,
+        const recoveredEvents = await this.recoverMissingEvents(
+          mergeFetchedAndPersistedEvents(fetchedEvents, persistedEvents),
+          persistedEvents,
+          syncedCalendar.homeAccountId,
+          syncedCalendar.assertSession,
+        );
+        syncedCalendar.assertSession();
+        const currentEvents = this.dependencies.db.listEvents({
+          calendarIds: [calendarId],
+          end: rangeEnd,
+          start: rangeStart,
+        });
+        const events = mergeConcurrentCalendarEvents(
+          recoveredEvents,
+          persistedEvents,
+          currentEvents,
+        );
+        this.dependencies.newEventNotifications.reconcile(
           events,
-          rangeEnd,
-          rangeStart,
-        });
-        this.dependencies.db.saveSyncState({
-          calendarId,
-          errorMessage: null,
-          lastSyncedAt: finishedAt,
-          rangeEnd,
-          rangeStart,
-        });
-        this.dependencies.db.recordCalendarSyncRange({
-          calendarId,
-          rangeEnd,
-          rangeStart,
-          syncedAt: finishedAt,
-        });
+          currentEvents,
+          syncedCalendar.shouldRecordInviteCandidates,
+          () => {
+            this.dependencies.db.replaceEventsForCalendarRange({
+              calendarId,
+              events,
+              rangeEnd,
+              rangeStart,
+            });
+            this.dependencies.db.saveSyncState({
+              calendarId,
+              errorMessage: null,
+              lastSyncedAt: finishedAt,
+              rangeEnd,
+              rangeStart,
+            });
+            this.dependencies.db.recordCalendarSyncRange({
+              calendarId,
+              rangeEnd,
+              rangeStart,
+              syncedAt: finishedAt,
+            });
+          },
+        );
         syncedCalendars.push({
           ...syncedCalendar,
           events,
-          previousEventsById: buildEventsById(persistedEvents),
+          previousEventsById: buildEventsById(currentEvents),
         });
       }
 
@@ -591,7 +629,22 @@ class SyncService {
     events: CalendarEvent[],
     previousEventsById: Map<string, CalendarEvent>,
     shouldRecordCandidates: boolean,
+    persist?: () => void,
   ): void {
+    if (persist) {
+      this.dependencies.newEventNotifications.reconcile(
+        events,
+        [...previousEventsById.values()],
+        shouldRecordCandidates,
+        persist,
+      );
+    } else {
+      this.dependencies.newEventNotifications.reconcile(
+        events,
+        [...previousEventsById.values()],
+        shouldRecordCandidates,
+      );
+    }
     this.persistInviteCandidates(
       this.findInviteCandidates(events, previousEventsById, shouldRecordCandidates),
     );
@@ -626,10 +679,6 @@ class SyncService {
         continue;
       }
 
-      this.dependencies.newEventNotifications.dismiss({
-        calendarId: previous.calendarId,
-        eventId: previous.id,
-      });
       this.dependencies.db.clearNotificationFired(buildInviteNotificationKey(previous));
     }
 
@@ -637,10 +686,6 @@ class SyncService {
       const notificationKey = buildInviteNotificationKey(event);
       const previous = previousEventsById.get(event.id);
       if (!isFuturePendingInvite(event, now)) {
-        this.dependencies.newEventNotifications.dismiss({
-          calendarId: event.calendarId,
-          eventId: event.id,
-        });
         if (previous === undefined || isFuturePendingInvite(previous, now)) {
           this.dependencies.db.clearNotificationFired(notificationKey);
         }
@@ -649,10 +694,6 @@ class SyncService {
 
       const becameEligible = previous !== undefined && !isFuturePendingInvite(previous, now);
       if (becameEligible) {
-        this.dependencies.newEventNotifications.dismiss({
-          calendarId: event.calendarId,
-          eventId: event.id,
-        });
         this.dependencies.db.clearNotificationFired(notificationKey);
       }
       if (!shouldRecordCandidates) {
@@ -666,6 +707,49 @@ class SyncService {
     }
 
     return candidates;
+  }
+
+  private async recoverMissingEvents(
+    events: CalendarEvent[],
+    previousEvents: CalendarEvent[],
+    homeAccountId: string,
+    assertSession: () => void,
+  ): Promise<CalendarEvent[]> {
+    const eventsById = buildEventsById(events);
+    const missingEvents = previousEvents.filter(
+      (previous) =>
+        !eventsById.has(previous.id) &&
+        !previous.isOrganizer &&
+        !previous.cancelled &&
+        !isDeclinedEventResponse(previous.responseStatus?.response) &&
+        Date.parse(previous.end) > this.now(),
+    );
+    for (const [missingIndex, previous] of missingEvents.entries()) {
+      assertSession();
+      let lookupUnavailable = false;
+      try {
+        const current = await this.dependencies.graph.getEvent(
+          previous.calendarId,
+          previous.id,
+          homeAccountId,
+        );
+        eventsById.set(current.id, current);
+      } catch (error) {
+        if (!isMissingGraphItemError(error)) {
+          lookupUnavailable = true;
+        }
+      }
+      assertSession();
+      if (lookupUnavailable) {
+        for (const remaining of missingEvents.slice(missingIndex)) {
+          if (!eventsById.has(remaining.id)) {
+            eventsById.set(remaining.id, remaining);
+          }
+        }
+        break;
+      }
+    }
+    return [...eventsById.values()];
   }
 
   private resolveAccountIds(reason: SyncReason, homeAccountId?: string): string[] {
@@ -799,6 +883,25 @@ function mergeFetchedAndPersistedEvents(
     return persisted && shouldPreservePersistedEvent(persisted, event) ? persisted : event;
   });
   return mergePersistedDeclinedEvents(newestEvents, persistedEvents);
+}
+
+function mergeConcurrentCalendarEvents(
+  fetched: CalendarEvent[],
+  previous: CalendarEvent[],
+  current: CalendarEvent[],
+): CalendarEvent[] {
+  const previousById = buildEventsById(previous);
+  const currentById = buildEventsById(current);
+  const eventsById = buildEventsById(
+    fetched.filter((event) => !previousById.has(event.id) || currentById.has(event.id)),
+  );
+  for (const event of current) {
+    const before = previousById.get(event.id);
+    if (!before || JSON.stringify(before) !== JSON.stringify(event)) {
+      eventsById.set(event.id, event);
+    }
+  }
+  return mergeFetchedAndPersistedEvents([...eventsById.values()], current);
 }
 
 function shouldPreservePersistedEvent(persisted: CalendarEvent, fetched: CalendarEvent): boolean {

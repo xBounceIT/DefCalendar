@@ -53,6 +53,7 @@ import type { EditorState } from "./event-editor-state";
 import EventEditorDialog from "./components/event-editor-dialog";
 import EventSearchDialog from "./components/event-search-dialog";
 import NewEventPopup from "./components/new-event-popup";
+import PendingInvitations from "./components/pending-invitations";
 import TitleBar from "./components/title-bar";
 import UpdateAvailablePopup from "./components/update-available-popup";
 import WorkspacePanel from "./components/workspace-panel";
@@ -126,6 +127,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     "appearance",
   );
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isPendingInvitationsOpen, setIsPendingInvitationsOpen] = useState(false);
   const [showAuthScreen, setShowAuthScreen] = useState(false);
   const [showCalendarSelection, setShowCalendarSelection] = useState(false);
   const [isApplyingCalendarSelection, setIsApplyingCalendarSelection] = useState(false);
@@ -185,11 +187,12 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     [queryClient, calendarApi, fallbackSettings],
   );
   useTitleBarScrim(
-    isSearchOpen || isSettingsOpen || editorState !== null,
+    isSearchOpen || isSettingsOpen || isPendingInvitationsOpen || editorState !== null,
     appSettings.theme ?? "system",
   );
   const shouldShowNewEventPopup =
     signedIn &&
+    !isPendingInvitationsOpen &&
     editorState === null &&
     settingsQuery.data !== undefined &&
     !appSettings.newEventPopupEnabled &&
@@ -403,6 +406,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     });
 
     const unsubscribeAuth = calendarApi.auth.onState((state) => {
+      setIsPendingInvitationsOpen(false);
       queryClient.setQueryData(["auth"], state);
       void invalidateWorkspaceData(queryClient);
     });
@@ -1099,12 +1103,23 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     <div className="app-shell">
       <TitleBar />
       <CalendarSidebar
+        pendingInvitations={
+          <PendingInvitations
+            isOpen={isPendingInvitationsOpen}
+            onOpenChange={setIsPendingInvitationsOpen}
+            onFindAcceptConflicts={findAcceptConflicts}
+            timeFormat={appSettings.timeFormat}
+          />
+        }
         accounts={accounts}
         calendars={calendars}
         canCreateEvent={Boolean(editableCalendar)}
         eventDayKeys={miniCalendarEventDayKeys}
         isRefreshing={refreshMutation.isPending || syncStatus.state === "syncing"}
-        onAccountAdd={() => setShowAuthScreen(true)}
+        onAccountAdd={() => {
+          setIsPendingInvitationsOpen(false);
+          setShowAuthScreen(true);
+        }}
         onCalendarColorChange={(calendar, color) => {
           void handleCalendarColorChange(calendar, color);
         }}
