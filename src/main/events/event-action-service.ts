@@ -3,7 +3,6 @@ import type MsalAuthService from "@main/auth/msal-auth-service";
 import type { CalendarEvent, EventReferenceArgs, RespondToEventArgs } from "@shared/schemas";
 import type AppDatabase from "@main/db/database";
 import { IPC_CHANNELS } from "@shared/ipc";
-import { isMissingGraphItemError } from "@main/graph/calendar-service";
 import type GraphCalendarService from "@main/graph/calendar-service";
 import type NewEventNotificationService from "@main/notifications/new-event-notification-service";
 import type ReminderService from "@main/reminders/reminder-service";
@@ -31,12 +30,27 @@ class EventActionService {
     const homeAccountId = this.resolveCalendarHomeAccountId(args.calendarId);
     const assertSession = this.dependencies.auth.createAccountSessionGuard(homeAccountId);
     const current = this.dependencies.db.getEvent(args.calendarId, args.eventId);
+    const notification = this.dependencies.newEventNotifications
+      .getItems()
+      .find((item) => item.calendarId === args.calendarId && item.eventId === args.eventId);
+    if (
+      args.notificationRevision !== undefined &&
+      notification?.revision !== args.notificationRevision
+    ) {
+      throw new Error("The invitation changed. Review the latest update before responding.");
+    }
+    const reference = {
+      calendarId: args.calendarId,
+      eventId: args.eventId,
+      revision: notification?.revision,
+    };
     const isSeriesTarget = targetsDifferentEvent(args.eventId, args.targetEventId);
     await this.dependencies.graph.respondToEvent(args, homeAccountId);
     assertSession();
-    this.dependencies.newEventNotifications.dismiss({
-      calendarId: args.calendarId,
-      eventId: args.eventId,
+    const completed = this.dependencies.newEventNotifications.dismissIfCurrent(reference, () => {
+      if (current && !isSeriesTarget) {
+        this.dependencies.db.upsertEvent(applyResponseToEvent(current, args.action));
+      }
     });
 
     if (isSeriesTarget) {
@@ -46,7 +60,7 @@ class EventActionService {
       return;
     }
 
-    let nextEvent = current;
+    let nextEvent: CalendarEvent | null = null;
     try {
       const refreshed = await this.dependencies.graph.getEvent(
         args.calendarId,
@@ -54,19 +68,21 @@ class EventActionService {
         homeAccountId,
       );
       nextEvent = mergeCachedAttachments(refreshed, current);
-    } catch (error) {
-      if (!isMissingGraphItemError(error)) {
-        throw error;
-      }
-    }
+    } catch {}
 
     assertSession();
 
-    if (nextEvent) {
-      replaceStoredEvent(
-        this.dependencies.db,
-        current,
-        applyResponseToEvent(nextEvent, args.action),
+    if (nextEvent && completed) {
+      const refreshed = nextEvent;
+      this.dependencies.newEventNotifications.dismissIfCurrent(
+        { ...reference, revision: undefined },
+        () => {
+          replaceStoredEvent(
+            this.dependencies.db,
+            current,
+            applyResponseToEvent(refreshed, args.action),
+          );
+        },
       );
     }
 

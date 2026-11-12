@@ -575,14 +575,24 @@
     "remindLater": "Remind me later"
   },
   "newEventPopup": {
-    "title": "New invitations",
+    "title": "Invitations to manage",
+    "pendingButton": "Pending invitations",
+    "keepPending": "Closing this window keeps these items pending and preserves the badge.",
+    "actionError": "Unable to complete the action. Try again.",
+    "status": {
+      "invitation": "Awaiting response",
+      "updated": "Update to review",
+      "cancelled": "Cancellation to review"
+    },
     "loadError": "Unable to load invitations. Try again.",
     "retry": "Try again",
-    "subtitle_one": "{{count}} new event awaiting your response",
-    "subtitle_other": "{{count}} new events awaiting your response",
+    "subtitle_one": "{{count}} event to manage",
+    "subtitle_other": "{{count}} events to manage",
     "noOrganizer": "Unknown organizer",
     "closeAria": "Close",
     "actions": {
+      "acknowledge": "Mark reviewed",
+      "openEvent": "View event",
       "accept": "Accept",
       "tentative": "Tentative",
       "decline": "Decline"

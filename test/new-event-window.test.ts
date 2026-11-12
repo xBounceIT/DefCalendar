@@ -59,6 +59,33 @@ afterEach(() => {
 });
 
 describe("new event window", () => {
+  it("preserves attention without crashing if a native close cannot be persisted", () => {
+    const onAttentionChanged = vi.fn();
+    const manager = new NewEventWindowManager(() => {
+      throw new Error("disk full");
+    }, onAttentionChanged);
+    manager.sync(items, true, true);
+    expect(() => electron.instances[0].close()).not.toThrow();
+    expect(onAttentionChanged).toHaveBeenCalledOnce();
+    expect(manager.getWindow()).toBeNull();
+  });
+  it("closes only the popup when pending invitations have been hidden", () => {
+    const onDismiss = vi.fn();
+    const manager = new NewEventWindowManager(onDismiss);
+    manager.sync(items, true, true);
+    manager.sync(
+      items.map((item) => ({ ...item, popupDismissed: true })),
+      true,
+    );
+    expect(electron.instances[0].close).toHaveBeenCalledOnce();
+    expect(onDismiss).not.toHaveBeenCalled();
+    manager.sync(
+      items.map((item) => ({ ...item, popupDismissed: true })),
+      true,
+      true,
+    );
+    expect(electron.instances).toHaveLength(1);
+  });
   it("presents only an independent secure popup when it is ready", () => {
     const manager = new NewEventWindowManager(vi.fn());
     manager.sync(items, true, true);

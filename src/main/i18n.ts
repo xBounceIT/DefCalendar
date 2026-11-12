@@ -12,6 +12,8 @@ interface MainTranslations {
   windowTitle: string;
   reminderTitle: string;
   inviteNotificationTitle: string;
+  inviteUpdateTitle: string;
+  inviteCancellationTitle: string;
   inviteNotificationUntitledEvent: string;
   inviteNotificationUnknownOrganizer: string;
   inviteNotificationAccept: string;
@@ -38,6 +40,8 @@ const translations: Record<AppLocale, MainTranslations> = {
     windowTitle: "DefCalendar",
     reminderTitle: "Reminder",
     inviteNotificationTitle: "New invitation",
+    inviteUpdateTitle: "Meeting updated",
+    inviteCancellationTitle: "Meeting cancelled",
     inviteNotificationUntitledEvent: "Untitled event",
     inviteNotificationUnknownOrganizer: "Unknown organizer",
     inviteNotificationAccept: "Accept",
@@ -62,6 +66,8 @@ const translations: Record<AppLocale, MainTranslations> = {
     windowTitle: "DefCalendar",
     reminderTitle: "Promemoria",
     inviteNotificationTitle: "Nuovo invito",
+    inviteUpdateTitle: "Evento modificato",
+    inviteCancellationTitle: "Evento annullato",
     inviteNotificationUntitledEvent: "Evento senza titolo",
     inviteNotificationUnknownOrganizer: "Organizzatore sconosciuto",
     inviteNotificationAccept: "Accetta",

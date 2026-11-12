@@ -21,7 +21,8 @@ interface SystemInviteNotificationDependencies {
 class SystemInviteNotificationService {
   private readonly activeNotifications = new Map<string, InviteNotification>();
   private readonly dependencies: SystemInviteNotificationDependencies;
-  private readonly suppressedEventKeys = new Set<string>();
+  private readonly suppressedEventKeys = new Map<string, string>();
+  private readonly displayedItems = new Map<string, string>();
   private unsubscribe: null | (() => void) = null;
 
   constructor(dependencies: SystemInviteNotificationDependencies) {
@@ -51,6 +52,7 @@ class SystemInviteNotificationService {
   }
 
   sync(items: NewEventNotificationItem[]): void {
+    items = items.filter((item) => !item.popupDismissed);
     const settings = this.dependencies.settings.getSettings();
     if (!settings.systemInviteNotificationsEnabled) {
       this.closeAll();
@@ -70,7 +72,7 @@ class SystemInviteNotificationService {
         this.close(eventKey);
       }
     }
-    for (const eventKey of this.suppressedEventKeys) {
+    for (const eventKey of this.suppressedEventKeys.keys()) {
       if (!nextEventKeys.has(eventKey)) {
         this.suppressedEventKeys.delete(eventKey);
       }
@@ -78,6 +80,12 @@ class SystemInviteNotificationService {
 
     for (const item of items) {
       const eventKey = buildEventReferenceKey(item);
+      const previousItem =
+        this.displayedItems.get(eventKey) ?? this.suppressedEventKeys.get(eventKey);
+      if (previousItem !== undefined && previousItem !== JSON.stringify(item)) {
+        this.close(eventKey);
+        this.suppressedEventKeys.delete(eventKey);
+      }
       if (this.activeNotifications.has(eventKey) || this.suppressedEventKeys.has(eventKey)) {
         continue;
       }
@@ -89,15 +97,24 @@ class SystemInviteNotificationService {
   private show(item: NewEventNotificationItem, settings: UserSettings): void {
     const eventKey = buildEventReferenceKey(item);
     const notification = new Notification({
-      actions: [
-        { text: t("inviteNotificationAccept"), type: "button" },
-        { text: t("inviteNotificationTentative"), type: "button" },
-        { text: t("inviteNotificationDecline"), type: "button" },
-      ],
+      actions:
+        item.kind === "cancelled"
+          ? []
+          : [
+              { text: t("inviteNotificationAccept"), type: "button" },
+              { text: t("inviteNotificationTentative"), type: "button" },
+              { text: t("inviteNotificationDecline"), type: "button" },
+            ],
       body: buildBody(item, settings),
       groupId: INVITE_GROUP_ID,
       id: createNotificationId(item),
-      title: t("inviteNotificationTitle"),
+      title: t(
+        item.kind === "cancelled"
+          ? "inviteCancellationTitle"
+          : item.kind === "updated"
+            ? "inviteUpdateTitle"
+            : "inviteNotificationTitle",
+      ),
     });
 
     notification.on("action", (event: unknown, actionIndex?: number) => {
@@ -122,6 +139,7 @@ class SystemInviteNotificationService {
     });
 
     this.activeNotifications.set(eventKey, notification);
+    this.displayedItems.set(eventKey, JSON.stringify(item));
     notification.show();
   }
 
@@ -130,6 +148,9 @@ class SystemInviteNotificationService {
     actionIndex: number | undefined,
     notification: InviteNotification,
   ): void {
+    if (item.kind === "cancelled") {
+      return;
+    }
     if (actionIndex === undefined) {
       return;
     }
@@ -147,7 +168,7 @@ class SystemInviteNotificationService {
         })
       ) {
         const eventKey = buildEventReferenceKey(item);
-        this.suppressedEventKeys.add(eventKey);
+        this.suppressedEventKeys.set(eventKey, JSON.stringify(item));
         this.close(eventKey);
       }
       return;
@@ -160,6 +181,7 @@ class SystemInviteNotificationService {
         comment: "",
         eventId: item.eventId,
         sendResponse: true,
+        ...(item.revision ? { notificationRevision: item.revision } : {}),
       })
       .then(() => {
         const eventKey = buildEventReferenceKey(item);
@@ -184,6 +206,7 @@ class SystemInviteNotificationService {
     }
 
     this.activeNotifications.delete(eventKey);
+    this.displayedItems.delete(eventKey);
     notification.close();
   }
 

@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type { CalendarEvent } from "@shared/schemas";
@@ -14,6 +14,7 @@ import i18n, { resolveLocaleSettingAsync } from "../i18n";
 
 function NewEventWindow(): React.JSX.Element {
   const { t } = useTranslation();
+  const [dismissFailed, setDismissFailed] = useState(false);
   const {
     data: settings,
     isError,
@@ -67,15 +68,24 @@ function NewEventWindow(): React.JSX.Element {
             </h3>
             <button
               className="new-event-popup__action"
-              onClick={() => void globalThis.calendarApi.newEventNotifications.dismissAll()}
+              onClick={() => {
+                setDismissFailed(false);
+                void globalThis.calendarApi.newEventNotifications
+                  .dismissAll()
+                  .catch(() => setDismissFailed(true));
+              }}
               type="button"
             >
               {t("common.close")}
             </button>
           </header>
           <div className="new-event-popup__item">
-            <p role={isError ? "alert" : "status"}>
-              {isError ? t("newEventPopup.loadError") : t("common.loading")}
+            <p role={isError || dismissFailed ? "alert" : "status"}>
+              {dismissFailed
+                ? t("newEventPopup.actionError")
+                : isError
+                  ? t("newEventPopup.loadError")
+                  : t("common.loading")}
             </p>
             {isError && (
               <button

@@ -25,6 +25,7 @@ class NewEventWindowManager {
   ) {}
 
   sync(items: NewEventNotificationItem[], enabled: boolean, focus = false): void {
+    items = items.filter((item) => !item.popupDismissed);
     this.items = items;
     this.enabled = enabled;
     if (!enabled || items.length === 0) {
@@ -141,7 +142,11 @@ class NewEventWindowManager {
     const dismissWindow = () => {
       if (this.window === window) {
         this.releaseWindow();
-        this.onDismiss();
+        try {
+          this.onDismiss();
+        } catch {
+          this.onAttentionChanged();
+        }
       }
     };
     window.on("close", dismissWindow);

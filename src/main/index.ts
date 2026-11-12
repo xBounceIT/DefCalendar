@@ -62,9 +62,9 @@ async function bootstrap(): Promise<void> {
   setMainLocale(resolveMainLocale(savedSettings.language, app.getLocale()));
 
   const reminderManager = new ReminderWindowManager();
-  const newEventNotifications = new NewEventNotificationService();
+  const newEventNotifications = new NewEventNotificationService(Date.now, db);
   const newEventWindow: NewEventWindowManager = new NewEventWindowManager(
-    () => newEventNotifications.clear(),
+    () => newEventNotifications.hideAll(),
     () => taskbarInviteAttention.refresh(),
   );
   const auth = new MsalAuthService(
@@ -75,6 +75,7 @@ async function bootstrap(): Promise<void> {
   auth.setSettings(settings);
 
   await auth.initialize();
+  newEventNotifications.reload();
 
   const graph = new GraphCalendarService(auth, config);
   const reminderSync = new ReminderSyncService(db, auth, graph);

@@ -371,11 +371,16 @@ const eventReferenceArgsSchema = z.object({
   eventId: z.string(),
 });
 
+const inviteNotificationReferenceSchema = eventReferenceArgsSchema.extend({
+  revision: z.string().min(1).optional(),
+});
+
 const respondToEventArgsSchema = z.object({
   action: eventResponseActionSchema,
   calendarId: z.string(),
   comment: z.string().default(""),
   eventId: z.string(),
+  notificationRevision: z.string().min(1).optional(),
   sendResponse: z.boolean().default(true),
   targetEventId: z.string().optional(),
 });
@@ -444,6 +449,10 @@ const reminderDialogItemSchema = z.object({
 
 const newEventNotificationItemSchema = z.object({
   calendarId: z.string(),
+  revision: z.string().min(1).optional(),
+  kind: z.enum(["invitation", "updated", "cancelled"]).optional(),
+  popupDismissed: z.boolean().optional(),
+  requiresResponse: z.boolean().optional(),
   end: dateTimeStringSchema,
   eventId: z.string(),
   isAllDay: z.boolean(),
@@ -678,6 +687,7 @@ type ReminderDismissArgs = z.infer<typeof reminderDismissArgsSchema>;
 type ReminderDialogItem = z.infer<typeof reminderDialogItemSchema>;
 type ReminderDialogState = z.infer<typeof reminderDialogStateSchema>;
 type NewEventNotificationItem = z.infer<typeof newEventNotificationItemSchema>;
+type InviteNotificationReference = z.infer<typeof inviteNotificationReferenceSchema>;
 type SyncStatus = z.infer<typeof syncStatusSchema>;
 type AppUpdateState = z.infer<typeof appUpdateStateSchema>;
 type AppUpdateStatus = z.infer<typeof appUpdateStatusSchema>;
@@ -759,6 +769,7 @@ export {
   onlineMeetingInfoSchema,
   participantResponseStatusSchema,
   newEventNotificationItemSchema,
+  inviteNotificationReferenceSchema,
   reminderDialogItemSchema,
   REMINDER_TYPE,
   reminderDialogStateSchema,
@@ -815,6 +826,7 @@ export {
   type LocalReminderRule,
   type LocalReminderWhen,
   type NewEventNotificationItem,
+  type InviteNotificationReference,
   type ReminderDismissArgs,
   type ReminderDialogItem,
   type ReminderDialogState,

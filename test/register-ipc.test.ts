@@ -4,6 +4,7 @@ import path from "node:path";
 import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import EventActionService from "../src/main/events/event-action-service";
+import NewEventNotificationService from "../src/main/notifications/new-event-notification-service";
 import registerIpc from "../src/main/ipc/register-ipc";
 import PhotonLocationService from "../src/main/locations/photon-location-service";
 import OsmMapService from "../src/main/locations/osm-map-service";
@@ -271,8 +272,16 @@ function createFixture() {
   };
 
   const newEventNotifications = {
+    dismissIfCurrent: vi.fn((_reference, persist?: () => void) => {
+      persist?.();
+      return true;
+    }),
+    acknowledge: vi.fn(),
+    hide: vi.fn(),
+    hideAll: vi.fn(),
+    reload: vi.fn(),
     clear: vi.fn(),
-    dismiss: vi.fn(),
+    dismiss: vi.fn((_reference, persist?: () => void) => persist?.()),
     getItems: vi.fn().mockReturnValue([]),
     onChange: vi.fn(),
     recordCandidates: vi.fn(),
@@ -333,6 +342,114 @@ function createFixture() {
 }
 
 describe("register ipc", () => {
+  it("does not dismiss a series invitation after the account changes during its deletion sync", async () => {
+    const fixture = createFixture();
+    const deferred = createDeferred<ReturnType<typeof fixture.sync.getStatus>>();
+    fixture.sync.syncAll.mockReturnValueOnce(deferred.promise);
+    const request = fixture.handlers.get(IPC_CHANNELS.eventsDelete)!(
+      { sender: fixture.mainWebContents },
+      { calendarId: "calendar-1", eventId: "event-1", targetEventId: "series-1" },
+    );
+    const settled = request.catch((error: unknown) => error);
+    await vi.waitFor(() => expect(fixture.sync.syncAll).toHaveBeenCalledOnce());
+    fixture.assertAccountSession.mockImplementation(() => {
+      throw new Error("session changed");
+    });
+    deferred.resolve(fixture.sync.getStatus());
+    expect(await settled).toBeInstanceOf(Error);
+    expect(fixture.newEventNotifications.dismiss).not.toHaveBeenCalled();
+  });
+  it("rejects an RSVP submitted from an obsolete notification before contacting Graph", async () => {
+    const fixture = createFixture();
+    fixture.newEventNotifications.getItems.mockReturnValue([
+      { calendarId: "calendar-1", eventId: "event-1", revision: "latest" },
+    ]);
+    await expect(
+      fixture.handlers.get(IPC_CHANNELS.eventsRespond)?.(
+        { sender: fixture.mainWebContents },
+        {
+          calendarId: "calendar-1",
+          eventId: "event-1",
+          action: "accept",
+          notificationRevision: "old",
+        },
+      ),
+    ).rejects.toThrow("changed");
+    expect(fixture.graph.respondToEvent).not.toHaveBeenCalled();
+    expect(fixture.newEventNotifications.dismissIfCurrent).not.toHaveBeenCalled();
+  });
+  it("preserves an organizer update that arrives while an RSVP is in flight", async () => {
+    const fixture = createFixture();
+    const notifications = new NewEventNotificationService(() =>
+      Date.parse("2026-03-30T09:00:00.000Z"),
+    );
+    const original = {
+      ...createCalendarEvent(),
+      isOrganizer: false,
+      responseStatus: { response: "accepted", time: null },
+    };
+    const first = { ...original, subject: "First update" };
+    const second = { ...first, subject: "Second update" };
+    notifications.reconcile([first], [original], true);
+    fixture.newEventNotifications.getItems.mockImplementation(() => notifications.getItems());
+    fixture.newEventNotifications.dismissIfCurrent.mockImplementation((reference, persist) =>
+      notifications.dismissIfCurrent(reference, persist),
+    );
+    const response = createDeferred<void>();
+    fixture.graph.respondToEvent.mockReturnValue(response.promise);
+    const result = fixture.handlers.get(IPC_CHANNELS.eventsRespond)?.(
+      { sender: fixture.mainWebContents },
+      {
+        calendarId: original.calendarId,
+        eventId: original.id,
+        action: "accept",
+        sendResponse: true,
+        comment: "",
+      },
+    );
+    notifications.reconcile([second], [first], true);
+    response.resolve();
+    await result;
+    expect(notifications.getItems()).toEqual([
+      expect.objectContaining({ subject: "Second update" }),
+    ]);
+    expect(fixture.db.upsertEvent).not.toHaveBeenCalled();
+  });
+  it("clears a pending invitation after the user explicitly deletes it", async () => {
+    const fixture = createFixture();
+    const reference = { calendarId: "calendar-1", eventId: "event-1" };
+    await fixture.handlers.get(IPC_CHANNELS.eventsDelete)?.(
+      { sender: fixture.mainWebContents },
+      reference,
+    );
+    expect(fixture.newEventNotifications.dismiss).toHaveBeenCalledWith(
+      reference,
+      expect.any(Function),
+    );
+  });
+
+  it("keeps a successful RSVP locally answered when refreshing the event is offline", async () => {
+    const fixture = createFixture();
+    fixture.db.getEvent.mockReturnValue({ ...createCalendarEvent(), isOrganizer: false });
+    fixture.graph.getEvent.mockRejectedValue(new Error("offline"));
+    const result = fixture.handlers.get(IPC_CHANNELS.eventsRespond)?.(
+      { sender: fixture.mainWebContents },
+      {
+        calendarId: "calendar-1",
+        eventId: "event-1",
+        action: "accept",
+        sendResponse: true,
+        comment: "",
+      },
+    );
+    await expect(result).resolves.toBeUndefined();
+    expect(fixture.db.upsertEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        responseStatus: expect.objectContaining({ response: "accepted" }),
+      }),
+    );
+    expect(fixture.sync.syncAll).toHaveBeenCalledWith("mutation", "account-1");
+  });
   it("allows the invite popup to read its state and respond without opening the app", async () => {
     const fixture = createFixture();
     const sender = { sender: fixture.inviteWebContents };
@@ -358,7 +475,7 @@ describe("register ipc", () => {
       sendResponse: true,
     });
 
-    expect(fixture.newEventNotifications.dismiss).toHaveBeenCalledWith(reference);
+    expect(fixture.newEventNotifications.hide).toHaveBeenCalledWith(reference);
     expect(fixture.graph.respondToEvent).toHaveBeenCalled();
     expect(fixture.mainWindow.focus).not.toHaveBeenCalled();
     await expect(fixture.handlers.get(IPC_CHANNELS.settingsUpdate)?.(sender, {})).rejects.toThrow(
@@ -529,7 +646,7 @@ describe("register ipc", () => {
 
       fixture.auth.onSessionValidation.mock.calls[0][0](state, "account-1");
 
-      expect(fixture.newEventNotifications.clear).toHaveBeenCalledOnce();
+      expect(fixture.newEventNotifications.reload).toHaveBeenCalledOnce();
       expect(fixture.reminders.checkNow).toHaveBeenCalledOnce();
       expect(fixture.mainWebContents.send).toHaveBeenCalledWith(
         IPC_CHANNELS.authStateChanged,
@@ -607,6 +724,12 @@ describe("register ipc", () => {
       createCalendarEvent(),
     ],
     [
+      IPC_CHANNELS.eventsRespond,
+      "respondToEvent",
+      { calendarId: "calendar-1", eventId: "event-1", action: "accept", sendResponse: true },
+      undefined,
+    ],
+    [
       IPC_CHANNELS.eventsRemoveAttachment,
       "getEvent",
       { calendarId: "calendar-1", eventId: "event-1", attachmentId: "attachment-1" },
@@ -642,13 +765,17 @@ describe("register ipc", () => {
       const request = fixture.handlers.get(channel)!({ sender: fixture.mainWebContents }, input);
       const settledRequest = request.catch((error: unknown) => error);
       await vi.waitFor(() => expect(fixture.graph[method]).toHaveBeenCalledOnce());
+      const writesBeforeInvalidation = fixture.db.upsertEvent.mock.calls.length;
+      expect(writesBeforeInvalidation).toBe(
+        channel === IPC_CHANNELS.eventsRespond && method === "getEvent" ? 1 : 0,
+      );
       fixture.assertAccountSession.mockImplementation(() => {
         throw new Error("The Microsoft 365 session changed during the request.");
       });
       deferred.resolve(result);
 
       await expect(settledRequest).resolves.toBeInstanceOf(Error);
-      expect(fixture.db.upsertEvent).not.toHaveBeenCalled();
+      expect(fixture.db.upsertEvent).toHaveBeenCalledTimes(writesBeforeInvalidation);
       expect(fixture.db.deleteEvent).not.toHaveBeenCalled();
       expect(fixture.sync.syncAll).not.toHaveBeenCalled();
     },
@@ -678,6 +805,7 @@ describe("register ipc", () => {
     expect.hasAssertions();
     const fixture = createFixture();
     fixture.graph.getEvent.mockImplementationOnce(async () => {
+      expect(fixture.db.upsertEvent).toHaveBeenCalledOnce();
       fixture.assertAccountSession.mockImplementation(() => {
         throw new Error("The Microsoft 365 session changed during the request.");
       });
@@ -690,7 +818,7 @@ describe("register ipc", () => {
         { calendarId: "calendar-1", eventId: "event-1", action: "decline" },
       ),
     ).rejects.toThrow("session changed");
-    expect(fixture.db.upsertEvent).not.toHaveBeenCalled();
+    expect(fixture.db.upsertEvent).toHaveBeenCalledOnce();
     expect(fixture.sync.syncAll).not.toHaveBeenCalled();
   });
 
@@ -863,7 +991,18 @@ describe("register ipc", () => {
     expect(response).toStrictEqual([storedEvent]);
   });
 
-  it("dismisses one invite through a validated calendar and event reference", async () => {
+  it("acknowledges reviewed changes only from trusted application windows", async () => {
+    const fixture = createFixture();
+    const reference = { calendarId: "calendar-1", eventId: "event-1" };
+    const handler = fixture.handlers.get(IPC_CHANNELS.newEventNotificationsAcknowledge)!;
+    await handler({ sender: fixture.mainWebContents }, reference);
+    await handler({ sender: fixture.inviteWebContents }, reference);
+    expect(fixture.newEventNotifications.acknowledge).toHaveBeenCalledTimes(2);
+    await expect(handler({ sender: {} }, reference)).rejects.toThrow();
+    await expect(handler({ sender: fixture.mainWebContents }, "event-1")).rejects.toThrow();
+  });
+
+  it("hides one popup item through a validated calendar and event reference", async () => {
     expect.hasAssertions();
     const fixture = createFixture();
     const invokeEvent = { sender: fixture.mainWebContents };
@@ -872,7 +1011,7 @@ describe("register ipc", () => {
 
     await handler?.(invokeEvent, args);
 
-    expect(fixture.newEventNotifications.dismiss).toHaveBeenCalledWith(args);
+    expect(fixture.newEventNotifications.hide).toHaveBeenCalledWith(args);
     await expect(handler?.(invokeEvent, "event-1")).rejects.toThrow();
   });
 
@@ -966,6 +1105,19 @@ describe("register ipc", () => {
       expect.objectContaining({ id: "event-1" }),
     );
     expect(fixture.reminderManager.minimize).toHaveBeenCalledOnce();
+  });
+
+  it("does not minimize reminder notifications when an invitation is opened from the main app", async () => {
+    const fixture = createFixture();
+    await fixture.handlers.get(IPC_CHANNELS.eventsOpenInApp)?.(
+      { sender: fixture.mainWebContents },
+      { calendarId: "calendar-1", eventId: "event-1" },
+    );
+    expect(fixture.mainWebContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.eventsOpenInAppRequested,
+      expect.objectContaining({ id: "event-1" }),
+    );
+    expect(fixture.reminderManager.minimize).not.toHaveBeenCalled();
   });
 
   it("restores a minimized main window before opening a reminder event", async () => {

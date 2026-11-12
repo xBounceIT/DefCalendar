@@ -166,8 +166,9 @@ function installCalendarApi(items: NewEventNotificationItem[]): CalendarApi {
       snooze: vi.fn(),
     },
     newEventNotifications: {
-      dismiss: vi.fn(),
-      dismissAll: vi.fn(),
+      acknowledge: vi.fn().mockResolvedValue(undefined),
+      dismiss: vi.fn().mockResolvedValue(undefined),
+      dismissAll: vi.fn().mockResolvedValue(undefined),
       get: vi.fn().mockResolvedValue(items),
       onChanged: vi.fn().mockReturnValue(() => undefined),
     },
@@ -217,6 +218,95 @@ function renderPopup(props?: Partial<React.ComponentProps<typeof NewEventPopup>>
 }
 
 describe("new event popup", () => {
+  it("reports popup close failures without discarding the invitation", async () => {
+    const api = installCalendarApi([createNotificationItem()]);
+    vi.mocked(api.newEventNotifications.dismissAll).mockRejectedValueOnce(new Error("disk full"));
+    renderPopup();
+    await screen.findByText("Planning invite");
+    fireEvent.click(screen.getAllByRole("button", { name: "Close" })[0]);
+    await screen.findByRole("alert");
+    expect(screen.getByText("Planning invite")).toBeInTheDocument();
+    expect(api.events.respond).not.toHaveBeenCalled();
+  });
+  it("shows queue load failures and supports retry without losing pending notices", async () => {
+    const api = installCalendarApi([createNotificationItem()]);
+    vi.mocked(api.newEventNotifications.get).mockRejectedValueOnce(new Error("IPC unavailable"));
+    renderPopup();
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByText("Planning invite");
+    expect(api.newEventNotifications.dismissAll).not.toHaveBeenCalled();
+  });
+  it("discards an overlap lookup if an organizer changes the invitation while it is running", async () => {
+    const item = createNotificationItem();
+    const api = installCalendarApi([item]);
+    let changed: ((items: NewEventNotificationItem[]) => void) | undefined;
+    vi.mocked(api.newEventNotifications.onChanged).mockImplementation((listener) => {
+      changed = listener;
+      return () => undefined;
+    });
+    let resolveLookup: (events: CalendarEvent[]) => void = () => undefined;
+    const lookup = new Promise<CalendarEvent[]>((resolve) => {
+      resolveLookup = resolve;
+    });
+    renderPopup({ onFindAcceptConflicts: () => lookup });
+    fireEvent.click(await screen.findByRole("button", { name: "Accept" }));
+    await act(async () => {
+      changed?.([
+        {
+          ...item,
+          start: "2026-03-31T09:00:00.000Z",
+          end: "2026-03-31T10:00:00.000Z",
+          kind: "updated",
+        },
+      ]);
+      resolveLookup([]);
+      await lookup;
+    });
+    expect(api.events.respond).not.toHaveBeenCalled();
+    expect(screen.getByText("Update to review")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Accept" })).toBeEnabled();
+  });
+  it("only shows closed invitations when explicitly opened from the pending list", async () => {
+    const item = createNotificationItem({ popupDismissed: true });
+    const api = installCalendarApi([item]);
+    const view = renderPopup();
+    await waitFor(() => expect(api.newEventNotifications.get).toHaveBeenCalled());
+    expect(screen.queryByText(item.subject)).not.toBeInTheDocument();
+    view.unmount();
+    const onClose = vi.fn();
+    renderPopup({ showAll: true, onClose });
+    await screen.findByText(item.subject);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(api.newEventNotifications.dismissAll).toHaveBeenCalledOnce();
+    expect(api.events.respond).not.toHaveBeenCalled();
+  });
+
+  it("offers review rather than RSVP actions for cancellations", async () => {
+    const item = createNotificationItem({ kind: "cancelled" });
+    const api = installCalendarApi([item]);
+    renderPopup({ showAll: true });
+    await screen.findByText("Cancellation to review");
+    expect(screen.queryByRole("button", { name: "Accept" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Mark reviewed" }));
+    expect(api.newEventNotifications.acknowledge).toHaveBeenCalledWith({
+      calendarId: item.calendarId,
+      eventId: item.eventId,
+    });
+    expect(api.events.respond).not.toHaveBeenCalled();
+  });
+
+  it("keeps a failed response actionable and shows the error", async () => {
+    const api = installCalendarApi([createNotificationItem()]);
+    vi.mocked(api.events.respond).mockRejectedValue(new Error("offline"));
+    renderPopup();
+    fireEvent.click(await screen.findByRole("button", { name: "Tentative" }));
+    await screen.findByRole("alert");
+    expect(screen.getByRole("button", { name: "Tentative" })).toBeEnabled();
+    expect(api.newEventNotifications.dismiss).not.toHaveBeenCalled();
+    expect(api.newEventNotifications.dismissAll).not.toHaveBeenCalled();
+  });
   it("checks overlaps and responds inside the independent popup", async () => {
     const item = createNotificationItem();
     const calendarApi = installCalendarApi([item]);
@@ -329,6 +419,21 @@ describe("new event popup", () => {
 
     expect(calendarApi.newEventNotifications.dismissAll).toHaveBeenCalledOnce();
     expect(calendarApi.events.respond).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed close even before popup settings have loaded", async () => {
+    const api = installCalendarApi([createNotificationItem()]);
+    vi.mocked(api.settings.get).mockReturnValue(new Promise(() => undefined));
+    vi.mocked(api.newEventNotifications.dismissAll).mockRejectedValue(new Error("disk full"));
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <NewEventWindow />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await screen.findByRole("alert");
+    expect(screen.getByText("Unable to complete the action. Try again.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close" })).toBeEnabled();
   });
 
   it("reports initial settings errors and lets the user retry without opening the main app", async () => {
@@ -530,7 +635,7 @@ describe("new event popup", () => {
 
     renderPopup();
 
-    const dialog = await screen.findByRole("dialog", { name: "New invitations" });
+    const dialog = await screen.findByRole("dialog", { name: "Invitations to manage" });
     await waitFor(() => {
       expect(dialog).toHaveFocus();
     });

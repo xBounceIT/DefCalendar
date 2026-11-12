@@ -127,6 +127,15 @@ function resetMocks(): void {
 }
 
 describe("taskbar invite attention service", () => {
+  it("keeps the macOS badge for invitations after their popup is closed", () => {
+    resetMocks();
+    Object.defineProperty(process, "platform", { configurable: true, value: "darwin" });
+    const fixture = createService({ items: [createItem({ popupDismissed: true })] });
+    fixture.service.start();
+    expect(electronRuntimeMock.app.setBadgeCount).toHaveBeenLastCalledWith(1);
+    fixture.service.sync([]);
+    expect(electronRuntimeMock.app.setBadgeCount).toHaveBeenLastCalledWith(0);
+  });
   it.each([false, true])(
     "only badges macOS invitations with a hidden or minimized window (%s)",
     (minimized) => {
