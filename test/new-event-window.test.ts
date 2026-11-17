@@ -12,15 +12,20 @@ const electron = vi.hoisted(() => {
       send: vi.fn(),
     };
     readonly show = vi.fn();
+    readonly showInactive = vi.fn();
     readonly moveTop = vi.fn();
     readonly focus = vi.fn();
     readonly restore = vi.fn();
+    readonly getNormalBounds = vi.fn(() => ({ x: 1800, y: 100, width: 560, height: 460 }));
     readonly isMinimized = vi.fn(() => false);
     readonly isDestroyed = vi.fn(() => false);
-    readonly close = vi.fn(() => {
-      this.handlers.get("close")?.();
+    readonly destroy = vi.fn(() => {
       this.isDestroyed.mockReturnValue(true);
       this.handlers.get("closed")?.();
+    });
+    readonly close = vi.fn(() => {
+      this.handlers.get("close")?.();
+      this.destroy();
     });
     readonly loadURL = vi.fn(() => load());
     readonly loadFile = vi.fn(() => load());
@@ -38,6 +43,7 @@ const electron = vi.hoisted(() => {
     load,
     screen: {
       getPrimaryDisplay: () => ({ workArea: { x: 0, y: 0, width: 1920, height: 1080 } }),
+      getDisplayMatching: () => ({ workArea: { x: 0, y: 24, width: 1920, height: 1056 } }),
     },
   };
 });
@@ -45,14 +51,17 @@ const electron = vi.hoisted(() => {
 vi.mock("@main/electron-runtime", () => electron);
 
 const items = [{ calendarId: "calendar-1", eventId: "event-1" }] as NewEventNotificationItem[];
+const originalPlatform = process.platform;
 
 beforeEach(() => {
+  Object.defineProperty(process, "platform", { configurable: true, value: "win32" });
   vi.useFakeTimers();
   electron.instances.length = 0;
   electron.load.mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => {
+  Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.unstubAllEnvs();
@@ -107,6 +116,52 @@ describe("new event window", () => {
     expect(window.loadFile).toHaveBeenCalledWith(expect.stringContaining("new-event-popup.html"));
     expect(manager.ownsWebContents(window.webContents as never)).toBe(true);
     expect(manager.ownsWebContents({} as never)).toBe(false);
+  });
+
+  it("presents new invitations on macOS without activating the calendar, including after retry", async () => {
+    Object.defineProperty(process, "platform", { configurable: true, value: "darwin" });
+    const manager = new NewEventWindowManager(vi.fn());
+    electron.load.mockRejectedValueOnce(new Error("could not load popup"));
+    manager.sync(items, true, true);
+    await vi.advanceTimersByTimeAsync(1000);
+    const window = electron.instances[1];
+    window.handlers.get("ready-to-show")?.();
+    manager.sync([...items, { ...items[0], eventId: "event-2" }], true, true);
+
+    expect(window.showInactive).toHaveBeenCalledTimes(2);
+    expect(window.show).not.toHaveBeenCalled();
+    expect(window.focus).not.toHaveBeenCalled();
+    expect(window.moveTop).not.toHaveBeenCalled();
+  });
+
+  it("replaces a minimized macOS popup on a new invitation without dismissing pending invitations", () => {
+    Object.defineProperty(process, "platform", { configurable: true, value: "darwin" });
+    const onDismiss = vi.fn();
+    const manager = new NewEventWindowManager(onDismiss);
+    manager.sync(items, true, true);
+    const minimized = electron.instances[0];
+    minimized.handlers.get("ready-to-show")?.();
+    minimized.isMinimized.mockReturnValue(true);
+
+    manager.sync(items, true);
+    expect(manager.getWindow()).toBe(minimized);
+    expect(minimized.showInactive).toHaveBeenCalledOnce();
+
+    const nextItems = [...items, { ...items[0], eventId: "event-2" }];
+    manager.sync(nextItems, true, true);
+    const replacement = electron.instances[1];
+    replacement.webHandlers.get("did-finish-load")?.();
+    replacement.handlers.get("ready-to-show")?.();
+
+    expect(minimized.destroy).toHaveBeenCalledOnce();
+    expect(minimized.restore).not.toHaveBeenCalled();
+    expect(replacement.options).toMatchObject({ x: 1360, y: 100 });
+    expect(onDismiss).not.toHaveBeenCalled();
+    expect(replacement.showInactive).toHaveBeenCalledOnce();
+    expect(replacement.webContents.send).toHaveBeenCalledWith(
+      IPC_CHANNELS.newEventNotificationsChanged,
+      nextItems,
+    );
   });
 
   it("loads the development popup entry", () => {
@@ -344,21 +399,29 @@ describe("new event window", () => {
     expect(electron.instances).toHaveLength(2);
   });
 
-  it("resets recovery backoff after a replacement loads successfully", async () => {
+  it("keeps recovery backoff until the popup is ready to show", async () => {
     electron.load.mockRejectedValueOnce(new Error("first failure"));
     electron.load.mockRejectedValueOnce(new Error("second failure"));
     const manager = new NewEventWindowManager(vi.fn());
     manager.sync(items, true, true);
     await vi.advanceTimersByTimeAsync(3000);
     expect(electron.instances).toHaveLength(3);
-    const recovered = electron.instances[2];
-    recovered.webHandlers.get("did-finish-load")?.();
+    const loaded = electron.instances[2];
+    loaded.webHandlers.get("did-finish-load")?.();
+    loaded.webHandlers.get("render-process-gone")?.();
+
+    await vi.advanceTimersByTimeAsync(3999);
+    expect(electron.instances).toHaveLength(3);
+    await vi.advanceTimersByTimeAsync(1);
+
+    const recovered = electron.instances[3];
+    recovered.handlers.get("ready-to-show")?.();
     recovered.webHandlers.get("render-process-gone")?.();
 
     await vi.advanceTimersByTimeAsync(1000);
 
-    expect(electron.instances).toHaveLength(4);
-    expect(manager.getWindow()).toBe(electron.instances[3]);
+    expect(electron.instances).toHaveLength(5);
+    expect(manager.getWindow()).toBe(electron.instances[4]);
   });
 
   it("ignores a failed load after that popup was replaced", async () => {

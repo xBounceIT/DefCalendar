@@ -1,6 +1,7 @@
-import type { WebContents } from "electron";
+import type { BrowserWindow as ElectronBrowserWindow, Rectangle, WebContents } from "electron";
 import { join } from "pathe";
-import { BrowserWindow, screen, shell } from "@main/electron-runtime";
+import { BrowserWindow, shell } from "@main/electron-runtime";
+import getPopupPosition from "@main/notifications/popup-position";
 import { IPC_CHANNELS, type ReminderDialogState } from "@shared/ipc";
 import { t } from "../i18n";
 
@@ -14,35 +15,33 @@ class ReminderWindowManager {
     timeFormat: "system",
     theme: "system",
   };
-  private window: BrowserWindow | null = null;
+  private window: ElectronBrowserWindow | null = null;
   private isLoaded = false;
   private isReadyToShow = false;
-  private shouldFocusOnReady = false;
+  private shouldAnnounceOnReady = false;
 
-  show(state: ReminderDialogState, focus: boolean): void {
+  show(state: ReminderDialogState, announce: boolean): void {
     this.state = state;
-    const window = this.ensureWindow();
+    const window = this.ensureWindow(announce);
     this.pushState();
 
     if (!this.isReadyToShow) {
-      this.shouldFocusOnReady = this.shouldFocusOnReady || focus;
+      this.shouldAnnounceOnReady ||= announce;
       return;
     }
 
-    if (focus) {
-      shell.beep();
-      this.present(window);
-      return;
-    }
-
-    if (!window.isVisible()) {
+    if (announce) {
+      this.present(window, true);
+    } else if (process.platform !== "darwin" && !window.isVisible()) {
       window.show();
     }
   }
 
   close(): void {
-    if (this.window && !this.window.isDestroyed()) {
-      this.window.close();
+    const window = this.window;
+    this.releaseWindow();
+    if (window && !window.isDestroyed()) {
+      window.close();
     }
   }
 
@@ -62,13 +61,25 @@ class ReminderWindowManager {
     }
   }
 
-  private ensureWindow(): BrowserWindow {
+  private releaseWindow(): void {
+    this.window = null;
+    this.isLoaded = false;
+    this.isReadyToShow = false;
+    this.shouldAnnounceOnReady = false;
+  }
+
+  private ensureWindow(announce: boolean): ElectronBrowserWindow {
+    let previousBounds: Rectangle | undefined;
     if (this.window && !this.window.isDestroyed()) {
-      return this.window;
+      if (process.platform !== "darwin" || !announce || !this.window.isMinimized()) {
+        return this.window;
+      }
+      const minimizedWindow = this.window;
+      previousBounds = minimizedWindow.getNormalBounds();
+      this.releaseWindow();
+      minimizedWindow.destroy();
     }
 
-    const display = screen.getPrimaryDisplay();
-    const { x, y, width, height } = display.workArea;
     const window = new BrowserWindow({
       alwaysOnTop: true,
       autoHideMenuBar: true,
@@ -81,8 +92,7 @@ class ReminderWindowManager {
       show: false,
       title: t("reminderTitle"),
       width: POPUP_WIDTH,
-      x: x + Math.round((width - POPUP_WIDTH) / 2),
-      y: y + Math.round((height - POPUP_HEIGHT) / 2),
+      ...getPopupPosition(POPUP_WIDTH, POPUP_HEIGHT, previousBounds),
       webPreferences: {
         preload: join(__dirname, "../preload/index.cjs"),
         sandbox: true,
@@ -91,43 +101,59 @@ class ReminderWindowManager {
       },
     });
 
+    this.window = window;
     window.setAlwaysOnTop(true, "screen-saver");
 
     window.once("ready-to-show", () => {
-      this.isReadyToShow = true;
-      if (this.shouldFocusOnReady) {
-        shell.beep();
-        this.present(window);
-        this.shouldFocusOnReady = false;
+      if (this.window !== window || window.isDestroyed()) {
         return;
       }
-
-      window.show();
+      this.isReadyToShow = true;
+      const announceOnReady = this.shouldAnnounceOnReady;
+      this.shouldAnnounceOnReady = false;
+      this.present(window, announceOnReady);
     });
 
     window.webContents.on("did-finish-load", () => {
-      this.isLoaded = true;
-      this.pushState();
+      if (this.window === window) {
+        this.isLoaded = true;
+        this.pushState();
+      }
     });
 
     window.on("closed", () => {
-      this.window = null;
-      this.isLoaded = false;
-      this.isReadyToShow = false;
-      this.shouldFocusOnReady = false;
+      if (this.window === window) {
+        this.releaseWindow();
+      }
     });
 
-    if (process.env.ELECTRON_RENDERER_URL) {
-      void window.loadURL(`${process.env.ELECTRON_RENDERER_URL}/reminder-popup.html`);
-    } else {
-      void window.loadFile(join(__dirname, "../renderer/reminder-popup.html"));
-    }
+    const closeFailedWindow = () => {
+      if (this.window === window) {
+        this.close();
+      }
+    };
+    window.webContents.on("render-process-gone", closeFailedWindow);
+    const load = process.env.ELECTRON_RENDERER_URL
+      ? window.loadURL(`${process.env.ELECTRON_RENDERER_URL}/reminder-popup.html`)
+      : window.loadFile(join(__dirname, "../renderer/reminder-popup.html"));
+    void load.catch(closeFailedWindow);
 
-    this.window = window;
     return window;
   }
 
-  private present(window: BrowserWindow): void {
+  private present(window: ElectronBrowserWindow, announce: boolean): void {
+    if (announce) {
+      shell.beep();
+    }
+    if (process.platform === "darwin") {
+      window.showInactive();
+      return;
+    }
+    if (!announce) {
+      window.show();
+      return;
+    }
+
     if (window.isMinimized()) {
       window.restore();
     }

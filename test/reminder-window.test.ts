@@ -12,12 +12,15 @@ interface FakeWindow {
   loadURL: ReturnType<typeof vi.fn>;
   loadFile: ReturnType<typeof vi.fn>;
   show: ReturnType<typeof vi.fn>;
+  showInactive: ReturnType<typeof vi.fn>;
   focus: ReturnType<typeof vi.fn>;
   moveTop: ReturnType<typeof vi.fn>;
   minimize: ReturnType<typeof vi.fn>;
   restore: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
+  destroy: ReturnType<typeof vi.fn>;
   setAlwaysOnTop: ReturnType<typeof vi.fn>;
+  getNormalBounds: ReturnType<typeof vi.fn>;
   isMinimized: ReturnType<typeof vi.fn>;
   isVisible: ReturnType<typeof vi.fn>;
   isDestroyed: ReturnType<typeof vi.fn>;
@@ -31,11 +34,15 @@ interface FakeWindow {
 
 const fakeWindows: FakeWindow[] = [];
 
-const { BrowserWindowMock, beepMock, screenMock } = vi.hoisted(() => {
+const { BrowserWindowMock, beepMock, loadMock, screenMock } = vi.hoisted(() => {
   const beepMock = vi.fn();
+  const loadMock = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
   const screenMock = {
     getPrimaryDisplay: vi.fn().mockReturnValue({
       workArea: { x: 0, y: 0, width: 1920, height: 1080 },
+    }),
+    getDisplayMatching: vi.fn().mockReturnValue({
+      workArea: { x: -1440, y: 24, width: 1440, height: 876 },
     }),
   };
 
@@ -50,15 +57,21 @@ const { BrowserWindowMock, beepMock, screenMock } = vi.hoisted(() => {
     };
     const win: FakeWindow = {
       webContents,
-      loadURL: vi.fn(),
-      loadFile: vi.fn(),
+      loadURL: vi.fn(() => loadMock()),
+      loadFile: vi.fn(() => loadMock()),
       show: vi.fn(),
+      showInactive: vi.fn(),
       focus: vi.fn(),
       moveTop: vi.fn(),
       minimize: vi.fn(),
       restore: vi.fn(),
       close: vi.fn(),
+      destroy: vi.fn(() => {
+        win.isDestroyed.mockReturnValue(true);
+        win.fireOn("closed");
+      }),
       setAlwaysOnTop: vi.fn(),
+      getNormalBounds: vi.fn(() => ({ x: -1200, y: 160, width: 560, height: 460 })),
       isMinimized: vi.fn().mockReturnValue(false),
       isVisible: vi.fn().mockReturnValue(false),
       isDestroyed: vi.fn().mockReturnValue(false),
@@ -108,10 +121,10 @@ const { BrowserWindowMock, beepMock, screenMock } = vi.hoisted(() => {
     return makeWindow(options);
   }
 
-  return { BrowserWindowMock, beepMock, screenMock };
+  return { BrowserWindowMock, beepMock, loadMock, screenMock };
 });
 
-vi.mock(import("@main/electron-runtime"), () => ({
+vi.mock("@main/electron-runtime", () => ({
   BrowserWindow: BrowserWindowMock,
   screen: screenMock,
   shell: {
@@ -132,22 +145,29 @@ const STATE: ReminderDialogState = {
       eventId: "event-1",
       isAllDay: false,
       location: null,
+      onlineMeeting: null,
+      reminderMinutesBeforeStart: 0,
       reminderType: "start",
-      snoozeOptionsMinutes: [5, 10, 15],
       start: "2026-04-01T10:00:00.000Z",
       subject: "Standup",
     },
   ],
   locale: "en",
+  theme: "system",
   timeFormat: "system",
 };
 
+const originalPlatform = process.platform;
+
 beforeEach(() => {
+  Object.defineProperty(process, "platform", { configurable: true, value: "win32" });
   fakeWindows.length = 0;
   beepMock.mockReset();
+  loadMock.mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(() => {
+  Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
   delete process.env.ELECTRON_RENDERER_URL;
 });
 
@@ -234,6 +254,54 @@ describe("reminderWindowManager.show", () => {
     expect(win.restore).toHaveBeenCalledOnce();
   });
 
+  it("shows and refreshes due reminders on macOS without activating the calendar", () => {
+    Object.defineProperty(process, "platform", { configurable: true, value: "darwin" });
+    const manager = new ReminderWindowManager();
+    manager.show(STATE, true);
+    const win = fakeWindows[0]!;
+    win.fireOnce("ready-to-show");
+    win.fireWebEvent("did-finish-load");
+
+    const updatedState = { ...STATE, locale: "it" as const };
+    manager.show(updatedState, false);
+    expect(win.webContents.send).toHaveBeenLastCalledWith(
+      IPC_CHANNELS.reminderStateChanged,
+      updatedState,
+    );
+    expect(win.showInactive).toHaveBeenCalledOnce();
+    expect(beepMock).toHaveBeenCalledOnce();
+
+    manager.show(STATE, true);
+    expect(beepMock).toHaveBeenCalledTimes(2);
+    expect(win.showInactive).toHaveBeenCalledTimes(2);
+    expect(win.show).not.toHaveBeenCalled();
+    expect(win.moveTop).not.toHaveBeenCalled();
+    expect(win.focus).not.toHaveBeenCalled();
+  });
+
+  it("shows new reminders on macOS without restoring a minimized window from the Dock", () => {
+    Object.defineProperty(process, "platform", { configurable: true, value: "darwin" });
+    const manager = new ReminderWindowManager();
+    manager.show(STATE, true);
+    const minimized = fakeWindows[0]!;
+    minimized.fireOnce("ready-to-show");
+    minimized.isMinimized.mockReturnValue(true);
+
+    manager.show(STATE, false);
+    expect(fakeWindows).toHaveLength(1);
+    expect(minimized.showInactive).toHaveBeenCalledOnce();
+
+    manager.show(STATE, true);
+    const replacement = fakeWindows[1]!;
+    replacement.fireOnce("ready-to-show");
+
+    expect(minimized.destroy).toHaveBeenCalledOnce();
+    expect(minimized.restore).not.toHaveBeenCalled();
+    expect(replacement.options).toMatchObject({ x: -1200, y: 160 });
+    expect(replacement.showInactive).toHaveBeenCalledOnce();
+    expect(replacement.focus).not.toHaveBeenCalled();
+  });
+
   it("pushes state to webContents only after did-finish-load", async () => {
     const manager = new ReminderWindowManager();
 
@@ -248,6 +316,54 @@ describe("reminderWindowManager.show", () => {
 });
 
 describe("reminderWindowManager lifecycle", () => {
+  it("ignores late events from a pending popup close on macOS", () => {
+    Object.defineProperty(process, "platform", { configurable: true, value: "darwin" });
+    const manager = new ReminderWindowManager();
+    manager.show(STATE, true);
+    const closing = fakeWindows[0]!;
+    manager.close();
+
+    expect(manager.hasWindow()).toBe(false);
+    expect(manager.ownsWebContents(closing.webContents as unknown as Electron.WebContents)).toBe(
+      false,
+    );
+    closing.fireOnce("ready-to-show");
+    expect(closing.showInactive).not.toHaveBeenCalled();
+    expect(beepMock).not.toHaveBeenCalled();
+
+    manager.show(STATE, true);
+    const replacement = fakeWindows[1]!;
+    closing.fireWebEvent("did-finish-load");
+    closing.fireOn("closed");
+    expect(replacement.webContents.send).not.toHaveBeenCalled();
+    replacement.fireOnce("ready-to-show");
+    expect(replacement.showInactive).toHaveBeenCalledOnce();
+  });
+
+  it.each(["load failure", "renderer crash"])(
+    "allows the next reminder check to replace a popup after a %s",
+    async (failure) => {
+      Object.defineProperty(process, "platform", { configurable: true, value: "darwin" });
+      const manager = new ReminderWindowManager();
+      const load =
+        failure === "load failure" ? Promise.reject(new Error("ERR_FAILED")) : Promise.resolve();
+      loadMock.mockReturnValueOnce(load);
+      manager.show(STATE, true);
+      const failedWindow = fakeWindows[0]!;
+      if (failure === "renderer crash") {
+        failedWindow.fireWebEvent("render-process-gone");
+      }
+      await load.catch(() => undefined);
+
+      expect(manager.hasWindow()).toBe(false);
+      manager.show(STATE, true);
+      const replacement = fakeWindows[1]!;
+      replacement.fireOnce("ready-to-show");
+      expect(replacement.showInactive).toHaveBeenCalledOnce();
+      expect(replacement.focus).not.toHaveBeenCalled();
+    },
+  );
+
   it("close() closes window when present", async () => {
     const manager = new ReminderWindowManager();
     manager.show(STATE, false);
