@@ -17,7 +17,7 @@ const { isEncryptionAvailableMock, encryptStringMock, decryptStringMock } = vi.h
   isEncryptionAvailableMock: vi.fn(),
 }));
 
-vi.mock(import("fs-extra"), () => ({
+vi.mock("fs-extra", () => ({
   default: {
     existsSync: existsSyncMock,
     mkdirSync: mkdirSyncMock,
@@ -27,7 +27,7 @@ vi.mock(import("fs-extra"), () => ({
   },
 }));
 
-vi.mock(import("electron"), () => ({
+vi.mock("electron", () => ({
   safeStorage: {
     decryptString: decryptStringMock,
     encryptString: encryptStringMock,

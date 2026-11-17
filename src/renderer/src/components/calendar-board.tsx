@@ -2,7 +2,6 @@ import type {
   DayCellContentArg,
   DateSelectArg,
   DatesSetArg,
-  EventClickArg,
   EventContentArg,
   EventDropArg,
   EventHoveringArg,
@@ -39,7 +38,7 @@ interface CalendarBoardProps {
   onDateClick: (clickInfo: DateClickArg) => void;
   onDateDoubleClick: (clickInfo: DateClickArg) => void;
   onDatesSet: (dates: DatesSetArg) => void;
-  onEventClick: (clickInfo: EventClickArg) => void;
+  onEventClick: (calendarId: string, eventId: string) => void;
   onEventCopy: (calendarId: string, eventId: string) => void;
   onEventDrop: (changeInfo: EventDropArg) => void;
   onEventResize: (changeInfo: EventResizeDoneArg) => void;
@@ -700,8 +699,9 @@ function CalendarSurface({
         slotEventOverlap={false}
         editable
         eventClick={(info) => {
-          if (!hasSelectedTextWithin(info.el)) {
-            onEventClick(info);
+          const { calendarId, eventId } = info.event.extendedProps as CalendarEventExtendedProps;
+          if (calendarId && eventId && !hasSelectedTextWithin(info.el)) {
+            onEventClick(calendarId, eventId);
           }
         }}
         eventClassNames={handleEventClassNames}

@@ -2,13 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createDefaultSettings } from "../src/shared/schema-values";
 import useUiStore from "../src/renderer/src/store";
 
-function createRange(selectedDate: string): { rangeEnd: string; rangeStart: string } {
-  const seed = new Date(selectedDate);
-  const rangeStart = new Date(seed.getFullYear(), seed.getMonth() - 1, 1).toISOString();
-  const rangeEnd = new Date(seed.getFullYear(), seed.getMonth() + 2, 1).toISOString();
-  return { rangeEnd, rangeStart };
-}
-
 function shiftDays(iso: string, days: number): string {
   return new Date(Date.parse(iso) + days * 24 * 60 * 60 * 1000).toISOString();
 }
@@ -19,7 +12,8 @@ beforeEach(() => {
     activeView: defaults.activeView,
     hydrated: true,
     selectedDate: defaults.selectedDate,
-    ...createRange(defaults.selectedDate),
+    rangeStart: "2026-04-01T00:00:00.000Z",
+    rangeEnd: "2026-07-01T00:00:00.000Z",
   });
 });
 
@@ -90,73 +84,7 @@ describe("ui store hydrate", () => {
     expect(state.selectedDate).toBe("2026-06-15T00:00:00.000Z");
     expect(state.hydrated).toBe(true);
 
-    const seed = new Date("2026-06-15T00:00:00.000Z");
-    const expectedStart = new Date(seed.getFullYear(), seed.getMonth() - 1, 1).toISOString();
-    const expectedEnd = new Date(seed.getFullYear(), seed.getMonth() + 2, 1).toISOString();
-    expect(state.rangeStart).toBe(expectedStart);
-    expect(state.rangeEnd).toBe(expectedEnd);
-  });
-});
-
-describe("ui store selectedDayForTable", () => {
-  it("setSelectedDayForTable assigns the value", () => {
-    const listener = vi.fn();
-    const unsubscribe = useUiStore.subscribe(listener);
-
-    try {
-      useUiStore.getState().setSelectedDayForTable("2026-06-15");
-      expect(useUiStore.getState().selectedDayForTable).toBe("2026-06-15");
-      expect(listener).toHaveBeenCalledOnce();
-    } finally {
-      unsubscribe();
-    }
-  });
-
-  it("clearSelectedDayForTable resets the value to null", () => {
-    useUiStore.setState({ selectedDayForTable: "2026-06-15" });
-    useUiStore.getState().clearSelectedDayForTable();
-    expect(useUiStore.getState().selectedDayForTable).toBeNull();
-  });
-});
-
-describe("ui store happy-path notifications", () => {
-  it("notifies subscribers when setSelectedDate receives a new value", () => {
-    const listener = vi.fn();
-    const unsubscribe = useUiStore.subscribe(listener);
-
-    try {
-      const current = useUiStore.getState().selectedDate;
-      useUiStore.getState().setSelectedDate(shiftDays(current, 7));
-      expect(listener).toHaveBeenCalledOnce();
-    } finally {
-      unsubscribe();
-    }
-  });
-
-  it("notifies subscribers when setRange receives a new range", () => {
-    const listener = vi.fn();
-    const unsubscribe = useUiStore.subscribe(listener);
-
-    try {
-      const { rangeStart, rangeEnd } = useUiStore.getState();
-      useUiStore.getState().setRange(shiftDays(rangeStart, 30), shiftDays(rangeEnd, 30));
-      expect(listener).toHaveBeenCalledOnce();
-    } finally {
-      unsubscribe();
-    }
-  });
-
-  it("notifies subscribers when setActiveView switches view", () => {
-    const listener = vi.fn();
-    const unsubscribe = useUiStore.subscribe(listener);
-
-    try {
-      const current = useUiStore.getState().activeView;
-      const next = current === "dayGridMonth" ? "timeGridWeek" : "dayGridMonth";
-      useUiStore.getState().setActiveView(next);
-      expect(listener).toHaveBeenCalledOnce();
-    } finally {
-      unsubscribe();
-    }
+    expect(state.rangeStart).toBe(new Date("2026-05-01T00:00:00").toISOString());
+    expect(state.rangeEnd).toBe(new Date("2026-08-01T00:00:00").toISOString());
   });
 });

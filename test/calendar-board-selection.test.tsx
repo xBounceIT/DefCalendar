@@ -91,7 +91,7 @@ describe("calendar title selection", () => {
 
       selection.removeAllRanges();
       fireEvent.click(title);
-      expect(onEventClick).toHaveBeenCalledOnce();
+      expect(onEventClick).toHaveBeenCalledExactlyOnceWith("work", "event-1");
     },
   );
 

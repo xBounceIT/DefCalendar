@@ -23,7 +23,7 @@ const electronRuntimeMock = vi.hoisted(() => ({
   },
 }));
 
-vi.mock(import("@main/electron-runtime"), () => electronRuntimeMock);
+vi.mock("@main/electron-runtime", () => electronRuntimeMock);
 
 type ItemsListener = (items: NewEventNotificationItem[]) => void;
 

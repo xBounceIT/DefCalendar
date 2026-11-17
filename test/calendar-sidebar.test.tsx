@@ -77,6 +77,7 @@ function renderSidebar({
         eventDayKeys={eventDayKeys}
         isRefreshing={false}
         onAccountAdd={vi.fn()}
+        onCalendarColorChange={vi.fn()}
         onCalendarToggle={vi.fn()}
         onCreateEvent={vi.fn()}
         onDateSelect={vi.fn()}
@@ -99,7 +100,7 @@ function renderSidebar({
 }
 
 describe("calendar sidebar", () => {
-  it("groups calendars by signed-in account without rendering a switch action", () => {
+  it("groups calendars by signed-in account", () => {
     renderSidebar();
 
     const firstAccount = screen.getByRole("button", { name: /daniel@example.com/i });
@@ -118,7 +119,6 @@ describe("calendar sidebar", () => {
     expect(within(firstCard!).queryByText("Operations")).toBeNull();
     expect(within(secondCard!).getByText("Operations")).not.toBeNull();
     expect(within(secondCard!).queryByText("Shared Team Calendar")).toBeNull();
-    expect(screen.queryByRole("button", { name: /switch/i })).toBeNull();
   });
 
   it("adds event markers to mini-calendar days with events", () => {

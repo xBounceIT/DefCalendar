@@ -411,7 +411,7 @@ class SyncService {
       const finishedAt = new Date().toISOString();
       const inviteNotificationsEnabled = areInviteNotificationsEnabled(settings);
       const shouldRecordInviteCandidates =
-        inviteNotificationsEnabled && reason !== "sign-in" && reason !== "switch-account";
+        inviteNotificationsEnabled && reason !== "switch-account";
 
       const totalCalendars = calendarsToSync.length;
       let processedCalendars = 0;

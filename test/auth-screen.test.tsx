@@ -1,34 +1,29 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import AuthScreen from "../src/renderer/src/components/auth-screen";
-import enTranslations from "../src/renderer/src/i18n/locales/en.json";
 import { EXCHANGE365_ADMIN_APPROVAL_REQUIRED_MESSAGE } from "../src/shared/exchange-auth";
-import { I18nextProvider, initReactI18next } from "react-i18next";
-import { createInstance } from "i18next";
-import { describe, expect, it, vi } from "vitest";
+import { I18nextProvider } from "react-i18next";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createTestI18n } from "./setup-i18n";
+
+afterEach(cleanup);
 
 function renderAuthScreen(props: React.ComponentProps<typeof AuthScreen>) {
-  const i18n = createInstance();
-  void i18n.use(initReactI18next).init({
-    resources: { en: { translation: enTranslations } },
-    lng: "en",
-    fallbackLng: "en",
-    interpolation: { escapeValue: false },
-  });
-
-  return render(
+  const i18n = createTestI18n();
+  render(
     <I18nextProvider i18n={i18n}>
       <AuthScreen {...props} />
     </I18nextProvider>,
   );
+  return i18n;
 }
 
 describe("auth screen", () => {
-  it("renders the primary Exchange button and welcome message", () => {
-    renderAuthScreen({
+  it("updates the sign-in screen when the language changes", async () => {
+    const i18n = renderAuthScreen({
       errorMessage: null,
       isPending: false,
       onAdminApproval: vi.fn(),
@@ -37,10 +32,18 @@ describe("auth screen", () => {
       showAdminApprovalAction: false,
     });
 
-    expect(screen.getByRole("button", { name: "Sync Microsoft 365" })).not.toBeNull();
-    expect(screen.getByText(/Welcome to DefCalendar/i)).not.toBeNull();
-    expect(screen.getByText(/Your personal calendar companion\./i)).not.toBeNull();
-    expect(screen.queryByRole("button", { name: /admin approval/i })).toBeNull();
+    expect(screen.getByRole("button", { name: "Sync Microsoft 365" })).toBeEnabled();
+    expect(screen.getByText("Welcome to DefCalendar")).toBeInTheDocument();
+    expect(screen.getByText("Your personal calendar companion.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry with Admin Approval" })).toBeNull();
+
+    await act(async () => {
+      await i18n.changeLanguage("it");
+    });
+
+    expect(screen.getByRole("button", { name: "Sincronizza Microsoft 365" })).toBeEnabled();
+    expect(screen.getByText("Benvenuto in DefCalendar")).toBeInTheDocument();
+    expect(screen.getByText("Il tuo compagno di calendario personale.")).toBeInTheDocument();
   });
 
   it("renders the disabled sync buttons with 'Coming soon' labels", () => {

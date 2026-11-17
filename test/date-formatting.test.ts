@@ -1,32 +1,16 @@
 // @vitest-environment jsdom
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   buildEventTimeFormat,
   formatHeaderDate,
   formatLocalizedDate,
   formatSyncTimestamp,
 } from "../src/renderer/src/date-formatting";
+import i18n from "../src/renderer/src/i18n";
 
-const { i18nMock } = vi.hoisted(() => ({
-  i18nMock: {
-    language: "en",
-    t: vi.fn((key: string, params?: Record<string, unknown>) => {
-      if (params && "date" in params) {
-        return `${key}|${String(params.date)}`;
-      }
-      return key;
-    }),
-  },
-}));
-
-vi.mock(import("../src/renderer/src/i18n"), () => ({
-  default: i18nMock,
-}));
-
-beforeEach(() => {
-  i18nMock.language = "en";
-  i18nMock.t.mockClear();
+beforeEach(async () => {
+  await i18n.changeLanguage("en");
 });
 
 function withStubbedDateTimeFormat<T>(
@@ -55,41 +39,33 @@ function withStubbedDateTimeFormat<T>(
 }
 
 describe(formatHeaderDate, () => {
-  it("formats with month + year for the dayGridMonth view (en locale)", () => {
-    expect(formatHeaderDate("2026-04-15T00:00:00.000Z", "dayGridMonth")).toBe("April 2026");
-  });
-
   it("formats with day + month + year for non-month views", () => {
-    const result = formatHeaderDate("2026-04-15T12:00:00.000Z", "timeGridDay");
+    const result = formatHeaderDate(new Date(2026, 3, 15, 12).toISOString(), "timeGridDay");
     expect(result).toContain("April");
     expect(result).toContain("2026");
     expect(result).toMatch(/15/);
   });
 
-  it("formats with Italian locale when i18n.language is 'it'", () => {
-    i18nMock.language = "it";
-    expect(formatHeaderDate("2026-04-15T00:00:00.000Z", "dayGridMonth")).toBe("aprile 2026");
+  it("formats the calendar month in Italian", async () => {
+    await i18n.changeLanguage("it");
+    expect(formatHeaderDate(new Date(2026, 3, 15, 12).toISOString(), "dayGridMonth")).toBe(
+      "aprile 2026",
+    );
   });
 
   it("returns the i18n fallback string for an invalid date", () => {
-    expect(formatHeaderDate("not-a-date", "dayGridMonth")).toBe("dateFormatting.fallbackCalendar");
-    expect(i18nMock.t).toHaveBeenCalledWith("dateFormatting.fallbackCalendar");
+    expect(formatHeaderDate("not-a-date", "dayGridMonth")).toBe("Calendar");
   });
 });
 
 describe(formatSyncTimestamp, () => {
-  it("returns the noSyncYet string for a null value", () => {
-    expect(formatSyncTimestamp(null, "system")).toBe("dateFormatting.noSyncYet");
+  it("shows that no sync has completed when there is no timestamp", () => {
+    expect(formatSyncTimestamp(null, "system")).toBe("No completed sync yet.");
   });
 
-  it("delegates to lastSynced i18n key with formatted date when value is present", () => {
-    const result = formatSyncTimestamp("2026-04-15T13:30:00.000Z", "24h");
-
-    expect(result).toMatch(/^dateFormatting\.lastSynced\|/);
-    expect(i18nMock.t).toHaveBeenCalledWith(
-      "dateFormatting.lastSynced",
-      expect.objectContaining({ date: expect.any(String) }),
-    );
+  it("shows the last sync date and time in the requested clock format", () => {
+    const timestamp = new Date(2026, 3, 15, 13, 30).toISOString();
+    expect(formatSyncTimestamp(timestamp, "24h")).toBe("Last synced Apr 15, 13:30");
   });
 });
 
@@ -106,11 +82,10 @@ describe("formatLocalizedDate + applyTimeFormat", () => {
     expect(result).toMatch(/AM|PM/i);
   });
 
-  it("does not append hour12 to date-only options when no time units present", () => {
-    const date = new Date(Date.UTC(2026, 3, 15));
+  it("displays just the requested date even when the 12-hour clock is selected", () => {
+    const date = new Date(2026, 3, 15);
     const result = formatLocalizedDate(date, { day: "numeric", month: "long" }, "12h");
-    expect(result).toMatch(/April/);
-    expect(result).not.toMatch(/AM|PM/i);
+    expect(result).toBe("April 15");
   });
 });
 

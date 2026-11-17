@@ -7,9 +7,11 @@ import i18n from "i18next";
 import itTranslations from "../src/renderer/src/i18n/locales/it.json";
 import CalendarBoard from "../src/renderer/src/components/calendar-board";
 import type { CalendarEvent, CalendarView } from "../src/shared/schemas";
-import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 let capturedCalendarProps: Record<string, unknown> | null = null;
+
+type CalendarEventFixture = Pick<EventContentArg["event"], "allDay" | "extendedProps" | "title">;
 
 const DEFAULT_VIEWPORT_HEIGHT = 768;
 const DEFAULT_VIEWPORT_WIDTH = 1024;
@@ -184,18 +186,20 @@ function renderCalendarEvent(options?: {
   const isOrganizer = options?.isOrganizer ?? false;
   const isReminderOn = options?.isReminderOn ?? false;
   const response = options?.response ?? null;
-  const eventContent = capturedCalendarProps?.eventContent as (
-    info: EventContentArg,
-  ) => React.ReactNode;
+  const eventContent = capturedCalendarProps?.eventContent as (info: {
+    event: CalendarEventFixture;
+    timeText: string;
+    view: Pick<EventContentArg["view"], "type">;
+  }) => React.ReactNode;
   const eventDidMount = capturedCalendarProps?.eventDidMount as
-    | ((info: { event: EventContentArg["event"]; el: HTMLElement }) => void)
+    | ((info: { event: CalendarEventFixture; el: HTMLElement }) => void)
     | undefined;
   const eventMouseEnter = capturedCalendarProps?.eventMouseEnter as
-    | ((info: { event: EventContentArg["event"]; el: HTMLElement; jsEvent: MouseEvent }) => void)
+    | ((info: { event: CalendarEventFixture; el: HTMLElement; jsEvent: MouseEvent }) => void)
     | undefined;
   const eventMouseLeave = capturedCalendarProps?.eventMouseLeave as (() => void) | undefined;
 
-  const event = {
+  const event: CalendarEventFixture = {
     allDay: options?.allDay ?? false,
     title: "Focus time",
     extendedProps: {
@@ -211,7 +215,7 @@ function renderCalendarEvent(options?: {
         ...options?.eventData,
       },
     },
-  } as EventContentArg["event"];
+  };
 
   const rendered = render(
     <>
@@ -219,7 +223,7 @@ function renderCalendarEvent(options?: {
         event,
         timeText: "9:00",
         view: { type: options?.view ?? "dayGridMonth" },
-      } as EventContentArg)}
+      })}
     </>,
   );
 
@@ -368,7 +372,6 @@ describe("calendar board locale", () => {
 
     expect(capturedCalendarProps?.locale).toBe("it");
     expect(capturedCalendarProps?.allDayText).toBe("Giornata intera");
-    expectTypeOf(capturedCalendarProps?.dateClick).toBeFunction();
     expect(capturedCalendarProps?.selectable).toBe(false);
     expect(capturedCalendarProps?.select).toStrictEqual(expect.any(Function));
     expect(capturedCalendarProps?.selectMirror).toBeUndefined();

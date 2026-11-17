@@ -48,7 +48,6 @@ function isFuturePendingInvite(
 export {
   isDeclinedEventResponse,
   isFuturePendingInvite,
-  isPendingEventResponse,
   isPendingInvite,
   normalizeEventResponseValue,
 };

@@ -127,18 +127,22 @@ function installCalendarApi(items: NewEventNotificationItem[]): CalendarApi {
       search: vi.fn(),
     },
     events: {
+      getAttendeeAvailability: vi.fn().mockResolvedValue([]),
       addAttachment: vi.fn(),
       cancel: vi.fn(),
       create: vi.fn(),
       delete: vi.fn(),
+      downloadAttachment: vi.fn().mockResolvedValue(false),
       forward: vi.fn(),
       list: vi.fn(),
       listAttachments: vi.fn(),
       onOpenInApp: vi.fn().mockReturnValue(() => undefined),
+      openAttachment: vi.fn().mockResolvedValue(undefined),
       openInApp: vi.fn(),
       openWebLink: vi.fn(),
       removeAttachment: vi.fn(),
       respond: vi.fn().mockResolvedValue(undefined),
+      search: vi.fn().mockResolvedValue([]),
       update: vi.fn(),
     },
     settings: {
@@ -156,6 +160,9 @@ function installCalendarApi(items: NewEventNotificationItem[]): CalendarApi {
       getStatus: vi.fn(),
       install: vi.fn(),
       onStatus: vi.fn().mockReturnValue(() => undefined),
+    },
+    window: {
+      setTitleBarScrim: vi.fn().mockResolvedValue(undefined),
     },
     reminder: {
       dismiss: vi.fn(),

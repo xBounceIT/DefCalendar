@@ -51,6 +51,7 @@ class ReminderService {
     items: [],
     locale: "en",
     timeFormat: "system",
+    theme: "system",
   };
   private started = false;
 
@@ -481,7 +482,7 @@ class ReminderService {
   private toReminderEvaluation(
     now: number,
     computation: ReminderComputation,
-    settings: Pick<UserSettings, "language" | "timeFormat">,
+    settings: Pick<UserSettings, "language" | "theme" | "timeFormat">,
   ): ReminderEvaluation {
     const dueItems = [...computation.dueItems];
     let nextCheckAt = computation.nextCheckAt;

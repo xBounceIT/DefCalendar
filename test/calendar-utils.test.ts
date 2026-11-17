@@ -59,11 +59,11 @@ function createEvent(overrides: Partial<CalendarEvent>): CalendarEvent {
 
 describe("calendar utilities", () => {
   it("round-trips timed datetime inputs", () => {
-    const iso = "2026-03-27T09:15:00.000Z";
+    const iso = createIso(2026, 2, 27, 9, 15);
     const input = toDateTimeInputValue(iso, false);
 
-    expect(input).toMatch(/2026-03-27T/);
-    expect(fromDateTimeInputValue(input, false)).toBeTypeOf("string");
+    expect(input).toBe("2026-03-27T09:15");
+    expect(fromDateTimeInputValue(input, false)).toBe(iso);
   });
 
   it("adds minutes to ISO strings", () => {

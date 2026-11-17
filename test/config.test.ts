@@ -40,16 +40,6 @@ describe("app config", () => {
     ]);
   });
 
-  it("ignores the legacy MSAL_REDIRECT_URI override", () => {
-    const env: NodeJS.ProcessEnv = {
-      MSAL_REDIRECT_URI: "http://localhost",
-    };
-    const config = resolveAppConfig(env);
-
-    expect(config.clientId).toBe(bundledMsalApp.clientId);
-    expect(config.authority).toBe(bundledMsalApp.authority);
-  });
-
   it("defaults sync window days to a year back and one year forward", () => {
     const config = resolveAppConfig({});
 

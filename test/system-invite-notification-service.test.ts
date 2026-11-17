@@ -42,7 +42,7 @@ const notificationMock = vi.hoisted(() => {
   };
 });
 
-vi.mock(import("@main/electron-runtime"), () => ({
+vi.mock("@main/electron-runtime", () => ({
   Notification: notificationMock.MockNotification,
 }));
 

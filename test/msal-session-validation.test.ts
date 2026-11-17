@@ -90,14 +90,18 @@ describe("startup session permission validation", () => {
   it("attempts to evict all accounts even when the first token-cache eviction fails", async () => {
     expect.hasAssertions();
     const secondAccount = { ...account, homeAccountId: "account-2" };
-    const { service, pca } = createFixture([account, secondAccount]);
+    const { service, pca, db, settings } = createFixture([account, secondAccount]);
     await service.initialize();
     pca.signOut.mockRejectedValueOnce(new Error("token cache cannot be written"));
 
     await expect(service.signOutAll()).resolves.toBeUndefined();
 
-    expect(service.hasSession()).toBe(false);
+    expect(service.getAuthState()).toStrictEqual({ status: "signed_out", accounts: [] });
     expect(pca.signOut).toHaveBeenCalledTimes(2);
+    expect(pca.signOut).toHaveBeenCalledWith({ account });
+    expect(pca.signOut).toHaveBeenCalledWith({ account: secondAccount });
+    expect(db.saveAccounts).toHaveBeenLastCalledWith([]);
+    expect(settings.updateSettings).toHaveBeenLastCalledWith({ activeAccountId: null });
   });
 
   it("notifies subscribers of automatic sign-out with the permission failure reason", async () => {

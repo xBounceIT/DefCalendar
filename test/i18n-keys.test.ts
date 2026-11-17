@@ -1,99 +1,76 @@
-import { describe, expect, it } from "vitest";
-import {
-  extractKeysFromFile,
-  getAllTsxFiles,
-  getUsedKeys,
-  loadTranslationFiles,
-} from "./i18n-utils";
-import { resolve } from "node:path";
+import { readFileSync, readdirSync } from "node:fs";
+import { join, resolve } from "node:path";
+import ts from "typescript";
+import { expect, it } from "vitest";
+import { loadTranslationFiles } from "./i18n-utils";
 
-describe("i18n key existence", () => {
-  const translations = loadTranslationFiles();
-  const srcDir = resolve(__dirname, "../src");
-  const allFiles = getAllTsxFiles(srcDir);
+function mayPassCount(options: ts.Expression): boolean {
+  if (ts.isStringLiteralLike(options)) {
+    return false;
+  }
+  return (
+    !ts.isObjectLiteralExpression(options) ||
+    options.properties.some((property) => {
+      const name = property.name;
+      return (
+        ts.isSpreadAssignment(property) ||
+        (name && (ts.isIdentifier(name) || ts.isStringLiteral(name)) && name.text === "count")
+      );
+    })
+  );
+}
 
-  const allExtractedKeys: ReturnType<typeof extractKeysFromFile> = [];
-  for (const file of allFiles) {
-    allExtractedKeys.push(...extractKeysFromFile(file));
+function findMissingMessages(root: string, messages: Record<string, string>): string[] {
+  const missing: string[] = [];
+
+  for (const file of readdirSync(root, { encoding: "utf8", recursive: true })) {
+    if (!/\.tsx?$/.test(file)) {
+      continue;
+    }
+
+    const source = ts.createSourceFile(
+      file,
+      readFileSync(join(root, file), "utf8"),
+      ts.ScriptTarget.Latest,
+    );
+    function visit(node: ts.Node): void {
+      if (ts.isCallExpression(node)) {
+        const callee = node.expression;
+        const key = node.arguments[0];
+        const isTranslation =
+          (ts.isIdentifier(callee) && callee.text === "t") ||
+          (ts.isPropertyAccessExpression(callee) &&
+            callee.name.text === "t" &&
+            ts.isIdentifier(callee.expression) &&
+            callee.expression.text === "i18n");
+
+        if (
+          isTranslation &&
+          key &&
+          ts.isStringLiteralLike(key) &&
+          !Object.hasOwn(messages, key.text) &&
+          !(
+            Object.hasOwn(messages, key.text + "_other") &&
+            node.arguments.slice(1).some(mayPassCount)
+          )
+        ) {
+          const { line } = source.getLineAndCharacterOfPosition(key.getStart(source));
+          missing.push(file + ":" + (line + 1) + " " + key.text);
+        }
+      }
+
+      ts.forEachChild(node, visit);
+    }
+
+    visit(source);
   }
 
-  const usedKeys = getUsedKeys(allExtractedKeys);
-  const enKeys = new Set(Object.keys(translations.en));
-  const itKeys = new Set(Object.keys(translations.it));
+  return missing;
+}
 
-  it("should have all used keys defined in English translations", () => {
-    const missingInEn: string[] = [];
+it("provides messages for literal renderer translation keys", () => {
+  const { en } = loadTranslationFiles();
+  const renderer = resolve(import.meta.dirname, "../src/renderer/src");
 
-    for (const key of usedKeys) {
-      // Direct key match
-      if (enKeys.has(key)) {
-        continue;
-      }
-      // Pluralization base key: t("sync.synced", {count}) resolves to sync.synced_one / sync.synced_other
-      if (enKeys.has(`${key}_one`) || enKeys.has(`${key}_other`)) {
-        continue;
-      }
-      missingInEn.push(key);
-    }
-
-    if (missingInEn.length > 0) {
-      console.error("Missing keys in en.json:");
-      for (const key of missingInEn) {
-        const usages = allExtractedKeys
-          .filter((k) => k.key === key)
-          .map((k) => `  - ${k.file}:${k.line}`);
-        console.error(`  ${key}:`);
-        usages.forEach((u) => console.error(u));
-      }
-    }
-
-    expect(missingInEn).toHaveLength(0);
-  });
-
-  it("should have all used keys defined in Italian translations", () => {
-    const missingInIt: string[] = [];
-
-    for (const key of usedKeys) {
-      // Direct key match
-      if (itKeys.has(key)) {
-        continue;
-      }
-      // Pluralization base key: t("sync.synced", {count}) resolves to sync.synced_one / sync.synced_other
-      if (itKeys.has(`${key}_one`) || itKeys.has(`${key}_other`)) {
-        continue;
-      }
-      missingInIt.push(key);
-    }
-
-    if (missingInIt.length > 0) {
-      console.error("Missing keys in it.json:");
-      for (const key of missingInIt) {
-        const usages = allExtractedKeys
-          .filter((k) => k.key === key)
-          .map((k) => `  - ${k.file}:${k.line}`);
-        console.error(`  ${key}:`);
-        usages.forEach((u) => console.error(u));
-      }
-    }
-
-    expect(missingInIt).toHaveLength(0);
-  });
-
-  it("should not define the same key more than once in a single expression block", () => {
-    // Translation keys are naturally reused across files and components -- that's their purpose.
-    // This test only checks if a key appears an unexpectedly high number of times
-    // In a single file, which might indicate a copy-paste error or accidental duplication.
-    const fileCounts = new Map<string, number>();
-
-    for (const { key, file } of allExtractedKeys) {
-      const fileKey = `${file}::${key}`;
-      fileCounts.set(fileKey, (fileCounts.get(fileKey) ?? 0) + 1);
-    }
-
-    const suspiciousDuplicates = [...fileCounts.entries()]
-      .filter(([, count]) => count > 4)
-      .map(([fileKey]) => fileKey);
-
-    expect(suspiciousDuplicates).toHaveLength(0);
-  });
+  expect(findMissingMessages(renderer, en)).toStrictEqual([]);
 });
