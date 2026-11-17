@@ -60,11 +60,12 @@ jobs:
         if: matrix.platform == 'mac'
         shell: bash
         env:
-          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_FOR_PULL_REQUEST: ${{ github.event_name == 'pull_request' }}
+          CSC_LINK: ${{ github.event_name == 'push' && secrets.MAC_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ github.event_name == 'push' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ github.event_name == 'push' && secrets.APPLE_ID || '' }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ github.event_name == 'push' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ github.event_name == 'push' && secrets.APPLE_TEAM_ID || '' }}
         run: |
           signingArgs=()
           if [[ -z "${CSC_LINK:-}" ]]; then
@@ -80,7 +81,7 @@ jobs:
         if: matrix.platform == 'mac'
         shell: bash
         env:
-          REQUIRE_DEVELOPER_ID: ${{ secrets.MAC_CSC_LINK != '' }}
+          REQUIRE_DEVELOPER_ID: ${{ github.event_name == 'push' && secrets.MAC_CSC_LINK != '' }}
         run: |
           app="release/mac-universal/DefCalendar.app/Contents"
           lipo "$app/MacOS/DefCalendar" -verify_arch x86_64 arm64

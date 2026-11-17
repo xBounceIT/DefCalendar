@@ -162,8 +162,20 @@ describe("macOS release signing", () => {
     expect(macVerify?.if).toBe("matrix.platform == 'mac'");
     expect(macVerify?.shell).toBe("bash");
     expect(macVerify?.env?.REQUIRE_DEVELOPER_ID).toMatch(
-      /^\$\{\{ secrets\.MAC_CSC_LINK != '' \}\}$/,
+      /^\$\{\{ github\.event_name == 'push' && secrets\.MAC_CSC_LINK != '' \}\}$/,
     );
+  });
+
+  it("allows ad-hoc signing in pull requests and reserves credentials for tag builds", () => {
+    expect.hasAssertions();
+    expect(macBuild?.env?.CSC_FOR_PULL_REQUEST).toBe("${{ github.event_name == 'pull_request' }}");
+    const credentials = Object.entries(macBuild?.env ?? {}).filter(
+      ([name]) => name !== "CSC_FOR_PULL_REQUEST",
+    );
+    expect(credentials).toHaveLength(5);
+    for (const [, value] of credentials) {
+      expect(value).toMatch(/^\$\{\{ github\.event_name == 'push' && secrets\.\w+ \|\| '' \}\}$/);
+    }
   });
 
   it("accepts a Developer ID Application signature", async () => {
