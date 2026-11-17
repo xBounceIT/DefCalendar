@@ -1,7 +1,8 @@
-import type { BrowserWindow as ElectronBrowserWindow, WebContents } from "electron";
+import type { BrowserWindow as ElectronBrowserWindow, Rectangle, WebContents } from "electron";
 import { join } from "pathe";
-import { BrowserWindow, screen } from "@main/electron-runtime";
+import { BrowserWindow } from "@main/electron-runtime";
 import { t } from "@main/i18n";
+import getPopupPosition from "@main/notifications/popup-position";
 import { IPC_CHANNELS, type NewEventNotificationItem } from "@shared/ipc";
 
 const POPUP_WIDTH = 560;
@@ -14,7 +15,7 @@ class NewEventWindowManager {
   private items: NewEventNotificationItem[] = [];
   private isLoaded = false;
   private isReadyToShow = false;
-  private shouldFocusOnReady = false;
+  private shouldShowOnReady = false;
   private enabled = false;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private retryDelayMs = INITIAL_RETRY_DELAY_MS;
@@ -24,7 +25,7 @@ class NewEventWindowManager {
     private readonly onAttentionChanged: () => void = () => undefined,
   ) {}
 
-  sync(items: NewEventNotificationItem[], enabled: boolean, focus = false): void {
+  sync(items: NewEventNotificationItem[], enabled: boolean, showPopup = false): void {
     items = items.filter((item) => !item.popupDismissed);
     this.items = items;
     this.enabled = enabled;
@@ -34,16 +35,16 @@ class NewEventWindowManager {
       return;
     }
 
-    if ((!this.window || this.window.isDestroyed()) && !focus) {
+    if (!this.getWindow() && !showPopup) {
       return;
     }
 
     this.cancelRetry();
-    const window = this.ensureWindow();
+    const window = this.ensureWindow(showPopup);
     this.pushState();
     if (!this.isReadyToShow) {
-      this.shouldFocusOnReady ||= focus;
-    } else if (focus) {
+      this.shouldShowOnReady ||= showPopup;
+    } else if (showPopup) {
       this.present(window);
     }
   }
@@ -81,7 +82,7 @@ class NewEventWindowManager {
     this.window = null;
     this.isLoaded = false;
     this.isReadyToShow = false;
-    this.shouldFocusOnReady = false;
+    this.shouldShowOnReady = false;
   }
 
   ownsWebContents(contents: WebContents): boolean {
@@ -92,12 +93,18 @@ class NewEventWindowManager {
     return this.window && !this.window.isDestroyed() ? this.window : null;
   }
 
-  private ensureWindow(): ElectronBrowserWindow {
-    if (this.window && !this.window.isDestroyed()) {
-      return this.window;
+  private ensureWindow(showPopup: boolean): ElectronBrowserWindow {
+    const currentWindow = this.getWindow();
+    let previousBounds: Rectangle | undefined;
+    if (currentWindow) {
+      if (process.platform !== "darwin" || !showPopup || !currentWindow.isMinimized()) {
+        return currentWindow;
+      }
+      previousBounds = currentWindow.getNormalBounds();
+      this.releaseWindow();
+      currentWindow.destroy();
     }
 
-    const { x, y, width, height } = screen.getPrimaryDisplay().workArea;
     const window = new BrowserWindow({
       alwaysOnTop: true,
       autoHideMenuBar: true,
@@ -111,8 +118,7 @@ class NewEventWindowManager {
       skipTaskbar: false,
       title: t("inviteNotificationTitle"),
       width: POPUP_WIDTH,
-      x: x + Math.round((width - POPUP_WIDTH) / 2),
-      y: y + Math.round((height - POPUP_HEIGHT) / 2),
+      ...getPopupPosition(POPUP_WIDTH, POPUP_HEIGHT, previousBounds),
       webPreferences: {
         preload: join(__dirname, "../preload/index.cjs"),
         sandbox: true,
@@ -127,15 +133,14 @@ class NewEventWindowManager {
         return;
       }
       this.isReadyToShow = true;
-      if (this.shouldFocusOnReady) {
-        this.shouldFocusOnReady = false;
+      if (this.shouldShowOnReady) {
+        this.shouldShowOnReady = false;
         this.present(window);
       }
     });
     window.webContents.on("did-finish-load", () => {
       if (this.window === window) {
         this.isLoaded = true;
-        this.retryDelayMs = INITIAL_RETRY_DELAY_MS;
         this.pushState();
       }
     });
@@ -168,20 +173,21 @@ class NewEventWindowManager {
     };
     window.webContents.on("render-process-gone", closeFailedWindow);
 
-    if (process.env.ELECTRON_RENDERER_URL) {
-      void window
-        .loadURL(`${process.env.ELECTRON_RENDERER_URL}/new-event-popup.html`)
-        .catch(closeFailedWindow);
-    } else {
-      void window
-        .loadFile(join(__dirname, "../renderer/new-event-popup.html"))
-        .catch(closeFailedWindow);
-    }
+    const load = process.env.ELECTRON_RENDERER_URL
+      ? window.loadURL(`${process.env.ELECTRON_RENDERER_URL}/new-event-popup.html`)
+      : window.loadFile(join(__dirname, "../renderer/new-event-popup.html"));
+    void load.catch(closeFailedWindow);
 
     return window;
   }
 
   private present(window: ElectronBrowserWindow): void {
+    this.retryDelayMs = INITIAL_RETRY_DELAY_MS;
+    if (process.platform === "darwin") {
+      window.showInactive();
+      return;
+    }
+
     if (window.isMinimized()) {
       window.restore();
     }
