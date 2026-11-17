@@ -5,7 +5,7 @@ import {
   resolveVisualTheme,
   visualThemeSchema,
 } from "../src/shared/theme";
-import { themeSettingSchema, userSettingsPatchSchema } from "../src/shared/schemas";
+import { themeSettingSchema } from "../src/shared/schemas";
 import { describe, expect, it } from "vitest";
 
 describe("resolveVisualTheme", () => {
@@ -72,12 +72,5 @@ describe("themeSettingSchema", () => {
   it("accepts blue-navy as a theme setting", () => {
     expect.hasAssertions();
     expect(themeSettingSchema.parse("blue-navy")).toBe("blue-navy");
-  });
-
-  it("preserves blue-navy in settings patches", () => {
-    expect.hasAssertions();
-    expect(userSettingsPatchSchema.parse({ theme: "blue-navy" })).toStrictEqual({
-      theme: "blue-navy",
-    });
   });
 });

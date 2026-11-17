@@ -2523,10 +2523,5 @@ function isString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
-export {
-  extractPlainTextFromGraphHtml,
-  isMissingGraphItemError,
-  normalizeGraphResponseValue,
-  parseRecurrence,
-};
+export { extractPlainTextFromGraphHtml, isMissingGraphItemError, parseRecurrence };
 export default GraphCalendarService;

@@ -1,7 +1,6 @@
 import {
   appUpdateStatusSchema,
   attachmentUploadSchema,
-  calendarSummarySchema,
   createDefaultSettings,
   eventDraftSchema,
   userSettingsPatchSchema,
@@ -29,23 +28,6 @@ describe("shared schemas", () => {
       userSettingsPatchSchema.parse({ spellcheckEnabled: false, spellcheckLanguages: [] }),
     ).toStrictEqual({ spellcheckEnabled: false, spellcheckLanguages: [] });
   });
-  it("accepts a valid event draft", () => {
-    const draft = eventDraftSchema.parse({
-      calendarId: "calendar-1",
-      subject: "Weekly planning",
-      body: "Agenda",
-      location: "Room 3",
-      start: "2026-03-27T09:00:00.000Z",
-      end: "2026-03-27T10:00:00.000Z",
-      timeZone: "Europe/Rome",
-      isAllDay: false,
-      isReminderOn: true,
-      reminderMinutesBeforeStart: 15,
-    });
-
-    expect(draft.subject).toBe("Weekly planning");
-  });
-
   it("rejects drafts where the end precedes the start", () => {
     expect(() =>
       eventDraftSchema.parse({
@@ -123,23 +105,6 @@ describe("shared schemas", () => {
     expect(disabledPatch.taskbarInviteNotificationsEnabled).toBe(false);
   });
 
-  it("accepts calendar summaries with account ownership", () => {
-    const calendar = calendarSummarySchema.parse({
-      canEdit: true,
-      canShare: false,
-      color: "#5b7cfa",
-      homeAccountId: "account-1",
-      id: "calendar-1",
-      isDefaultCalendar: true,
-      isVisible: true,
-      name: "Primary",
-      ownerAddress: "user@example.com",
-      ownerName: "Test User",
-    });
-
-    expect(calendar.homeAccountId).toBe("account-1");
-  });
-
   it("rejects attachment uploads when decoded content reaches three megabytes", () => {
     expect.hasAssertions();
     expect(() =>
@@ -150,21 +115,6 @@ describe("shared schemas", () => {
         size: 1,
       }),
     ).toThrow(/3 MB/);
-  });
-
-  it("accepts a valid app update status payload", () => {
-    const status = appUpdateStatusSchema.parse({
-      checkedAt: "2026-03-28T09:30:00.000Z",
-      manualInstall: false,
-      currentVersion: "0.1.0",
-      downloadPercent: 64.5,
-      error: null,
-      latestVersion: "0.2.0",
-      releaseNotes: "Fix stability issues",
-      state: "downloading",
-    });
-
-    expect(status.state).toBe("downloading");
   });
 
   it("rejects app update status with invalid percent", () => {

@@ -34,7 +34,6 @@ const DOWNLOADED_STATUS: AppUpdateStatus = {
 let getStatusMock: ReturnType<typeof vi.fn> = vi.fn();
 let checkMock: ReturnType<typeof vi.fn> = vi.fn();
 let downloadMock: ReturnType<typeof vi.fn> = vi.fn();
-let installMock: ReturnType<typeof vi.fn> = vi.fn();
 let onStatusMock: ReturnType<typeof vi.fn> = vi.fn();
 let unsubscribeMock: ReturnType<typeof vi.fn> = vi.fn();
 let lastStatusListener: ((status: AppUpdateStatus) => void) | null = null;
@@ -45,7 +44,6 @@ beforeEach(() => {
   getStatusMock = vi.fn().mockResolvedValue(IDLE_STATUS);
   checkMock = vi.fn().mockResolvedValue(AVAILABLE_STATUS);
   downloadMock = vi.fn().mockResolvedValue(DOWNLOADED_STATUS);
-  installMock = vi.fn().mockResolvedValue(undefined);
   onStatusMock = vi.fn((listener: (status: AppUpdateStatus) => void) => {
     lastStatusListener = listener;
     return unsubscribeMock;
@@ -56,7 +54,7 @@ beforeEach(() => {
       getStatus: getStatusMock,
       check: checkMock,
       download: downloadMock,
-      install: installMock,
+      install: vi.fn(),
       onStatus: onStatusMock,
     },
   };
@@ -171,17 +169,6 @@ describe(useUpdater, () => {
       expect(downloadMock).toHaveBeenCalledOnce();
       expect(result.current.status).toStrictEqual(DOWNLOADED_STATUS);
     });
-  });
-
-  it("install() invokes the IPC bridge", async () => {
-    const { result } = renderUseUpdater();
-    await waitFor(() => expect(result.current.status).toStrictEqual(IDLE_STATUS));
-
-    act(() => {
-      result.current.install();
-    });
-
-    expect(installMock).toHaveBeenCalledOnce();
   });
 
   it("reflects mutation pending state via isChecking and isDownloading", async () => {

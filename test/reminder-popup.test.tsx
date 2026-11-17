@@ -186,7 +186,10 @@ describe("reminder popup", () => {
     expect.hasAssertions();
     const item = createReminder({
       onlineMeeting: {
+        conferenceId: null,
         joinUrl: "https://teams.microsoft.com/l/meetup-join/example",
+        phones: [],
+        provider: "teamsForBusiness",
       },
     });
     const calendarApi = installCalendarApi(item);

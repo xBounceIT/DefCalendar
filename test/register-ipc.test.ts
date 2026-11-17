@@ -29,7 +29,7 @@ const { app, dialog, ipcMain, shell } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock(import("@main/electron-runtime"), () => ({
+vi.mock("@main/electron-runtime", () => ({
   app,
   dialog,
   ipcMain,
@@ -969,7 +969,7 @@ describe("register ipc", () => {
     },
   );
 
-  it("ensures the requested event range before listing cached events", async () => {
+  it("returns newly synced events when the requested range finishes fetching", async () => {
     expect.hasAssertions();
     const fixture = createFixture();
     const invokeEvent = { sender: fixture.mainWebContents };
@@ -979,16 +979,20 @@ describe("register ipc", () => {
       start: "2026-11-01T00:00:00.000Z",
     };
     const storedEvent = createCalendarEvent();
-    fixture.db.listEvents.mockReturnValue([storedEvent]);
+    const completed = createDeferred<void>();
+    fixture.sync.ensureEventsRange.mockImplementationOnce(async () => {
+      await completed.promise;
+      fixture.db.listEvents.mockReturnValue([storedEvent]);
+    });
 
-    const response = await fixture.handlers.get(IPC_CHANNELS.eventsList)?.(invokeEvent, args);
+    const response = fixture.handlers.get(IPC_CHANNELS.eventsList)?.(invokeEvent, args);
+    await vi.waitFor(() => {
+      expect(fixture.sync.ensureEventsRange).toHaveBeenCalledWith(args);
+    });
+    completed.resolve();
 
-    expect(fixture.sync.ensureEventsRange).toHaveBeenCalledWith(args);
+    await expect(response).resolves.toStrictEqual([storedEvent]);
     expect(fixture.db.listEvents).toHaveBeenCalledWith(args);
-    expect(fixture.sync.ensureEventsRange.mock.invocationCallOrder[0]).toBeLessThan(
-      fixture.db.listEvents.mock.invocationCallOrder[0],
-    );
-    expect(response).toStrictEqual([storedEvent]);
   });
 
   it("acknowledges reviewed changes only from trusted application windows", async () => {
@@ -1035,44 +1039,27 @@ describe("register ipc", () => {
     expect(response).toStrictEqual([storedEvent]);
   });
 
-  it("refreshes reminders before the background sync after reminder-affecting event mutations", async () => {
-    const fixture = createFixture();
-    const invokeEvent = { sender: fixture.mainWebContents };
+  it.each([
+    [IPC_CHANNELS.eventsCreate, createEventDraft()],
+    [IPC_CHANNELS.eventsUpdate, createEventDraft({ id: "event-1" })],
+    [IPC_CHANNELS.eventsDelete, { calendarId: "calendar-1", eventId: "event-1" }],
+    [IPC_CHANNELS.eventsCancel, { calendarId: "calendar-1", eventId: "event-1", comment: "" }],
+  ] as const)(
+    "%s waits for reminders to refresh before starting the background sync",
+    async (channel, args) => {
+      const fixture = createFixture();
+      const refreshed = createDeferred<void>();
+      fixture.reminders.checkNow.mockReturnValueOnce(refreshed.promise);
 
-    await fixture.handlers.get(IPC_CHANNELS.eventsCreate)?.(invokeEvent, createEventDraft());
-    await fixture.handlers.get(IPC_CHANNELS.eventsUpdate)?.(
-      invokeEvent,
-      createEventDraft({ id: "event-1" }),
-    );
-    await fixture.handlers.get(IPC_CHANNELS.eventsDelete)?.(invokeEvent, {
-      calendarId: "calendar-1",
-      etag: '"etag-1"',
-      eventId: "event-1",
-    });
-    await fixture.handlers.get(IPC_CHANNELS.eventsCancel)?.(invokeEvent, {
-      calendarId: "calendar-1",
-      comment: "",
-      eventId: "event-1",
-    });
+      const response = fixture.handlers.get(channel)?.({ sender: fixture.mainWebContents }, args);
+      await vi.waitFor(() => expect(fixture.reminders.checkNow).toHaveBeenCalledOnce());
+      expect(fixture.sync.syncAll).not.toHaveBeenCalled();
 
-    expect(fixture.reminders.checkNow).toHaveBeenCalledTimes(4);
-    expect(fixture.sync.syncAll).toHaveBeenNthCalledWith(1, "mutation", "account-1");
-    expect(fixture.sync.syncAll).toHaveBeenNthCalledWith(2, "mutation", "account-1");
-    expect(fixture.sync.syncAll).toHaveBeenNthCalledWith(3, "mutation", "account-1");
-    expect(fixture.sync.syncAll).toHaveBeenNthCalledWith(4, "mutation", "account-1");
-    expect(fixture.reminders.checkNow.mock.invocationCallOrder[0]).toBeLessThan(
-      fixture.sync.syncAll.mock.invocationCallOrder[0],
-    );
-    expect(fixture.reminders.checkNow.mock.invocationCallOrder[1]).toBeLessThan(
-      fixture.sync.syncAll.mock.invocationCallOrder[1],
-    );
-    expect(fixture.reminders.checkNow.mock.invocationCallOrder[2]).toBeLessThan(
-      fixture.sync.syncAll.mock.invocationCallOrder[2],
-    );
-    expect(fixture.reminders.checkNow.mock.invocationCallOrder[3]).toBeLessThan(
-      fixture.sync.syncAll.mock.invocationCallOrder[3],
-    );
-  });
+      refreshed.resolve();
+      await response;
+      expect(fixture.sync.syncAll).toHaveBeenCalledExactlyOnceWith("mutation", "account-1");
+    },
+  );
 
   it("allows reminder windows to open external links", async () => {
     const fixture = createFixture();

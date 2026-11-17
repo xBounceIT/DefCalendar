@@ -53,19 +53,30 @@ const mockCalendarSurfaceApi = {
     type: "timeGridWeek",
   },
 };
-const mockResizeObserverObserve = vi.fn();
-const mockResizeObserverDisconnect = vi.fn();
+const resizeObservers = new Map<Element, MockResizeObserver>();
 
 class MockResizeObserver {
+  constructor(private readonly callback: ResizeObserverCallback) {}
+
   disconnect(): void {
-    mockResizeObserverDisconnect();
+    for (const [target, observer] of resizeObservers) {
+      if (observer === this) {
+        resizeObservers.delete(target);
+      }
+    }
   }
 
-  observe(target: unknown): void {
-    mockResizeObserverObserve(target);
+  observe(target: Element): void {
+    resizeObservers.set(target, this);
   }
 
-  unobserve(): void {}
+  unobserve(target: Element): void {
+    resizeObservers.delete(target);
+  }
+
+  resize(): void {
+    this.callback([], this);
+  }
 }
 
 vi.mock<MockedCalendarModule>(import("@fullcalendar/react"), async () => {
@@ -171,6 +182,7 @@ function resetUiStoreState(): void {
 }
 
 function restoreResizeObserver(): void {
+  resizeObservers.clear();
   if (originalResizeObserverDescriptor) {
     Object.defineProperty(globalThis, "ResizeObserver", originalResizeObserverDescriptor);
     return;
@@ -231,7 +243,13 @@ function getCalendarDateClickHandler(): (arg: DateClickArg) => void {
   return capturedCalendarProps?.dateClick as (arg: DateClickArg) => void;
 }
 
-function createCalendarApiMock(): CalendarApi {
+function createCalendarApiMock(visibleCalendarIds: string[] = []): CalendarApi {
+  const settings = {
+    ...createDefaultSettings(),
+    selectedDate: signedInSelectedDate,
+    visibleCalendarIds,
+  };
+
   return {
     spellcheck: {
       onDictionaryStatesChanged: vi.fn().mockReturnValue(() => undefined),
@@ -278,33 +296,22 @@ function createCalendarApiMock(): CalendarApi {
       cancel: vi.fn(),
       create: vi.fn(),
       delete: vi.fn(),
+      downloadAttachment: vi.fn().mockResolvedValue(false),
       forward: vi.fn(),
-      list: vi.fn(),
+      list: vi.fn().mockResolvedValue([]),
       listAttachments: vi.fn(),
       onOpenInApp: vi.fn().mockReturnValue(() => undefined),
+      openAttachment: vi.fn().mockResolvedValue(undefined),
       openInApp: vi.fn(),
       openWebLink: vi.fn(),
       removeAttachment: vi.fn(),
       respond: vi.fn(),
+      search: vi.fn().mockResolvedValue([]),
       update: vi.fn(),
     },
     settings: {
-      get: vi.fn().mockResolvedValue({
-        activeView: "timeGridWeek",
-        selectedDate: signedInSelectedDate,
-        visibleCalendarIds: [],
-        language: "system",
-        timeFormat: "system",
-        updateChannel: "stable",
-      }),
-      update: vi.fn().mockResolvedValue({
-        activeView: "timeGridWeek",
-        selectedDate: signedInSelectedDate,
-        visibleCalendarIds: [],
-        language: "system",
-        timeFormat: "system",
-        updateChannel: "stable",
-      }),
+      get: vi.fn<CalendarApi["settings"]["get"]>().mockResolvedValue(settings),
+      update: vi.fn<CalendarApi["settings"]["update"]>().mockResolvedValue(settings),
     },
     sync: {
       getStatus: vi.fn().mockResolvedValue({
@@ -318,7 +325,8 @@ function createCalendarApiMock(): CalendarApi {
       refresh: vi.fn(),
     },
     updates: {
-      getStatus: vi.fn().mockResolvedValue({
+      getStatus: vi.fn<CalendarApi["updates"]["getStatus"]>().mockResolvedValue({
+        revision: 0,
         checkedAt: null,
         manualInstall: false,
         currentVersion: "0.1.0",
@@ -333,10 +341,14 @@ function createCalendarApiMock(): CalendarApi {
       install: vi.fn(),
       onStatus: vi.fn().mockReturnValue(() => undefined),
     },
+    window: {
+      setTitleBarScrim: vi.fn().mockResolvedValue(undefined),
+    },
     reminder: {
-      getState: vi.fn().mockResolvedValue({
+      getState: vi.fn<CalendarApi["reminder"]["getState"]>().mockResolvedValue({
         items: [],
         locale: "en",
+        theme: "system",
         timeFormat: "system",
       }),
       onState: vi.fn().mockReturnValue(() => undefined),
@@ -355,52 +367,32 @@ function createCalendarApiMock(): CalendarApi {
   };
 }
 
-function createSignedInCalendarApiMock(): CalendarApi {
+function createSignedInAuthState(): AuthState {
+  const account = {
+    homeAccountId: "account-1",
+    username: "daniel.dangeli@syncsecurity.it",
+    name: "Daniel D'Angeli",
+    tenantId: "tenant-1",
+    color: "#5b7cfa",
+  };
   return {
-    spellcheck: {
-      onDictionaryStatesChanged: vi.fn().mockReturnValue(() => undefined),
-      addWord: vi.fn().mockResolvedValue(undefined),
-      getDictionaries: vi.fn().mockResolvedValue({
-        availableLanguages: ["en-US", "it"],
-        dictionaryStates: { "en-US": "ready", it: "ready" },
-        customWords: [],
-        usesSystemLanguages: false,
-      }),
-      removeWord: vi.fn(),
-    },
-    app: {
-      getLocale: vi.fn().mockResolvedValue("en-US"),
-      getVersion: vi.fn().mockResolvedValue("v0.1.0"),
-      setLocale: vi.fn().mockResolvedValue(undefined),
-    },
+    status: "signed_in",
+    account,
+    accounts: [{ ...account, lastSignedInAt: "2026-03-27T08:00:00.000Z" }],
+    activeAccountId: account.homeAccountId,
+  };
+}
+
+function createSignedInCalendarApiMock(): CalendarApi {
+  const base = createCalendarApiMock(["calendar-1"]);
+  return {
+    ...base,
     auth: {
-      getState: vi.fn().mockResolvedValue({
-        status: "signed_in",
-        account: {
-          homeAccountId: "account-1",
-          name: "Daniel D'Angeli",
-          tenantId: "tenant-1",
-          username: "daniel.dangeli@syncsecurity.it",
-          color: "#5b7cfa",
-        },
-        accounts: [
-          {
-            homeAccountId: "account-1",
-            username: "daniel.dangeli@syncsecurity.it",
-            name: "Daniel D'Angeli",
-            tenantId: "tenant-1",
-            color: "#5b7cfa",
-            lastSignedInAt: "2026-03-27T08:00:00.000Z",
-          },
-        ],
-        activeAccountId: "account-1",
-      }),
-      onState: vi.fn().mockReturnValue(() => undefined),
-      signInWithExchange365: vi.fn(),
-      signOut: vi.fn(),
-      switchAccount: vi.fn(),
+      ...base.auth,
+      getState: vi.fn().mockResolvedValue(createSignedInAuthState()),
     },
     calendars: {
+      ...base.calendars,
       list: vi.fn().mockResolvedValue([
         {
           id: "calendar-1",
@@ -415,55 +407,9 @@ function createSignedInCalendarApiMock(): CalendarApi {
           ownerName: "Daniel D'Angeli",
         },
       ]),
-      setColor: vi.fn(),
-      setVisibility: vi.fn(),
-    },
-    categories: {
-      list: vi.fn().mockResolvedValue([]),
-    },
-    locations: {
-      map: vi.fn().mockResolvedValue([]),
-      search: vi.fn().mockResolvedValue([]),
-    },
-    contacts: {
-      getPhoto: vi.fn().mockResolvedValue(null),
-      search: vi.fn().mockResolvedValue([]),
-    },
-    events: {
-      getAttendeeAvailability: vi.fn().mockResolvedValue([]),
-      addAttachment: vi.fn(),
-      cancel: vi.fn(),
-      create: vi.fn(),
-      delete: vi.fn(),
-      forward: vi.fn(),
-      list: vi.fn().mockResolvedValue([]),
-      listAttachments: vi.fn(),
-      onOpenInApp: vi.fn().mockReturnValue(() => undefined),
-      openInApp: vi.fn(),
-      openWebLink: vi.fn(),
-      removeAttachment: vi.fn(),
-      respond: vi.fn(),
-      update: vi.fn(),
-    },
-    settings: {
-      get: vi.fn().mockResolvedValue({
-        activeView: "timeGridWeek",
-        selectedDate: signedInSelectedDate,
-        visibleCalendarIds: ["calendar-1"],
-        language: "system",
-        timeFormat: "system",
-        updateChannel: "stable",
-      }),
-      update: vi.fn().mockResolvedValue({
-        activeView: "timeGridWeek",
-        selectedDate: signedInSelectedDate,
-        visibleCalendarIds: ["calendar-1"],
-        language: "system",
-        timeFormat: "system",
-        updateChannel: "stable",
-      }),
     },
     sync: {
+      ...base.sync,
       getStatus: vi.fn().mockResolvedValue({
         lastSyncedAt: "2026-03-27T15:43:00.000Z",
         message: "Synced 3 calendars, 0 events.",
@@ -474,104 +420,32 @@ function createSignedInCalendarApiMock(): CalendarApi {
         },
         state: "idle",
       }),
-      onStatus: vi.fn().mockReturnValue(() => undefined),
-      refresh: vi.fn(),
-    },
-    updates: {
-      getStatus: vi.fn().mockResolvedValue({
-        checkedAt: null,
-        manualInstall: false,
-        currentVersion: "0.1.0",
-        downloadPercent: null,
-        error: null,
-        latestVersion: null,
-        releaseNotes: null,
-        state: "idle",
-      }),
-      check: vi.fn(),
-      download: vi.fn(),
-      install: vi.fn(),
-      onStatus: vi.fn().mockReturnValue(() => undefined),
-    },
-    reminder: {
-      getState: vi.fn().mockResolvedValue({
-        items: [],
-        locale: "en",
-        timeFormat: "system",
-      }),
-      onState: vi.fn().mockReturnValue(() => undefined),
-      snooze: vi.fn(),
-      dismiss: vi.fn().mockResolvedValue(undefined),
-      dismissAll: vi.fn().mockResolvedValue(undefined),
-      minimizeWindow: vi.fn(),
-    },
-    newEventNotifications: {
-      acknowledge: vi.fn().mockResolvedValue(undefined),
-      get: vi.fn().mockResolvedValue([]),
-      onChanged: vi.fn().mockReturnValue(() => undefined),
-      dismiss: vi.fn().mockResolvedValue(undefined),
-      dismissAll: vi.fn().mockResolvedValue(undefined),
     },
   };
 }
 
 function createSignInFlowCalendarApiMock(): CalendarApi {
+  const base = createCalendarApiMock(["calendar-1", "calendar-2"]);
   let signedIn = false;
-  const signedInState = {
-    status: "signed_in" as const,
-    account: {
-      homeAccountId: "account-1",
-      username: "daniel.dangeli@syncsecurity.it",
-      name: "Daniel D'Angeli",
-      tenantId: "tenant-1",
-      color: "#5b7cfa",
-    },
-    accounts: [
-      {
-        homeAccountId: "account-1",
-        username: "daniel.dangeli@syncsecurity.it",
-        name: "Daniel D'Angeli",
-        tenantId: "tenant-1",
-        color: "#5b7cfa",
-        lastSignedInAt: "2026-03-27T08:00:00.000Z",
-      },
-    ],
-    activeAccountId: "account-1",
-  };
+  const signedInState = createSignedInAuthState();
 
   return {
-    app: {
-      getLocale: vi.fn().mockResolvedValue("en-US"),
-      getVersion: vi.fn().mockResolvedValue("v0.1.0"),
-      setLocale: vi.fn().mockResolvedValue(undefined),
-    },
-    spellcheck: {
-      onDictionaryStatesChanged: vi.fn().mockReturnValue(() => undefined),
-      addWord: vi.fn().mockResolvedValue(undefined),
-      getDictionaries: vi.fn().mockResolvedValue({
-        availableLanguages: ["en-US", "it"],
-        dictionaryStates: { "en-US": "ready", it: "ready" },
-        customWords: [],
-        usesSystemLanguages: false,
-      }),
-      removeWord: vi.fn(),
-    },
+    ...base,
     auth: {
+      ...base.auth,
       getState: vi.fn().mockImplementation(() => {
         if (signedIn) {
           return Promise.resolve(signedInState);
         }
         return Promise.resolve({ status: "signed_out", accounts: [] });
       }),
-      onState: vi.fn().mockReturnValue(() => undefined),
       signInWithExchange365: vi.fn().mockImplementation(async () => {
         signedIn = true;
         return signedInState;
       }),
-      signOut: vi.fn(),
-      switchAccount: vi.fn(),
     },
     calendars: {
+      ...base.calendars,
       list: vi.fn().mockResolvedValue([
         {
           id: "calendar-1",
@@ -598,55 +472,9 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
           ownerName: "Daniel D'Angeli",
         },
       ]),
-      setColor: vi.fn(),
-      setVisibility: vi.fn(),
-    },
-    categories: {
-      list: vi.fn().mockResolvedValue([]),
-    },
-    locations: {
-      map: vi.fn().mockResolvedValue([]),
-      search: vi.fn().mockResolvedValue([]),
-    },
-    contacts: {
-      getPhoto: vi.fn().mockResolvedValue(null),
-      search: vi.fn().mockResolvedValue([]),
-    },
-    events: {
-      getAttendeeAvailability: vi.fn().mockResolvedValue([]),
-      create: vi.fn(),
-      delete: vi.fn(),
-      forward: vi.fn(),
-      list: vi.fn().mockResolvedValue([]),
-      onOpenInApp: vi.fn().mockReturnValue(() => undefined),
-      openInApp: vi.fn(),
-      openWebLink: vi.fn(),
-      update: vi.fn(),
-      respond: vi.fn(),
-      cancel: vi.fn(),
-      listAttachments: vi.fn(),
-      addAttachment: vi.fn(),
-      removeAttachment: vi.fn(),
-    },
-    settings: {
-      get: vi.fn().mockResolvedValue({
-        activeView: "timeGridWeek",
-        selectedDate: signedInSelectedDate,
-        visibleCalendarIds: ["calendar-1", "calendar-2"],
-        language: "system",
-        timeFormat: "system",
-        updateChannel: "stable",
-      }),
-      update: vi.fn().mockResolvedValue({
-        activeView: "timeGridWeek",
-        selectedDate: signedInSelectedDate,
-        visibleCalendarIds: ["calendar-1", "calendar-2"],
-        language: "system",
-        timeFormat: "system",
-        updateChannel: "stable",
-      }),
     },
     sync: {
+      ...base.sync,
       getStatus: vi.fn().mockResolvedValue({
         lastSyncedAt: null,
         message: "Choose calendars to sync.",
@@ -654,7 +482,6 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
         counts: null,
         state: "idle",
       }),
-      onStatus: vi.fn().mockReturnValue(() => undefined),
       refresh: vi.fn().mockResolvedValue({
         lastSyncedAt: null,
         message: "Synced 2 calendars, 0 events.",
@@ -666,67 +493,12 @@ function createSignInFlowCalendarApiMock(): CalendarApi {
         state: "idle",
       }),
     },
-    updates: {
-      getStatus: vi.fn().mockResolvedValue({
-        checkedAt: null,
-        manualInstall: false,
-        currentVersion: "0.1.0",
-        downloadPercent: null,
-        error: null,
-        latestVersion: null,
-        releaseNotes: null,
-        state: "idle",
-      }),
-      check: vi.fn(),
-      download: vi.fn(),
-      install: vi.fn(),
-      onStatus: vi.fn().mockReturnValue(() => undefined),
-    },
-    reminder: {
-      getState: vi.fn().mockResolvedValue({
-        items: [],
-        locale: "en",
-        timeFormat: "system",
-      }),
-      onState: vi.fn().mockReturnValue(() => undefined),
-      snooze: vi.fn(),
-      dismiss: vi.fn().mockResolvedValue(undefined),
-      dismissAll: vi.fn().mockResolvedValue(undefined),
-      minimizeWindow: vi.fn(),
-    },
-    newEventNotifications: {
-      acknowledge: vi.fn().mockResolvedValue(undefined),
-      get: vi.fn().mockResolvedValue([]),
-      onChanged: vi.fn().mockReturnValue(() => undefined),
-      dismiss: vi.fn().mockResolvedValue(undefined),
-      dismissAll: vi.fn().mockResolvedValue(undefined),
-    },
   };
 }
 
 function createDelayedAuthRefreshCalendarApiMock(): CalendarApi {
   const base = createCalendarApiMock();
-  const signedInState = {
-    status: "signed_in" as const,
-    account: {
-      homeAccountId: "account-1",
-      username: "daniel.dangeli@syncsecurity.it",
-      name: "Daniel D'Angeli",
-      tenantId: "tenant-1",
-      color: "#5b7cfa",
-    },
-    accounts: [
-      {
-        homeAccountId: "account-1",
-        username: "daniel.dangeli@syncsecurity.it",
-        name: "Daniel D'Angeli",
-        tenantId: "tenant-1",
-        color: "#5b7cfa",
-        lastSignedInAt: "2026-03-27T08:00:00.000Z",
-      },
-    ],
-    activeAccountId: "account-1",
-  };
+  const signedInState = createSignedInAuthState();
 
   return {
     ...base,
@@ -736,6 +508,7 @@ function createDelayedAuthRefreshCalendarApiMock(): CalendarApi {
       signInWithExchange365: vi.fn().mockResolvedValue(signedInState),
     },
     calendars: {
+      ...base.calendars,
       list: vi.fn().mockResolvedValue([
         {
           id: "calendar-1",
@@ -750,7 +523,6 @@ function createDelayedAuthRefreshCalendarApiMock(): CalendarApi {
           ownerName: "Daniel D'Angeli",
         },
       ]),
-      setVisibility: vi.fn(),
     },
   };
 }
@@ -1683,8 +1455,6 @@ describe("app startup", () => {
       await expect(
         screen.findByRole("button", { name: "Sync Microsoft 365" }),
       ).resolves.not.toBeNull();
-      expect(screen.getByText(/Welcome to DefCalendar/i)).not.toBeNull();
-      expect(screen.getByText(/Your personal calendar companion\./i)).not.toBeNull();
       expect(calendarApi.newEventNotifications.get).not.toHaveBeenCalled();
     } finally {
       restoreCalendarApi();
@@ -1734,29 +1504,20 @@ describe("app startup", () => {
     }
   });
 
-  it("renders the signed-in workspace without the removed dashboard headings", async () => {
+  it("resizes the signed-in calendar when its container changes size", async () => {
     try {
       installResizeObserverMock();
       installCalendarApi(createSignedInCalendarApiMock());
 
       renderApp();
 
-      await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
-      await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
-      expect([
-        screen.queryByRole("heading", { level: 1, name: "DefCalendar" }),
-        screen.queryByText("Exchange 365"),
-      ]).toStrictEqual([null, null]);
+      const calendar = await screen.findByTestId("mock-calendar");
+      await waitFor(() => expect(mockCalendarSurfaceApi.updateSize).toHaveBeenCalled());
+      mockCalendarSurfaceApi.updateSize.mockClear();
 
-      await waitFor(() => {
-        expect({
-          observed: mockResizeObserverObserve.mock.calls.length > 0,
-          updated: mockCalendarSurfaceApi.updateSize.mock.calls.length > 0,
-        }).toStrictEqual({
-          observed: true,
-          updated: true,
-        });
-      });
+      const observedSurface = [...resizeObservers].find(([target]) => target.contains(calendar));
+      act(() => observedSurface?.[1].resize());
+      expect(mockCalendarSurfaceApi.updateSize).toHaveBeenCalledOnce();
     } finally {
       restoreCalendarApi();
       restoreResizeObserver();

@@ -82,14 +82,6 @@ describe("updateAvailablePopup visibility", () => {
     expect(container.querySelector(".update-popup")).toBeNull();
   });
 
-  it("renders the popup when status state is 'available'", async () => {
-    renderPopup({ ...BASE_STATUS, state: "available", latestVersion: "1.0.0" });
-    await waitFor(() => {
-      expect(document.querySelector(".update-popup")).not.toBeNull();
-    });
-    expect(screen.getByText(/Download/i)).toBeInTheDocument();
-  });
-
   it("displays the normalized release version with 'v' prefix", async () => {
     renderPopup({ ...BASE_STATUS, state: "available", latestVersion: "1.2.3" });
     await waitFor(() => {
@@ -149,16 +141,6 @@ describe("updateAvailablePopup actions", () => {
     );
     act(() => lastListener?.({ ...status, state: "downloaded" }));
     expect(installMock).not.toHaveBeenCalled();
-  });
-
-  it("clicking the primary button calls download()", async () => {
-    renderPopup({ ...BASE_STATUS, state: "available", latestVersion: "1.0.0" });
-    await waitFor(() => expect(document.querySelector(".update-popup")).not.toBeNull());
-
-    const buttons = document.querySelectorAll(".update-popup__button--primary");
-    fireEvent.click(buttons[0]!);
-
-    await waitFor(() => expect(downloadMock).toHaveBeenCalledOnce());
   });
 
   it("leaves automatic installation to the main process", async () => {

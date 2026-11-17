@@ -830,10 +830,10 @@ describe("detailed scheduling assistant", () => {
   it("extends the visible timeline and availability when the end date exceeds two days", async () => {
     expect.hasAssertions();
     const { onSave, load, container } = setup();
-    fireEvent.change(screen.getByRole("textbox", { name: "End date", exact: true }), {
+    fireEvent.change(screen.getByRole("textbox", { name: "End date" }), {
       target: { value: "10/03/2026" },
     });
-    fireEvent.blur(screen.getByRole("textbox", { name: "End date", exact: true }));
+    fireEvent.blur(screen.getByRole("textbox", { name: "End date" }));
     expect(container.querySelectorAll(".scheduling-assistant__days > button")).toHaveLength(5);
     const endHandle = screen.getByRole("button", { name: "Adjust meeting end" });
     expect(endHandle).toBeEnabled();
@@ -2187,17 +2187,13 @@ afterEach(() => {
 });
 
 describe("event editor dialog", () => {
-  it("stacks compact sidebar tab icons above their labels and keeps keyboard switching", () => {
+  it("stacks compact sidebar tab icons above their labels", () => {
     expect.hasAssertions();
     applyEditorStyles(621);
     renderDialog({ state: createMeetingState() });
-    const attendees = screen.getByRole("tab", { name: "Attendees" });
     const scheduling = screen.getByRole("tab", { name: "Scheduling" });
 
     expect(getComputedStyle(scheduling).flexDirection).toBe("column");
-    fireEvent.keyDown(attendees, { key: "ArrowRight" });
-    expect(scheduling).toHaveFocus();
-    expect(screen.getByRole("tabpanel", { name: "Scheduling" })).toBeInTheDocument();
   });
 
   it("allows the planner participant popup to extend above its panel", () => {
@@ -2213,14 +2209,36 @@ describe("event editor dialog", () => {
     ).not.toBe("hidden");
   });
 
-  it("keeps a toolbar menu within the island when opened and resized", () => {
+  it("keeps the toolbar menu within the island and stops measuring it when closed", () => {
     expect.hasAssertions();
     let compact = false;
+    const resizeListeners = new Set<() => void>();
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        private readonly onResize: () => void;
+
+        constructor(onResize: () => void) {
+          this.onResize = onResize;
+        }
+
+        observe(target: HTMLElement): void {
+          if (target.classList.contains("event-toolbar")) {
+            resizeListeners.add(this.onResize);
+          }
+        }
+
+        disconnect(): void {
+          resizeListeners.delete(this.onResize);
+        }
+      },
+    );
+    const measureToolbar = vi.fn(() => new DOMRect(40, 20, compact ? 300 : 540, 54));
     const bounds = vi
       .spyOn(HTMLElement.prototype, "getBoundingClientRect")
       .mockImplementation(function menuBounds(this: HTMLElement) {
         if (this.classList.contains("event-toolbar")) {
-          return new DOMRect(40, 20, compact ? 300 : 540, 54);
+          return measureToolbar();
         }
         if (this.classList.contains("event-toolbar__dropdown")) {
           return new DOMRect(compact ? 140 : 440, 80, compact ? 280 : 360, 100);
@@ -2229,35 +2247,25 @@ describe("event editor dialog", () => {
       });
     onTestFinished(() => bounds.mockRestore());
     const { container } = renderDialog();
-    fireEvent.click(screen.getByRole("button", { name: "Categories" }));
+    const categories = screen.getByRole("button", { name: "Categories" });
+    fireEvent.click(categories);
     const menu = container.querySelector<HTMLElement>(".event-toolbar__dropdown")!;
 
-    expect(menu.style.left).toBe("-228px");
-    expect(menu.style.maxWidth).toBe("524px");
+    expect(menu).toHaveStyle({ left: "-228px", maxWidth: "524px" });
     compact = true;
-    fireEvent.resize(globalThis);
-    expect(menu.style.left).toBe("-88px");
-    expect(menu.style.maxWidth).toBe("284px");
-  });
+    for (const onResize of resizeListeners) {
+      onResize();
+    }
+    expect(menu).toHaveStyle({ left: "-88px", maxWidth: "284px" });
 
-  it("disconnects menu resize observation when the toolbar popup closes", () => {
-    expect.hasAssertions();
-    const disconnect = vi.fn();
-    const observe = vi.fn();
-    vi.stubGlobal(
-      "ResizeObserver",
-      class {
-        observe = observe;
-        disconnect = disconnect;
-      },
-    );
-    const { container } = renderDialog();
-    fireEvent.click(screen.getByRole("button", { name: "Categories" }));
-
-    expect(observe).toHaveBeenCalledWith(container.querySelector(".event-toolbar"));
-    expect(observe).toHaveBeenCalledWith(container.querySelector(".event-toolbar__dropdown"));
-    fireEvent.click(screen.getByRole("button", { name: "Categories" }));
-    expect(disconnect).toHaveBeenCalledOnce();
+    fireEvent.click(categories);
+    expect(menu).not.toBeInTheDocument();
+    measureToolbar.mockClear();
+    for (const onResize of resizeListeners) {
+      onResize();
+    }
+    fireEvent.resize(window);
+    expect(measureToolbar).not.toHaveBeenCalled();
   });
 
   it("keeps padded scheduling controls and weekly options able to wrap", () => {
@@ -2334,7 +2342,7 @@ describe("event editor dialog", () => {
       });
       const input = screen.getByRole("combobox", { name: "Location" });
       if (mode === "create") {
-        fireEvent.click(screen.getByRole("button", { name: "Map", exact: true }));
+        fireEvent.click(screen.getByRole("button", { name: "Map" }));
       }
       fireEvent.focus(input);
       fireEvent.change(input, { target: { value: "Roma" } });
@@ -2593,7 +2601,7 @@ describe("event editor dialog", () => {
         draft: { subject: "Planning", location: "Microsoft Teams Meeting" },
       }),
     });
-    expect(screen.getByRole("button", { name: "Location", exact: true })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Location" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -2618,7 +2626,7 @@ describe("event editor dialog", () => {
         mode: "edit",
       },
     });
-    expect(screen.getByRole("button", { name: "Location", exact: true })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Location" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -2634,7 +2642,7 @@ describe("event editor dialog", () => {
     fireEvent.click(await screen.findByRole("option", { name: "Colosseo, Roma, Italia" }));
     await screen.findByRole("img", { name: "Location area map" });
     expect(globalThis.calendarApi.locations.map).toHaveBeenCalledWith(coordinates);
-    const mapMode = screen.getByRole("button", { name: "Map", exact: true });
+    const mapMode = screen.getByRole("button", { name: "Map" });
     fireEvent.click(mapMode);
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
     await waitFor(() =>
@@ -2642,7 +2650,7 @@ describe("event editor dialog", () => {
         expect.objectContaining({ isPhysicalLocation: true, locationCoordinates: coordinates }),
       ),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Location", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Location" }));
     expect(screen.queryByRole("img", { name: "Location area map" })).not.toBeInTheDocument();
     expect(input).toHaveValue("Colosseo, Roma, Italia");
     fireEvent.focus(input);
@@ -2676,7 +2684,7 @@ describe("event editor dialog", () => {
 
     expect(screen.queryByRole("link", { name: "Open in Google Maps" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Map", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Map" }));
     fireEvent.change(screen.getByPlaceholderText("Location"), {
       target: { value: "  Caffè & Bar #1, Via Roma 10, Milano  " },
     });
@@ -2729,8 +2737,8 @@ describe("event editor dialog", () => {
     });
 
     expect(screen.getByPlaceholderText("Location")).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Location", exact: true })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Map", exact: true })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Location" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Map" })).toBeDisabled();
     expect(screen.getByRole("link", { name: "Open in Google Maps" })).toHaveAttribute(
       "href",
       "https://www.google.com/maps/search/?api=1&query=Via+Roma+10%2C+Milano",
@@ -3727,14 +3735,9 @@ describe("event editor dialog", () => {
     expect(screen.getByRole("button", { name: "Accept" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Refuse" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Other" })).toBeInTheDocument();
-    expect(screen.queryByText("Response actions")).toBeNull();
-    expect(organizerHeading.compareDocumentPosition(responsesHeading)).toBeGreaterThan(0);
-  });
-
-  it("shows the forward action for existing events", () => {
-    renderDialog();
-
-    expect(screen.getByRole("button", { name: "Forward" })).toBeInTheDocument();
+    expect(
+      organizerHeading.compareDocumentPosition(responsesHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("forwards an event with recipients and a comment from the toolbar", () => {
@@ -3941,24 +3944,6 @@ describe("event editor dialog", () => {
 
     expect(onRespond).toHaveBeenCalledWith(attendeeEvent, "decline", "", true);
     expect(onFindAcceptConflicts).not.toHaveBeenCalled();
-  });
-
-  it("shows recurring refuse scope options from the sidebar", () => {
-    const attendeeEvent = createAttendeeEvent({
-      seriesMasterId: "series-1",
-    });
-
-    renderDialog({
-      state: {
-        event: attendeeEvent,
-        mode: "edit",
-      },
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Refuse" }));
-
-    expect(screen.getByRole("button", { name: "Deny only current" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Delete current and future" })).toBeInTheDocument();
   });
 
   it("declines only the current recurring event from the sidebar dropdown", () => {

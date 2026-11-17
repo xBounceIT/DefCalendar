@@ -1,4 +1,4 @@
-import type { DatesSetArg, EventClickArg, EventDropArg, EventInput } from "@fullcalendar/core";
+import type { DatesSetArg, EventDropArg, EventInput } from "@fullcalendar/core";
 import type { DateClickArg, EventResizeDoneArg } from "@fullcalendar/interaction";
 import type FullCalendar from "@fullcalendar/react";
 import React from "react";
@@ -29,7 +29,7 @@ interface WorkspacePanelProps {
   onDateClick: (clickInfo: DateClickArg) => void;
   onDateDoubleClick: (clickInfo: DateClickArg) => void;
   onDatesSet: (dates: DatesSetArg) => void;
-  onEventClick: (clickInfo: EventClickArg) => void;
+  onEventClick: (calendarId: string, eventId: string) => void;
   onEventCopy: (calendarId: string, eventId: string) => void;
   onEventDrop: (changeInfo: EventDropArg) => void;
   onEventResize: (changeInfo: EventResizeDoneArg) => void;
@@ -262,17 +262,6 @@ function Banner({ message }: { message: null | string }) {
 }
 
 function WorkspacePanel(props: WorkspacePanelProps) {
-  const handleTableEventClick = (event: CalendarEvent) => {
-    props.onEventClick({
-      event: {
-        extendedProps: {
-          calendarId: event.calendarId,
-          eventId: event.id,
-        },
-      },
-    } as EventClickArg);
-  };
-
   return (
     <main className="workspace">
       <WorkspaceHeader
@@ -292,7 +281,7 @@ function WorkspacePanel(props: WorkspacePanelProps) {
         events={props.events}
         getEventCategoryColor={props.getEventCategoryColor}
         onClear={props.onClearDaySelection}
-        onEventClick={handleTableEventClick}
+        onEventClick={(event) => props.onEventClick(event.calendarId, event.id)}
         onJoinMeeting={props.onJoinMeeting}
         selectedDay={props.selectedDayForTable}
         timeFormat={props.timeFormat}

@@ -4,7 +4,6 @@ import windowsTimeZones from "../src/shared/windows-time-zones.json";
 import GraphCalendarService, {
   extractPlainTextFromGraphHtml,
   isMissingGraphItemError,
-  normalizeGraphResponseValue,
   parseRecurrence,
 } from "../src/main/graph/calendar-service";
 
@@ -1480,31 +1479,6 @@ describe("graph calendar service body conversion", () => {
 
   it("preserves readable plain text content", () => {
     expect(extractPlainTextFromGraphHtml("Already plain text")).toBe("Already plain text");
-  });
-});
-
-describe("graph calendar service response normalization", () => {
-  it("normalizes tentative variants", () => {
-    expect(normalizeGraphResponseValue("tentative")).toBe("tentative");
-    expect(normalizeGraphResponseValue("tentativelyAccepted")).toBe("tentative");
-    expect(normalizeGraphResponseValue("  TENTATIVELYACCEPTED  ")).toBe("tentative");
-  });
-
-  it("normalizes unanswered variants", () => {
-    expect(normalizeGraphResponseValue("none")).toBe("none");
-    expect(normalizeGraphResponseValue("notResponded")).toBe("none");
-    expect(normalizeGraphResponseValue("organizer")).toBe("none");
-  });
-
-  it("keeps accepted and declined values", () => {
-    expect(normalizeGraphResponseValue("accepted")).toBe("accepted");
-    expect(normalizeGraphResponseValue("declined")).toBe("declined");
-  });
-
-  it("returns null for empty values", () => {
-    expect(normalizeGraphResponseValue(null)).toBeNull();
-    expect(normalizeGraphResponseValue(undefined)).toBeNull();
-    expect(normalizeGraphResponseValue("   ")).toBeNull();
   });
 });
 

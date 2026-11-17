@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import createMainWindow from "../src/main/window";
 
 const originalPlatform = process.platform;
@@ -40,7 +40,7 @@ const { BrowserWindowMock, openExternalMock } = vi.hoisted(() => {
   return { BrowserWindowMock, openExternalMock };
 });
 
-vi.mock(import("@main/electron-runtime"), () => ({
+vi.mock("@main/electron-runtime", () => ({
   app: { isPackaged: false },
   BrowserWindow: BrowserWindowMock,
   shell: {
@@ -54,11 +54,12 @@ vi.mock(import("@main/i18n"), () => ({
 
 beforeEach(() => {
   openExternalMock.mockReset();
+  vi.stubEnv("ELECTRON_RENDERER_URL", undefined);
 });
 
 afterEach(() => {
   Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
-  delete process.env.ELECTRON_RENDERER_URL;
+  vi.unstubAllEnvs();
 });
 
 function makeWindow(): MockBrowserWindowInstance {
@@ -95,7 +96,6 @@ describe("createMainWindow — security configuration", () => {
     expect(webPreferences.contextIsolation).toBe(true);
     // oxlint-disable-next-line vitest/prefer-to-be-falsy
     expect(webPreferences.nodeIntegration).toBe(false);
-    expectTypeOf(webPreferences.preload).toBeString();
     expect(webPreferences.preload).toMatch(/preload[\\/]index\.cjs$/);
   });
 
@@ -140,7 +140,7 @@ describe("createMainWindow — security configuration", () => {
 
 describe("createMainWindow — load source", () => {
   it("loads the dev URL when ELECTRON_RENDERER_URL is set", () => {
-    process.env.ELECTRON_RENDERER_URL = "http://localhost:5173/";
+    vi.stubEnv("ELECTRON_RENDERER_URL", "http://localhost:5173/");
     const win = makeWindow();
 
     expect(win.loadURL).toHaveBeenCalledWith("http://localhost:5173/");

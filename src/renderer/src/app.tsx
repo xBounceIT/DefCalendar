@@ -1,4 +1,4 @@
-import type { DatesSetArg, EventClickArg, EventDropArg, EventInput } from "@fullcalendar/core";
+import type { DatesSetArg, EventDropArg, EventInput } from "@fullcalendar/core";
 import type { DateClickArg, EventResizeDoneArg } from "@fullcalendar/interaction";
 import type FullCalendar from "@fullcalendar/react";
 import { endOfMonth, endOfWeek, startOfMonth, startOfWeek } from "date-fns";
@@ -748,8 +748,7 @@ function CalendarApp({ calendarApi }: { calendarApi: CalendarApi }) {
     });
   }
 
-  function handleEventClick(clickInfo: EventClickArg): void {
-    const { calendarId, eventId } = clickInfo.event.extendedProps;
+  function handleEventClick(calendarId: string, eventId: string): void {
     const eventData = eventLookup.get(`${calendarId}:${eventId}`);
     if (!eventData) {
       return;

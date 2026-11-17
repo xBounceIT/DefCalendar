@@ -75,38 +75,23 @@ describe(CalendarSelectionScreen, () => {
     expect((hiddenInput as HTMLInputElement).checked).toBe(false);
   });
 
-  it("toggles selection when checkbox is clicked", () => {
-    renderScreen({
-      accountEmail: null,
-      calendars: [createCalendar({ id: "c1", name: "Personal", isVisible: true })],
-      errorMessage: null,
-      isPending: false,
-      onContinue: vi.fn(),
-    });
-
-    const input = screen.getByLabelText("Personal").querySelector("input")! as HTMLInputElement;
-    expect(input.checked).toBe(true);
-    fireEvent.click(input);
-    expect(input.checked).toBe(false);
-    fireEvent.click(input);
-    expect(input.checked).toBe(true);
-  });
-
-  it("invokes onContinue with the selected calendar IDs", () => {
+  it("continues with the calendar IDs after the selection changes", () => {
     const onContinue = vi.fn();
     renderScreen({
       accountEmail: null,
       calendars: [
         createCalendar({ id: "c1", name: "A", isVisible: true }),
-        createCalendar({ id: "c2", name: "B", isVisible: true }),
+        createCalendar({ id: "c2", name: "B", isVisible: false }),
+        createCalendar({ id: "c3", name: "C", isVisible: true }),
       ],
       errorMessage: null,
       isPending: false,
       onContinue,
     });
 
-    const continueButton = screen.getByRole("button");
-    fireEvent.click(continueButton);
+    fireEvent.click(screen.getByRole("checkbox", { name: "B" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "C" }));
+    fireEvent.click(screen.getByRole("button", { name: "Start syncing" }));
 
     expect(onContinue).toHaveBeenCalledOnce();
     const ids = onContinue.mock.calls[0]?.[0] as string[];

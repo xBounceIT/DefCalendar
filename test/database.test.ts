@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -36,6 +36,12 @@ function createSqliteDatabase(sqlite: DatabaseSync): AppDatabase {
   return db;
 }
 
+function createDatabaseFixture() {
+  const sqlite = new DatabaseSync(":memory:");
+  onTestFinished(() => sqlite.close());
+  return { db: createSqliteDatabase(sqlite), sqlite };
+}
+
 function seedReminderCalendar(
   sqlite: DatabaseSync,
   id = "calendar-1",
@@ -44,7 +50,7 @@ function seedReminderCalendar(
   sqlite
     .prepare(`
     INSERT INTO calendars (id, home_account_id, name, can_edit, can_share, is_default_calendar,
-      payload_json, updated_at) VALUES (?, ?, 'Calendar', 1, 0, 1, '{}', '2026-09-30')
+      payload_json, updated_at) VALUES (?, ?, 'Calendar', 1, 0, 1, '{"isVisible":true}', '2026-09-30')
   `)
     .run(id, account);
 }
@@ -425,864 +431,425 @@ describe("database", () => {
     }
   });
 
-  it("clears only the signed-out account data with parameterized statements", () => {
-    const targetAccountId = "account-1'; DELETE FROM settings; --";
-    const exec = vi.fn();
-    const runs = new Map<string, ReturnType<typeof vi.fn>>();
-    const alls = new Map<string, ReturnType<typeof vi.fn>>();
-    const prepare = vi.fn((sql: string) => {
-      const run = vi.fn();
-      const all = vi.fn();
-      if (sql === "SELECT id FROM calendars WHERE home_account_id = ?") {
-        all.mockReturnValue([{ id: "calendar-%_1" }]);
-      }
-      runs.set(sql, run);
-      alls.set(sql, all);
-      return { all, run };
-    });
-    const transaction = vi.fn((execute: (accountId: string) => void) => execute);
-
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-
-    (
-      db as unknown as {
-        db: {
-          exec: typeof exec;
-          prepare: typeof prepare;
-          transaction: typeof transaction;
-        };
-      }
-    ).db = {
-      exec,
-      prepare,
-      transaction,
-    };
-
-    db.clearUserData(targetAccountId);
-
-    expect(exec).not.toHaveBeenCalled();
-    expect(transaction).toHaveBeenCalledOnce();
-
-    const preparedSql = prepare.mock.calls.map(([sql]) => sql);
-    expect(preparedSql).toStrictEqual([
-      "SELECT id FROM calendars WHERE home_account_id = ?",
-      String.raw`DELETE FROM reminder_state WHERE dedupe_key LIKE ? ESCAPE '\'`,
-      String.raw`DELETE FROM notification_state WHERE dedupe_key LIKE ? ESCAPE '\'`,
-      "DELETE FROM sync_state WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
-      "DELETE FROM calendar_sync_ranges WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
-      "DELETE FROM events WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
-      "DELETE FROM contacts WHERE home_account_id = ?",
-      "DELETE FROM calendars WHERE home_account_id = ?",
-      "DELETE FROM accounts WHERE home_account_id = ?",
-    ]);
-    expect(preparedSql.filter((sql) => sql.includes(targetAccountId))).toHaveLength(0);
-    expect(alls.get("SELECT id FROM calendars WHERE home_account_id = ?")).toHaveBeenCalledWith(
-      targetAccountId,
-    );
-    expect(
-      runs.get(String.raw`DELETE FROM reminder_state WHERE dedupe_key LIKE ? ESCAPE '\'`),
-    ).toHaveBeenCalledWith(String.raw`calendar-\%\_1:%`);
-    expect(
-      runs.get(String.raw`DELETE FROM notification_state WHERE dedupe_key LIKE ? ESCAPE '\'`),
-    ).toHaveBeenCalledWith(String.raw`calendar-\%\_1:%`);
-    expect(
-      runs.get(
-        "DELETE FROM sync_state WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
-      ),
-    ).toHaveBeenCalledWith(targetAccountId);
-    expect(
-      runs.get(
-        "DELETE FROM calendar_sync_ranges WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
-      ),
-    ).toHaveBeenCalledWith(targetAccountId);
-    expect(
-      runs.get(
-        "DELETE FROM events WHERE calendar_id IN (SELECT id FROM calendars WHERE home_account_id = ?)",
-      ),
-    ).toHaveBeenCalledWith(targetAccountId);
-    expect(runs.get("DELETE FROM contacts WHERE home_account_id = ?")).toHaveBeenCalledWith(
-      targetAccountId,
-    );
-    expect(runs.get("DELETE FROM calendars WHERE home_account_id = ?")).toHaveBeenCalledWith(
-      targetAccountId,
-    );
-    expect(runs.get("DELETE FROM accounts WHERE home_account_id = ?")).toHaveBeenCalledWith(
-      targetAccountId,
-    );
-  });
-
-  it("reads calendar ownership from database columns for legacy payloads", () => {
-    const prepare = vi.fn((sql: string) => {
-      if (!sql.includes("FROM calendars")) {
-        throw new Error(`Unexpected SQL: ${sql}`);
-      }
-
-      return {
-        all: vi.fn().mockReturnValue([
-          {
-            can_edit: 1,
-            can_share: 0,
-            color: "#5b7cfa",
-            home_account_id: "account-1",
-            id: "calendar-1",
-            is_default_calendar: 1,
-            name: "Primary",
-            owner_address: "user@example.com",
-            owner_name: "Test User",
-            user_color: null,
-            payload_json: JSON.stringify({
-              canEdit: true,
-              canShare: false,
-              color: "#5b7cfa",
-              id: "calendar-1",
-              isDefaultCalendar: true,
-              isVisible: true,
-              name: "Primary",
-              ownerAddress: "user@example.com",
-              ownerName: "Test User",
-            }),
-          },
-        ]),
-      };
-    });
-
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
-
-    expect(db.listCalendars()).toStrictEqual([
-      {
-        canEdit: true,
-        canShare: false,
+  it("clears only the signed-out account, including calendars with literal wildcard characters", () => {
+    const { db, sqlite } = createDatabaseFixture();
+    const signedOut = "account O'Neil";
+    const retained = "account-2";
+    seedReminderCalendar(sqlite, "calendar-%_1", signedOut);
+    seedReminderCalendar(sqlite, "calendar-other_1", retained);
+    const removedEvent = createStoredReminderEvent({ calendarId: "calendar-%_1" });
+    const keptEvent = createStoredReminderEvent({ calendarId: "calendar-other_1" });
+    const removedReminder = "calendar-%_1:event-1:2026-03-30T10:00:00.000Z:pre";
+    const keptReminder = "calendar-other_1:event-1:2026-03-30T10:00:00.000Z:pre";
+    db.upsertEvent(removedEvent);
+    db.upsertEvent(keptEvent);
+    db.dismissReminder(removedReminder);
+    db.dismissReminder(keptReminder);
+    db.markNotificationFired("calendar-%_1:event-1:invite");
+    db.markNotificationFired("calendar-other_1:event-1:invite");
+    db.replaceContactsForAccount([{ email: "first@example.com", name: null }], signedOut);
+    db.replaceContactsForAccount([{ email: "second@example.com", name: null }], retained);
+    db.saveAccounts(
+      [signedOut, retained].map((homeAccountId) => ({
+        homeAccountId,
+        username: "user@example.com",
+        name: null,
+        tenantId: null,
         color: "#5b7cfa",
-        homeAccountId: "account-1",
-        id: "calendar-1",
-        isDefaultCalendar: true,
-        isVisible: true,
-        name: "Primary",
-        ownerAddress: "user@example.com",
-        ownerName: "Test User",
-        userColor: null,
-      },
-    ]);
-  });
+        lastSignedInAt: keptEvent.start,
+      })),
+    );
+    db.markDeepBackfillCompleted("calendar-%_1", removedEvent.start);
+    db.markDeepBackfillCompleted("calendar-other_1", keptEvent.start);
+    for (const event of [removedEvent, keptEvent]) {
+      db.recordCalendarSyncRange({
+        calendarId: event.calendarId,
+        rangeStart: event.start,
+        rangeEnd: event.end,
+        syncedAt: event.start,
+      });
+    }
+    db.saveSettings({ ...db.getSettings(), language: "it" });
 
-  it("detects calendar sync range coverage across adjacent rows", () => {
-    expect.hasAssertions();
-    const all = vi.fn().mockReturnValue([
-      {
-        range_end: "2026-11-10T00:00:00.000Z",
-        range_start: "2026-11-01T00:00:00.000Z",
-      },
-      {
-        range_end: "2026-11-30T23:00:00.000Z",
-        range_start: "2026-11-10T00:00:00.000Z",
-      },
-    ]);
-    const prepare = vi.fn(() => ({ all }));
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+    db.clearUserData(signedOut);
 
+    expect(db.getAccounts().map(({ homeAccountId }) => homeAccountId)).toStrictEqual([retained]);
+    expect(db.listCalendarIds()).toStrictEqual(["calendar-other_1"]);
+    expect(db.getEvent(removedEvent.calendarId, removedEvent.id)).toBeNull();
+    expect(db.getEvent(keptEvent.calendarId, keptEvent.id)?.id).toBe(keptEvent.id);
+    expect(db.getReminderState(removedReminder)).toBeNull();
+    expect(db.getReminderState(keptReminder)?.dismissedAt).toBeTruthy();
+    expect(db.hasNotificationFired("calendar-%_1:event-1:invite")).toBe(false);
+    expect(db.hasNotificationFired("calendar-other_1:event-1:invite")).toBe(true);
+    expect(db.getContactByEmail(signedOut, "first@example.com")).toBeNull();
+    expect(db.getContactByEmail(retained, "second@example.com")?.email).toBe("second@example.com");
+    expect(db.getDeepBackfillCompletedAt("calendar-%_1")).toBeNull();
+    expect(db.getDeepBackfillCompletedAt("calendar-other_1")).toBe(keptEvent.start);
     expect(
-      db.isCalendarSyncRangeCovered(
-        "calendar-1",
-        "2026-11-01T00:00:00.000Z",
-        "2026-11-30T23:00:00.000Z",
-      ),
-    ).toBe(true);
-  });
-
-  it("rejects calendar sync range coverage when there is a gap", () => {
-    expect.hasAssertions();
-    const all = vi.fn().mockReturnValue([
-      {
-        range_end: "2026-11-10T00:00:00.000Z",
-        range_start: "2026-11-01T00:00:00.000Z",
-      },
-      {
-        range_end: "2026-11-30T23:00:00.000Z",
-        range_start: "2026-11-11T00:00:00.000Z",
-      },
-    ]);
-    const prepare = vi.fn(() => ({ all }));
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
-
-    expect(
-      db.isCalendarSyncRangeCovered(
-        "calendar-1",
-        "2026-11-01T00:00:00.000Z",
-        "2026-11-30T23:00:00.000Z",
-      ),
+      db.isCalendarSyncRangeCovered(removedEvent.calendarId, removedEvent.start, removedEvent.end),
     ).toBe(false);
-  });
-
-  it("returns missing calendar sync ranges between covered rows", () => {
-    expect.hasAssertions();
-    const all = vi.fn().mockReturnValue([
-      {
-        range_end: "2026-11-10T00:00:00.000Z",
-        range_start: "2026-11-01T00:00:00.000Z",
-      },
-      {
-        range_end: "2026-11-30T23:00:00.000Z",
-        range_start: "2026-11-20T00:00:00.000Z",
-      },
-    ]);
-    const prepare = vi.fn(() => ({ all }));
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
-
     expect(
-      db.listUncoveredCalendarSyncRanges(
-        "calendar-1",
-        "2026-11-01T00:00:00.000Z",
-        "2026-11-30T23:00:00.000Z",
-      ),
-    ).toStrictEqual([
-      {
-        rangeEnd: "2026-11-20T00:00:00.000Z",
-        rangeStart: "2026-11-10T00:00:00.000Z",
-      },
+      db.isCalendarSyncRangeCovered(keptEvent.calendarId, keptEvent.start, keptEvent.end),
+    ).toBe(true);
+    expect(db.getSettings().language).toBe("it");
+  });
+
+  it("reads calendar ownership for stored payloads that have no account ID", () => {
+    const { db, sqlite } = createDatabaseFixture();
+    seedReminderCalendar(sqlite, "legacy-calendar", "legacy-owner");
+
+    expect(db.listCalendars()).toMatchObject([
+      { id: "legacy-calendar", homeAccountId: "legacy-owner" },
     ]);
   });
 
-  it("ignores stale calendar sync range rows when a freshness cutoff is provided", () => {
-    expect.hasAssertions();
-    const all = vi.fn().mockReturnValue([]);
-    const prepare = vi.fn(() => ({ all }));
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+  it("joins adjacent sync coverage and reports only the missing interval when there is a gap", () => {
+    const { db, sqlite } = createDatabaseFixture();
+    seedReminderCalendar(sqlite);
+    const rangeStart = "2026-11-01T00:00:00.000Z";
+    const firstEnd = "2026-11-10T00:00:00.000Z";
+    const secondStart = "2026-11-20T00:00:00.000Z";
+    const rangeEnd = "2026-11-30T00:00:00.000Z";
+    const syncedAt = "2026-07-02T12:00:00.000Z";
+    const calendarId = "calendar-1";
+    db.recordCalendarSyncRange({ calendarId, rangeStart, rangeEnd: firstEnd, syncedAt });
+    db.recordCalendarSyncRange({ calendarId, rangeStart: secondStart, rangeEnd, syncedAt });
 
-    const result = db.listUncoveredCalendarSyncRanges(
-      "calendar-1",
-      "2026-11-01T00:00:00.000Z",
-      "2026-11-30T23:00:00.000Z",
-      "2026-07-01T12:00:00.000Z",
-    );
-
-    expect(prepare.mock.calls[0]?.[0]).toContain("last_synced_at >= ?");
-    expect(all).toHaveBeenCalledWith(
-      "calendar-1",
-      "2026-11-01T00:00:00.000Z",
-      "2026-11-30T23:00:00.000Z",
-      "2026-07-01T12:00:00.000Z",
-    );
-    expect(result).toStrictEqual([
-      {
-        rangeEnd: "2026-11-30T23:00:00.000Z",
-        rangeStart: "2026-11-01T00:00:00.000Z",
-      },
+    expect(db.listUncoveredCalendarSyncRanges(calendarId, rangeStart, rangeEnd)).toStrictEqual([
+      { rangeStart: firstEnd, rangeEnd: secondStart },
     ]);
-  });
-
-  it("replaces overlapping calendar sync range coverage before recording fetched range", () => {
-    expect.hasAssertions();
-    const deleteRun = vi.fn();
-    const insertRun = vi.fn();
-    const prepare = vi.fn((sql: string) => {
-      if (sql.includes("DELETE FROM calendar_sync_ranges")) {
-        return { run: deleteRun };
-      }
-
-      if (sql.includes("INSERT INTO calendar_sync_ranges")) {
-        return { run: insertRun };
-      }
-
-      throw new Error(`Unexpected SQL: ${sql}`);
-    });
-    const transaction = vi.fn((execute: () => void) => execute);
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { prepare: typeof prepare; transaction: typeof transaction } }).db = {
-      prepare,
-      transaction,
-    };
+    expect(db.isCalendarSyncRangeCovered(calendarId, rangeStart, rangeEnd)).toBe(false);
 
     db.recordCalendarSyncRange({
-      calendarId: "calendar-1",
-      rangeEnd: "2026-11-30T23:00:00.000Z",
-      rangeStart: "2026-11-05T00:00:00.000Z",
-      syncedAt: "2026-07-02T12:00:00.000Z",
+      calendarId,
+      rangeStart: firstEnd,
+      rangeEnd: secondStart,
+      syncedAt,
     });
-
-    expect(deleteRun).toHaveBeenCalledWith(
-      "calendar-1",
-      "2026-11-05T00:00:00.000Z",
-      "2026-11-30T23:00:00.000Z",
-    );
-    expect(insertRun).toHaveBeenCalledWith(
-      "calendar-1",
-      "2026-11-05T00:00:00.000Z",
-      "2026-11-30T23:00:00.000Z",
-      "2026-07-02T12:00:00.000Z",
-    );
+    expect(db.isCalendarSyncRangeCovered(calendarId, rangeStart, rangeEnd)).toBe(true);
   });
 
-  it("preserves unfetched coverage portions when requested", () => {
-    expect.hasAssertions();
-    const all = vi.fn().mockReturnValue([
-      {
-        last_synced_at: "2026-07-01T12:00:00.000Z",
-        range_end: "2026-11-10T00:00:00.000Z",
-        range_start: "2026-11-01T00:00:00.000Z",
-      },
-      {
-        last_synced_at: "2026-06-30T12:00:00.000Z",
-        range_end: "2026-12-15T00:00:00.000Z",
-        range_start: "2026-11-25T00:00:00.000Z",
-      },
-    ]);
-    const deleteRun = vi.fn();
-    const insertRun = vi.fn();
-    const prepare = vi.fn((sql: string) => {
-      if (sql.includes("SELECT range_start, range_end")) {
-        return { all };
-      }
+  it.each([false, true])(
+    "applies the freshness cutoff after an overlapping fetch, preserve coverage=%s",
+    (preserveOverlappingCoverage) => {
+      const { db, sqlite } = createDatabaseFixture();
+      seedReminderCalendar(sqlite);
+      const calendarId = "calendar-1";
+      const firstDay = "2026-11-01T00:00:00.000Z";
+      const fetchStart = "2026-11-05T00:00:00.000Z";
+      const fetchEnd = "2026-11-30T00:00:00.000Z";
+      const lastDay = "2026-12-15T00:00:00.000Z";
+      const previousSync = "2026-07-01T12:00:00.000Z";
+      const latestSync = "2026-07-02T12:00:00.000Z";
+      db.recordCalendarSyncRange({
+        calendarId,
+        rangeStart: firstDay,
+        rangeEnd: lastDay,
+        syncedAt: previousSync,
+      });
+      db.recordCalendarSyncRange({
+        calendarId,
+        preserveOverlappingCoverage,
+        rangeStart: fetchStart,
+        rangeEnd: fetchEnd,
+        syncedAt: latestSync,
+      });
 
-      if (sql.includes("DELETE FROM calendar_sync_ranges")) {
-        return { run: deleteRun };
-      }
+      const unfetched = [
+        { rangeStart: firstDay, rangeEnd: fetchStart },
+        { rangeStart: fetchEnd, rangeEnd: lastDay },
+      ];
+      expect(db.listUncoveredCalendarSyncRanges(calendarId, firstDay, lastDay)).toStrictEqual(
+        preserveOverlappingCoverage ? [] : unfetched,
+      );
+      expect(
+        db.listUncoveredCalendarSyncRanges(calendarId, firstDay, lastDay, latestSync),
+      ).toStrictEqual(unfetched);
+    },
+  );
 
-      if (sql.includes("INSERT INTO calendar_sync_ranges")) {
-        return { run: insertRun };
-      }
+  it("returns before-start and start reminders with independent snooze and dismissal state", () => {
+    const { db, sqlite } = createDatabaseFixture();
+    seedReminderCalendar(sqlite);
+    const timed = createStoredReminderEvent();
+    const atStart = createStoredReminderEvent({ id: "event-2", reminderMinutesBeforeStart: 0 });
+    db.upsertEvent(timed);
+    db.upsertEvent(atStart);
+    const timedKey = "calendar-1:event-1:2026-03-30T10:00:00.000Z";
+    const atStartKey = "calendar-1:event-2:2026-03-30T10:00:00.000Z:start";
+    const snoozedUntil = "2026-03-30T09:50:00.000Z";
+    db.snoozeReminder(timedKey + ":pre", snoozedUntil);
+    db.dismissReminder(timedKey + ":start");
 
-      throw new Error(`Unexpected SQL: ${sql}`);
-    });
-    const transaction = vi.fn((execute: () => void) => execute);
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { prepare: typeof prepare; transaction: typeof transaction } }).db = {
-      prepare,
-      transaction,
-    };
-
-    db.recordCalendarSyncRange({
-      calendarId: "calendar-1",
-      preserveOverlappingCoverage: true,
-      rangeEnd: "2026-11-30T23:00:00.000Z",
-      rangeStart: "2026-11-05T00:00:00.000Z",
-      syncedAt: "2026-07-02T12:00:00.000Z",
-    });
-
-    expect(deleteRun).toHaveBeenCalledWith(
-      "calendar-1",
-      "2026-11-05T00:00:00.000Z",
-      "2026-11-30T23:00:00.000Z",
+    const candidates = db.listReminderCandidates(["calendar-1"], timed.start, timed.end);
+    expect(candidates).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          dedupeKey: timedKey + ":pre",
+          dismissedAt: null,
+          reminderType: "pre",
+          snoozedUntil,
+        }),
+        expect.objectContaining({
+          dedupeKey: timedKey + ":start",
+          dismissedAt: expect.any(String),
+          reminderType: "start",
+          snoozedUntil: null,
+        }),
+        expect.objectContaining({
+          dedupeKey: atStartKey,
+          reminderType: "start",
+        }),
+      ]),
     );
-    expect(insertRun.mock.calls).toStrictEqual([
-      [
-        "calendar-1",
-        "2026-11-01T00:00:00.000Z",
-        "2026-11-05T00:00:00.000Z",
-        "2026-07-01T12:00:00.000Z",
-      ],
-      [
-        "calendar-1",
-        "2026-11-30T23:00:00.000Z",
-        "2026-12-15T00:00:00.000Z",
-        "2026-06-30T12:00:00.000Z",
-      ],
-      [
-        "calendar-1",
-        "2026-11-05T00:00:00.000Z",
-        "2026-11-30T23:00:00.000Z",
-        "2026-07-02T12:00:00.000Z",
-      ],
-    ]);
+    expect(candidates).toHaveLength(3);
   });
 
-  it("returns pre and start candidates for events with reminderMinutesBeforeStart > 0", () => {
-    const all = vi.fn().mockReturnValue([
-      {
-        base_key: "calendar-1:event-1:2026-03-30T10:00:00.000Z",
-        dismissed_at_pre: null,
-        dismissed_at_start: "2026-03-30T10:00:00.000Z",
-        payload_json: JSON.stringify(createStoredReminderEvent()),
-        snoozed_until_pre: "2026-03-30T09:50:00.000Z",
-        snoozed_until_start: null,
-      },
-      {
-        base_key: "calendar-1:event-2:2026-03-30T11:00:00.000Z",
-        dismissed_at_pre: "2026-03-30T11:00:00.000Z",
-        dismissed_at_start: null,
-        payload_json: JSON.stringify(
-          createStoredReminderEvent({
-            id: "event-2",
-            reminderMinutesBeforeStart: 0,
-            start: "2026-03-30T11:00:00.000Z",
-          }),
-        ),
-        snoozed_until_pre: null,
-        snoozed_until_start: "2026-03-30T11:05:00.000Z",
-      },
-    ]);
-    const prepare = vi.fn(() => ({ all }));
-
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+  it("excludes cancelled and declined events from both reminder queries", () => {
+    const { db, sqlite } = createDatabaseFixture();
+    seedReminderCalendar(sqlite);
+    const eligible = createStoredReminderEvent({ reminderMinutesBeforeStart: 0 });
+    db.upsertEvent(eligible);
+    db.upsertEvent(createStoredReminderEvent({ id: "cancelled", cancelled: true }));
+    db.upsertEvent(
+      createStoredReminderEvent({
+        id: "declined",
+        isOrganizer: false,
+        responseStatus: { response: "declined", time: null },
+      }),
+    );
 
     expect(
-      db.listReminderCandidates(
-        ["calendar-1"],
-        "2026-03-28T12:00:00.000Z",
-        "2026-03-30T12:00:00.000Z",
-      ),
-    ).toStrictEqual([
-      expect.objectContaining({
-        dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z:pre",
-        dismissedAt: null,
-        reminderType: "pre",
-        snoozedUntil: "2026-03-30T09:50:00.000Z",
-      }),
-      expect.objectContaining({
-        dedupeKey: "calendar-1:event-1:2026-03-30T10:00:00.000Z:start",
-        dismissedAt: "2026-03-30T10:00:00.000Z",
-        reminderType: "start",
-        snoozedUntil: null,
-      }),
-      expect.objectContaining({
-        dedupeKey: "calendar-1:event-2:2026-03-30T11:00:00.000Z:start",
-        dismissedAt: null,
-        reminderType: "start",
-        snoozedUntil: "2026-03-30T11:05:00.000Z",
-      }),
-    ]);
-
-    expect(all).toHaveBeenCalledWith(
-      "2026-03-28T12:00:00.000Z",
-      "2026-03-30T12:00:00.000Z",
-      "calendar-1",
-    );
-  });
-
-  it("excludes cancelled events from reminder candidates", () => {
-    const all = vi.fn().mockReturnValue([
-      {
-        base_key: "calendar-1:event-1:2026-03-30T10:00:00.000Z",
-        dismissed_at_pre: null,
-        dismissed_at_start: null,
-        payload_json: JSON.stringify(createStoredReminderEvent({ cancelled: true })),
-        snoozed_until_pre: null,
-        snoozed_until_start: null,
-      },
-    ]);
-    const prepare = vi.fn(() => ({ all }));
-
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
-
+      db
+        .listReminderCandidates(["calendar-1"], eligible.start, eligible.end)
+        .map(({ event }) => event.id),
+    ).toStrictEqual([eligible.id]);
     expect(
-      db.listReminderCandidates(
-        ["calendar-1"],
-        "2026-03-28T12:00:00.000Z",
-        "2026-03-30T12:00:00.000Z",
-      ),
-    ).toStrictEqual([]);
+      db
+        .listReminderEventsByStartRange(["calendar-1"], eligible.start, eligible.end)
+        .map(({ id }) => id),
+    ).toStrictEqual([eligible.id]);
   });
 
-  it("excludes declined events from reminder candidates", () => {
-    const all = vi.fn().mockReturnValue([
-      {
-        base_key: "calendar-1:event-1:2026-03-30T10:00:00.000Z",
-        dismissed_at_pre: null,
-        dismissed_at_start: null,
-        payload_json: JSON.stringify(
-          createStoredReminderEvent({
-            isOrganizer: false,
-            responseStatus: { response: "declined", time: "2026-03-29T09:00:00.000Z" },
-          }),
-        ),
-        snoozed_until_pre: null,
-        snoozed_until_start: null,
-      },
-    ]);
-    const prepare = vi.fn(() => ({ all }));
-
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
-
-    expect(
-      db.listReminderCandidates(
-        ["calendar-1"],
-        "2026-03-28T12:00:00.000Z",
-        "2026-03-30T12:00:00.000Z",
-      ),
-    ).toStrictEqual([]);
-  });
-
-  it("excludes cancelled events from listReminderEventsByStartRange", () => {
-    const all = vi.fn().mockReturnValue([
-      {
-        payload_json: JSON.stringify(createStoredReminderEvent({ id: "event-1" })),
-      },
-      {
-        payload_json: JSON.stringify(createStoredReminderEvent({ cancelled: true, id: "event-2" })),
-      },
-    ]);
-    const prepare = vi.fn(() => ({ all }));
-
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
-
-    const results = db.listReminderEventsByStartRange(
-      ["calendar-1"],
-      "2026-03-28T12:00:00.000Z",
-      "2026-03-30T12:00:00.000Z",
-    );
-
-    expect(results).toHaveLength(1);
-    expect(results[0]?.id).toBe("event-1");
-  });
-
-  it("excludes declined events from listReminderEventsByStartRange", () => {
-    const all = vi.fn().mockReturnValue([
-      {
-        payload_json: JSON.stringify(createStoredReminderEvent({ id: "event-1" })),
-      },
-      {
-        payload_json: JSON.stringify(
-          createStoredReminderEvent({
-            id: "event-2",
-            isOrganizer: false,
-            responseStatus: { response: "declined", time: "2026-03-29T09:00:00.000Z" },
-          }),
-        ),
-      },
-    ]);
-    const prepare = vi.fn(() => ({ all }));
-
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
-
-    const results = db.listReminderEventsByStartRange(
-      ["calendar-1"],
-      "2026-03-28T12:00:00.000Z",
-      "2026-03-30T12:00:00.000Z",
-    );
-
-    expect(results).toHaveLength(1);
-    expect(results[0]?.id).toBe("event-1");
-  });
-
-  it("prunes dismissed rows and stale snoozed-only rows past retention", () => {
-    const run = vi.fn();
-    let capturedSql = "";
-    const prepare = vi.fn((sql: string) => {
-      capturedSql = sql;
-      return { run };
-    });
-
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+  it("prunes expired dismissed and snoozed-only reminders while keeping current state", () => {
+    const { db, sqlite } = createDatabaseFixture();
+    const seed = sqlite.prepare("INSERT INTO reminder_state VALUES (?, ?, ?)");
+    seed.run("expired:pre", null, "2026-02-28T00:00:00.000Z");
+    seed.run("expired:start", "2026-02-28T00:00:00.000Z", null);
+    seed.run("current:pre", null, "2026-03-01T00:00:00.000Z");
+    seed.run("current:start", "2026-03-02T00:00:00.000Z", null);
 
     db.pruneReminderState("2026-03-01T00:00:00.000Z");
 
-    const normalizedSql = capturedSql.replace(/\s+/g, " ").trim();
-    expect(normalizedSql).toContain("DELETE FROM reminder_state");
-    expect(normalizedSql).toContain("dismissed_at IS NOT NULL AND dismissed_at < ?");
-    expect(normalizedSql).toContain(
-      "dismissed_at IS NULL AND snoozed_until IS NOT NULL AND snoozed_until < ?",
-    );
-    expect(run).toHaveBeenCalledWith("2026-03-01T00:00:00.000Z", "2026-03-01T00:00:00.000Z");
+    expect(db.getReminderState("expired:pre")).toBeNull();
+    expect(db.getReminderState("expired:start")).toBeNull();
+    expect(db.getReminderState("current:pre")?.dismissedAt).toBe("2026-03-01T00:00:00.000Z");
+    expect(db.getReminderState("current:start")?.snoozedUntil).toBe("2026-03-02T00:00:00.000Z");
   });
 
-  it("preserves only invite delivery markers that still belong to pending future events", () => {
-    expect.hasAssertions();
-    const run = vi.fn();
-    let capturedSql = "";
-    const prepare = vi.fn((sql: string) => {
-      capturedSql = sql;
-      return { run };
-    });
-
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+  it("keeps old invite delivery markers only while their invitations still need a response", () => {
+    const { db, sqlite } = createDatabaseFixture();
+    seedReminderCalendar(sqlite);
+    const seed = sqlite.prepare("INSERT INTO notification_state VALUES (?, ?)");
+    const firedAt = "2026-02-28T00:00:00.000Z";
+    db.upsertEvent(
+      createStoredReminderEvent({
+        id: "pending",
+        isOrganizer: false,
+        responseStatus: { response: " notResponded ", time: null },
+      }),
+    );
+    db.upsertEvent(
+      createStoredReminderEvent({ id: "cancelled", isOrganizer: false, cancelled: true }),
+    );
+    db.upsertEvent(
+      createStoredReminderEvent({
+        id: "past",
+        isOrganizer: false,
+        start: "2026-03-30T09:30:00.000Z",
+      }),
+    );
+    db.upsertEvent(createStoredReminderEvent({ id: "organizer" }));
+    db.upsertEvent(
+      createStoredReminderEvent({
+        id: "accepted",
+        isOrganizer: false,
+        responseStatus: { response: "accepted", time: null },
+      }),
+    );
+    for (const id of ["pending", "cancelled", "past", "organizer", "accepted", "missing"]) {
+      seed.run("calendar-1:" + id + ":invite", firedAt);
+    }
+    seed.run("calendar-1:pending:pre", firedAt);
+    seed.run("calendar-1:recent:invite", "2026-03-02T00:00:00.000Z");
 
     db.pruneNotificationState("2026-03-01T00:00:00.000Z", "2026-03-30T09:30:00.000Z");
 
-    const normalizedSql = capturedSql.replace(/\s+/g, " ").trim();
-    expect(normalizedSql).toContain("dedupe_key NOT LIKE '%:invite'");
-    expect(normalizedSql).toContain("OR NOT EXISTS ( SELECT 1 FROM events");
-    expect(normalizedSql).toContain(
-      "notification_state.dedupe_key = events.calendar_id || ':' || events.id || ':invite'",
-    );
-    expect(
-      [
-        "json_extract(events.payload_json, '$.cancelled')",
-        "json_extract(events.payload_json, '$.isOrganizer')",
-        "COALESCE(json_extract(",
-        "IN ('', 'none', 'notresponded', 'organizer')",
-        "julianday(events.start_sort) > julianday(?)",
-      ].every((fragment) => normalizedSql.includes(fragment)),
-    ).toBe(true);
-    expect(run).toHaveBeenCalledWith("2026-03-01T00:00:00.000Z", "2026-03-30T09:30:00.000Z");
+    expect(db.hasNotificationFired("calendar-1:pending:invite")).toBe(true);
+    expect(db.hasNotificationFired("calendar-1:recent:invite")).toBe(true);
+    for (const id of ["cancelled", "past", "organizer", "accepted", "missing"]) {
+      expect(db.hasNotificationFired("calendar-1:" + id + ":invite")).toBe(false);
+    }
+    expect(db.hasNotificationFired("calendar-1:pending:pre")).toBe(false);
   });
 
-  it("searches events across scoped fields with parameterized SQL", () => {
-    const matchedEvent = createStoredReminderEvent({
-      calendarId: "calendar-1",
-      id: "event-1",
+  it("ranks event matches within the requested calendars and treats wildcards literally", () => {
+    const { db, sqlite } = createDatabaseFixture();
+    seedReminderCalendar(sqlite);
+    seedReminderCalendar(sqlite, "another-calendar");
+    const event = createStoredReminderEvent();
+    db.upsertEvent({
+      ...event,
+      id: "prefix",
+      subject: "Plan%_ning",
+      start: "2026-03-30T08:00:00.000Z",
     });
-    const all = vi
-      .fn()
-      .mockReturnValue([{ payload_json: JSON.stringify(matchedEvent), sort_rank: 0 }]);
-    let capturedSql = "";
-    const prepare = vi.fn((sql: string) => {
-      capturedSql = sql;
-      return { all };
+    db.upsertEvent({
+      ...event,
+      id: "substring",
+      subject: "Weekly Plan%_ning",
+      start: "2026-03-30T09:00:00.000Z",
     });
-
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
-
-    const results = db.searchEvents({
-      calendarIds: ["calendar-1", "calendar-2"],
-      limit: 30,
-      query: "Plan%_ning",
-      sort: "relevance",
+    db.upsertEvent({ ...event, id: "preview", bodyPreview: "Agenda: plan%_ning" });
+    db.upsertEvent({
+      ...event,
+      id: "location",
+      location: "Plan%_ning",
+      start: "2026-03-30T10:05:00.000Z",
     });
-
-    expect(results).toHaveLength(1);
-    expect(results[0]?.id).toBe("event-1");
-
-    expect(capturedSql).toContain("LOWER(subject) LIKE @contains");
-    expect(capturedSql).toContain("json_extract(payload_json, '$.bodyPreview')");
-    expect(capturedSql).toContain("json_extract(payload_json, '$.location')");
-    expect(capturedSql).toContain("json_extract(payload_json, '$.categories')");
-    expect(capturedSql).toContain("json_each(IFNULL(json_extract(payload_json, '$.attendees')");
-    expect(capturedSql).toContain("calendar_id IN (@calendar_0, @calendar_1)");
-    expect(capturedSql).toContain("ORDER BY sort_rank, start_sort DESC");
-    expect(capturedSql).toContain("LIMIT @limit");
-
-    expect(all).toHaveBeenCalledWith({
-      calendar_0: "calendar-1",
-      calendar_1: "calendar-2",
-      contains: String.raw`%plan\%\_ning%`,
-      limit: 30,
-      prefix: String.raw`plan\%\_ning%`,
+    db.upsertEvent({
+      ...event,
+      id: "category",
+      categories: ["Plan%_ning"],
+      start: "2026-03-30T10:10:00.000Z",
     });
-  });
-
-  it("returns no results when search query normalizes to empty", () => {
-    const prepare = vi.fn();
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
-
-    const results = db.searchEvents({
-      calendarIds: ["calendar-1"],
-      limit: 30,
-      query: '",;:()',
-      sort: "recent",
+    db.upsertEvent({
+      ...event,
+      id: "attendee",
+      start: "2026-03-30T10:15:00.000Z",
+      attendees: [
+        { email: "person@example.com", name: "Plan%_ning", type: "required", response: null },
+      ],
+    });
+    db.upsertEvent({ ...event, id: "similar-percent", subject: "PlanX_ning" });
+    db.upsertEvent({ ...event, id: "similar-underscore", subject: "Plan%Xning" });
+    db.upsertEvent({
+      ...event,
+      id: "outside",
+      subject: "Plan%_ning",
+      calendarId: "another-calendar",
     });
 
-    expect(results).toStrictEqual([]);
-    expect(prepare).not.toHaveBeenCalled();
-  });
-
-  it("searches events without a calendar filter when omitted", () => {
-    const all = vi.fn().mockReturnValue([]);
-    let capturedSql = "";
-    const prepare = vi.fn((sql: string) => {
-      capturedSql = sql;
-      return { all };
-    });
-
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
-
-    db.searchEvents({ limit: 10, query: "weekly", sort: "recent" });
-
-    expect(capturedSql).not.toContain("calendar_id IN");
-    expect(capturedSql).toContain("ORDER BY start_sort DESC");
-    expect(all).toHaveBeenCalledWith({
-      contains: "%weekly%",
-      limit: 10,
-      prefix: "weekly%",
-    });
-  });
-
-  it("orders search results oldest-first when requested", () => {
-    const all = vi.fn().mockReturnValue([]);
-    let capturedSql = "";
-    const prepare = vi.fn((sql: string) => {
-      capturedSql = sql;
-      return { all };
-    });
-
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
-
-    db.searchEvents({ limit: 10, query: "weekly", sort: "oldest" });
-
-    expect(capturedSql).toContain("ORDER BY start_sort ASC");
-  });
-
-  it("searches contacts with normalized attendee input", () => {
-    const all = vi.fn().mockReturnValue([
-      { contact_id: "contact-1", email: "john@example.com", name: "Doe, John" },
-      { contact_id: null, email: "jane@example.com", name: null },
+    const results = db
+      .searchEvents({
+        calendarIds: ["calendar-1"],
+        query: "Plan%_ning",
+        limit: 10,
+        sort: "relevance",
+      })
+      .map(({ id }) => id);
+    expect(results).toStrictEqual([
+      "prefix",
+      "substring",
+      "attendee",
+      "category",
+      "location",
+      "preview",
     ]);
-    const prepare = vi.fn((sql: string) => {
-      if (!sql.includes("FROM contacts")) {
-        throw new Error(`Unexpected SQL: ${sql}`);
-      }
+  });
 
-      return { all };
-    });
+  it("returns no results for a punctuation-only event search", () => {
+    const { db, sqlite } = createDatabaseFixture();
+    seedReminderCalendar(sqlite);
+    db.upsertEvent(createStoredReminderEvent());
 
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+    expect(db.searchEvents({ limit: 30, query: '",;:()', sort: "recent" })).toStrictEqual([]);
+  });
 
-    expect(
-      db.searchContacts({
-        homeAccountId: "account-1",
-        limit: 5,
-        query: '"Doe, Jo" <jo',
+  it("searches across calendars when no filter is supplied and honors the sort and limit", () => {
+    const { db, sqlite } = createDatabaseFixture();
+    seedReminderCalendar(sqlite);
+    seedReminderCalendar(sqlite, "another-calendar");
+    db.upsertEvent(createStoredReminderEvent({ id: "newer" }));
+    db.upsertEvent(
+      createStoredReminderEvent({
+        id: "older",
+        calendarId: "another-calendar",
+        start: "2026-03-29T10:00:00.000Z",
       }),
-    ).toStrictEqual([
-      { contactId: "contact-1", email: "john@example.com", name: "Doe, John" },
-      { email: "jane@example.com", name: null },
-    ]);
-    expect(all).toHaveBeenCalledWith({
-      contains: "%doe jo jo%",
-      exact: "doe jo jo",
-      home_account_id: "account-1",
-      limit: 5,
-      prefix: "doe jo jo%",
-    });
-  });
-
-  it("backfills past-due reminders when reminder_state is created during migration", () => {
-    const exec = vi.fn();
-    const prepare = vi.fn((sql: string) => {
-      if (sql === "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?") {
-        return {
-          get: vi.fn().mockReturnValue(undefined),
-        };
-      }
-
-      if (sql === "PRAGMA table_info(contacts)") {
-        return { all: vi.fn().mockReturnValue([{ name: "contact_id" }]) };
-      }
-
-      if (sql === "PRAGMA table_info(calendars)") {
-        return {
-          all: vi.fn().mockReturnValue([{ name: "home_account_id" }]),
-        };
-      }
-
-      if (sql === "PRAGMA table_info(sync_state)") {
-        return {
-          all: vi.fn().mockReturnValue([{ name: "deep_backfill_completed_at" }]),
-        };
-      }
-
-      throw new Error(`Unexpected SQL: ${sql}`);
-    });
-
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { exec: typeof exec; prepare: typeof prepare } }).db = {
-      exec,
-      prepare,
-    };
-
-    (db as unknown as { migrate: () => void }).migrate();
-
-    expect(exec).toHaveBeenCalledTimes(4);
-    expect(exec.mock.calls[1]?.[0]).toContain("ALTER TABLE calendars ADD COLUMN user_color");
-    expect(exec.mock.calls[2]?.[0]).toContain("FROM notification_state");
-    expect(exec.mock.calls[2]?.[0]).toContain("FROM events");
-    expect(exec.mock.calls[2]?.[0]).toContain("strftime('%Y-%m-%dT%H:%M:%fZ', 'now')");
-    expect(exec.mock.calls[2]?.[0]).toContain("julianday('now', '-5 minutes')");
-    expect(exec.mock.calls[3]?.[0]).toContain(":pre");
-  });
-
-  it("skips reminder backfill after reminder_state already exists", () => {
-    const exec = vi.fn();
-    const prepare = vi.fn((sql: string) => {
-      if (sql === "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?") {
-        return {
-          get: vi.fn().mockReturnValue({ 1: 1 }),
-        };
-      }
-
-      if (sql === "PRAGMA table_info(contacts)") {
-        return { all: vi.fn().mockReturnValue([{ name: "contact_id" }]) };
-      }
-
-      if (sql === "PRAGMA table_info(calendars)") {
-        return {
-          all: vi.fn().mockReturnValue([{ name: "home_account_id" }, { name: "user_color" }]),
-        };
-      }
-
-      if (sql === "PRAGMA table_info(sync_state)") {
-        return {
-          all: vi.fn().mockReturnValue([{ name: "deep_backfill_completed_at" }]),
-        };
-      }
-
-      throw new Error(`Unexpected SQL: ${sql}`);
-    });
-
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { exec: typeof exec; prepare: typeof prepare } }).db = {
-      exec,
-      prepare,
-    };
-
-    (db as unknown as { migrate: () => void }).migrate();
-
-    expect(exec).toHaveBeenCalledTimes(2);
-  });
-
-  it("adds the deep_backfill_completed_at column when migrating an older sync_state table", () => {
-    const exec = vi.fn();
-    const prepare = vi.fn((sql: string) => {
-      if (sql === "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?") {
-        return {
-          get: vi.fn().mockReturnValue({ 1: 1 }),
-        };
-      }
-
-      if (sql === "PRAGMA table_info(contacts)") {
-        return { all: vi.fn().mockReturnValue([{ name: "contact_id" }]) };
-      }
-
-      if (sql === "PRAGMA table_info(calendars)") {
-        return {
-          all: vi.fn().mockReturnValue([{ name: "home_account_id" }, { name: "user_color" }]),
-        };
-      }
-
-      if (sql === "PRAGMA table_info(sync_state)") {
-        return {
-          all: vi
-            .fn()
-            .mockReturnValue([
-              { name: "calendar_id" },
-              { name: "last_synced_at" },
-              { name: "range_start" },
-              { name: "range_end" },
-              { name: "error_message" },
-            ]),
-        };
-      }
-
-      throw new Error(`Unexpected SQL: ${sql}`);
-    });
-
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { exec: typeof exec; prepare: typeof prepare } }).db = {
-      exec,
-      prepare,
-    };
-
-    (db as unknown as { migrate: () => void }).migrate();
-
-    expect(exec).toHaveBeenCalledTimes(3);
-    expect(exec.mock.calls[2]?.[0]).toContain(
-      "ALTER TABLE sync_state ADD COLUMN deep_backfill_completed_at TEXT",
     );
+
+    expect(
+      db.searchEvents({ limit: 5, query: "Planning", sort: "oldest" }).map(({ id }) => id),
+    ).toStrictEqual(["older", "newer"]);
+    expect(
+      db.searchEvents({ limit: 1, query: "Planning", sort: "recent" }).map(({ id }) => id),
+    ).toStrictEqual(["newer"]);
+  });
+
+  it("finds contacts using normalized attendee input and only searches the selected account", () => {
+    const { db } = createDatabaseFixture();
+    const match = { contactId: "contact-1", email: "john@example.com", name: "Doe, John" };
+    db.replaceContactsForAccount(
+      [match, { email: "jane@example.com", name: "Doe, Jane" }],
+      "account-1",
+    );
+    db.replaceContactsForAccount([{ ...match, email: "josh@example.com" }], "account-2");
+
+    expect(
+      db.searchContacts({ homeAccountId: "account-1", limit: 5, query: '"Doe, John" <JO' }),
+    ).toStrictEqual([match]);
+  });
+
+  it("migrates past-due reminders once without suppressing a reminder that is still upcoming", () => {
+    const { db, sqlite } = createDatabaseFixture();
+    seedReminderCalendar(sqlite);
+    const now = Date.now();
+    const past = new Date(now - 60 * 60_000).toISOString();
+    const future = new Date(now + 60 * 60_000).toISOString();
+    for (const [id, start] of [
+      ["past", past],
+      ["future", future],
+    ]) {
+      db.upsertEvent({ ...createStoredReminderEvent({ id, start }), end: start });
+    }
+    db.markNotificationFired("calendar-1:legacy-reminder");
+    sqlite.exec("DROP TABLE reminder_state");
+
+    const migrated = createSqliteDatabase(sqlite);
+
+    expect(migrated.getReminderState("calendar-1:legacy-reminder:pre")?.dismissedAt).toBeTruthy();
+    expect(migrated.getReminderState("calendar-1:past:" + past + ":pre")?.dismissedAt).toBeTruthy();
+    expect(migrated.getReminderState("calendar-1:future:" + future + ":pre")).toBeNull();
+
+    migrated.upsertEvent({
+      ...createStoredReminderEvent({ id: "newly-synced", start: past }),
+      end: past,
+    });
+    expect(
+      createSqliteDatabase(sqlite).getReminderState("calendar-1:newly-synced:" + past + ":pre"),
+    ).toBeNull();
+  });
+
+  it("can record completed deep backfill after migrating an older sync cache", () => {
+    const { db, sqlite } = createDatabaseFixture();
+    seedReminderCalendar(sqlite);
+    const syncedAt = "2026-03-30T10:00:00.000Z";
+    db.saveSyncState({
+      calendarId: "calendar-1",
+      errorMessage: null,
+      lastSyncedAt: syncedAt,
+      rangeStart: "2026-03-01T00:00:00.000Z",
+      rangeEnd: "2026-04-01T00:00:00.000Z",
+    });
+    sqlite.exec("ALTER TABLE sync_state DROP COLUMN deep_backfill_completed_at");
+
+    const migrated = createSqliteDatabase(sqlite);
+
+    expect(migrated.getLatestSyncStatus().lastSyncedAt).toBe(syncedAt);
+    expect(migrated.getDeepBackfillCompletedAt("calendar-1")).toBeNull();
+    migrated.markDeepBackfillCompleted("calendar-1", syncedAt);
+    expect(migrated.getDeepBackfillCompletedAt("calendar-1")).toBe(syncedAt);
   });
 
   it("sanitizes legacy events with recurrence month=0 / numberOfOccurrences=0 on read", () => {
@@ -1307,11 +874,12 @@ describe("database", () => {
         },
       },
     };
-    const all = vi.fn().mockReturnValue([{ payload_json: JSON.stringify(corruptedEvent) }]);
-    const prepare = vi.fn(() => ({ all }));
-
-    const db = Object.create(AppDatabase.prototype) as AppDatabase;
-    (db as unknown as { db: { prepare: typeof prepare } }).db = { prepare };
+    const { db, sqlite } = createDatabaseFixture();
+    seedReminderCalendar(sqlite);
+    db.upsertEvent(createStoredReminderEvent());
+    sqlite
+      .prepare("UPDATE events SET payload_json = ? WHERE id = ?")
+      .run(JSON.stringify(corruptedEvent), corruptedEvent.id);
 
     const events = db.listEvents({
       end: "2026-03-30T23:59:59.000Z",

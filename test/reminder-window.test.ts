@@ -164,16 +164,17 @@ beforeEach(() => {
   fakeWindows.length = 0;
   beepMock.mockReset();
   loadMock.mockReset().mockResolvedValue(undefined);
+  vi.stubEnv("ELECTRON_RENDERER_URL", undefined);
 });
 
 afterEach(() => {
   Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
-  delete process.env.ELECTRON_RENDERER_URL;
+  vi.unstubAllEnvs();
 });
 
 describe("reminderWindowManager.show", () => {
   it("creates window with secure webPreferences and loads URL when ELECTRON_RENDERER_URL is set", async () => {
-    process.env.ELECTRON_RENDERER_URL = "http://localhost:5173";
+    vi.stubEnv("ELECTRON_RENDERER_URL", "http://localhost:5173");
     const manager = new ReminderWindowManager();
 
     manager.show(STATE, false);

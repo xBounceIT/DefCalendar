@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ReminderService from "../src/main/reminders/reminder-service";
+import { createDefaultSettings, reminderDialogStateSchema } from "../src/shared/schemas";
 
 const originalPlatform = process.platform;
 
@@ -11,7 +12,7 @@ const { getLocale, powerMonitor } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock(import("@main/electron-runtime"), () => ({
+vi.mock("@main/electron-runtime", () => ({
   app: {
     getLocale,
   },
@@ -184,6 +185,30 @@ describe("reminder service", () => {
     Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
     vi.useRealTimers();
     vi.clearAllMocks();
+  });
+
+  it("publishes the empty reminder state only when a preference changes", async () => {
+    expect.hasAssertions();
+    const fixture = createFixture();
+    const defaults = createDefaultSettings();
+    fixture.settings.getSettings.mockReturnValue(defaults);
+    const listener = vi.fn();
+    fixture.service.onState(listener);
+
+    expect(reminderDialogStateSchema.parse(fixture.service.getState())).toStrictEqual({
+      items: [],
+      locale: "en",
+      theme: "system",
+      timeFormat: "system",
+    });
+    await fixture.service.checkNow();
+    expect(listener).not.toHaveBeenCalled();
+
+    fixture.settings.getSettings.mockReturnValue({ ...defaults, theme: "dark" });
+    await fixture.service.checkNow();
+    expect(listener).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ items: [], theme: "dark" }),
+    );
   });
 
   it.each([false, true])(

@@ -43,13 +43,13 @@ const { TrayMock, trayInstances, buildFromTemplateMock, createFromPathMock, isPa
     };
   });
 
-vi.mock(import("electron"), () => ({
+vi.mock("electron", () => ({
   Menu: { buildFromTemplate: buildFromTemplateMock },
   Tray: TrayMock,
   nativeImage: { createFromPath: createFromPathMock },
 }));
 
-vi.mock(import("@main/electron-runtime"), () => ({
+vi.mock("@main/electron-runtime", () => ({
   app: {
     get isPackaged() {
       return isPackagedRef.value;

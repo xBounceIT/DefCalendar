@@ -92,10 +92,7 @@ const OUTLOOK_CATEGORY_COLORS: Readonly<Record<string, string>> = {
   preset24: "#701a75",
 };
 
-function getCalendarAccent(
-  color: string | null | undefined,
-  userColor: string | null | undefined,
-): string {
+function getCalendarAccent(color: string | null | undefined, userColor?: string | null): string {
   if (userColor && userColor.trim().length > 0) {
     const match = CALENDAR_COLORS.find((c) => c.name === userColor);
     return match?.hex ?? userColor;

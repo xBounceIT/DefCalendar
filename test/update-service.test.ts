@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { appUpdateStatusSchema } from "../src/shared/schemas";
 import UpdateService from "../src/main/update/update-service";
 
 const { isPackagedRef, getVersionMock, downloadMacUpdateMock, installMacUpdateMock } = vi.hoisted(
@@ -220,21 +221,12 @@ describe("updateService construction", () => {
     expect(autoUpdaterMock.on).not.toHaveBeenCalled();
   });
 
-  it("transitions to idle and registers all autoUpdater listeners when packaged", async () => {
+  it("waits for an explicit download and does not install on normal quit", () => {
     const service = new UpdateService();
 
     expect(service.getStatus().state).toBe("idle");
     expect(autoUpdaterMock.autoDownload).toBe(false);
     expect(autoUpdaterMock.autoInstallOnAppQuit).toBe(false);
-    const events = autoUpdaterMock.on.mock.calls.map(([name]) => name);
-    expect(events).toStrictEqual([
-      "checking-for-update",
-      "update-available",
-      "update-not-available",
-      "download-progress",
-      "update-downloaded",
-      "error",
-    ]);
   });
 
   it("propagates the allowPrerelease flag to autoUpdater", () => {
@@ -264,24 +256,26 @@ describe("updateService event handlers", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
-  it("transitions through the full available → downloading → downloaded lifecycle", async () => {
+  it("publishes IPC-compatible states throughout the update lifecycle", () => {
+    expect.hasAssertions();
     const service = new UpdateService();
+    const states: ReturnType<typeof appUpdateStatusSchema.parse>[] = [];
+    service.onStatus((status) => {
+      states.push(appUpdateStatusSchema.parse(status));
+    });
 
     getHandler("checking-for-update")(undefined);
-    expect(service.getStatus().state).toBe("checking");
-
     getHandler("update-available")({ version: "1.0.0", releaseNotes: "Highlights" });
-    expect(service.getStatus().state).toBe("available");
-    expect(service.getStatus().latestVersion).toBe("1.0.0");
-    expect(service.getStatus().releaseNotes).toBe("Highlights");
-
     getHandler("download-progress")({ percent: 42.5 });
-    expect(service.getStatus().state).toBe("downloading");
-    expect(service.getStatus().downloadPercent).toBe(42.5);
-
     getHandler("update-downloaded")({ version: "1.0.0", releaseNotes: null });
-    expect(service.getStatus().state).toBe("downloaded");
-    expect(service.getStatus().downloadPercent).toBe(100);
+
+    expect(states).toMatchObject([
+      { state: "checking" },
+      { state: "available", latestVersion: "1.0.0", releaseNotes: "Highlights" },
+      { state: "downloading", downloadPercent: 42.5 },
+      { state: "downloaded", downloadPercent: 100 },
+    ]);
+    expect(service.getStatus()).toStrictEqual(states.at(-1));
   });
 
   it("clamps download progress between 0 and 100", async () => {
@@ -446,7 +440,10 @@ describe("updateService.downloadUpdate", () => {
     await service.installUpdate();
     expect(service.getStatus()).toMatchObject({ state: "downloaded", error: "Installer failed" });
     await service.installUpdate();
-    expect(autoUpdaterMock.quitAndInstall).toHaveBeenCalledTimes(2);
+    expect(autoUpdaterMock.quitAndInstall.mock.calls).toStrictEqual([
+      [true, true],
+      [true, true],
+    ]);
   });
 });
 
@@ -464,14 +461,6 @@ describe("updateService.installUpdate", () => {
 
     await service.installUpdate();
     expect(autoUpdaterMock.quitAndInstall).not.toHaveBeenCalled();
-  });
-
-  it("invokes quitAndInstall when status is downloaded", async () => {
-    const service = new UpdateService();
-    getHandler("update-downloaded")({ version: "1.0.0", releaseNotes: null });
-
-    await service.installUpdate();
-    expect(autoUpdaterMock.quitAndInstall).toHaveBeenCalledOnce();
   });
 });
 

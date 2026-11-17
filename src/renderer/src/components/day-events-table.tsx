@@ -425,7 +425,9 @@ function useResizableColumns() {
 
   const tableRef = React.useRef<HTMLTableElement | null>(null);
   const suppressSortClickRef = React.useRef(false);
-  const suppressSortResetTimeoutRef = React.useRef<null | number>(null);
+  const suppressSortResetTimeoutRef = React.useRef<null | ReturnType<typeof globalThis.setTimeout>>(
+    null,
+  );
 
   const handleMouseDown = React.useCallback(
     (e: React.MouseEvent, column: string, nextColumn: string | null) => {
