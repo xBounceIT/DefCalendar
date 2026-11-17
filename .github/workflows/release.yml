@@ -4,80 +4,19 @@ on:
   push:
     tags:
       - "v*"
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - ".github/scripts/verify-release-assets.cjs"
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
 
 jobs:
-  prepare:
-    runs-on: windows-latest
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Validate tag and package version
-        shell: pwsh
-        env:
-          ACTUAL_TAG: ${{ github.ref_name }}
-        run: |
-          $packageJson = Get-Content package.json -Raw | ConvertFrom-Json
-          $expectedTag = "v$($packageJson.version)"
-          $actualTag = $env:ACTUAL_TAG
-          if ($actualTag -ne $expectedTag) {
-            throw "Tag $actualTag does not match package.json version $expectedTag"
-          }
-
-      - name: Create draft release with generated notes
-        shell: pwsh
-        env:
-          TAG: ${{ github.ref_name }}
-          OWNER: ${{ github.repository_owner }}
-          REPO_NAME: ${{ github.event.repository.name }}
-          TARGET_SHA: ${{ github.sha }}
-        run: |
-          $tag = $env:TAG
-          $owner = $env:OWNER
-          $repo = $env:REPO_NAME
-          $target = $env:TARGET_SHA
-          $previousTag = $null
-          $resolvedPreviousTag = git describe --tags --abbrev=0 "$tag^" 2>$null
-          if ($LASTEXITCODE -eq 0 -and $resolvedPreviousTag) {
-            $previousTag = $resolvedPreviousTag.Trim()
-          }
-
-          $apiArgs = @(
-            "repos/$owner/$repo/releases/generate-notes",
-            "--method", "POST",
-            "-f", "tag_name=$tag",
-            "-f", "target_commitish=$target"
-          )
-
-          if ($previousTag) {
-            $apiArgs += @("-f", "previous_tag_name=$previousTag")
-          }
-
-          $notes = gh api @apiArgs | ConvertFrom-Json
-          $notesFile = Join-Path $env:RUNNER_TEMP "release-notes.md"
-          $notes.body | Out-File -FilePath $notesFile -Encoding utf8
-
-          # Pre-create the draft release so electron-builder uploads to this
-          # exact release instead of racing to create one for each parallel
-          # asset upload (which produced two duplicate drafts in v0.5.0).
-          # Keep it as a draft until all assets are uploaded so update checks
-          # (autoUpdater) never observe a public release without installers
-          # or latest.yml.
-          gh release create "$tag" `
-            --draft `
-            --title "$($notes.name)" `
-            --notes-file "$notesFile" `
-            --target "$target"
-
   build:
-    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -87,16 +26,25 @@ jobs:
           - os: macos-latest
             platform: mac
     runs-on: ${{ matrix.os }}
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v5
         with:
           node-version: "22"
           cache: npm
+
+      - name: Validate tag and package version
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          expected="v$(node -p 'require("./package.json").version')"
+          if [[ "$GITHUB_REF_NAME" != "$expected" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $expected" >&2
+            exit 1
+          fi
 
       - name: Install dependencies
         run: npm ci
@@ -104,11 +52,11 @@ jobs:
       - name: Audit dependencies
         run: npm run audit
 
-      - name: Build and publish Windows assets
+      - name: Build Windows assets
         if: matrix.platform == 'win'
-        run: npm run dist:publish -- --win
+        run: npm run dist -- --win --publish never
 
-      - name: Build and publish macOS universal assets
+      - name: Build macOS universal assets
         if: matrix.platform == 'mac'
         shell: bash
         env:
@@ -126,7 +74,7 @@ jobs:
           else
             signingArgs+=("-c.forceCodeSigning=true" "-c.mac.type=distribution")
           fi
-          npm run dist:publish -- --mac --universal "${signingArgs[@]}"
+          npm run dist -- --mac --universal --publish never "${signingArgs[@]}"
 
       - name: Verify macOS universal binaries
         if: matrix.platform == 'mac'
@@ -143,17 +91,62 @@ jobs:
           fi
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :NSUserNotificationAlertStyle' "$app/Info.plist")" == "alert" ]]
 
+      - name: Verify and stage release assets
+        run: node .github/scripts/verify-release-assets.cjs ${{ matrix.platform }}
+
+      - name: Upload verified release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: release/assets/
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+
   publish:
+    if: github.event_name == 'push'
     needs: build
-    runs-on: windows-latest
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      GH_REPO: ${{ github.repository }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release-assets/
+
       - name: Publish release
-        shell: pwsh
+        shell: bash
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          # Flip the release to public only after all assets are uploaded.
-          gh release edit "$env:TAG" --draft=false
+          assets=(release-assets/*)
+          if [[ "${#assets[@]}" != 8 ]]; then
+            echo "Expected eight verified release assets" >&2
+            exit 1
+          fi
+
+          if draft=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>&1); then
+            if [[ "$draft" == true ]]; then
+              gh release upload "$TAG" "${assets[@]}" --clobber
+              gh release edit "$TAG" --draft=false
+            elif [[ "$draft" == false ]]; then
+              echo "Release $TAG is already public"
+            else
+              echo "Unable to determine the state of release $TAG" >&2
+              exit 1
+            fi
+          elif [[ "$draft" == 'release not found' ]]; then
+            previous=$(gh release list --limit 1 --exclude-drafts --exclude-pre-releases --json tagName --jq '.[0].tagName // empty')
+            notes=(--generate-notes)
+            if [[ -n "$previous" ]]; then
+              notes+=(--notes-start-tag "$previous")
+            fi
+            gh release create "$TAG" "${assets[@]}" --verify-tag --target "$GITHUB_SHA" "${notes[@]}"
+          else
+            printf '%s\n' "$draft" >&2
+            exit 1
+          fi
