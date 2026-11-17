@@ -48,6 +48,7 @@
       }
     ],
     "win": {
+      "artifactName": "${productName}-Setup-${version}.${ext}",
       "target": [
         "nsis"
       ]
@@ -126,9 +127,11 @@
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "husky": "^9.1.7",
+    "js-yaml": "^4.3.1",
     "jsdom": "^29.1.1",
     "oxfmt": "^0.47.0",
     "oxlint": "^1.62.0",
+    "picomatch": "file:vendor/npm/picomatch",
     "typescript": "^6.0.3",
     "vite": "^7.3.7",
     "vitest": "^4.1.12"
@@ -150,11 +153,12 @@
     "jsdom": {
       "undici": "^7.30.1"
     },
-    "js-yaml": "^4.3.1",
+    "js-yaml": "$js-yaml",
     "lodash.isequal": "file:vendor/npm/lodash.isequal",
     "minimatch": "^11.0.4",
     "nanoid": "^3.3.18",
     "node-gyp": "^12.2.0",
+    "picomatch": "$picomatch",
     "postcss": "^8.5.26",
     "prebuild-install": "npm:@scrypted/prebuild-install@7.1.10",
     "rimraf": "^6.1.4",
