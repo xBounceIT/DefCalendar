@@ -3,10 +3,11 @@
 
 const {
   REGEX_BACKSLASH,
-  REGEX_REMOVE_BACKSLASH,
   REGEX_SPECIAL_CHARS,
   REGEX_SPECIAL_CHARS_GLOBAL
 } = require('./constants');
+
+const LINE_BREAK = /[\r\n\u2028\u2029]/;
 
 exports.isObject = val => val !== null && typeof val === 'object' && !Array.isArray(val);
 exports.hasRegexChars = str => REGEX_SPECIAL_CHARS.test(str);
@@ -28,9 +29,30 @@ exports.isWindows = () => {
 };
 
 exports.removeBackslashes = str => {
-  return str.replace(REGEX_REMOVE_BACKSLASH, match => {
-    return match === '\\' ? '' : match;
-  });
+  const parts = [];
+  let start = 0;
+  let nextClose = 0;
+
+  for (let index = 0; index < str.length; index++) {
+    if (str[index] === '[') {
+      nextClose = Math.max(nextClose, index + 2);
+      while (nextClose < str.length) {
+        const preceding = str[nextClose - 1];
+        if (str[nextClose] === ']' && preceding !== '\\') {
+          index = nextClose;
+          break;
+        }
+        if (LINE_BREAK.test(preceding)) break;
+        nextClose++;
+      }
+    } else if (str[index] === '\\' && index + 1 < str.length && !LINE_BREAK.test(str[index + 1])) {
+      parts.push(str.slice(start, index));
+      start = index + 1;
+    }
+  }
+
+  parts.push(str.slice(start));
+  return parts.join('');
 };
 
 exports.escapeLast = (input, char, lastIdx) => {

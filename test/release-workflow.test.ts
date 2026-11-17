@@ -333,7 +333,10 @@ ${publish.run}`;
 });
 
 describe("picomatch for build tooling", () => {
-  const picomatch = require("picomatch") as (pattern: string) => (value: string) => boolean;
+  const picomatch = require("picomatch") as {
+    (pattern: string): (value: string) => boolean;
+    scan(pattern: string, options: { unescape: boolean }): { base: string; glob: string };
+  };
 
   it("preserves recursive source file globs", () => {
     const matches = picomatch("src/**/*.{ts,tsx}");
@@ -343,5 +346,13 @@ describe("picomatch for build tooling", () => {
 
   it.each(["+(draft)", "*(draft)"])("rejects repeated extglob %s", (pattern) => {
     expect(() => picomatch(pattern)).toThrow("Repeated extglobs are disabled");
+  });
+
+  it.each([
+    [String.raw`src\ folder/[a\-z]*.ts`, "src folder", String.raw`[a\-z]*.ts`],
+    [String.raw`src/notes\[*-draft.ts`, "src", "notes[*-draft.ts"],
+  ])("preserves scan unescaping for %s", (pattern, base, glob) => {
+    expect.hasAssertions();
+    expect(picomatch.scan(pattern, { unescape: true })).toMatchObject({ base, glob });
   });
 });
