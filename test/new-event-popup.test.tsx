@@ -304,6 +304,40 @@ describe("new event popup", () => {
     expect(api.events.respond).not.toHaveBeenCalled();
   });
 
+  it("does not offer mark reviewed for a plain invitation", async () => {
+    const item = createNotificationItem({ kind: "invitation", requiresResponse: true });
+    installCalendarApi([item]);
+    renderPopup({ showAll: true });
+    await screen.findByText("Awaiting response");
+    expect(screen.queryByRole("button", { name: "Mark reviewed" })).not.toBeInTheDocument();
+  });
+
+  it("treats an update to an unanswered invitation like a new invite", async () => {
+    const item = createNotificationItem({ kind: "updated", requiresResponse: true });
+    installCalendarApi([item]);
+    renderPopup({ showAll: true });
+    await screen.findByText("Update to review");
+    expect(screen.queryByRole("button", { name: "Mark reviewed" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Accept" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Tentative" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Decline" })).toBeInTheDocument();
+  });
+
+  it.each([false, undefined])(
+    "offers mark reviewed for an update with requiresResponse=%s",
+    async (requiresResponse) => {
+      const item = createNotificationItem({ kind: "updated", requiresResponse });
+      const api = installCalendarApi([item]);
+      renderPopup({ showAll: true });
+      await screen.findByText("Update to review");
+      fireEvent.click(screen.getByRole("button", { name: "Mark reviewed" }));
+      expect(api.newEventNotifications.acknowledge).toHaveBeenCalledWith({
+        calendarId: item.calendarId,
+        eventId: item.eventId,
+      });
+    },
+  );
+
   it("keeps a failed response actionable and shows the error", async () => {
     const api = installCalendarApi([createNotificationItem()]);
     vi.mocked(api.events.respond).mockRejectedValue(new Error("offline"));

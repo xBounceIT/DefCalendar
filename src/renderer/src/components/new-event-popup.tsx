@@ -411,7 +411,8 @@ function NewEventPopup({
                       </button>
                     </>
                   )}
-                  {(item.kind === "updated" || item.kind === "cancelled") && (
+                  {(item.kind === "cancelled" ||
+                    (item.kind === "updated" && !item.requiresResponse)) && (
                     <button
                       className="new-event-popup__action"
                       disabled={isPending}
