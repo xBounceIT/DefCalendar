@@ -337,7 +337,7 @@ describe("tag-driven app version", () => {
     (step) => step.name === "Set app version from the pushed tag",
   );
 
-  async function runVersionStep(tag: string) {
+  async function runVersionStep(tag: string, initialVersion = "0.0.0") {
     if (!versionStep?.run) {
       throw new Error("The tag-driven version step is missing.");
     }
@@ -345,7 +345,7 @@ describe("tag-driven app version", () => {
     try {
       await writeFile(
         join(directory, "package.json"),
-        `${JSON.stringify({ name: "defcalendar", version: "0.0.0" })}\n`,
+        `${JSON.stringify({ name: "defcalendar", version: initialVersion })}\n`,
       );
       const result = await runBash(
         versionStep.run,
@@ -368,6 +368,12 @@ describe("tag-driven app version", () => {
     expect(workflow.jobs.build.steps.map((step) => step.name)).not.toContain(
       "Validate tag and package version",
     );
+  });
+
+  it("allows a tag matching the checked-in package.json version", async () => {
+    expect.hasAssertions();
+    const { version } = await runVersionStep("v0.10.11", "0.10.11");
+    expect(version).toBe("0.10.11");
   });
 
   it.each(["v1.2.3", "v0.10.12", "v2.0.0-rc.1"])(
