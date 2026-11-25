@@ -48,6 +48,7 @@ import PhotonLocationService from "@main/locations/photon-location-service";
 import OsmMapService from "@main/locations/osm-map-service";
 import type AppDatabase from "@main/db/database";
 import type EventActionService from "@main/events/event-action-service";
+import { openMeetingLink } from "@main/events/meeting-link";
 import { isMissingGraphItemError } from "@main/graph/calendar-service";
 import type GraphCalendarService from "@main/graph/calendar-service";
 import type MsalAuthService from "@main/auth/msal-auth-service";
@@ -683,7 +684,7 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
   ipcMain.handle(IPC_CHANNELS.eventsOpenWebLink, async (event, input) => {
     validateReminderSender(event);
     const args = openExternalArgsSchema.parse({ url: input });
-    await shell.openExternal(args.url);
+    await openMeetingLink(args.url, (target) => shell.openExternal(target));
   });
 
   ipcMain.handle(IPC_CHANNELS.syncRefresh, async (event) => {

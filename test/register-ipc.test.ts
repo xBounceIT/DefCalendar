@@ -111,6 +111,14 @@ function createDeferred<T>() {
   };
 }
 
+function stubPlatform(platform: NodeJS.Platform): void {
+  const original = process.platform;
+  Object.defineProperty(process, "platform", { configurable: true, value: platform });
+  onTestFinished(() => {
+    Object.defineProperty(process, "platform", { configurable: true, value: original });
+  });
+}
+
 function createFixture() {
   const handlers = new Map<
     string,
@@ -1062,6 +1070,7 @@ describe("register ipc", () => {
   );
 
   it("allows reminder windows to open external links", async () => {
+    stubPlatform("linux");
     const fixture = createFixture();
     const url = "https://teams.microsoft.com/l/meetup-join/example";
 
@@ -1071,6 +1080,40 @@ describe("register ipc", () => {
     );
 
     expect(shell.openExternal).toHaveBeenCalledWith(url);
+  });
+
+  it("opens the provider desktop app first on macOS and falls back to the browser", async () => {
+    stubPlatform("darwin");
+    const fixture = createFixture();
+    const url = "https://teams.microsoft.com/l/meetup-join/example";
+    shell.openExternal.mockRejectedValueOnce(new Error("no application registered"));
+
+    await fixture.handlers.get(IPC_CHANNELS.eventsOpenWebLink)?.(
+      { sender: fixture.reminderWebContents },
+      url,
+    );
+
+    expect(shell.openExternal).toHaveBeenCalledTimes(2);
+    expect(shell.openExternal).toHaveBeenNthCalledWith(
+      1,
+      "msteams://teams.microsoft.com/l/meetup-join/example",
+    );
+    expect(shell.openExternal).toHaveBeenNthCalledWith(2, url);
+  });
+
+  it("opens only the provider desktop app on macOS when it is installed", async () => {
+    stubPlatform("darwin");
+    const fixture = createFixture();
+    const url = "https://acme.webex.com/acme/j.php?MTID=m123";
+    shell.openExternal.mockResolvedValueOnce(undefined);
+
+    await fixture.handlers.get(IPC_CHANNELS.eventsOpenWebLink)?.(
+      { sender: fixture.mainWebContents },
+      url,
+    );
+
+    expect(shell.openExternal).toHaveBeenCalledTimes(1);
+    expect(shell.openExternal).toHaveBeenCalledWith("wbx://acme.webex.com/acme/j.php?MTID=m123");
   });
 
   it("allows reminder windows to open cached events in the main app", async () => {
