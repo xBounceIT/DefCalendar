@@ -53,7 +53,14 @@ Desktop calendar app for Microsoft 365 Exchange Online built with Electron.
 
 ## Releases
 
-Pushing a `v*` tag matching `package.json` builds Windows and macOS assets in parallel. The workflow checks the installers, blockmaps, and update manifests before uploading them and publishing the GitHub Release with generated notes. Pull requests that change the release workflow or its asset verifier run the packaging checks and attach the verified files to the Actions run.
+Release the app by pushing a semantic version tag — no dedicated version-bump PR is needed:
+
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+The workflow validates the `vX.Y.Z` tag and embeds it as the app version before building: the packaged app (`app.getVersion()`), the installer file names, and the `latest.yml` / `latest-mac.yml` update manifests all carry the tag value. Windows and macOS assets build in parallel, and the workflow checks the installers, blockmaps, and update manifests before uploading them and publishing the GitHub Release with generated notes. The `package.json` version is only used for local and pull-request preview builds. Pull requests that change the release workflow or its asset verifier run the packaging checks and attach the verified files to the Actions run.
 
 - Windows: NSIS installer.
 - macOS: universal DMG and ZIP containing both Intel (`x64`) and Apple Silicon (`arm64`) binaries, plus update metadata. The workflow checks both architectures in the app executable and the native SQLite module before publishing the release.

@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -330,6 +330,68 @@ ${publish.run}`;
       stderr: "HTTP 503\n",
     });
   });
+});
+
+describe("tag-driven app version", () => {
+  const versionStep = workflow.jobs.build.steps.find(
+    (step) => step.name === "Set app version from the pushed tag",
+  );
+
+  async function runVersionStep(tag: string, initialVersion = "0.0.0") {
+    if (!versionStep?.run) {
+      throw new Error("The tag-driven version step is missing.");
+    }
+    const directory = await mkdtemp(join(tmpdir(), "defcalendar-version-"));
+    try {
+      await writeFile(
+        join(directory, "package.json"),
+        `${JSON.stringify({ name: "defcalendar", version: initialVersion })}\n`,
+      );
+      const result = await runBash(
+        versionStep.run,
+        { ...process.env, GITHUB_REF_NAME: tag },
+        directory,
+      );
+      const pkg = JSON.parse(await readFile(join(directory, "package.json"), "utf8")) as {
+        version: string;
+      };
+      return { ...result, version: pkg.version };
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+
+  it("sets the app version from the tag only on pushes and drops the tag/package.json match check", () => {
+    expect.hasAssertions();
+    expect(versionStep?.if).toBe("github.event_name == 'push'");
+    expect(versionStep?.shell).toBe("bash");
+    expect(workflow.jobs.build.steps.map((step) => step.name)).not.toContain(
+      "Validate tag and package version",
+    );
+  });
+
+  it("allows a tag matching the checked-in package.json version", async () => {
+    expect.hasAssertions();
+    const { version } = await runVersionStep("v0.10.11", "0.10.11");
+    expect(version).toBe("0.10.11");
+  });
+
+  it.each(["v1.2.3", "v0.10.12"])(
+    "embeds the tag %s as the app version",
+    async (tag) => {
+      expect.hasAssertions();
+      const { version } = await runVersionStep(tag);
+      expect(version).toBe(tag.replace(/^v/, ""));
+    },
+  );
+
+  it.each(["v1.2", "1.2.3", "vX.Y.Z", "v2.0.0-rc.1", "v1.2.3.4", "v1.2.3-", "v1.2.3+build", "v"])(
+    "rejects the malformed tag %s",
+    async (tag) => {
+      expect.hasAssertions();
+      await expect(runVersionStep(tag)).rejects.toMatchObject({ code: 1 });
+    },
+  );
 });
 
 describe("picomatch for build tooling", () => {
