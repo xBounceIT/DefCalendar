@@ -10,6 +10,11 @@ describe("toNativeMeetingUrl", () => {
     );
   });
 
+  it("maps shortened Teams /meet/ links to the msteams scheme", () => {
+    const url = "https://teams.microsoft.com/meet/1234567890?p=abc";
+    expect(toNativeMeetingUrl(url)).toBe("msteams://teams.microsoft.com/meet/1234567890?p=abc");
+  });
+
   it("maps Zoom meeting links to the zoommtg join URI", () => {
     const url = "https://us06web.zoom.us/j/1234567890?pwd=abcdef";
     expect(toNativeMeetingUrl(url)).toBe(

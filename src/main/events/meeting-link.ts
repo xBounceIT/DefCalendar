@@ -34,7 +34,9 @@ export function toNativeMeetingUrl(url: string): string | null {
   const hostname = parsed.hostname.toLowerCase();
   const pathname = parsed.pathname.toLowerCase();
   if (hostname === "teams.microsoft.com" || hostname.endsWith(".teams.microsoft.com")) {
-    return pathname.startsWith("/l/meetup-join/") ? swapScheme(parsed, "msteams") : null;
+    return pathname.startsWith("/l/meetup-join/") || pathname.startsWith("/meet/")
+      ? swapScheme(parsed, "msteams")
+      : null;
   }
   if (hostname === "zoom.us" || hostname.endsWith(".zoom.us")) {
     if (!pathname.startsWith("/j/") && !pathname.startsWith("/wc/")) {
