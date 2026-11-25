@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -341,11 +341,27 @@ describe("tag-driven app version", () => {
     if (!versionStep?.run) {
       throw new Error("The tag-driven version step is missing.");
     }
-    const script = `npm() { printf 'ARG:%s\\n' "$@"; return 0; }\n${versionStep.run}`;
-    return runBash(script, { ...process.env, GITHUB_REF_NAME: tag });
+    const directory = await mkdtemp(join(tmpdir(), "defcalendar-version-"));
+    try {
+      await writeFile(
+        join(directory, "package.json"),
+        `${JSON.stringify({ name: "defcalendar", version: "0.0.0" })}\n`,
+      );
+      const result = await runBash(
+        versionStep.run,
+        { ...process.env, GITHUB_REF_NAME: tag },
+        directory,
+      );
+      const pkg = JSON.parse(await readFile(join(directory, "package.json"), "utf8")) as {
+        version: string;
+      };
+      return { ...result, version: pkg.version };
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   }
 
-  it("embeds the version only on tag pushes and drops the tag/package.json match check", () => {
+  it("sets the app version from the tag only on pushes and drops the tag/package.json match check", () => {
     expect.hasAssertions();
     expect(versionStep?.if).toBe("github.event_name == 'push'");
     expect(versionStep?.shell).toBe("bash");
@@ -355,20 +371,15 @@ describe("tag-driven app version", () => {
   });
 
   it.each(["v1.2.3", "v0.10.12", "v2.0.0-rc.1"])(
-    "sets the app version from the tag %s",
+    "embeds the tag %s as the app version",
     async (tag) => {
       expect.hasAssertions();
-      const { stdout } = await runVersionStep(tag);
-      const args = stdout
-        .trim()
-        .split(/\r?\n/)
-        .filter((line) => line.startsWith("ARG:"))
-        .map((line) => line.slice(4));
-      expect(args).toStrictEqual(["version", "--no-git-tag-version", tag.replace(/^v/, "")]);
+      const { version } = await runVersionStep(tag);
+      expect(version).toBe(tag.replace(/^v/, ""));
     },
   );
 
-  it.each(["v1.2", "1.2.3", "vX.Y.Z", "v1.2.3.4", "v1.2.3-", "v1.2.3+build"])(
+  it.each(["v1.2", "1.2.3", "vX.Y.Z", "v1.2.3.4", "v1.2.3-", "v1.2.3+build", "v"])(
     "rejects the malformed tag %s",
     async (tag) => {
       expect.hasAssertions();
