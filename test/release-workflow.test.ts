@@ -376,7 +376,7 @@ describe("tag-driven app version", () => {
     expect(version).toBe("0.10.11");
   });
 
-  it.each(["v1.2.3", "v0.10.12", "v2.0.0-rc.1"])(
+  it.each(["v1.2.3", "v0.10.12"])(
     "embeds the tag %s as the app version",
     async (tag) => {
       expect.hasAssertions();
@@ -385,7 +385,7 @@ describe("tag-driven app version", () => {
     },
   );
 
-  it.each(["v1.2", "1.2.3", "vX.Y.Z", "v1.2.3.4", "v1.2.3-", "v1.2.3+build", "v"])(
+  it.each(["v1.2", "1.2.3", "vX.Y.Z", "v2.0.0-rc.1", "v1.2.3.4", "v1.2.3-", "v1.2.3+build", "v"])(
     "rejects the malformed tag %s",
     async (tag) => {
       expect.hasAssertions();
