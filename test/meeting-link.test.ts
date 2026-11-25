@@ -33,20 +33,10 @@ describe("toNativeMeetingUrl", () => {
     expect(toNativeMeetingUrl("https://zoom.us/my/jdoe")).toBeNull();
   });
 
-  it("maps Webex meeting links to the wbx scheme", () => {
-    const url = "https://acme.webex.com/acme/j.php?MTID=m1234567890abcdef";
-    expect(toNativeMeetingUrl(url)).toBe(
-      "wbx://acme.webex.com/acme/j.php?MTID=m1234567890abcdef",
-    );
-  });
-
-  it("maps Webex join paths to the wbx scheme", () => {
-    expect(toNativeMeetingUrl("https://acme.webex.com/meet/jdoe")).toBe(
-      "wbx://acme.webex.com/meet/jdoe",
-    );
-    expect(toNativeMeetingUrl("https://acme.webex.com/join/1234567890")).toBe(
-      "wbx://acme.webex.com/join/1234567890",
-    );
+  it("returns null for Webex links, which use the HTTPS handoff to the desktop app", () => {
+    expect(toNativeMeetingUrl("https://acme.webex.com/acme/j.php?MTID=m1234567890abcdef")).toBeNull();
+    expect(toNativeMeetingUrl("https://acme.webex.com/meet/jdoe")).toBeNull();
+    expect(toNativeMeetingUrl("https://acme.webex.com/join/1234567890")).toBeNull();
   });
 
   it("returns null for providers without a desktop app", () => {

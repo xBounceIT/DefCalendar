@@ -42,13 +42,6 @@ export function toNativeMeetingUrl(url: string): string | null {
     }
     return zoomJoinUrl(parsed);
   }
-  if (hostname === "webex.com" || hostname.endsWith(".webex.com")) {
-    return pathname.includes("/j.php") ||
-      pathname.startsWith("/meet/") ||
-      pathname.startsWith("/join/")
-      ? swapScheme(parsed, "wbx")
-      : null;
-  }
   return null;
 }
 

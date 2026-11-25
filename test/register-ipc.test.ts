@@ -1104,7 +1104,7 @@ describe("register ipc", () => {
   it("opens only the provider desktop app on macOS when it is installed", async () => {
     stubPlatform("darwin");
     const fixture = createFixture();
-    const url = "https://acme.webex.com/acme/j.php?MTID=m123";
+    const url = "https://teams.microsoft.com/l/meetup-join/example";
     shell.openExternal.mockResolvedValueOnce(undefined);
 
     await fixture.handlers.get(IPC_CHANNELS.eventsOpenWebLink)?.(
@@ -1113,7 +1113,9 @@ describe("register ipc", () => {
     );
 
     expect(shell.openExternal).toHaveBeenCalledTimes(1);
-    expect(shell.openExternal).toHaveBeenCalledWith("wbx://acme.webex.com/acme/j.php?MTID=m123");
+    expect(shell.openExternal).toHaveBeenCalledWith(
+      "msteams://teams.microsoft.com/l/meetup-join/example",
+    );
   });
 
   it("allows reminder windows to open cached events in the main app", async () => {
