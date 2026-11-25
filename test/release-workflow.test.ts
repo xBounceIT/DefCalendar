@@ -332,6 +332,51 @@ ${publish.run}`;
   });
 });
 
+describe("tag-driven app version", () => {
+  const versionStep = workflow.jobs.build.steps.find(
+    (step) => step.name === "Set app version from the pushed tag",
+  );
+
+  async function runVersionStep(tag: string) {
+    if (!versionStep?.run) {
+      throw new Error("The tag-driven version step is missing.");
+    }
+    const script = `npm() { printf 'ARG:%s\\n' "$@"; return 0; }\n${versionStep.run}`;
+    return runBash(script, { ...process.env, GITHUB_REF_NAME: tag });
+  }
+
+  it("embeds the version only on tag pushes and drops the tag/package.json match check", () => {
+    expect.hasAssertions();
+    expect(versionStep?.if).toBe("github.event_name == 'push'");
+    expect(versionStep?.shell).toBe("bash");
+    expect(workflow.jobs.build.steps.map((step) => step.name)).not.toContain(
+      "Validate tag and package version",
+    );
+  });
+
+  it.each(["v1.2.3", "v0.10.12", "v2.0.0-rc.1"])(
+    "sets the app version from the tag %s",
+    async (tag) => {
+      expect.hasAssertions();
+      const { stdout } = await runVersionStep(tag);
+      const args = stdout
+        .trim()
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith("ARG:"))
+        .map((line) => line.slice(4));
+      expect(args).toStrictEqual(["version", "--no-git-tag-version", tag.replace(/^v/, "")]);
+    },
+  );
+
+  it.each(["v1.2", "1.2.3", "vX.Y.Z", "v1.2.3.4", "v1.2.3-", "v1.2.3+build"])(
+    "rejects the malformed tag %s",
+    async (tag) => {
+      expect.hasAssertions();
+      await expect(runVersionStep(tag)).rejects.toMatchObject({ code: 1 });
+    },
+  );
+});
+
 describe("picomatch for build tooling", () => {
   const picomatch = require("picomatch") as {
     (pattern: string): (value: string) => boolean;
