@@ -1,22 +1,5 @@
 type OpenExternal = (url: string) => Promise<void>;
 
-function nativeSchemeFor(hostname: string, pathname: string): string | null {
-  if (hostname === "teams.microsoft.com" || hostname.endsWith(".teams.microsoft.com")) {
-    return pathname.startsWith("/l/meetup-join/") ? "msteams" : null;
-  }
-  if (hostname === "zoom.us" || hostname.endsWith(".zoom.us")) {
-    return pathname.startsWith("/j/") || pathname.startsWith("/wc/join/") ? "zoommtg" : null;
-  }
-  if (hostname === "webex.com" || hostname.endsWith(".webex.com")) {
-    return pathname.includes("/j.php") ||
-      pathname.startsWith("/meet/") ||
-      pathname.startsWith("/join/")
-      ? "wbx"
-      : null;
-  }
-  return null;
-}
-
 function parseHttpsUrl(url: string): URL | null {
   try {
     const parsed = new URL(url);
@@ -26,16 +9,47 @@ function parseHttpsUrl(url: string): URL | null {
   }
 }
 
+function swapScheme(parsed: URL, scheme: string): string {
+  return `${scheme}://${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`;
+}
+
+function zoomJoinUrl(parsed: URL): string | null {
+  const confno = parsed.pathname.split("/").find((segment) => /^\d{8,}$/.test(segment));
+  if (!confno) {
+    return null;
+  }
+  const params = new URLSearchParams({ action: "join", confno });
+  const pwd = parsed.searchParams.get("pwd");
+  if (pwd) {
+    params.set("pwd", pwd);
+  }
+  return `zoommtg://zoom.us/join?${params.toString()}`;
+}
+
 export function toNativeMeetingUrl(url: string): string | null {
   const parsed = parseHttpsUrl(url);
   if (!parsed) {
     return null;
   }
-  const scheme = nativeSchemeFor(parsed.hostname.toLowerCase(), parsed.pathname.toLowerCase());
-  if (!scheme) {
-    return null;
+  const hostname = parsed.hostname.toLowerCase();
+  const pathname = parsed.pathname.toLowerCase();
+  if (hostname === "teams.microsoft.com" || hostname.endsWith(".teams.microsoft.com")) {
+    return pathname.startsWith("/l/meetup-join/") ? swapScheme(parsed, "msteams") : null;
   }
-  return `${scheme}://${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`;
+  if (hostname === "zoom.us" || hostname.endsWith(".zoom.us")) {
+    if (!pathname.startsWith("/j/") && !pathname.startsWith("/wc/")) {
+      return null;
+    }
+    return zoomJoinUrl(parsed);
+  }
+  if (hostname === "webex.com" || hostname.endsWith(".webex.com")) {
+    return pathname.includes("/j.php") ||
+      pathname.startsWith("/meet/") ||
+      pathname.startsWith("/join/")
+      ? swapScheme(parsed, "wbx")
+      : null;
+  }
+  return null;
 }
 
 async function tryOpen(url: string, openExternal: OpenExternal): Promise<boolean> {

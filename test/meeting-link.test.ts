@@ -10,9 +10,27 @@ describe("toNativeMeetingUrl", () => {
     );
   });
 
-  it("maps Zoom meeting links to the zoommtg scheme", () => {
+  it("maps Zoom meeting links to the zoommtg join URI", () => {
     const url = "https://us06web.zoom.us/j/1234567890?pwd=abcdef";
-    expect(toNativeMeetingUrl(url)).toBe("zoommtg://us06web.zoom.us/j/1234567890?pwd=abcdef");
+    expect(toNativeMeetingUrl(url)).toBe(
+      "zoommtg://zoom.us/join?action=join&confno=1234567890&pwd=abcdef",
+    );
+  });
+
+  it("maps Zoom web-client join links to the zoommtg join URI", () => {
+    expect(toNativeMeetingUrl("https://zoom.us/wc/1234567890/join?pwd=xyz")).toBe(
+      "zoommtg://zoom.us/join?action=join&confno=1234567890&pwd=xyz",
+    );
+  });
+
+  it("omits the pwd parameter when the Zoom link has none", () => {
+    expect(toNativeMeetingUrl("https://zoom.us/j/1234567890")).toBe(
+      "zoommtg://zoom.us/join?action=join&confno=1234567890",
+    );
+  });
+
+  it("returns null for Zoom pages without a meeting number", () => {
+    expect(toNativeMeetingUrl("https://zoom.us/my/jdoe")).toBeNull();
   });
 
   it("maps Webex meeting links to the wbx scheme", () => {
@@ -72,7 +90,7 @@ describe("openMeetingLink", () => {
     expect(openExternal).toHaveBeenCalledTimes(2);
     expect(openExternal).toHaveBeenNthCalledWith(
       1,
-      "zoommtg://us02web.zoom.us/j/1234567890?pwd=abc",
+      "zoommtg://zoom.us/join?action=join&confno=1234567890&pwd=abc",
     );
     expect(openExternal).toHaveBeenNthCalledWith(2, url);
   });
