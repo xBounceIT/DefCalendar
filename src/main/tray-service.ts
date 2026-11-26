@@ -1,6 +1,7 @@
-import { Menu, Tray, nativeImage } from "electron";
+import { Menu, Tray, dialog, nativeImage } from "electron";
 import { join } from "pathe";
 import { app } from "@main/electron-runtime";
+import { t } from "@main/i18n";
 
 interface TrayHandlers {
   showWindow: () => void;
@@ -23,7 +24,7 @@ class TrayService {
     }
 
     this.tray = new Tray(createTrayIcon());
-    this.tray.setToolTip("DefCalendar");
+    this.tray.setToolTip(t("trayTooltip"));
     this.tray.on("click", () => {
       this.handlers.showWindow();
     });
@@ -42,22 +43,26 @@ class TrayService {
   private buildMenu() {
     return Menu.buildFromTemplate([
       {
-        label: "Show DefCalendar",
+        label: t("showApp"),
         click: () => this.handlers.showWindow(),
       },
       {
-        label: "Refresh Now",
+        label: t("refreshNow"),
         click: () => this.handlers.refreshNow(),
       },
       { type: "separator" },
       {
-        label: "Sign Out",
-        click: () => {
-          void this.handlers.signOut();
+        label: t("signOut"),
+        click: async () => {
+          try {
+            await this.handlers.signOut();
+          } catch {
+            dialog.showErrorBox(t("windowTitle"), t("signOutError"));
+          }
         },
       },
       {
-        label: "Quit",
+        label: t("quit"),
         click: () => this.handlers.quit(),
       },
     ]);

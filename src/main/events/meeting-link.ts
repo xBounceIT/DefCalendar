@@ -1,12 +1,42 @@
 type OpenExternal = (url: string) => Promise<void>;
 
-function parseHttpsUrl(url: string): URL | null {
-  try {
-    const parsed = new URL(url);
-    return parsed.protocol === "https:" ? parsed : null;
-  } catch {
+function matchesDomain(hostname: string, domain: string): boolean {
+  return hostname === domain || hostname.endsWith(`.${domain}`);
+}
+
+function getMeetingProvider(parsed: URL) {
+  if (parsed.protocol !== "https:") {
     return null;
   }
+  const { hostname } = parsed;
+  const path = parsed.pathname.toLowerCase();
+  if (
+    matchesDomain(hostname, "teams.microsoft.com") &&
+    /^\/(?:l\/meetup-join|meet)\/.+/.test(path)
+  ) {
+    return "teams";
+  }
+  if (
+    matchesDomain(hostname, "zoom.us") &&
+    (/^\/(?:j|my|wc\/join)\/.+/.test(path) || /^\/wc\/\d+\/join\/?$/.test(path))
+  ) {
+    return "zoom";
+  }
+  if (matchesDomain(hostname, "meet.google.com") && /^\/[a-z]{3}-[a-z]{4}-[a-z]{3}$/.test(path)) {
+    return "google";
+  }
+  if (
+    matchesDomain(hostname, "webex.com") &&
+    (path.includes("/j.php") || path.startsWith("/meet/") || path.startsWith("/join/"))
+  ) {
+    return "webex";
+  }
+  return null;
+}
+
+export function isKnownMeetingUrl(url: string): boolean {
+  const parsed = URL.parse(url);
+  return parsed !== null && getMeetingProvider(parsed) !== null;
 }
 
 function swapScheme(parsed: URL, scheme: string): string {
@@ -14,7 +44,7 @@ function swapScheme(parsed: URL, scheme: string): string {
 }
 
 function zoomJoinUrl(parsed: URL): string | null {
-  const confno = parsed.pathname.split("/").find((segment) => /^\d{8,}$/.test(segment));
+  const confno = /^\/(?:j|wc(?:\/join)?)\/(\d{8,})(?:\/|$)/i.exec(parsed.pathname)?.[1];
   if (!confno) {
     return null;
   }
@@ -26,22 +56,16 @@ function zoomJoinUrl(parsed: URL): string | null {
   return `zoommtg://zoom.us/join?${params.toString()}`;
 }
 
-export function toNativeMeetingUrl(url: string): string | null {
-  const parsed = parseHttpsUrl(url);
+function toNativeMeetingUrl(url: string): string | null {
+  const parsed = URL.parse(url);
   if (!parsed) {
     return null;
   }
-  const hostname = parsed.hostname.toLowerCase();
-  const pathname = parsed.pathname.toLowerCase();
-  if (hostname === "teams.microsoft.com" || hostname.endsWith(".teams.microsoft.com")) {
-    return pathname.startsWith("/l/meetup-join/") || pathname.startsWith("/meet/")
-      ? swapScheme(parsed, "msteams")
-      : null;
+  const provider = getMeetingProvider(parsed);
+  if (provider === "teams") {
+    return swapScheme(parsed, "msteams");
   }
-  if (hostname === "zoom.us" || hostname.endsWith(".zoom.us")) {
-    if (!pathname.startsWith("/j/") && !pathname.startsWith("/wc/")) {
-      return null;
-    }
+  if (provider === "zoom") {
     return zoomJoinUrl(parsed);
   }
   return null;

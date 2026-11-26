@@ -248,17 +248,6 @@ describe("system invite notification service", () => {
     expect(notificationMock.instances[0].show).toHaveBeenCalledOnce();
   });
 
-  it("reads settings once while showing multiple invites in a sync pass", () => {
-    expect.hasAssertions();
-    resetNotificationMock();
-    const { service, settings } = createService();
-
-    service.sync([createItem(), createItem({ eventId: "event-2" })]);
-
-    expect(settings.getSettings).toHaveBeenCalledOnce();
-    expect(notificationMock.instances).toHaveLength(2);
-  });
-
   it("opens the event when the notification body is clicked", () => {
     expect.hasAssertions();
     resetNotificationMock();
@@ -374,9 +363,10 @@ describe("system invite notification service", () => {
     resetNotificationMock();
     const first = createItem({ calendarId: "calendar-1", eventId: "shared-event" });
     const second = createItem({ calendarId: "calendar-2", eventId: "shared-event" });
-    const { service } = createService();
+    const { service, settings } = createService();
 
     service.sync([first, second]);
+    expect(settings.getSettings.mock.calls.length).toBeLessThanOrEqual(1);
     service.sync([second]);
 
     expect(notificationMock.instances).toHaveLength(2);

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "pathe";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setMainLocale } from "../src/main/i18n";
 import TrayService from "../src/main/tray-service";
 
 interface MockTrayInstance {
@@ -13,7 +14,7 @@ interface MockTrayInstance {
 interface MenuItemTemplate {
   label?: string;
   type?: string;
-  click?: () => void;
+  click?: () => void | Promise<void>;
 }
 
 const menuTemplates: MenuItemTemplate[][] = [];
@@ -44,6 +45,7 @@ const { TrayMock, trayInstances, buildFromTemplateMock, createFromPathMock, isPa
   });
 
 vi.mock("electron", () => ({
+  dialog: { showErrorBox: vi.fn() },
   Menu: { buildFromTemplate: buildFromTemplateMock },
   Tray: TrayMock,
   nativeImage: { createFromPath: createFromPathMock },
@@ -71,6 +73,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  setMainLocale("en");
   Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
 });
 
@@ -122,12 +125,13 @@ describe("trayService.create", () => {
     expect(png[25]).toBe(6);
   });
 
-  it("creates a Tray with icon, tooltip, click handler, and context menu", () => {
+  it("shows the app tooltip and calendar actions in the tray menu", () => {
     new TrayService(createHandlers()).create();
 
-    expect(createFromPathMock).toHaveBeenCalledOnce();
-    expect(buildFromTemplateMock).toHaveBeenCalledOnce();
-    const template = menuTemplates[0];
+    const tray = trayInstances[0]!;
+    expect(tray.setToolTip).toHaveBeenCalledWith("DefCalendar");
+    const template = tray.setContextMenu.mock.calls[0]?.[0]?.template as MenuItemTemplate[];
+
     expect(template?.map((item) => item.label ?? item.type)).toStrictEqual([
       "Show DefCalendar",
       "Refresh Now",
@@ -143,8 +147,7 @@ describe("trayService.create", () => {
     service.create();
     service.create();
 
-    expect(createFromPathMock).toHaveBeenCalledOnce();
-    expect(buildFromTemplateMock).toHaveBeenCalledOnce();
+    expect(trayInstances).toHaveLength(1);
   });
 
   it("uses resourcesPath for the icon when packaged", () => {
@@ -176,6 +179,26 @@ describe("trayService.create", () => {
 });
 
 describe("trayService menu handlers", () => {
+  it("reports a failed sign-out in the selected language and allows a retry", async () => {
+    const { dialog } = await import("electron");
+    const handlers = createHandlers();
+    handlers.signOut.mockRejectedValueOnce(new Error("storage unavailable"));
+    const service = new TrayService(handlers);
+    service.create();
+    setMainLocale("it");
+    service.refreshMenu();
+
+    const signOut = menuTemplates.at(-1)!.find((item) => item.label === "Esci")!.click!;
+    await signOut();
+    expect(dialog.showErrorBox).toHaveBeenCalledExactlyOnceWith(
+      "DefCalendar",
+      "Impossibile completare la disconnessione. Riprova.",
+    );
+    await signOut();
+    expect(handlers.signOut).toHaveBeenCalledTimes(2);
+    expect(dialog.showErrorBox).toHaveBeenCalledOnce();
+  });
+
   it("each menu item invokes the matching handler", () => {
     const handlers = createHandlers();
     new TrayService(handlers).create();
@@ -205,22 +228,8 @@ describe("trayService menu handlers", () => {
     const clickHandler = tray.on.mock.calls.find(([event]) => event === "click")?.[1] as
       | (() => void)
       | undefined;
-    expect(clickHandler).toBeDefined();
     clickHandler?.();
     expect(handlers.showWindow).toHaveBeenCalledOnce();
-  });
-
-  it("tolerates a Promise return from signOut without unhandled rejection", () => {
-    const handlers = {
-      ...createHandlers(),
-      signOut: vi.fn().mockRejectedValue(new Error("ignore")),
-    };
-    new TrayService(handlers).create();
-    const template = menuTemplates[0];
-    const signOut = template?.find((item) => item.label === "Sign Out");
-
-    expect(() => signOut?.click?.()).not.toThrow();
-    expect(handlers.signOut).toHaveBeenCalledOnce();
   });
 });
 
@@ -240,19 +249,19 @@ describe("trayService.destroy and refreshMenu", () => {
   it("refreshMenu() rebuilds the context menu when tray exists", () => {
     const service = new TrayService(createHandlers());
     service.create();
-    buildFromTemplateMock.mockClear();
+    const tray = trayInstances[0]!;
+    tray.setContextMenu.mockClear();
 
     service.refreshMenu();
 
-    expect(buildFromTemplateMock).toHaveBeenCalledOnce();
+    expect(tray.setContextMenu).toHaveBeenCalledOnce();
   });
 
   it("refreshMenu() is a no-op when tray was never created", () => {
     const service = new TrayService(createHandlers());
-    buildFromTemplateMock.mockClear();
 
     service.refreshMenu();
 
-    expect(buildFromTemplateMock).not.toHaveBeenCalled();
+    expect(trayInstances).toHaveLength(0);
   });
 });

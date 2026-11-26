@@ -107,15 +107,14 @@ describe(useUpdater, () => {
       const { result } = renderUseUpdater();
       await waitFor(() => expect(result.current.status).toStrictEqual(IDLE_STATUS));
       act(() => result.current[action]());
-      await waitFor(() => expect(mutation).toHaveBeenCalledOnce());
+      const pendingFlag = action === "check" ? "isChecking" : "isDownloading";
+      await waitFor(() => expect(result.current[pendingFlag]).toBe(true));
       const newer = { ...DOWNLOADED_STATUS, revision: 3, error: "Cannot mount disk" };
       act(() => lastStatusListener?.(newer));
       await act(async () => {
         finish({ ...AVAILABLE_STATUS, revision: 1 });
       });
-      await waitFor(() =>
-        expect(result.current.isChecking || result.current.isDownloading).toBe(false),
-      );
+      await waitFor(() => expect(result.current[pendingFlag]).toBe(false));
       expect(result.current.status).toStrictEqual(newer);
     },
   );
@@ -128,19 +127,6 @@ describe(useUpdater, () => {
     });
     expect(getStatusMock).toHaveBeenCalledOnce();
     expect(result.current.statusError).toBeNull();
-  });
-
-  it("registers an onStatus listener and updates state when it fires", async () => {
-    const { result } = renderUseUpdater();
-    await waitFor(() => expect(onStatusMock).toHaveBeenCalledOnce());
-
-    act(() => {
-      lastStatusListener?.(AVAILABLE_STATUS);
-    });
-
-    await waitFor(() => {
-      expect(result.current.status).toStrictEqual(AVAILABLE_STATUS);
-    });
   });
 
   it("check() fires the mutation and updates query cache on success", async () => {
@@ -169,29 +155,6 @@ describe(useUpdater, () => {
       expect(downloadMock).toHaveBeenCalledOnce();
       expect(result.current.status).toStrictEqual(DOWNLOADED_STATUS);
     });
-  });
-
-  it("reflects mutation pending state via isChecking and isDownloading", async () => {
-    let resolveCheck: (status: AppUpdateStatus) => void = () => {};
-    checkMock.mockReturnValue(
-      new Promise<AppUpdateStatus>((resolve) => {
-        resolveCheck = resolve;
-      }),
-    );
-    const { result } = renderUseUpdater();
-    await waitFor(() => expect(result.current.status).toStrictEqual(IDLE_STATUS));
-
-    act(() => {
-      result.current.check();
-    });
-
-    await waitFor(() => expect(result.current.isChecking).toBe(true));
-
-    await act(async () => {
-      resolveCheck(AVAILABLE_STATUS);
-    });
-
-    await waitFor(() => expect(result.current.isChecking).toBe(false));
   });
 
   it("unsubscribes the onStatus listener on unmount", async () => {

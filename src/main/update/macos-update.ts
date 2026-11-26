@@ -14,7 +14,7 @@ export interface MacUpdateRelease {
   files?: { url: string; sha512: string; size?: number }[];
 }
 
-export function resolveMacUpdateDownload(info: MacUpdateRelease) {
+function resolveMacUpdateDownload(info: MacUpdateRelease) {
   const file = info.files?.find((entry) => {
     const url = new URL(entry.url, "https://github.com/");
     return url.pathname.endsWith(".dmg");

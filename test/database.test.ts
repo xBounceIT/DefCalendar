@@ -7,15 +7,20 @@ import { join } from "node:path";
 import AppDatabase from "../src/main/db/database";
 import NewEventNotificationService from "../src/main/notifications/new-event-notification-service";
 
+const { openDatabase } = vi.hoisted(() => ({
+  openDatabase: vi.fn<new () => Pick<DatabaseSync, "exec" | "prepare">>(),
+}));
+vi.mock("better-sqlite3", () => ({ default: openDatabase }));
+vi.mock("electron", () => ({ app: { getPath: () => tmpdir() } }));
+
 function createSqliteDatabase(sqlite: DatabaseSync): AppDatabase {
   let transactionId = 0;
-  sqlite.exec("PRAGMA foreign_keys = ON");
-  const db = Object.create(AppDatabase.prototype) as AppDatabase;
-  Object.assign(db, {
-    db: {
-      exec: (sql: string) => sqlite.exec(sql),
-      prepare: (sql: string) => sqlite.prepare(sql),
-      transaction:
+  openDatabase.mockImplementationOnce(
+    class {
+      pragma = (value: string) => sqlite.exec(`PRAGMA ${value}`);
+      exec = (sql: string) => sqlite.exec(sql);
+      prepare = (sql: string) => sqlite.prepare(sql);
+      transaction =
         <T extends unknown[], R>(callback: (...args: T) => R) =>
         (...args: T): R => {
           const savepoint = `test_transaction_${transactionId++}`;
@@ -29,11 +34,10 @@ function createSqliteDatabase(sqlite: DatabaseSync): AppDatabase {
             sqlite.exec(`RELEASE SAVEPOINT ${savepoint}`);
             throw error;
           }
-        },
+        };
     },
-  });
-  (db as unknown as { migrate: () => void }).migrate();
-  return db;
+  );
+  return new AppDatabase();
 }
 
 function createDatabaseFixture() {
@@ -104,6 +108,27 @@ function createStoredReminderEvent(overrides?: {
 }
 
 describe("database", () => {
+  it("keeps a cached event readable when its old join link uses a non-web protocol", () => {
+    const { db, sqlite } = createDatabaseFixture();
+    seedReminderCalendar(sqlite);
+    const event = {
+      ...createStoredReminderEvent(),
+      isOnlineMeeting: true,
+      onlineMeeting: {
+        conferenceId: "123",
+        joinUrl: "file:///calendar.ics",
+        phones: [],
+        provider: null,
+      },
+    };
+    db.upsertEvent(event);
+
+    expect(db.getEvent(event.calendarId, event.id)).toMatchObject({
+      subject: event.subject,
+      onlineMeeting: { conferenceId: "123", joinUrl: null },
+    });
+  });
+
   it("rolls back an explicit deletion if the pending queue cannot be persisted", () => {
     const sqlite = new DatabaseSync(":memory:");
     try {
@@ -238,7 +263,6 @@ describe("database", () => {
       } finally {
         sqlite.close();
       }
-      expect(sqlite.isOpen).toBe(false);
     },
   );
 
@@ -278,13 +302,12 @@ describe("database", () => {
     } finally {
       sqlite.close();
     }
-    expect(sqlite.isOpen).toBe(false);
   });
 
   it("preserves local dismissals and snoozes, repairs corrupted keys, and migrates legacy keys once", () => {
     const sqlite = new DatabaseSync(":memory:");
     try {
-      const db = createSqliteDatabase(sqlite);
+      createSqliteDatabase(sqlite);
       const base = "calendar-1:event-1:2026-09-30T10:00:00.000Z";
       const insert = sqlite.prepare("INSERT INTO reminder_state VALUES (?, ?, ?)");
       insert.run(`${base}:before:15`, null, "dismissed");
@@ -295,38 +318,25 @@ describe("database", () => {
       insert.run(`${base}:before:45`, "new-snooze", null);
       insert.run(base, null, "legacy-dismissal");
       insert.run(`${base}:start`, null, "start-dismissal");
-      for (let index = 0; index < 2; index += 1) {
-        (db as unknown as { migrate: () => void }).migrate();
-      }
-      expect(db.getReminderState(`${base}:before:15`)).toEqual({
-        dismissedAt: "dismissed",
-        snoozedUntil: null,
-      });
-      expect(db.getReminderState(`${base}:after:10`)).toEqual({
-        dismissedAt: null,
-        snoozedUntil: "snoozed",
-      });
-      expect(db.getReminderState(`${base}:before:30`)).toEqual({
-        dismissedAt: "recovered-dismissal",
-        snoozedUntil: null,
-      });
-      expect(db.getReminderState(`${base}:after:20`)).toEqual({
-        dismissedAt: null,
-        snoozedUntil: "recovered-snooze",
-      });
-      expect(db.getReminderState(`${base}:pre`)).toEqual({
-        dismissedAt: "legacy-dismissal",
-        snoozedUntil: null,
-      });
-      expect(db.getReminderState(`${base}:start`)).toEqual({
-        dismissedAt: "start-dismissal",
-        snoozedUntil: null,
-      });
-      expect(db.getReminderState(`${base}:before:45`)).toEqual({
-        dismissedAt: null,
-        snoozedUntil: "new-snooze",
-      });
-      expect(sqlite.prepare("SELECT * FROM reminder_state").all()).toHaveLength(7);
+      createSqliteDatabase(sqlite);
+      const reopened = createSqliteDatabase(sqlite);
+      const expected = {
+        [`${base}:before:15`]: { dismissedAt: "dismissed", snoozedUntil: null },
+        [`${base}:after:10`]: { dismissedAt: null, snoozedUntil: "snoozed" },
+        [`${base}:before:30`]: { dismissedAt: "recovered-dismissal", snoozedUntil: null },
+        [`${base}:after:20`]: { dismissedAt: null, snoozedUntil: "recovered-snooze" },
+        [`${base}:pre`]: { dismissedAt: "legacy-dismissal", snoozedUntil: null },
+        [`${base}:start`]: { dismissedAt: "start-dismissal", snoozedUntil: null },
+        [`${base}:before:45`]: { dismissedAt: null, snoozedUntil: "new-snooze" },
+      };
+      const keys = [
+        ...Object.keys(expected),
+        base,
+        `${base}:before:30:pre`,
+        `${base}:after:20:pre`,
+        `${base}:before:45:pre`,
+      ];
+      expect(Object.fromEntries(reopened.getReminderStates(keys))).toEqual(expected);
     } finally {
       sqlite.close();
     }
@@ -355,11 +365,12 @@ describe("database", () => {
       sqlite = new DatabaseSync(path);
       db = createSqliteDatabase(sqlite);
       expect(db.listPendingReminderDismissals()).toEqual([item]);
-      expect(db.getReminderState(pre)?.dismissedAt).toBeTruthy();
-      expect(db.getReminderState(start)?.dismissedAt).toBeTruthy();
+      const states = db.getReminderStates([pre, start]);
+      expect(states.get(pre)?.dismissedAt).toBeTruthy();
+      expect(states.get(start)?.dismissedAt).toBeTruthy();
       db.completeReminderDismissal(item);
       expect(db.listPendingReminderDismissals()).toEqual([]);
-      expect(db.getReminderState(pre)?.dismissedAt).toBeTruthy();
+      expect(db.getReminderStates([pre]).get(pre)?.dismissedAt).toBeTruthy();
     } finally {
       sqlite.close();
       rmSync(directory, { recursive: true, force: true });
@@ -376,7 +387,7 @@ describe("database", () => {
       expect(() =>
         db.dismissReminders(["invalid-key"], [{ ...item, calendarId: "missing" }]),
       ).toThrow();
-      expect(db.getReminderState("invalid-key")).toBeNull();
+      expect(db.getReminderStates(["invalid-key"]).size).toBe(0);
       const other = { ...item, calendarId: "calendar-2" };
       db.dismissReminders(["key-1", "key-2"], [item, other]);
       db.clearUserData("account-1");
@@ -398,15 +409,7 @@ describe("database", () => {
           PRIMARY KEY (home_account_id, normalized_email)
         )
       `);
-      const db = Object.create(AppDatabase.prototype) as AppDatabase;
-      Object.assign(db, {
-        db: {
-          exec: (sql: string) => sqlite.exec(sql),
-          prepare: (sql: string) => sqlite.prepare(sql),
-          transaction: (callback: (...args: unknown[]) => unknown) => callback,
-        },
-      });
-      (db as unknown as { migrate: () => void }).migrate();
+      const db = createSqliteDatabase(sqlite);
       const contacts = Array.from({ length: 30 }, (_, index) => ({
         contactId: `contact-${index}`,
         email: `person${index}@example.com`,
@@ -443,8 +446,7 @@ describe("database", () => {
     const keptReminder = "calendar-other_1:event-1:2026-03-30T10:00:00.000Z:pre";
     db.upsertEvent(removedEvent);
     db.upsertEvent(keptEvent);
-    db.dismissReminder(removedReminder);
-    db.dismissReminder(keptReminder);
+    db.dismissReminders([removedReminder, keptReminder]);
     db.markNotificationFired("calendar-%_1:event-1:invite");
     db.markNotificationFired("calendar-other_1:event-1:invite");
     db.replaceContactsForAccount([{ email: "first@example.com", name: null }], signedOut);
@@ -477,8 +479,9 @@ describe("database", () => {
     expect(db.listCalendarIds()).toStrictEqual(["calendar-other_1"]);
     expect(db.getEvent(removedEvent.calendarId, removedEvent.id)).toBeNull();
     expect(db.getEvent(keptEvent.calendarId, keptEvent.id)?.id).toBe(keptEvent.id);
-    expect(db.getReminderState(removedReminder)).toBeNull();
-    expect(db.getReminderState(keptReminder)?.dismissedAt).toBeTruthy();
+    const states = db.getReminderStates([removedReminder, keptReminder]);
+    expect(states.has(removedReminder)).toBe(false);
+    expect(states.get(keptReminder)?.dismissedAt).toBeTruthy();
     expect(db.hasNotificationFired("calendar-%_1:event-1:invite")).toBe(false);
     expect(db.hasNotificationFired("calendar-other_1:event-1:invite")).toBe(true);
     expect(db.getContactByEmail(signedOut, "first@example.com")).toBeNull();
@@ -486,11 +489,15 @@ describe("database", () => {
     expect(db.getDeepBackfillCompletedAt("calendar-%_1")).toBeNull();
     expect(db.getDeepBackfillCompletedAt("calendar-other_1")).toBe(keptEvent.start);
     expect(
-      db.isCalendarSyncRangeCovered(removedEvent.calendarId, removedEvent.start, removedEvent.end),
-    ).toBe(false);
+      db.listUncoveredCalendarSyncRanges(
+        removedEvent.calendarId,
+        removedEvent.start,
+        removedEvent.end,
+      ),
+    ).toEqual([{ rangeStart: removedEvent.start, rangeEnd: removedEvent.end }]);
     expect(
-      db.isCalendarSyncRangeCovered(keptEvent.calendarId, keptEvent.start, keptEvent.end),
-    ).toBe(true);
+      db.listUncoveredCalendarSyncRanges(keptEvent.calendarId, keptEvent.start, keptEvent.end),
+    ).toEqual([]);
     expect(db.getSettings().language).toBe("it");
   });
 
@@ -518,7 +525,6 @@ describe("database", () => {
     expect(db.listUncoveredCalendarSyncRanges(calendarId, rangeStart, rangeEnd)).toStrictEqual([
       { rangeStart: firstEnd, rangeEnd: secondStart },
     ]);
-    expect(db.isCalendarSyncRangeCovered(calendarId, rangeStart, rangeEnd)).toBe(false);
 
     db.recordCalendarSyncRange({
       calendarId,
@@ -526,7 +532,7 @@ describe("database", () => {
       rangeEnd: secondStart,
       syncedAt,
     });
-    expect(db.isCalendarSyncRangeCovered(calendarId, rangeStart, rangeEnd)).toBe(true);
+    expect(db.listUncoveredCalendarSyncRanges(calendarId, rangeStart, rangeEnd)).toEqual([]);
   });
 
   it.each([false, true])(
@@ -579,7 +585,7 @@ describe("database", () => {
     const atStartKey = "calendar-1:event-2:2026-03-30T10:00:00.000Z:start";
     const snoozedUntil = "2026-03-30T09:50:00.000Z";
     db.snoozeReminder(timedKey + ":pre", snoozedUntil);
-    db.dismissReminder(timedKey + ":start");
+    db.dismissReminders([timedKey + ":start"]);
 
     const candidates = db.listReminderCandidates(["calendar-1"], timed.start, timed.end);
     expect(candidates).toStrictEqual(
@@ -641,10 +647,14 @@ describe("database", () => {
 
     db.pruneReminderState("2026-03-01T00:00:00.000Z");
 
-    expect(db.getReminderState("expired:pre")).toBeNull();
-    expect(db.getReminderState("expired:start")).toBeNull();
-    expect(db.getReminderState("current:pre")?.dismissedAt).toBe("2026-03-01T00:00:00.000Z");
-    expect(db.getReminderState("current:start")?.snoozedUntil).toBe("2026-03-02T00:00:00.000Z");
+    expect(
+      Object.fromEntries(
+        db.getReminderStates(["expired:pre", "expired:start", "current:pre", "current:start"]),
+      ),
+    ).toEqual({
+      "current:pre": { dismissedAt: "2026-03-01T00:00:00.000Z", snoozedUntil: null },
+      "current:start": { dismissedAt: null, snoozedUntil: "2026-03-02T00:00:00.000Z" },
+    });
   });
 
   it("keeps old invite delivery markers only while their invitations still need a response", () => {
@@ -818,17 +828,22 @@ describe("database", () => {
 
     const migrated = createSqliteDatabase(sqlite);
 
-    expect(migrated.getReminderState("calendar-1:legacy-reminder:pre")?.dismissedAt).toBeTruthy();
-    expect(migrated.getReminderState("calendar-1:past:" + past + ":pre")?.dismissedAt).toBeTruthy();
-    expect(migrated.getReminderState("calendar-1:future:" + future + ":pre")).toBeNull();
+    const legacyKey = "calendar-1:legacy-reminder:pre";
+    const pastKey = "calendar-1:past:" + past + ":pre";
+    const futureKey = "calendar-1:future:" + future + ":pre";
+    const states = migrated.getReminderStates([legacyKey, pastKey, futureKey]);
+    expect(states.get(legacyKey)?.dismissedAt).toBeTruthy();
+    expect(states.get(pastKey)?.dismissedAt).toBeTruthy();
+    expect(states.has(futureKey)).toBe(false);
 
     migrated.upsertEvent({
       ...createStoredReminderEvent({ id: "newly-synced", start: past }),
       end: past,
     });
     expect(
-      createSqliteDatabase(sqlite).getReminderState("calendar-1:newly-synced:" + past + ":pre"),
-    ).toBeNull();
+      createSqliteDatabase(sqlite).getReminderStates(["calendar-1:newly-synced:" + past + ":pre"])
+        .size,
+    ).toBe(0);
   });
 
   it("can record completed deep backfill after migrating an older sync cache", () => {

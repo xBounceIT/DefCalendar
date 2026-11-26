@@ -70,16 +70,14 @@ describe(formatSyncTimestamp, () => {
 });
 
 describe("formatLocalizedDate + applyTimeFormat", () => {
-  it("uses 24-hour clock when timeFormat is 24h", () => {
-    const date = new Date(Date.UTC(2026, 3, 15, 13, 30));
-    const result = formatLocalizedDate(date, { hour: "numeric", minute: "2-digit" }, "24h");
-    expect(result).not.toMatch(/AM|PM|am|pm/);
-  });
-
-  it("uses 12-hour clock when timeFormat is 12h", () => {
-    const date = new Date(Date.UTC(2026, 3, 15, 13, 30));
-    const result = formatLocalizedDate(date, { hour: "numeric", minute: "2-digit" }, "12h");
-    expect(result).toMatch(/AM|PM/i);
+  it.each([
+    ["24h", "13:30"],
+    ["12h", "1:30 PM"],
+  ] as const)("displays an afternoon time in the %s format", (format, expected) => {
+    const date = new Date(2026, 3, 15, 13, 30);
+    expect(formatLocalizedDate(date, { hour: "numeric", minute: "2-digit" }, format)).toBe(
+      expected,
+    );
   });
 
   it("displays just the requested date even when the 12-hour clock is selected", () => {

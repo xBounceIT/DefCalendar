@@ -36,8 +36,6 @@ describe("meeting icon", () => {
   });
 
   it("falls back to the Teams icon for unknown meeting links", () => {
-    expect(
-      renderIcon("https://teams.microsoft.com/l/meetup-join/example").getAttribute("src"),
-    ).toBe(teamsIcon);
+    expect(renderIcon("https://meet.example.org/meeting").getAttribute("src")).toBe(teamsIcon);
   });
 });

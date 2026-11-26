@@ -779,21 +779,6 @@ class AppDatabase {
       );
   }
 
-  getReminderState(dedupeKey: string): null | ReminderStateSnapshot {
-    const row = this.db
-      .prepare("SELECT dismissed_at, snoozed_until FROM reminder_state WHERE dedupe_key = ?")
-      .get(dedupeKey);
-
-    if (!row) {
-      return null;
-    }
-
-    return {
-      dismissedAt: readNullableStringProperty(row, "dismissed_at"),
-      snoozedUntil: readNullableStringProperty(row, "snoozed_until"),
-    };
-  }
-
   getReminderStates(keys: string[]): Map<string, ReminderStateSnapshot> {
     if (keys.length === 0) {
       return new Map();
@@ -919,18 +904,6 @@ class AppDatabase {
     }
 
     return uncoveredRanges;
-  }
-
-  isCalendarSyncRangeCovered(
-    calendarId: string,
-    rangeStart: string,
-    rangeEnd: string,
-    freshAfter?: string,
-  ): boolean {
-    return (
-      this.listUncoveredCalendarSyncRanges(calendarId, rangeStart, rangeEnd, freshAfter).length ===
-      0
-    );
   }
 
   clearCalendarSyncRanges(calendarIds: string[]): void {
@@ -1143,10 +1116,6 @@ class AppDatabase {
 
   clearNotificationFired(key: string): void {
     this.db.prepare("DELETE FROM notification_state WHERE dedupe_key = ?").run(key);
-  }
-
-  dismissReminder(key: string): void {
-    this.dismissReminders([key]);
   }
 
   dismissReminders(keys: string[], remoteDismissals: ReminderDismissal[] = []): void {

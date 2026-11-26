@@ -16,7 +16,6 @@ export type { VisualTheme } from "./theme";
 export {
   getTitleBarColors,
   getTitleBarScrimColors,
-  isDarkVisualTheme,
   resolveVisualTheme,
   visualThemeSchema,
 } from "./theme";

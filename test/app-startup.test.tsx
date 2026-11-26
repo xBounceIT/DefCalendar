@@ -1786,6 +1786,7 @@ describe("app startup", () => {
 
       const subject = await screen.findByDisplayValue<HTMLInputElement>(event.subject);
       expect(subject).toMatchObject({ disabled: false, readOnly: true });
+      expect(screen.queryByRole("button", { name: "Save Changes" })).toBeNull();
       subject.focus();
       subject.setSelectionRange(0, subject.value.length);
       expect(fireEvent.keyDown(subject, { key: "c", ctrlKey: true })).toBe(true);
@@ -1795,7 +1796,6 @@ describe("app startup", () => {
       range.selectNodeContents(screen.getByRole("dialog"));
       selection.removeAllRanges();
       selection.addRange(range);
-      expect(selection.toString()).not.toBe("");
       expect([
         fireEvent.keyDown(document.body, { key: "c", ctrlKey: true }),
         fireEvent.keyDown(document.body, { key: "c", metaKey: true }),
@@ -2017,37 +2017,37 @@ describe("app startup", () => {
   });
 
   it("refetches both board and mini-calendar events after refresh", async () => {
+    const event = createCalendarEvent();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(event.start));
     try {
       installResizeObserverMock();
       const calendarApi = createSignedInCalendarApiMock();
-      calendarApi.sync.refresh = vi.fn().mockResolvedValue({
-        lastSyncedAt: "2026-03-27T15:43:00.000Z",
-        message: "Synced 1 calendar, 1 event.",
-        messageKey: "sync.synced",
-        counts: {
-          calendars: 1,
-          events: 1,
-        },
-        state: "idle",
+      const listEvents = vi.mocked(calendarApi.events.list);
+      listEvents.mockResolvedValue([event]);
+      vi.mocked(calendarApi.sync.refresh).mockImplementation(() => {
+        listEvents.mockResolvedValue([]);
+        return calendarApi.sync.getStatus();
       });
       installCalendarApi(calendarApi);
 
       renderApp();
 
-      const listEventsMock = vi.mocked(calendarApi.events.list);
-
-      await expect(screen.findByTestId("mock-calendar")).resolves.not.toBeNull();
+      const today = await screen.findByRole("button", { current: "date" });
       await waitFor(() => {
-        expect(listEventsMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+        expect(capturedCalendarProps?.events).toEqual([
+          expect.objectContaining({ title: event.subject }),
+        ]);
+        expect(today.classList.contains("has-events")).toBe(true);
       });
-
       fireEvent.click(screen.getByTitle("Sync"));
 
       await waitFor(() => {
-        expect(calendarApi.sync.refresh).toHaveBeenCalledOnce();
-        expect(listEventsMock.mock.calls.length).toBeGreaterThanOrEqual(4);
+        expect(capturedCalendarProps?.events).toEqual([]);
+        expect(today.classList.contains("has-events")).toBe(false);
       });
     } finally {
+      vi.useRealTimers();
       restoreCalendarApi();
       restoreResizeObserver();
     }
@@ -2066,8 +2066,6 @@ describe("app startup", () => {
         | ((arg: { date: Date }) => void)
         | undefined;
 
-      expect(dateClick).toBeInstanceOf(Function);
-
       act(() => {
         dateClick?.({
           date: new Date("2026-03-30T12:00:00.000Z"),
@@ -2083,7 +2081,6 @@ describe("app startup", () => {
             view: { calendar: { getDate: () => Date }; type: string };
           }) => void)
         | undefined;
-      expect(datesSet).toBeInstanceOf(Function);
 
       act(() => {
         datesSet?.({

@@ -3,11 +3,9 @@ import { resolve } from "node:path";
 import { setImmediate, setTimeout as delay } from "node:timers/promises";
 import { runInNewContext } from "node:vm";
 import { build } from "vite";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import electronViteConfig from "../electron.vite.config";
 import type GraphCalendarService from "../src/main/graph/calendar-service";
-
-type RetryTimer = (...args: Parameters<typeof delay>) => ReturnType<typeof delay>;
 
 async function compileService(): Promise<string> {
   const main = electronViteConfig.main;
@@ -38,13 +36,13 @@ async function compileService(): Promise<string> {
 function createService(
   compiledService: string,
   fetchMock: typeof fetch,
-  retryTimer?: RetryTimer,
+  wait?: (ms: number) => Promise<void>,
 ): GraphCalendarService {
   const module = { exports: {} };
   const require = createRequire(import.meta.url);
   runInNewContext(compiledService, {
     require: (id: string) =>
-      id === "node:timers/promises" && retryTimer ? { setTimeout: retryTimer } : require(id),
+      id === "node:timers/promises" && wait ? { setTimeout: wait } : require(id),
     module,
     exports: module.exports,
     fetch: fetchMock,
@@ -76,6 +74,8 @@ describe("compiled Graph retries", () => {
   beforeAll(async () => {
     compiledService = await compileService();
   });
+
+  afterEach(() => vi.useRealTimers());
 
   it.each([429, 503])("retries HTTP %i successfully in the CommonJS build", async (status) => {
     expect.hasAssertions();
@@ -150,57 +150,16 @@ describe("compiled Graph retries", () => {
     },
   );
 
-  it("waits for every timer chunk before retrying a large Retry-After", async () => {
-    expect.hasAssertions();
-    let finishFirst = () => {};
-    let finishSecond = () => {};
-    const firstWait = new Promise<void>((resolve) => {
-      finishFirst = resolve;
-    });
-    const secondWait = new Promise<void>((resolve) => {
-      finishSecond = resolve;
-    });
-    const retryTimer = vi
-      .fn<RetryTimer>()
-      .mockReturnValueOnce(firstWait)
-      .mockReturnValueOnce(secondWait);
-    const fetchMock = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(
-        new Response(null, { status: 429, headers: { "Retry-After": "2147484" } }),
-      )
-      .mockResolvedValueOnce(Response.json({ value: [] }));
-    const pending = createService(compiledService, fetchMock, retryTimer).listCalendars(
-      "account-1",
-    );
-    try {
-      await Promise.all([
-        expect(pending).resolves.toHaveLength(0),
-        (async () => {
-          await setImmediate();
-          expect(retryTimer).toHaveBeenNthCalledWith(1, 2_147_483_647, undefined, {
-            signal: undefined,
-          });
-          expect(fetchMock).toHaveBeenCalledOnce();
-          finishFirst();
-          await setImmediate();
-          expect(retryTimer).toHaveBeenNthCalledWith(2, 353, undefined, { signal: undefined });
-          expect(fetchMock).toHaveBeenCalledOnce();
-          finishSecond();
-        })(),
-      ]);
-    } finally {
-      finishFirst();
-      finishSecond();
-    }
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it.each([null, "invalid", "-1", "9".repeat(400)])(
-    "uses the fallback for an invalid Retry-After %s",
-    async (retryAfter) => {
-      expect.hasAssertions();
-      const retryTimer = vi.fn<RetryTimer>().mockResolvedValue(undefined);
+  it.each([
+    { retryAfter: "2147484", waitMs: 2_147_484_000 },
+    { retryAfter: null, waitMs: 1500 },
+    { retryAfter: "invalid", waitMs: 1500 },
+    { retryAfter: "-1", waitMs: 1500 },
+    { retryAfter: "9".repeat(400), waitMs: 1500 },
+  ])(
+    "waits $waitMs ms before retrying with Retry-After $retryAfter",
+    async ({ retryAfter, waitMs }) => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       const fetchMock = vi
         .fn<typeof fetch>()
         .mockResolvedValueOnce(
@@ -210,11 +169,15 @@ describe("compiled Graph retries", () => {
           }),
         )
         .mockResolvedValueOnce(Response.json({ value: [] }));
-      await expect(
-        createService(compiledService, fetchMock, retryTimer).listCalendars("account-1"),
-      ).resolves.toHaveLength(0);
-      expect(retryTimer).toHaveBeenCalledExactlyOnceWith(1500, undefined, { signal: undefined });
+
+      const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+      const pending = createService(compiledService, fetchMock, wait).listCalendars("account-1");
+      await setImmediate();
+      await vi.advanceTimersByTimeAsync(waitMs - 1);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(1);
       expect(fetchMock).toHaveBeenCalledTimes(2);
+      await expect(pending).resolves.toEqual([]);
     },
   );
 });

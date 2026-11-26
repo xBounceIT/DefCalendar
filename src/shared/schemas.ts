@@ -113,9 +113,11 @@ const eventAttachmentSchema = z.object({
   size: z.number().int().nonnegative(),
 });
 
+const meetingWebUrlSchema = z.url({ protocol: /^https?$/, normalize: true });
+
 const onlineMeetingInfoSchema = z.object({
   conferenceId: z.string().nullable(),
-  joinUrl: z.string().nullable(),
+  joinUrl: meetingWebUrlSchema.nullable().catch(null),
   phones: z.array(z.string()).default([]),
   provider: z.string().nullable(),
 });
@@ -415,10 +417,6 @@ const attachmentReferenceArgsSchema = z.object({
   attachmentId: z.string(),
   calendarId: z.string(),
   eventId: z.string(),
-});
-
-const openExternalArgsSchema = z.object({
-  url: z.string().url(),
 });
 
 const reminderSnoozeArgsSchema = z.object({
@@ -765,7 +763,7 @@ export {
   eventListArgsSchema,
   eventParticipantSchema,
   eventResponseActionSchema,
-  openExternalArgsSchema,
+  meetingWebUrlSchema,
   onlineMeetingInfoSchema,
   participantResponseStatusSchema,
   newEventNotificationItemSchema,

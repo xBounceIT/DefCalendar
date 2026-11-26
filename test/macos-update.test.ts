@@ -6,11 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  downloadMacUpdate,
-  installMacUpdate,
-  resolveMacUpdateDownload,
-} from "../src/main/update/macos-update";
+import { downloadMacUpdate, installMacUpdate } from "../src/main/update/macos-update";
 
 const { fetchMock, openPathMock, spawnMock, quitMock, paths } = vi.hoisted(() => ({
   fetchMock: vi.fn(),
@@ -70,14 +66,16 @@ afterEach(async () => {
 });
 
 describe("macOS update download", () => {
-  it.each(["1.0.0", "v1.0.0", "1.0.0-beta.1"])(
-    "resolves the DMG from the checked release %s",
-    (version) => {
-      expect(resolveMacUpdateDownload({ ...release, version }).url).toBe(
-        `https://github.com/xBounceIT/DefCalendar/releases/download/${version.startsWith("v") ? version : `v${version}`}/DefCalendar-1.0.0-mac-universal.dmg`,
-      );
-    },
-  );
+  it.each([
+    ["1.0.0", "v1.0.0"],
+    ["v1.0.0", "v1.0.0"],
+    ["1.0.0-beta.1", "v1.0.0-beta.1"],
+  ])("downloads the DMG from the checked release %s", async (version, tag) => {
+    await downloadMacUpdate({ ...release, version }, vi.fn());
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      `https://github.com/xBounceIT/DefCalendar/releases/download/${tag}/DefCalendar-1.0.0-mac-universal.dmg`,
+    ]);
+  });
 
   it("rejects releases without a DMG and checksum", async () => {
     await expect(

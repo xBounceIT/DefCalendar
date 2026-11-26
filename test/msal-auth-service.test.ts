@@ -133,6 +133,7 @@ describe("msal auth service", () => {
       throw new Error("Expected a signed-in auth state.");
     }
 
+    expect(firstState.account.color).toMatch(/^#[0-9a-f]{6}$/i);
     expect(firstState.account.color).toBe(firstState.accounts[0]?.color);
     expect(secondState.account.color).toBe(firstState.account.color);
     expect(secondState.accounts[0]?.color).toBe(firstState.account.color);

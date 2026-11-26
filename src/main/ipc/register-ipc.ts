@@ -27,7 +27,7 @@ import {
   forwardEventArgsSchema,
   listOutlookCategoriesArgsSchema,
   outlookCategorySchema,
-  openExternalArgsSchema,
+  meetingWebUrlSchema,
   reminderDialogStateSchema,
   reminderDismissArgsSchema,
   reminderSnoozeArgsSchema,
@@ -683,8 +683,8 @@ function registerIpc(dependencies: RegisterIpcDependencies): void {
 
   ipcMain.handle(IPC_CHANNELS.eventsOpenWebLink, async (event, input) => {
     validateReminderSender(event);
-    const args = openExternalArgsSchema.parse({ url: input });
-    await openMeetingLink(args.url, (target) => shell.openExternal(target));
+    const url = meetingWebUrlSchema.parse(input);
+    await openMeetingLink(url, (target) => shell.openExternal(target));
   });
 
   ipcMain.handle(IPC_CHANNELS.syncRefresh, async (event) => {

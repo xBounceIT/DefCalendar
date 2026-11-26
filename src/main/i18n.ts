@@ -8,6 +8,7 @@ interface MainTranslations {
   showApp: string;
   refreshNow: string;
   signOut: string;
+  signOutError: string;
   quit: string;
   windowTitle: string;
   reminderTitle: string;
@@ -36,6 +37,7 @@ const translations: Record<AppLocale, MainTranslations> = {
     showApp: "Show DefCalendar",
     refreshNow: "Refresh Now",
     signOut: "Sign Out",
+    signOutError: "Could not complete sign-out. Please try again.",
     quit: "Quit",
     windowTitle: "DefCalendar",
     reminderTitle: "Reminder",
@@ -62,6 +64,7 @@ const translations: Record<AppLocale, MainTranslations> = {
     showApp: "Mostra DefCalendar",
     refreshNow: "Aggiorna ora",
     signOut: "Esci",
+    signOutError: "Impossibile completare la disconnessione. Riprova.",
     quit: "Esci dall\u2019applicazione",
     windowTitle: "DefCalendar",
     reminderTitle: "Promemoria",
