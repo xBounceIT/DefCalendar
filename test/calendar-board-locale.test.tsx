@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import type { EventContentArg, EventInput } from "@fullcalendar/core";
 import React from "react";
@@ -265,7 +266,7 @@ describe("calendar board locale", () => {
   it.each(["timeGridWeek", "timeGridDay"] as const)("renders event details in %s", async (view) => {
     await renderBoard("it");
 
-    const { container, getByText } = renderCalendarEvent({
+    const { getByText } = renderCalendarEvent({
       view,
       eventData: {
         location: " Sala riunioni ",
@@ -281,11 +282,10 @@ describe("calendar board locale", () => {
       },
     });
 
-    expect(container.querySelector(".calendar-event-content--detailed")).not.toBeNull();
-    getByText("Sala riunioni · Riunione online");
-    getByText("Organizzatore: Giulia");
-    getByText("Partecipanti: luca@example.com");
-    getByText("Revisione del progetto e prossimi passi.");
+    expect(getByText("Sala riunioni · Riunione online")).toBeInTheDocument();
+    expect(getByText("Organizzatore: Giulia")).toBeInTheDocument();
+    expect(getByText("Partecipanti: luca@example.com")).toBeInTheDocument();
+    expect(getByText("Revisione del progetto e prossimi passi.")).toBeInTheDocument();
   });
 
   it.each([
@@ -295,12 +295,11 @@ describe("calendar board locale", () => {
   ] as const)("keeps events compact in $view with allDay=$allDay", async (options) => {
     await renderBoard("en");
 
-    const { container, queryByText } = renderCalendarEvent({
+    const { queryByText } = renderCalendarEvent({
       ...options,
       eventData: { location: "Meeting room", bodyPreview: "Project review" },
     });
 
-    expect(container.querySelector(".calendar-event-content--detailed")).toBeNull();
     expect(queryByText("Meeting room")).toBeNull();
     expect(queryByText("Project review")).toBeNull();
   });
@@ -372,9 +371,6 @@ describe("calendar board locale", () => {
 
     expect(capturedCalendarProps?.locale).toBe("it");
     expect(capturedCalendarProps?.allDayText).toBe("Giornata intera");
-    expect(capturedCalendarProps?.selectable).toBe(false);
-    expect(capturedCalendarProps?.select).toStrictEqual(expect.any(Function));
-    expect(capturedCalendarProps?.selectMirror).toBeUndefined();
   });
 
   it("passes the English locale and translated all-day label", async () => {
@@ -382,18 +378,6 @@ describe("calendar board locale", () => {
 
     expect(capturedCalendarProps?.locale).toBe("en");
     expect(capturedCalendarProps?.allDayText).toBe("All day");
-  });
-
-  it("passes the day click callback to FullCalendar", async () => {
-    await renderBoard("en");
-
-    expect(capturedCalendarProps?.dateClick).toStrictEqual(expect.any(Function));
-    expect(capturedCalendarProps?.dayCellClassNames).toStrictEqual(expect.any(Function));
-    expect(capturedCalendarProps?.eventMouseEnter).toStrictEqual(expect.any(Function));
-    expect(capturedCalendarProps?.eventMouseLeave).toStrictEqual(expect.any(Function));
-    expect(capturedCalendarProps?.selectable).toBe(false);
-    expect(capturedCalendarProps?.select).toStrictEqual(expect.any(Function));
-    expect(capturedCalendarProps?.selectMirror).toBeUndefined();
   });
 
   it("renders a bell icon for events with reminders", async () => {

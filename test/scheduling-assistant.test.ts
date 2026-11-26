@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AttendeeAvailability } from "../src/shared/attendee-availability";
 import type { EventParticipant } from "../src/shared/schemas";
-import { HALF_HOUR, getAvailabilityInRange } from "../src/renderer/src/meeting-planner";
+import { HALF_HOUR } from "../src/renderer/src/meeting-planner";
 import {
   getSchedulingWindow,
   getSchedulingSuggestions,
@@ -76,12 +76,20 @@ describe("scheduling periods", () => {
     };
     const start = time("09:00"),
       end = time("15:00");
-    const slots = getSchedulingSlots(item, start, end);
-    expect(slots).toEqual(
-      Array.from({ length: slots.length }, (_, index) =>
-        getAvailabilityInRange(item, start + index * HALF_HOUR, start + (index + 1) * HALF_HOUR),
-      ),
-    );
+    expect(getSchedulingSlots(item, start, end)).toEqual([
+      "unknown",
+      "busy",
+      "oof",
+      "oof",
+      "workingElsewhere",
+      "workingElsewhere",
+      "unknown",
+      "free",
+      "free",
+      "free",
+      "unknown",
+      "unknown",
+    ]);
     expect(getSchedulingSlots(undefined, start, end)).toEqual(Array(12).fill("unknown"));
     expect(
       getSchedulingSuggestions({

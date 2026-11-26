@@ -30,10 +30,6 @@ function resolveVisualTheme(preference: ThemeSetting, prefersDark: boolean): Vis
   return preference;
 }
 
-function isDarkVisualTheme(visual: VisualTheme): boolean {
-  return visual !== "light";
-}
-
 function getTitleBarColors(visual: VisualTheme): TitleBarColors {
   return TITLE_BAR_COLORS[visual];
 }
@@ -43,10 +39,4 @@ function getTitleBarScrimColors(visual: VisualTheme): TitleBarColors {
 }
 
 export type { VisualTheme };
-export {
-  getTitleBarColors,
-  getTitleBarScrimColors,
-  isDarkVisualTheme,
-  resolveVisualTheme,
-  visualThemeSchema,
-};
+export { getTitleBarColors, getTitleBarScrimColors, resolveVisualTheme, visualThemeSchema };

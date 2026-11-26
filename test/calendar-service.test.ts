@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CalendarEvent, EventDraft } from "../src/shared/schemas";
 import windowsTimeZones from "../src/shared/windows-time-zones.json";
 import GraphCalendarService, {
-  extractPlainTextFromGraphHtml,
   isMissingGraphItemError,
   parseRecurrence,
 } from "../src/main/graph/calendar-service";
@@ -1452,34 +1451,29 @@ describe("graph calendar service body conversion", () => {
       subject: "Updated planning",
     });
   });
-  it("returns null for empty input", () => {
-    expect(extractPlainTextFromGraphHtml()).toBeNull();
-    expect(extractPlainTextFromGraphHtml("")).toBeNull();
-  });
+  it.each([
+    [undefined, null],
+    ["", null],
+    ['<script>alert(1)</script foo="bar"><p>Agenda</p>', "Agenda"],
+    ["<p>&amp;quot; &amp;lt; &amp;amp;</p>", "&quot; &lt; &amp;"],
+    [
+      "<p>Hello&nbsp;team</p><p>Line <strong>two</strong><br>Line three</p>",
+      "Hello team\n\nLine two\nLine three",
+    ],
+    ["Already plain text", "Already plain text"],
+  ])(
+    "supplies a readable event preview when Graph only returns the body %j",
+    async (content, expected) => {
+      const remote = createGraphEvent({
+        body: content === undefined ? undefined : { content, contentType: "HTML" },
+      });
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(remote)));
 
-  it("drops script content even with malformed closing tags", () => {
-    expect(extractPlainTextFromGraphHtml('<script>alert(1)</script foo="bar"><p>Agenda</p>')).toBe(
-      "Agenda",
-    );
-  });
+      const event = await createService().getEvent("calendar-1", remote.id, "account-1");
 
-  it("does not double-unescape HTML entities", () => {
-    expect(extractPlainTextFromGraphHtml("<p>&amp;quot; &amp;lt; &amp;amp;</p>")).toBe(
-      "&quot; &lt; &amp;",
-    );
-  });
-
-  it("keeps common formatting readable as plain text", () => {
-    expect(
-      extractPlainTextFromGraphHtml(
-        "<p>Hello&nbsp;team</p><p>Line <strong>two</strong><br>Line three</p>",
-      ),
-    ).toBe("Hello team\n\nLine two\nLine three");
-  });
-
-  it("preserves readable plain text content", () => {
-    expect(extractPlainTextFromGraphHtml("Already plain text")).toBe("Already plain text");
-  });
+      expect(event.bodyPreview).toBe(expected);
+    },
+  );
 });
 
 describe("graph calendar service request handling", () => {
@@ -2095,8 +2089,11 @@ describe("graph calendar service request handling", () => {
     });
   });
 
-  it("parses Zoom links from event body content", async () => {
-    const joinUrl = "https://acme.zoom.us/j/123456789?pwd=abc123";
+  it.each([
+    "https://acme.zoom.us/j/123456789?pwd=abc123",
+    "https://acme.zoom.us/wc/123456789/join?pwd=abc123",
+    "https://teams.microsoft.com/meet/123456789?p=abc",
+  ])("finds the meeting link %s in an invitation without a Graph join URL", async (joinUrl) => {
     const fetchMock = vi.fn().mockResolvedValue(
       Response.json({
         value: [
@@ -2178,36 +2175,44 @@ describe("graph calendar service request handling", () => {
     expect(event.onlineMeeting?.joinUrl).toBe(joinUrl);
   });
 
-  it("keeps Graph-provided join URLs before parsed URLs", async () => {
-    const graphJoinUrl = "https://teams.microsoft.com/l/meetup-join/graph-link";
-    const bodyJoinUrl = "https://acme.zoom.us/j/123456789";
-    const fetchMock = vi.fn().mockResolvedValue(
-      Response.json({
-        value: [
-          createGraphEvent({
-            body: {
-              content: bodyJoinUrl,
-              contentType: "HTML",
-            },
-            onlineMeeting: {
-              joinUrl: graphJoinUrl,
-            },
-          }),
-        ],
-      }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
+  it.each([
+    [
+      "https://teams.microsoft.com/l/meetup-join/graph-link",
+      "https://teams.microsoft.com/l/meetup-join/graph-link",
+    ],
+    ["file:///calendar.ics", "https://acme.zoom.us/j/123456789"],
+  ])(
+    "uses the first usable join URL from Graph or the invitation body for %s",
+    async (graphJoinUrl, expectedUrl) => {
+      const bodyJoinUrl = "https://acme.zoom.us/j/123456789";
+      const fetchMock = vi.fn().mockResolvedValue(
+        Response.json({
+          value: [
+            createGraphEvent({
+              body: {
+                content: bodyJoinUrl,
+                contentType: "HTML",
+              },
+              onlineMeeting: {
+                joinUrl: graphJoinUrl,
+              },
+            }),
+          ],
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
 
-    const service = createService();
-    const [event] = await service.listCalendarView(
-      "calendar-1",
-      "2026-03-30T00:00:00.000Z",
-      "2026-03-31T00:00:00.000Z",
-      "account-1",
-    );
+      const service = createService();
+      const [event] = await service.listCalendarView(
+        "calendar-1",
+        "2026-03-30T00:00:00.000Z",
+        "2026-03-31T00:00:00.000Z",
+        "account-1",
+      );
 
-    expect(event.onlineMeeting?.joinUrl).toBe(graphJoinUrl);
-  });
+      expect(event.onlineMeeting?.joinUrl).toBe(expectedUrl);
+    },
+  );
 
   it("ignores non-meeting URLs", async () => {
     const fetchMock = vi.fn().mockResolvedValue(

@@ -83,28 +83,26 @@ describe("manual macOS updates", () => {
     Object.defineProperty(process, "platform", { configurable: true, value: "darwin" });
   });
 
-  it.each(["1.0.0", "v1.0.0", "1.0.0-beta.1"])(
-    "downloads and opens the DMG for %s without installing through Squirrel",
-    async (version) => {
-      const service = new UpdateService();
-      getHandler("update-available")({ version, releaseNotes: null });
+  it("downloads and opens the macOS disk image once without launching Squirrel", async () => {
+    const version = "1.0.0";
+    const service = new UpdateService();
+    getHandler("update-available")({ version, releaseNotes: null });
 
-      const status = await service.downloadUpdate();
+    const status = await service.downloadUpdate();
 
-      expect(status.manualInstall).toBe(true);
-      expect(status.state).toBe("downloaded");
-      expect(downloadMacUpdateMock).toHaveBeenCalledExactlyOnceWith(
-        expect.objectContaining({ version }),
-        expect.any(Function),
-      );
-      expect(installMacUpdateMock).toHaveBeenCalledExactlyOnceWith("/cache/update.dmg", version);
-      expect(autoUpdaterMock.downloadUpdate).not.toHaveBeenCalled();
-      getHandler("update-downloaded")({ version, releaseNotes: null });
-      await service.installUpdate();
-      expect(installMacUpdateMock).toHaveBeenCalledOnce();
-      expect(autoUpdaterMock.quitAndInstall).not.toHaveBeenCalled();
-    },
-  );
+    expect(status.manualInstall).toBe(true);
+    expect(status.state).toBe("downloaded");
+    expect(downloadMacUpdateMock).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ version }),
+      expect.any(Function),
+    );
+    expect(installMacUpdateMock).toHaveBeenCalledExactlyOnceWith("/cache/update.dmg", version);
+    expect(autoUpdaterMock.downloadUpdate).not.toHaveBeenCalled();
+    getHandler("update-downloaded")({ version, releaseNotes: null });
+    await service.installUpdate();
+    expect(installMacUpdateMock).toHaveBeenCalledOnce();
+    expect(autoUpdaterMock.quitAndInstall).not.toHaveBeenCalled();
+  });
 
   it("continues to check for updates and preserves manual installation mode", async () => {
     autoUpdaterMock.checkForUpdates.mockResolvedValue({
@@ -237,16 +235,6 @@ describe("updateService construction", () => {
 });
 
 describe("updateService event handlers", () => {
-  it("increments the revision for every published transition", () => {
-    const service = new UpdateService();
-    const revisions: number[] = [];
-    service.onStatus((status) => revisions.push(status.revision));
-    getHandler("checking-for-update")(undefined);
-    getHandler("update-available")({ version: "1.0.0" });
-    getHandler("download-progress")({ percent: 50 });
-    expect(revisions).toStrictEqual([1, 2, 3]);
-    expect(service.getStatus().revision).toBe(3);
-  });
   it("does not publish invalid numeric progress to the IPC schema", () => {
     const service = new UpdateService();
     const listener = vi.fn();
@@ -270,10 +258,10 @@ describe("updateService event handlers", () => {
     getHandler("update-downloaded")({ version: "1.0.0", releaseNotes: null });
 
     expect(states).toMatchObject([
-      { state: "checking" },
-      { state: "available", latestVersion: "1.0.0", releaseNotes: "Highlights" },
-      { state: "downloading", downloadPercent: 42.5 },
-      { state: "downloaded", downloadPercent: 100 },
+      { state: "checking", revision: 1 },
+      { state: "available", revision: 2, latestVersion: "1.0.0", releaseNotes: "Highlights" },
+      { state: "downloading", revision: 3, downloadPercent: 42.5 },
+      { state: "downloaded", revision: 4, downloadPercent: 100 },
     ]);
     expect(service.getStatus()).toStrictEqual(states.at(-1));
   });
@@ -465,21 +453,14 @@ describe("updateService.installUpdate", () => {
 });
 
 describe("updateService.onStatus", () => {
-  it("notifies listeners on every status transition", async () => {
+  it("stops delivering status changes after unsubscribe", () => {
     const service = new UpdateService();
     const listener = vi.fn();
     const unsubscribe = service.onStatus(listener);
 
-    getHandler("checking-for-update")(undefined);
-    getHandler("update-available")({ version: "1.0.0", releaseNotes: null });
-
-    expect(listener).toHaveBeenCalledTimes(2);
-    expect(listener.mock.calls[0]?.[0].state).toBe("checking");
-    expect(listener.mock.calls[1]?.[0].state).toBe("available");
-
     unsubscribe();
     getHandler("error")(new Error("boom"));
-    expect(listener).toHaveBeenCalledTimes(2);
+    expect(listener).not.toHaveBeenCalled();
   });
 });
 

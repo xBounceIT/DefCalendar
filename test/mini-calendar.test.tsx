@@ -12,7 +12,7 @@ import { toLocalDateKey } from "../src/shared/calendar";
 
 afterEach(cleanup);
 
-function renderMiniCalendar(props: Partial<React.ComponentProps<typeof MiniCalendar>> = {}): {
+function renderMiniCalendar(): {
   onDateSelect: ReturnType<typeof vi.fn>;
   onVisibleMonthChange: ReturnType<typeof vi.fn>;
   result: ReturnType<typeof render>;
@@ -27,7 +27,6 @@ function renderMiniCalendar(props: Partial<React.ComponentProps<typeof MiniCalen
         onDateSelect={onDateSelect}
         onVisibleMonthChange={onVisibleMonthChange}
         selectedDate={new Date(2026, 3, 15)}
-        {...props}
       />
     </I18nextProvider>,
   );
@@ -41,20 +40,18 @@ describe(MiniCalendar, () => {
     expect(screen.getByRole("heading", { level: 3 }).textContent).toMatch(/April 2026/);
   });
 
-  it("renders the 7 weekday headers", () => {
+  it("shows English weekday headings in Monday-first order", () => {
     const { result } = renderMiniCalendar();
     const headers = result.container.querySelectorAll(".mini-calendar-day-header");
-    expect(headers).toHaveLength(7);
-  });
-
-  it("notifies parent when the visible month changes after Next click", () => {
-    const { onVisibleMonthChange } = renderMiniCalendar();
-    onVisibleMonthChange.mockClear();
-    fireEvent.click(screen.getByLabelText("Next month"));
-    expect(onVisibleMonthChange).toHaveBeenCalled();
-    const passed = onVisibleMonthChange.mock.calls.at(-1)?.[0] as Date;
-    expect(passed.getMonth()).toBe(4);
-    expect(passed.getFullYear()).toBe(2026);
+    expect([...headers].map((header) => header.textContent)).toEqual([
+      "M",
+      "T",
+      "W",
+      "T",
+      "F",
+      "S",
+      "S",
+    ]);
   });
 
   it("notifies parent when navigating to previous month", () => {
@@ -77,29 +74,15 @@ describe(MiniCalendar, () => {
     expect(passed.getDate()).toBe(today.getDate());
   });
 
-  it("clicking a day in the grid invokes onDateSelect with that date", () => {
-    const { onDateSelect, result } = renderMiniCalendar();
-    const dayButtons = result.container.querySelectorAll(
-      "button.mini-calendar-day:not(.other-month)",
+  it("selects the clicked day and identifies the current selection", () => {
+    const { onDateSelect } = renderMiniCalendar();
+    expect(
+      screen.getByRole("button", { name: "Wednesday, April 15th, 2026", pressed: true }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Monday, April 6th, 2026", pressed: false }),
     );
-    expect(dayButtons.length).toBeGreaterThan(0);
-    fireEvent.click(dayButtons[5]!);
-    expect(onDateSelect).toHaveBeenCalledOnce();
-  });
-
-  it("applies has-events class to days present in eventDayKeys", () => {
-    const eventDay = new Date(2026, 3, 15);
-    const { result } = renderMiniCalendar({
-      eventDayKeys: new Set([toLocalDateKey(eventDay)]),
-    });
-    const hasEvents = result.container.querySelectorAll(".mini-calendar-day.has-events");
-    expect(hasEvents.length).toBeGreaterThan(0);
-  });
-
-  it("marks the selected date with the 'selected' class", () => {
-    const { result } = renderMiniCalendar();
-    const selected = result.container.querySelector(".mini-calendar-day.selected");
-    expect(selected?.textContent).toBe("15");
+    expect(onDateSelect).toHaveBeenCalledExactlyOnceWith(new Date(2026, 3, 6));
   });
 
   it("does not reset month navigation when a parent recreates the same selected date", () => {
@@ -117,6 +100,7 @@ describe(MiniCalendar, () => {
     );
     const result = render(content());
     fireEvent.click(screen.getByRole("button", { name: "Next month" }));
+    expect(onVisibleMonthChange).toHaveBeenLastCalledWith(new Date(2026, 4, 1));
     onVisibleMonthChange.mockClear();
     result.rerender(content());
     expect(screen.getByRole("heading")).toHaveTextContent("May 2026");

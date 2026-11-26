@@ -8,7 +8,6 @@ import CalendarBoard from "../src/renderer/src/components/calendar-board";
 import type { Hit, InteractionSettings } from "@fullcalendar/core/internal";
 import { DateComponent } from "@fullcalendar/core/internal";
 import dateContextPlugin from "../src/renderer/src/date-context-plugin";
-import { toDateTimeInputValue } from "../src/shared/calendar";
 
 function renderBoard(
   activeView: "dayGridMonth" | "timeGridWeek" | "timeGridDay",
@@ -152,54 +151,24 @@ describe("calendar title selection", () => {
     "joins the meeting from its view-specific position in %s without opening or dragging it",
     (activeView) => {
       expect.hasAssertions();
-      const { container, eventData, onEventClick, onEventCopy, onJoinMeeting } = renderBoard(
-        activeView,
-        {
-          joinUrl: "https://meet.google.com/abc-defg-hij",
-        },
-      );
-      const button = container.querySelector<HTMLButtonElement>(
-        ".calendar-event-content__join-btn",
-      )!;
-
-      expect({
-        label: button.getAttribute("aria-label"),
-        isLast: button.parentElement?.lastElementChild === button,
-        position: button.parentElement?.className,
-        precedingElement: button.previousElementSibling?.classList.contains(
-          activeView === "timeGridDay"
-            ? "calendar-event-content__icon"
-            : "calendar-event-card__body",
-        ),
-        details: [
-          "Meeting room",
-          "Organizer: Giulia Rossi",
-          "Attendees: Luca Bianchi",
-          "Project review",
-        ].map((text) => screen.getByText(text).textContent),
-      }).toStrictEqual({
-        label: "Join meeting",
-        isLast: true,
-        position:
-          activeView === "timeGridDay" ? "calendar-event-content__header" : "calendar-event-card",
-        precedingElement: true,
-        details: [
-          "Meeting room",
-          "Organizer: Giulia Rossi",
-          "Attendees: Luca Bianchi",
-          "Project review",
-        ],
+      const { eventData, onEventClick, onEventCopy, onJoinMeeting } = renderBoard(activeView, {
+        joinUrl: "https://meet.google.com/abc-defg-hij",
       });
+      const button = screen.getByLabelText("Join meeting", { selector: "button" });
+      const preview = screen.getByText("Project review");
+      const expectedPosition =
+        activeView === "timeGridDay"
+          ? Node.DOCUMENT_POSITION_FOLLOWING
+          : Node.DOCUMENT_POSITION_PRECEDING;
+      expect(button.compareDocumentPosition(preview) & expectedPosition).toBe(expectedPosition);
       expect(fireEvent.mouseDown(button, { button: 0 })).toBe(true);
       expect(document.body.style.userSelect).not.toBe("none");
       fireEvent.mouseUp(button);
       fireEvent.click(button);
 
       expect(onJoinMeeting).toHaveBeenCalledExactlyOnceWith(eventData);
-      expect({
-        eventOpens: onEventClick.mock.calls.length,
-        eventCopies: onEventCopy.mock.calls.length,
-      }).toStrictEqual({ eventOpens: 0, eventCopies: 0 });
+      expect(onEventClick).not.toHaveBeenCalled();
+      expect(onEventCopy).not.toHaveBeenCalled();
     },
   );
 
@@ -211,16 +180,16 @@ describe("calendar title selection", () => {
     { joinUrl: "https://meet.google.com/abc-defg-hij", allDay: true },
   ])("omits the meeting button for unavailable meetings: %j", (meeting) => {
     expect.hasAssertions();
-    const { container } = renderBoard("timeGridDay", meeting);
-    expect(container.querySelector(".calendar-event-content__join-btn")).toBeNull();
+    renderBoard("timeGridDay", meeting);
+    expect(screen.queryByLabelText("Join meeting", { selector: "button" })).toBeNull();
   });
 
   it("keeps the month event compact when it has a meeting link", () => {
     expect.hasAssertions();
-    const { container } = renderBoard("dayGridMonth", {
+    renderBoard("dayGridMonth", {
       joinUrl: "https://meet.google.com/abc-defg-hij",
     });
-    expect(container.querySelector(".calendar-event-content__join-btn")).toBeNull();
+    expect(screen.queryByLabelText("Join meeting", { selector: "button" })).toBeNull();
   });
 });
 
@@ -255,12 +224,14 @@ describe("calendar date context interaction", () => {
       expect(screen.queryByRole("dialog", { name: "Placeholder" })).toBeNull();
       fireEvent.click(screen.getByRole("menuitem", { name: "Create placeholder" }));
       expect(screen.getByRole("dialog", { name: "Placeholder" })).not.toBeNull();
-      expect((screen.getByLabelText("Start time") as HTMLInputElement).value).toBe(
-        toDateTimeInputValue(new Date(2026, 2, 30, 9).toISOString(), false).slice(11),
+      expect(
+        screen.getByLabelText<HTMLInputElement>("Start date", { selector: "input" }).value,
+      ).toBe("03/30/2026");
+      expect(screen.getByLabelText<HTMLInputElement>("End date", { selector: "input" }).value).toBe(
+        "03/31/2026",
       );
-      expect((screen.getByLabelText("End time") as HTMLInputElement).value).toBe(
-        toDateTimeInputValue(new Date(2026, 2, 31, 9, 30).toISOString(), false).slice(11),
-      );
+      expect((screen.getByLabelText("Start time") as HTMLInputElement).value).toBe("09:00");
+      expect((screen.getByLabelText("End time") as HTMLInputElement).value).toBe("09:30");
       fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
       expect(screen.queryByRole("dialog", { name: "Placeholder" })).toBeNull();
       expect(onCreate).not.toHaveBeenCalled();

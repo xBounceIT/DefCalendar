@@ -1201,6 +1201,16 @@ describe("register ipc", () => {
     expect(fixture.mainWebContents.send).not.toHaveBeenCalled();
   });
 
+  it.each(["not a url", "file:///calendar.ics", "calendar:meeting"])(
+    "rejects %s before opening it",
+    async (url) => {
+      const fixture = createFixture();
+      const open = fixture.handlers.get(IPC_CHANNELS.eventsOpenWebLink)!;
+      await expect(open({ sender: fixture.mainWebContents }, url)).rejects.toThrow();
+      expect(shell.openExternal).not.toHaveBeenCalled();
+    },
+  );
+
   it("rejects external link requests from untrusted senders", async () => {
     const fixture = createFixture();
     const url = "https://example.com";

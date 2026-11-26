@@ -1,30 +1,14 @@
 import type { TokenCacheContext } from "@azure/msal-node";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import SafeStorageTokenCache from "../src/main/auth/cache-plugin";
-
-const { existsSyncMock, readFileSyncMock, writeFileSyncMock, mkdirSyncMock, rmSyncMock } =
-  vi.hoisted(() => ({
-    existsSyncMock: vi.fn(),
-    mkdirSyncMock: vi.fn(),
-    readFileSyncMock: vi.fn(),
-    rmSyncMock: vi.fn(),
-    writeFileSyncMock: vi.fn(),
-  }));
 
 const { isEncryptionAvailableMock, encryptStringMock, decryptStringMock } = vi.hoisted(() => ({
   decryptStringMock: vi.fn(),
   encryptStringMock: vi.fn(),
   isEncryptionAvailableMock: vi.fn(),
-}));
-
-vi.mock("fs-extra", () => ({
-  default: {
-    existsSync: existsSyncMock,
-    mkdirSync: mkdirSyncMock,
-    readFileSync: readFileSyncMock,
-    rmSync: rmSyncMock,
-    writeFileSync: writeFileSyncMock,
-  },
 }));
 
 vi.mock("electron", () => ({
@@ -35,7 +19,8 @@ vi.mock("electron", () => ({
   },
 }));
 
-const CACHE_PATH = "/tmp/defcalendar/cache.bin";
+let directory: string;
+let cachePath: string;
 
 function createTokenCacheContext(overrides?: {
   cacheHasChanged?: boolean;
@@ -51,144 +36,79 @@ function createTokenCacheContext(overrides?: {
 }
 
 beforeEach(() => {
-  existsSyncMock.mockReset();
-  readFileSyncMock.mockReset();
-  writeFileSyncMock.mockReset();
-  mkdirSyncMock.mockReset();
-  rmSyncMock.mockReset();
-  isEncryptionAvailableMock.mockReset();
-  encryptStringMock.mockReset();
-  decryptStringMock.mockReset();
+  directory = mkdtempSync(join(tmpdir(), "defcalendar-cache-"));
+  cachePath = join(directory, "cache.bin");
+  vi.resetAllMocks();
+});
+
+afterEach(() => {
+  rmSync(directory, { recursive: true, force: true });
 });
 
 describe("safeStorageTokenCache.beforeCacheAccess", () => {
-  it("does nothing when cache file is missing", async () => {
-    existsSyncMock.mockReturnValue(false);
-    const plugin = new SafeStorageTokenCache(CACHE_PATH).createPlugin();
+  it.each(["missing", "empty"])("preserves the in-memory cache for a %s file", async (state) => {
+    if (state === "empty") {
+      writeFileSync(cachePath, "");
+    }
     const ctx = createTokenCacheContext();
-
-    await plugin.beforeCacheAccess(ctx);
-
-    expect(readFileSyncMock).not.toHaveBeenCalled();
+    await new SafeStorageTokenCache(cachePath).createPlugin().beforeCacheAccess(ctx);
     expect(ctx.tokenCache.deserialize).not.toHaveBeenCalled();
   });
 
-  it("does nothing when cache file is empty", async () => {
-    existsSyncMock.mockReturnValue(true);
-    readFileSyncMock.mockReturnValue(Buffer.alloc(0));
-    const plugin = new SafeStorageTokenCache(CACHE_PATH).createPlugin();
+  it("restores an encrypted payload", async () => {
+    const cipher = Buffer.from([0xde, 0xad, 0xbe, 0xef]);
+    writeFileSync(cachePath, Buffer.concat([Buffer.from("enc:"), cipher]));
+    decryptStringMock.mockReturnValue('{"plaintext":true}');
     const ctx = createTokenCacheContext();
 
-    await plugin.beforeCacheAccess(ctx);
+    await new SafeStorageTokenCache(cachePath).createPlugin().beforeCacheAccess(ctx);
 
-    expect(ctx.tokenCache.deserialize).not.toHaveBeenCalled();
+    expect(decryptStringMock).toHaveBeenCalledWith(cipher);
+    expect(ctx.tokenCache.deserialize).toHaveBeenCalledWith('{"plaintext":true}');
   });
 
-  it("decrypts an encrypted payload before deserializing", async () => {
-    existsSyncMock.mockReturnValue(true);
-    const encryptedBytes = Buffer.from([0xde, 0xad, 0xbe, 0xef]);
-    readFileSyncMock.mockReturnValue(Buffer.concat([Buffer.from("enc:", "utf8"), encryptedBytes]));
-    decryptStringMock.mockReturnValue('{"plaintext": true}');
-    const plugin = new SafeStorageTokenCache(CACHE_PATH).createPlugin();
-    const ctx = createTokenCacheContext();
-
-    await plugin.beforeCacheAccess(ctx);
-
-    expect(decryptStringMock).toHaveBeenCalledOnce();
-    const passed = decryptStringMock.mock.calls[0]?.[0] as Buffer;
-    expect(passed.equals(encryptedBytes)).toBe(true);
-    expect(ctx.tokenCache.deserialize).toHaveBeenCalledWith('{"plaintext": true}');
-  });
-
-  it("strips the plain prefix and feeds the body to deserialize", async () => {
-    existsSyncMock.mockReturnValue(true);
-    readFileSyncMock.mockReturnValue(Buffer.from('plain:{"plain": true}', "utf8"));
-    const plugin = new SafeStorageTokenCache(CACHE_PATH).createPlugin();
-    const ctx = createTokenCacheContext();
-
-    await plugin.beforeCacheAccess(ctx);
-
-    expect(decryptStringMock).not.toHaveBeenCalled();
-    expect(ctx.tokenCache.deserialize).toHaveBeenCalledWith('{"plain": true}');
-  });
-
-  it("treats unprefixed legacy payloads as plain text", async () => {
-    existsSyncMock.mockReturnValue(true);
-    readFileSyncMock.mockReturnValue(Buffer.from('{"legacy": true}', "utf8"));
-    const plugin = new SafeStorageTokenCache(CACHE_PATH).createPlugin();
-    const ctx = createTokenCacheContext();
-
-    await plugin.beforeCacheAccess(ctx);
-
-    expect(decryptStringMock).not.toHaveBeenCalled();
-    expect(ctx.tokenCache.deserialize).toHaveBeenCalledWith('{"legacy": true}');
-  });
+  it.each(['plain:{"plain":true}', '{"plain":true}'])(
+    "reads the saved plaintext format %s",
+    async (stored) => {
+      writeFileSync(cachePath, stored);
+      const ctx = createTokenCacheContext();
+      await new SafeStorageTokenCache(cachePath).createPlugin().beforeCacheAccess(ctx);
+      expect(ctx.tokenCache.deserialize).toHaveBeenCalledWith('{"plain":true}');
+    },
+  );
 });
 
 describe("safeStorageTokenCache.afterCacheAccess", () => {
-  it("does not write when cacheHasChanged is false", async () => {
-    const plugin = new SafeStorageTokenCache(CACHE_PATH).createPlugin();
+  it("preserves the saved cache when MSAL reports no change", async () => {
+    writeFileSync(cachePath, "existing cache");
     const ctx = createTokenCacheContext({ cacheHasChanged: false });
-
-    await plugin.afterCacheAccess(ctx);
-
-    expect(writeFileSyncMock).not.toHaveBeenCalled();
-    expect(mkdirSyncMock).not.toHaveBeenCalled();
+    await new SafeStorageTokenCache(cachePath).createPlugin().afterCacheAccess(ctx);
+    expect(readFileSync(cachePath, "utf8")).toBe("existing cache");
   });
 
-  it("writes encrypted payload prefixed with enc: when encryption is available", async () => {
+  it("writes a prefixed encrypted file in a new cache directory", async () => {
+    const path = join(directory, "account", "cache.bin");
+    const cipher = Buffer.from([1, 2, 3]);
     isEncryptionAvailableMock.mockReturnValue(true);
-    const cipher = Buffer.from([0x01, 0x02, 0x03]);
     encryptStringMock.mockReturnValue(cipher);
-    const plugin = new SafeStorageTokenCache(CACHE_PATH).createPlugin();
     const ctx = createTokenCacheContext({
       cacheHasChanged: true,
-      serializeReturn: '{"token": "secret"}',
+      serializeReturn: '{"token":"secret"}',
     });
 
-    await plugin.afterCacheAccess(ctx);
+    await new SafeStorageTokenCache(path).createPlugin().afterCacheAccess(ctx);
 
-    expect(encryptStringMock).toHaveBeenCalledWith('{"token": "secret"}');
-    expect(mkdirSyncMock).toHaveBeenCalledWith(expect.any(String), { recursive: true });
-    expect(writeFileSyncMock).toHaveBeenCalledOnce();
-    const written = writeFileSyncMock.mock.calls[0]?.[1] as Buffer;
-    expect(written.subarray(0, 4).equals(Buffer.from("enc:", "utf8"))).toBe(true);
-    expect(written.subarray(4).equals(cipher)).toBe(true);
+    expect(encryptStringMock).toHaveBeenCalledWith('{"token":"secret"}');
+    expect(readFileSync(path)).toEqual(Buffer.concat([Buffer.from("enc:"), cipher]));
   });
 
-  it("writes plain prefix when encryption is unavailable", async () => {
+  it("writes the plaintext format when encryption is unavailable", async () => {
     isEncryptionAvailableMock.mockReturnValue(false);
-    const plugin = new SafeStorageTokenCache(CACHE_PATH).createPlugin();
     const ctx = createTokenCacheContext({
       cacheHasChanged: true,
-      serializeReturn: '{"token": "fallback"}',
+      serializeReturn: '{"token":"fallback"}',
     });
-
-    await plugin.afterCacheAccess(ctx);
-
-    expect(encryptStringMock).not.toHaveBeenCalled();
-    expect(writeFileSyncMock).toHaveBeenCalledOnce();
-    const written = writeFileSyncMock.mock.calls[0]?.[1] as Buffer;
-    expect(written.toString("utf8")).toBe('plain:{"token": "fallback"}');
-  });
-});
-
-describe("safeStorageTokenCache.clear", () => {
-  it("removes the cache file when it exists", () => {
-    existsSyncMock.mockReturnValue(true);
-    const cache = new SafeStorageTokenCache(CACHE_PATH);
-
-    cache.clear();
-
-    expect(rmSyncMock).toHaveBeenCalledWith(CACHE_PATH, { force: true });
-  });
-
-  it("is a no-op when the cache file is missing", () => {
-    existsSyncMock.mockReturnValue(false);
-    const cache = new SafeStorageTokenCache(CACHE_PATH);
-
-    cache.clear();
-
-    expect(rmSyncMock).not.toHaveBeenCalled();
+    await new SafeStorageTokenCache(cachePath).createPlugin().afterCacheAccess(ctx);
+    expect(readFileSync(cachePath, "utf8")).toBe('plain:{"token":"fallback"}');
   });
 });

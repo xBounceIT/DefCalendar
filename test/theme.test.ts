@@ -1,11 +1,9 @@
 import {
   getTitleBarColors,
   getTitleBarScrimColors,
-  isDarkVisualTheme,
   resolveVisualTheme,
   visualThemeSchema,
 } from "../src/shared/theme";
-import { themeSettingSchema } from "../src/shared/schemas";
 import { describe, expect, it } from "vitest";
 
 describe("resolveVisualTheme", () => {
@@ -20,15 +18,6 @@ describe("resolveVisualTheme", () => {
     expect.hasAssertions();
     expect(resolveVisualTheme("system", true)).toBe("dark");
     expect(resolveVisualTheme("system", false)).toBe("light");
-  });
-});
-
-describe("isDarkVisualTheme", () => {
-  it("treats dark and blue-navy as dark themes", () => {
-    expect.hasAssertions();
-    expect(isDarkVisualTheme("dark")).toBe(true);
-    expect(isDarkVisualTheme("blue-navy")).toBe(true);
-    expect(isDarkVisualTheme("light")).toBe(false);
   });
 });
 
@@ -65,12 +54,5 @@ describe("visualThemeSchema", () => {
     expect(visualThemeSchema.parse("dark")).toBe("dark");
     expect(visualThemeSchema.parse("blue-navy")).toBe("blue-navy");
     expect(() => visualThemeSchema.parse("system")).toThrow();
-  });
-});
-
-describe("themeSettingSchema", () => {
-  it("accepts blue-navy as a theme setting", () => {
-    expect.hasAssertions();
-    expect(themeSettingSchema.parse("blue-navy")).toBe("blue-navy");
   });
 });

@@ -1,114 +1,53 @@
 import { describe, expect, it, vi } from "vitest";
+import { openMeetingLink } from "../src/main/events/meeting-link";
 
-import { openMeetingLink, toNativeMeetingUrl } from "../src/main/events/meeting-link";
-
-describe("toNativeMeetingUrl", () => {
-  it("maps Teams meeting links to the msteams scheme", () => {
-    const url = "https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc?context=%7B%7D";
-    expect(toNativeMeetingUrl(url)).toBe(
+describe("meeting links on macOS", () => {
+  it.each([
+    [
+      "https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc?context=%7B%7D",
       "msteams://teams.microsoft.com/l/meetup-join/19%3ameeting_abc?context=%7B%7D",
-    );
-  });
-
-  it("maps shortened Teams /meet/ links to the msteams scheme", () => {
-    const url = "https://teams.microsoft.com/meet/1234567890?p=abc";
-    expect(toNativeMeetingUrl(url)).toBe("msteams://teams.microsoft.com/meet/1234567890?p=abc");
-  });
-
-  it("maps Zoom meeting links to the zoommtg join URI", () => {
-    const url = "https://us06web.zoom.us/j/1234567890?pwd=abcdef";
-    expect(toNativeMeetingUrl(url)).toBe(
+    ],
+    [
+      "https://teams.microsoft.com/meet/1234567890?p=abc",
+      "msteams://teams.microsoft.com/meet/1234567890?p=abc",
+    ],
+    [
+      "https://us06web.zoom.us/j/1234567890?pwd=abcdef",
       "zoommtg://zoom.us/join?action=join&confno=1234567890&pwd=abcdef",
-    );
-  });
-
-  it("maps Zoom web-client join links to the zoommtg join URI", () => {
-    expect(toNativeMeetingUrl("https://zoom.us/wc/1234567890/join?pwd=xyz")).toBe(
+    ],
+    [
+      "https://zoom.us/wc/1234567890/join?pwd=xyz",
       "zoommtg://zoom.us/join?action=join&confno=1234567890&pwd=xyz",
-    );
+    ],
+    ["https://zoom.us/j/1234567890", "zoommtg://zoom.us/join?action=join&confno=1234567890"],
+    ["https://zoom.us/wc/join/1234567890", "zoommtg://zoom.us/join?action=join&confno=1234567890"],
+  ])("opens %s in the native app with its meeting parameters", async (url, expected) => {
+    const openExternal = vi.fn().mockResolvedValue(undefined);
+    await openMeetingLink(url, openExternal, "darwin");
+    expect(openExternal).toHaveBeenCalledExactlyOnceWith(expected);
   });
 
-  it("omits the pwd parameter when the Zoom link has none", () => {
-    expect(toNativeMeetingUrl("https://zoom.us/j/1234567890")).toBe(
-      "zoommtg://zoom.us/join?action=join&confno=1234567890",
-    );
-  });
-
-  it("returns null for Zoom pages without a meeting number", () => {
-    expect(toNativeMeetingUrl("https://zoom.us/my/jdoe")).toBeNull();
-  });
-
-  it("returns null for Webex links, which use the HTTPS handoff to the desktop app", () => {
-    expect(toNativeMeetingUrl("https://acme.webex.com/acme/j.php?MTID=m1234567890abcdef")).toBeNull();
-    expect(toNativeMeetingUrl("https://acme.webex.com/meet/jdoe")).toBeNull();
-    expect(toNativeMeetingUrl("https://acme.webex.com/join/1234567890")).toBeNull();
-  });
-
-  it("returns null for providers without a desktop app", () => {
-    expect(toNativeMeetingUrl("https://meet.google.com/abc-defg-hij")).toBeNull();
-  });
-
-  it("returns null for non-meeting links", () => {
-    expect(toNativeMeetingUrl("https://example.com/some/page")).toBeNull();
-    expect(toNativeMeetingUrl("https://teams.microsoft.com/")).toBeNull();
-  });
-
-  it("returns null for non-https and invalid URLs", () => {
-    expect(toNativeMeetingUrl("http://teams.microsoft.com/l/meetup-join/abc")).toBeNull();
-    expect(toNativeMeetingUrl("msteams://teams.microsoft.com/l/meetup-join/abc")).toBeNull();
-    expect(toNativeMeetingUrl("not a url")).toBeNull();
+  it.each([
+    "https://acme.webex.com/acme/j.php?MTID=m1234567890abcdef",
+    "https://acme.webex.com/meet/jdoe",
+    "https://acme.webex.com/join/1234567890",
+    "https://meet.google.com/abc-defg-hij",
+    "https://zoom.us/my/jdoe",
+    "https://zoom.us/my/1234567890",
+    "https://zoom.us/wc/settings/1234567890",
+    "https://teams.microsoft.com/",
+    "https://example.com/some/page",
+    "http://teams.microsoft.com/l/meetup-join/abc",
+  ])("opens %s directly without constructing a native meeting URL", async (url) => {
+    const openExternal = vi.fn().mockResolvedValue(undefined);
+    await openMeetingLink(url, openExternal, "darwin");
+    expect(openExternal).toHaveBeenCalledExactlyOnceWith(url);
   });
 });
 
-describe("openMeetingLink", () => {
-  it("opens only the native app on macOS when it handles the link", async () => {
-    const openExternal = vi.fn().mockResolvedValue(undefined);
-    const url = "https://teams.microsoft.com/l/meetup-join/example";
-
-    await openMeetingLink(url, openExternal, "darwin");
-
-    expect(openExternal).toHaveBeenCalledOnce();
-    expect(openExternal).toHaveBeenCalledWith(
-      "msteams://teams.microsoft.com/l/meetup-join/example",
-    );
-  });
-
-  it("falls back to the browser on macOS when the native app is unavailable", async () => {
-    const openExternal = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("no handler"))
-      .mockResolvedValue(undefined);
-    const url = "https://us02web.zoom.us/j/1234567890?pwd=abc";
-
-    await openMeetingLink(url, openExternal, "darwin");
-
-    expect(openExternal).toHaveBeenCalledTimes(2);
-    expect(openExternal).toHaveBeenNthCalledWith(
-      1,
-      "zoommtg://zoom.us/join?action=join&confno=1234567890&pwd=abc",
-    );
-    expect(openExternal).toHaveBeenNthCalledWith(2, url);
-  });
-
-  it("opens the web link directly on macOS for providers without a desktop app", async () => {
-    const openExternal = vi.fn().mockResolvedValue(undefined);
-    const url = "https://meet.google.com/abc-defg-hij";
-
-    await openMeetingLink(url, openExternal, "darwin");
-
-    expect(openExternal).toHaveBeenCalledOnce();
-    expect(openExternal).toHaveBeenCalledWith(url);
-  });
-
-  it("opens the web link directly outside macOS", async () => {
-    const openExternal = vi.fn().mockResolvedValue(undefined);
-    const url = "https://teams.microsoft.com/l/meetup-join/example";
-
-    await openMeetingLink(url, openExternal, "win32");
-    await openMeetingLink(url, openExternal, "linux");
-
-    expect(openExternal).toHaveBeenCalledTimes(2);
-    expect(openExternal).toHaveBeenNthCalledWith(1, url);
-    expect(openExternal).toHaveBeenNthCalledWith(2, url);
-  });
+it("opens Teams web links directly on Windows", async () => {
+  const openExternal = vi.fn().mockResolvedValue(undefined);
+  const url = "https://teams.microsoft.com/l/meetup-join/example";
+  await openMeetingLink(url, openExternal, "win32");
+  expect(openExternal).toHaveBeenCalledExactlyOnceWith(url);
 });

@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import type { CalendarEvent, CalendarSummary } from "@shared/schemas";
 import React from "react";
@@ -123,21 +123,16 @@ describe("eventSearchDialog visibility", () => {
     expect(result.container.querySelector(".event-search-dialog")).toBeNull();
   });
 
-  it("renders the dialog with input and close button when open", () => {
-    renderDialog();
-    expect(screen.getByRole("combobox")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: /close/i }).length).toBeGreaterThan(0);
+  it("closes the search dialog from its close button", () => {
+    const { onClose } = renderDialog();
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it("disables the input and shows banner when no calendars are visible", () => {
     renderDialog({ visibleCalendarIds: [] });
-    const input = screen.getByRole("combobox") as HTMLInputElement;
-    expect(input.disabled).toBe(true);
-  });
-
-  it("shows the hint message before the user types enough characters", () => {
-    renderDialog();
-    expect(document.querySelector(".event-search-dialog__empty")).not.toBeNull();
+    expect(screen.getByRole("combobox")).toBeDisabled();
+    expect(screen.getByText("Select a calendar to search")).toBeInTheDocument();
   });
 });
 
@@ -150,6 +145,7 @@ describe("eventSearchDialog query lifecycle", () => {
     await new Promise((r) => setTimeout(r, 250));
 
     expect(searchMock).not.toHaveBeenCalled();
+    expect(screen.getByText("Type at least 2 characters")).toBeInTheDocument();
   });
 
   it("debounces and invokes search with normalized query", async () => {
@@ -221,17 +217,6 @@ describe("eventSearchDialog query lifecycle", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /sort/i })).toHaveTextContent("Most recent");
     expect(searchMock).not.toHaveBeenCalled();
-  });
-
-  it("renders results when search returns events", async () => {
-    searchMock.mockResolvedValue([createEvent({ subject: "Weekly Sync" })]);
-    renderDialog();
-    const input = screen.getByRole("combobox") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "weekly" } });
-
-    await waitFor(() => {
-      expect(screen.getByText("Weekly Sync")).toBeInTheDocument();
-    });
   });
 
   it("preserves a selected result title for copying", async () => {

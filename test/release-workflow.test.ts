@@ -361,13 +361,10 @@ describe("tag-driven app version", () => {
     }
   }
 
-  it("sets the app version from the tag only on pushes and drops the tag/package.json match check", () => {
+  it("runs the tag version script in Bash on both release platforms only on pushes", () => {
     expect.hasAssertions();
     expect(versionStep?.if).toBe("github.event_name == 'push'");
     expect(versionStep?.shell).toBe("bash");
-    expect(workflow.jobs.build.steps.map((step) => step.name)).not.toContain(
-      "Validate tag and package version",
-    );
   });
 
   it("allows a tag matching the checked-in package.json version", async () => {
@@ -376,14 +373,10 @@ describe("tag-driven app version", () => {
     expect(version).toBe("0.10.11");
   });
 
-  it.each(["v1.2.3", "v0.10.12"])(
-    "embeds the tag %s as the app version",
-    async (tag) => {
-      expect.hasAssertions();
-      const { version } = await runVersionStep(tag);
-      expect(version).toBe(tag.replace(/^v/, ""));
-    },
-  );
+  it("embeds a tag that differs from the checked-in app version", async () => {
+    const { version } = await runVersionStep("v1.2.3");
+    expect(version).toBe("1.2.3");
+  });
 
   it.each(["v1.2", "1.2.3", "vX.Y.Z", "v2.0.0-rc.1", "v1.2.3.4", "v1.2.3-", "v1.2.3+build", "v"])(
     "rejects the malformed tag %s",

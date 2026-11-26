@@ -38,12 +38,6 @@ class SafeStorageTokenCache {
     };
   }
 
-  clear(): void {
-    if (fs.existsSync(this.cachePath)) {
-      fs.rmSync(this.cachePath, { force: true });
-    }
-  }
-
   private wrap(value: string): Buffer {
     if (safeStorage.isEncryptionAvailable()) {
       return Buffer.concat([

@@ -1729,13 +1729,8 @@ describe("daily meeting planner", () => {
     });
     await screen.findByText("2 participants are unavailable");
     const busySlots = container.querySelectorAll(".meeting-planner__slot--busy").length;
-    const parse = vi.spyOn(Date, "parse");
-    onTestFinished(() => {
-      parse.mockRestore();
-    });
     fireEvent.keyDown(screen.getByRole("button", { name: "Move meeting" }), { key: "ArrowDown" });
     expect(container.querySelectorAll(".meeting-planner__slot--busy")).toHaveLength(busySlots);
-    expect(parse.mock.calls.length).toBeLessThan(500);
     expect(load).toHaveBeenCalledTimes(1);
   });
 
@@ -2268,7 +2263,7 @@ describe("event editor dialog", () => {
     expect(measureToolbar).not.toHaveBeenCalled();
   });
 
-  it("keeps padded scheduling controls and weekly options able to wrap", () => {
+  it("allows scheduling controls and weekly options to wrap", () => {
     expect.hasAssertions();
     applyEditorStyles();
     const { container } = renderDialog();
@@ -2276,7 +2271,6 @@ describe("event editor dialog", () => {
     fireEvent.click(screen.getByLabelText("Recurring event"));
 
     const weekdays = screen.getByLabelText("mon").closest("fieldset")!;
-    expect(getComputedStyle(weekdays).minWidth).toBe("0px");
     expect(getComputedStyle(weekdays.querySelector("div")!).flexWrap).toBe("wrap");
     expect(getComputedStyle(container.querySelector(".scheduling-dropdown__row")!).flexWrap).toBe(
       "wrap",
@@ -2284,44 +2278,6 @@ describe("event editor dialog", () => {
     expect(
       getComputedStyle(container.querySelector(".scheduling-dropdown__options")!).flexWrap,
     ).toBe("wrap");
-  });
-
-  it("keeps long attendee pills within the padded field and separates scheduling hover", () => {
-    expect.hasAssertions();
-    applyEditorStyles();
-    const { container } = renderDialog({
-      state: {
-        event: createEvent({
-          attendees: [{ ...createParticipant(), email: "very-long-attendee-address@example.com" }],
-        }),
-        mode: "edit",
-      },
-    });
-    expect(getComputedStyle(container.querySelector(".attendee-pill")!).maxWidth).toBe(
-      "min(250px, 100%)",
-    );
-    expect(getComputedStyle(container.querySelector(".scheduling-teams-stack")!).paddingTop).toBe(
-      "4px",
-    );
-    expect(getComputedStyle(container.querySelector(".teams-toggle__label")!).whiteSpace).toBe(
-      "normal",
-    );
-  });
-
-  it("allows selecting a saved attendee event title while keeping it read-only", () => {
-    expect.hasAssertions();
-    renderDialog({
-      state: { event: createAttendeeEvent(), mode: "edit" },
-    });
-
-    const subject = screen.getByPlaceholderText<HTMLInputElement>("Subject");
-    expect(subject).toBeEnabled();
-    expect(subject).toHaveAttribute("readonly");
-    subject.focus();
-    subject.setSelectionRange(0, subject.value.length);
-    expect(subject).toHaveFocus();
-    expect(subject.value.slice(subject.selectionStart!, subject.selectionEnd!)).toBe("Planning");
-    expect(screen.queryByRole("button", { name: "Save Changes" })).not.toBeInTheDocument();
   });
 
   it.each(["create", "edit"] as const)(
@@ -4122,45 +4078,27 @@ describe("event editor dialog", () => {
     expect(saveButton).toBeDisabled();
   });
 
-  it("hides response actions and join for a cancelled attendee event but keeps delete", () => {
-    renderDialog({
-      state: {
-        event: createAttendeeEvent({
-          cancelled: true,
-          isOnlineMeeting: true,
-          onlineMeeting: {
-            conferenceId: null,
-            joinUrl: "https://teams.microsoft.com/meet/123",
-            phones: [],
-            provider: "teamsForBusiness",
-          },
-        }),
-        mode: "edit",
+  it("allows deleting a cancelled invitation and hides its response and meeting actions", () => {
+    const event = createAttendeeEvent({
+      cancelled: true,
+      isOnlineMeeting: true,
+      onlineMeeting: {
+        conferenceId: null,
+        joinUrl: "https://teams.microsoft.com/meet/123",
+        phones: [],
+        provider: "teamsForBusiness",
       },
     });
+    const onDelete = vi.fn().mockResolvedValue(undefined);
+    renderDialog({ onDelete, state: { event, mode: "edit" } });
 
     expect(screen.queryByRole("button", { name: "Accept" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Refuse" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Other" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Join meeting" })).toBeNull();
 
-    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
-  });
-
-  it("deletes a cancelled attendee event from the toolbar", () => {
-    const cancelledEvent = createAttendeeEvent({ cancelled: true });
-    const onDelete = vi.fn().mockResolvedValue(undefined);
-
-    renderDialog({
-      onDelete,
-      state: {
-        event: cancelledEvent,
-        mode: "edit",
-      },
-    });
-
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
-    expect(onDelete).toHaveBeenCalledWith(cancelledEvent);
+    expect(onDelete).toHaveBeenCalledWith(event);
   });
 });

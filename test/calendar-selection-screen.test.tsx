@@ -57,24 +57,6 @@ describe(CalendarSelectionScreen, () => {
     expect(screen.getByLabelText("Family")).toBeInTheDocument();
   });
 
-  it("pre-selects calendars marked as visible", () => {
-    renderScreen({
-      accountEmail: null,
-      calendars: [
-        createCalendar({ id: "c1", name: "Visible", isVisible: true }),
-        createCalendar({ id: "c2", name: "Hidden", isVisible: false }),
-      ],
-      errorMessage: null,
-      isPending: false,
-      onContinue: vi.fn(),
-    });
-
-    const visibleInput = screen.getByLabelText("Visible").querySelector("input")!;
-    const hiddenInput = screen.getByLabelText("Hidden").querySelector("input")!;
-    expect((visibleInput as HTMLInputElement).checked).toBe(true);
-    expect((hiddenInput as HTMLInputElement).checked).toBe(false);
-  });
-
   it("continues with the calendar IDs after the selection changes", () => {
     const onContinue = vi.fn();
     renderScreen({
@@ -89,6 +71,8 @@ describe(CalendarSelectionScreen, () => {
       onContinue,
     });
 
+    expect(screen.getByRole("checkbox", { name: "A" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "B" })).not.toBeChecked();
     fireEvent.click(screen.getByRole("checkbox", { name: "B" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "C" }));
     fireEvent.click(screen.getByRole("button", { name: "Start syncing" }));

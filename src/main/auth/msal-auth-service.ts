@@ -85,7 +85,6 @@ type SessionValidationListener = (state: AuthState, removedHomeAccountId?: strin
 class MsalAuthService {
   private readonly config: AppConfig;
   private readonly pca: PublicClientApplication | null;
-  private readonly tokenCache: SafeStorageTokenCache;
   private accounts: AccountInfo[] = [];
   private activeAccountId: string | null = null;
   private accountColors = new Map<string, string>();
@@ -103,7 +102,6 @@ class MsalAuthService {
 
   constructor(config: AppConfig, tokenCache: SafeStorageTokenCache) {
     this.config = config;
-    this.tokenCache = tokenCache;
 
     if (hasConfiguredClientId(config.clientId)) {
       const msalConfig: Configuration = {

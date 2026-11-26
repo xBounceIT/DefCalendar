@@ -864,49 +864,25 @@ describe("sync service", () => {
     expect(fixture.newEventNotifications.recordCandidates).not.toHaveBeenCalled();
   });
 
-  it("records invite candidates when the in-app invite popup is enabled", async () => {
-    const fixture = createFixture({ newEventPopupEnabled: true });
-    const invite = createEvent({ id: "invite-1", isOrganizer: false, responseStatus: null });
-    fixture.graph.listCalendarView.mockResolvedValue([invite]);
-
-    await fixture.service.syncAll("manual");
-
-    expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([invite]);
-  });
-
-  it("records invite candidates when system invite notifications are enabled", async () => {
-    const fixture = createFixture({ systemInviteNotificationsEnabled: true });
-    const invite = createEvent({ id: "invite-1", isOrganizer: false, responseStatus: null });
-    fixture.graph.listCalendarView.mockResolvedValue([invite]);
-
-    await fixture.service.syncAll("manual");
-
-    expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([invite]);
-  });
-
-  it("records invite candidates when taskbar invite notifications are enabled", async () => {
-    const fixture = createFixture({ taskbarInviteNotificationsEnabled: true });
-    const invite = createEvent({ id: "invite-1", isOrganizer: false, responseStatus: null });
-    fixture.graph.listCalendarView.mockResolvedValue([invite]);
-
-    await fixture.service.syncAll("manual");
-
-    expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([invite]);
-  });
-
-  it("records invite candidates once when multiple invite notification modes are enabled", async () => {
-    const fixture = createFixture({
+  it.each([
+    { newEventPopupEnabled: true },
+    { systemInviteNotificationsEnabled: true },
+    { taskbarInviteNotificationsEnabled: true },
+    {
       newEventPopupEnabled: true,
       systemInviteNotificationsEnabled: true,
       taskbarInviteNotificationsEnabled: true,
-    });
+    },
+  ])("records an invite once with notification settings %j", async (settings) => {
+    const fixture = createFixture(settings);
     const invite = createEvent({ id: "invite-1", isOrganizer: false, responseStatus: null });
     fixture.graph.listCalendarView.mockResolvedValue([invite]);
 
     await fixture.service.syncAll("manual");
 
-    expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledOnce();
-    expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledWith([invite]);
+    expect(fixture.newEventNotifications.recordCandidates).toHaveBeenCalledExactlyOnceWith([
+      invite,
+    ]);
   });
 
   it("records only future unanswered invite candidates", async () => {
@@ -1517,31 +1493,6 @@ describe("sync service", () => {
     }
   });
 
-  it("runs one follow-up sync when a mutation arrives during an in-flight sync", async () => {
-    const fixture = createFixture();
-    const firstCalendars = createDeferred<CalendarSummary[]>();
-
-    fixture.graph.listCalendars
-      .mockReturnValueOnce(firstCalendars.promise)
-      .mockResolvedValue([createCalendar("calendar-a")]);
-
-    const firstSync = fixture.service.syncAll("manual");
-    const overlappingMutation = fixture.service.syncAll("mutation", "account-1");
-
-    expect(fixture.graph.listCalendars).toHaveBeenCalledOnce();
-
-    firstCalendars.resolve([createCalendar("calendar-a")]);
-
-    await Promise.all([firstSync, overlappingMutation]);
-    await Promise.resolve();
-
-    expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(2);
-    expect(fixture.graph.listCalendars.mock.calls.map(([accountId]) => accountId)).toStrictEqual([
-      "account-1",
-      "account-1",
-    ]);
-  });
-
   it("coalesces multiple same-account mutations into one follow-up sync", async () => {
     const fixture = createFixture();
     const firstCalendars = createDeferred<CalendarSummary[]>();
@@ -1553,13 +1504,13 @@ describe("sync service", () => {
     const firstSync = fixture.service.syncAll("manual");
     const firstMutation = fixture.service.syncAll("mutation", "account-1");
     const secondMutation = fixture.service.syncAll("mutation", "account-1");
+    expect(fixture.graph.listCalendars).toHaveBeenCalledOnce();
 
     firstCalendars.resolve([createCalendar("calendar-a")]);
 
     await Promise.all([firstSync, firstMutation, secondMutation]);
-    await Promise.resolve();
 
-    expect(fixture.graph.listCalendars).toHaveBeenCalledTimes(2);
+    expect(fixture.graph.listCalendars.mock.calls).toStrictEqual([["account-1"], ["account-1"]]);
   });
 
   it("falls back to one all-account follow-up sync for queued mutations across accounts", async () => {

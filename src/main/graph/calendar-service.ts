@@ -3,6 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import {
   contactSuggestionSchema,
+  onlineMeetingInfoSchema,
   type AttachmentUpload,
   type CalendarEvent,
   type CalendarSummary,
@@ -19,6 +20,7 @@ import {
 } from "@shared/schemas";
 import type { AppConfig } from "@main/config";
 import type MsalAuthService from "@main/auth/msal-auth-service";
+import { isKnownMeetingUrl } from "@main/events/meeting-link";
 import { normalizeEventResponseValue as normalizeGraphResponseValue } from "@shared/event-response";
 import {
   attendeeAvailabilityArgsSchema,
@@ -2023,11 +2025,9 @@ function extractKnownMeetingUrl(text?: string): string | null {
 }
 
 function parseOnlineMeetingInfo(event: GraphEvent): null | OnlineMeetingInfo {
-  let joinUrl = event.onlineMeeting?.joinUrl ?? null;
-
-  if (!joinUrl) {
-    joinUrl = extractKnownMeetingUrlFromEvent(event);
-  }
+  const joinUrl =
+    onlineMeetingInfoSchema.shape.joinUrl.parse(event.onlineMeeting?.joinUrl ?? null) ??
+    extractKnownMeetingUrlFromEvent(event);
 
   if (!event.onlineMeeting && !event.onlineMeetingProvider && !joinUrl) {
     return null;
@@ -2066,42 +2066,6 @@ function normalizeExtractedUrl(url: string): string {
     .replace(/&amp;/gi, "&")
     .trim()
     .replace(/[),.;\]]+$/g, "");
-}
-
-function isKnownMeetingUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    const hostname = parsed.hostname.toLowerCase();
-    const pathname = parsed.pathname.toLowerCase();
-
-    if (hostname === "meet.google.com" || hostname.endsWith(".meet.google.com")) {
-      return /^\/[a-z]{3}-[a-z]{4}-[a-z]{3}$/.test(pathname);
-    }
-
-    if (hostname === "teams.microsoft.com" || hostname.endsWith(".teams.microsoft.com")) {
-      return pathname.startsWith("/l/meetup-join/");
-    }
-
-    if (hostname === "zoom.us" || hostname.endsWith(".zoom.us")) {
-      return (
-        pathname.startsWith("/j/") ||
-        pathname.startsWith("/wc/join/") ||
-        pathname.startsWith("/my/")
-      );
-    }
-
-    if (hostname === "webex.com" || hostname.endsWith(".webex.com")) {
-      return (
-        pathname.includes("/j.php") ||
-        pathname.startsWith("/meet/") ||
-        pathname.startsWith("/join/")
-      );
-    }
-  } catch {
-    return false;
-  }
-
-  return false;
 }
 
 function parseRecurrence(value?: GraphRecurrence): null | Recurrence {
@@ -2431,10 +2395,6 @@ function stripHtml(value?: string): string | undefined {
     .trim();
 }
 
-function extractPlainTextFromGraphHtml(value?: string): null | string {
-  return trimOrNull(stripHtml(value));
-}
-
 function toParticipant(value: GraphAttendee | GraphRecipient): EventParticipant {
   let status: ParticipantResponseStatus | null = null;
   let response: null | string = null;
@@ -2523,5 +2483,5 @@ function isString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
-export { extractPlainTextFromGraphHtml, isMissingGraphItemError, parseRecurrence };
+export { isMissingGraphItemError, parseRecurrence };
 export default GraphCalendarService;

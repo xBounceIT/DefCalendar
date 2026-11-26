@@ -86,12 +86,6 @@ function createFixture(args?: {
       .mockImplementation((calendarId: string) =>
         args?.initialCalendarIds?.includes(calendarId) ? null : "2026-03-01T00:00:00.000Z",
       ),
-    dismissReminder: vi.fn().mockImplementation((dedupeKey: string) => {
-      const candidate = candidates.find((c) => c.dedupeKey === dedupeKey);
-      if (candidate) {
-        candidate.dismissedAt = new Date().toISOString();
-      }
-    }),
     dismissReminders: vi.fn().mockImplementation((dedupeKeys: string[]) => {
       for (const key of dedupeKeys) {
         const candidate = candidates.find((c) => c.dedupeKey === key);
@@ -101,9 +95,6 @@ function createFixture(args?: {
         reminderStateByKey[key] = { dismissedAt: new Date().toISOString(), snoozedUntil: null };
       }
     }),
-    getReminderState: vi
-      .fn()
-      .mockImplementation((dedupeKey: string) => reminderStateByKey[dedupeKey] ?? null),
     getReminderStates: vi.fn().mockImplementation((keys: string[]) => {
       const map = new Map<string, { dismissedAt: null | string; snoozedUntil: null | string }>();
       for (const key of keys) {
